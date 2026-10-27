@@ -71,6 +71,47 @@ async function _finS1(action, params = {}) { // chama o Financeiro no mesmo proc
   await mod.default({ method: 'POST', body: { action, params }, query: {}, headers: {} }, res);
   if (!out?.success) throw new Error(out?.error || 'falha em ' + action); return out;
 }
+// v3.290: FATOS VERIFICADOS para o diagnóstico — calculados pelo sistema a partir do Fluxo Detalhado (caixa hoje e
+// projeção dia a dia), Metas da Empresa, Agenda de Receitas e funil do HubSpot. O diagnóstico anterior misturava "a pagar
+// total" com "a pagar em 30 dias", propostas da tabela local (vazia) com o funil do HubSpot e dava runway e "caixa não
+// cobre 30 dias" ao mesmo tempo. Agora a IA recebe estes números prontos e é proibida de recalculá-los.
+async function fatosVerificados() {
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), mais = d => { const x = new Date(hoje + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + d); return x.toISOString().slice(0, 10); };
+  const r2 = v => Math.round((Number(v) || 0) * 100) / 100, F = {}, faltou = [];
+  const [fx, me, ag, fu] = await Promise.allSettled([
+    _comPrazo(_finS1('fluxo_detalhado', { data_inicio: hoje, data_fim: mais(120), dias_passado: 0 }), 45000),
+    _comPrazo(_finS1('metas_empresa_status', { ano: parseInt(hoje), com_crm: false }), 40000),
+    _comPrazo(_finS1('receitas_agenda', { meses: 4 }), 45000),
+    _comPrazo(_finS1('funil_vendas', { tipo: 'mes', ref: hoje.slice(0, 7), pipeline: 'todos' }), 45000)]);
+  if (fx.status === 'fulfilled') { const X = fx.value, L = (X.futuro?.lancamentos || []).filter(l => !l.ja_paga && !l.fora_do_saldo);
+    const jan = d => { const ate = mais(d), sel = L.filter(l => String(l.data).slice(0, 10) <= ate), e = sel.filter(l => l.tipo === 'entrada').reduce((a, l) => a + (l.valor || 0), 0), sa = sel.filter(l => l.tipo === 'saida').reduce((a, l) => a + (l.valor || 0), 0);
+      const sal = sel.filter(l => l.saldo_acumulado != null), mn = sal.reduce((m, l) => !m || l.saldo_acumulado < m.saldo_acumulado ? l : m, null);
+      return { entradas_previstas: r2(e), saidas_previstas: r2(sa), saldo_no_fim: r2((X.saldo_hoje || 0) + e - sa), menor_saldo: mn ? r2(mn.saldo_acumulado) : r2(X.saldo_hoje), data_menor_saldo: mn ? String(mn.data).slice(0, 10) : hoje }; };
+    const semanas = []; let saldo = X.saldo_hoje || 0;
+    for (let w = 0; w < 13; w++) { const de = mais(w * 7), ate = mais(w * 7 + 6), sel = L.filter(l => { const d = String(l.data).slice(0, 10); return d >= de && d <= ate; });
+      const e = sel.filter(l => l.tipo === 'entrada').reduce((a, l) => a + (l.valor || 0), 0), sa = sel.filter(l => l.tipo === 'saida').reduce((a, l) => a + (l.valor || 0), 0); saldo += e - sa;
+      semanas.push({ semana: de.split('-').reverse().slice(0, 2).join('/') + '–' + ate.split('-').reverse().slice(0, 2).join('/'), entradas: r2(e), saidas: r2(sa), saldo_fim: r2(saldo),
+        maiores: sel.sort((a, b) => (b.valor || 0) - (a.valor || 0)).slice(0, 3).map(l => (l.tipo === 'entrada' ? '+ ' : '− ') + String(l.descricao || l.contraparte || '').slice(0, 50) + ' R$ ' + Math.round(l.valor || 0).toLocaleString('pt-BR')) }); }
+    const j90 = jan(90), saidaMes = j90.saidas_previstas / 3;
+    F.caixa = { saldo_hoje: r2(X.saldo_hoje), proximos_30_dias: jan(30), proximos_60_dias: jan(60), proximos_90_dias: j90,
+      recebiveis_vencidos_em_aberto: r2(X.futuro?.vencidos_fora_do_extrato?.receber?.valor), pagaveis_vencidos_em_aberto: r2(X.futuro?.vencidos_fora_do_extrato?.pagar?.valor),
+      menor_saldo_30_dias_se_receber_os_vencidos: r2(jan(30).menor_saldo + (Number(X.futuro?.vencidos_fora_do_extrato?.receber?.valor) || 0) - (Number(X.futuro?.vencidos_fora_do_extrato?.pagar?.valor) || 0)),
+      saida_media_mensal_prevista: r2(saidaMes), meses_de_caixa_sem_novas_entradas: saidaMes > 0 ? Math.round((X.saldo_hoje || 0) / saidaMes * 10) / 10 : null,
+      fluxo_semanal_13_semanas: semanas, fonte: 'Fluxo Detalhado (QuickBooks + despesas programadas + receitas previstas)' }; }
+  else faltou.push('fluxo de caixa: ' + (fx.reason?.message || ''));
+  if (me.status === 'fulfilled') { const M = me.value.metas || {}, FA = M.faturamento || {}, MG = M.margem || {};
+    F.metas_do_ano = { ano: M.ano, meta_faturamento: FA.meta ?? M.meta?.faturamento ?? null, realizado: FA.realizado ?? M.realizado?.faturamento ?? null, pct_atingido: FA.pct_atingido ?? null, esperado_ate_hoje: FA.esperado_ate_hoje ?? null,
+      ritmo_pct: FA.ritmo_pct ?? null, projecao_fechamento: FA.projecao_fechamento ?? null, falta: FA.falta ?? null, margem_liquida_real_pct: MG.realizado_pct ?? M.realizado?.margem_pct ?? null, meta_margem_pct: MG.meta_pct ?? M.meta?.margem_pct ?? null,
+      lucro_liquido: M.realizado?.lucro_liquido ?? null, regime: 'caixa (DRE do QuickBooks)', fonte: 'Planejamento › Metas da Empresa' }; }
+  else faltou.push('metas: ' + (me.reason?.message || ''));
+  if (ag.status === 'fulfilled') { const A = ag.value.agenda || {}; F.receita_contratada_prevista = { proximos_4_meses: (A.por_mes || []).map(x => ({ mes: x.mes, total: r2(x.total), marcos_sem_termo: r2(x.marco), termos_no_faturamento: r2(x.termo), sustentacoes: r2(x.sustentacao), avulsas: r2(x.manual) })), fonte: 'Agenda de Receitas (marcos, termos e sustentações ainda não faturados)' }; }
+  else faltou.push('agenda de receitas: ' + (ag.reason?.message || ''));
+  if (fu.status === 'fulfilled' && !fu.value.indisponivel) { const R = fu.value.resumo || {}; F.funil_hubspot = { negocios_abertos: R.aberto?.qtd ?? null, valor_aberto: R.aberto?.valor ?? null, ponderado: R.aberto?.ponderado ?? null, abertos_sem_valor: R.aberto?.sem_valor ?? null,
+      ganho_no_mes: R.ganho?.valor ?? null, taxa_ganho_pct: R.taxa_ganho_pct ?? null, por_etapa: (fu.value.etapas || []).map(e => ({ etapa: e.nome, qtd: e.agora?.qtd, valor: e.agora?.valor })), fonte: 'HubSpot (funil do Dashboard ao vivo)',
+      observacao: R.aberto?.qtd && !R.aberto?.valor ? 'há negócios abertos, mas SEM VALOR preenchido no HubSpot — o funil em R$ aparece zerado por falta de cadastro, não por falta de negócios' : null }; }
+  else faltou.push('funil HubSpot: ' + (fu.reason?.message || fu.value?.indisponivel || ''));
+  return { fatos: F, faltou };
+}
 async function ctxReal(extra = {}) {
   const fontes = [], faltou = [];
   const [finR, vendR, leadsR] = await Promise.allSettled([
@@ -105,13 +146,23 @@ const CONCISO = '\nSeja conciso: no máximo 4 itens por lista, frases curtas, va
 
 // ── DIAGNÓSTICO COMPLETO ──────────────────────────────────────────────────────
 async function diagnosticoCompleto(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const [ctxR, FV] = await Promise.all([ctxReal(extra), fatosVerificados().catch(e => ({ fatos: {}, faltou: [e.message] }))]);
+  const ctx = ctxR.ctx; ctx.fatos_verificados = FV.fatos; if (FV.faltou.length) ctx.fatos_que_faltaram = FV.faltou;
 
   const system = `Você é o sistema de Inteligência Estratégica da Atlantyx — uma consultoria de estratégia interna de nível McKinsey.
 Seu papel: analisar a empresa de forma completa, identificar o que está funcionando, o que está bloqueando crescimento e o que pode ser otimizado para maximizar lucro.
 Use frameworks reais: SWOT, PESTEL, Porter, Canvas, BCG, Ansoff.
 Seja direto, honesto e acionável. Não suavize problemas reais.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + `
+REGRAS DE COERÊNCIA (obrigatórias):
+- "fatos_verificados" foi calculado pelo sistema e PREVALECE sobre qualquer outro número do contexto. Não recalcule caixa, runway, metas ou funil por conta própria.
+- Caixa: use fatos_verificados.caixa (saldo de hoje, entradas/saídas previstas em 30/60/90 dias e menor saldo projetado). Só diga que o caixa "não cobre" um período se o MENOR SALDO projetado desse período for negativo. Nunca compare o caixa com "contas a pagar totais" — compare com as saídas previstas do mesmo período, já descontadas das entradas previstas.
+- As entradas previstas JÁ incluem faturas em aberto no QuickBooks, marcos com entrega programada, termos no faturamento e sustentações. Recebíveis vencidos ainda em aberto são entrada provável com atraso (cobrança), não perda: considere menor_saldo_30_dias_se_receber_os_vencidos ao avaliar o risco de caixa.
+- Runway = fatos_verificados.caixa.meses_de_caixa_sem_novas_entradas. Não afirme falta de caixa e runway longo ao mesmo tempo.
+- Metas e margem: use fatos_verificados.metas_do_ano (realizado, % atingido, ritmo, meta de margem). Não use orçamento como meta.
+- Funil/propostas: use fatos_verificados.funil_hubspot. Negócio sem valor no HubSpot é falta de cadastro, não ausência de pipeline.
+- Receita contratada: use fatos_verificados.receita_contratada_prevista.
+- Se um fato estiver em fatos_que_faltaram, diga que o dado não estava disponível — não estime.`;
 
   const user = `Faça um DIAGNÓSTICO COMPLETO da empresa:
 ${JSON.stringify(ctx, null, 2)}
@@ -142,13 +193,13 @@ Retorne:
   "proximos_90_dias_criticos": "o que precisa acontecer nos próximos 90 dias para a empresa atingir R$5M",
   "evidencias_risco": [EV], "evidencias_oportunidade": [EV]
 }
-EV = {"indicador":"nome do dado","valor":"valor EXATO como está no contexto (R$, %, quantidade)","fonte":"caminho no contexto, ex.: dados_reais.financeiro.caixa","leitura":"por que esse número sustenta o ponto (1 frase)"}.
-Cada item precisa de 1 a 3 evidências tiradas LITERALMENTE de dados_reais (ou do plano vigente). Se não houver número que sustente o item, use {"indicador":"sem dado","valor":"—","fonte":"","leitura":"inferência qualitativa"} — nunca invente valores.`;
+EV = {"indicador":"nome do dado","valor":"valor EXATO como está no contexto (R$, %, quantidade)","fonte":"caminho no contexto, ex.: fatos_verificados.caixa.proximos_30_dias.menor_saldo","leitura":"por que esse número sustenta o ponto (1 frase)"}.
+Cada item precisa de 1 a 3 evidências tiradas LITERALMENTE de fatos_verificados (preferência) ou dados_reais (ou do plano vigente). Se não houver número que sustente o item, use {"indicador":"sem dado","valor":"—","fonte":"","leitura":"inferência qualitativa"} — nunca invente valores.`;
 
   const r = await claude(system, user, 5000);
   const diag = parseJSON(r);
   console.log(`[S1-Intel] Diagnóstico: ${diag.nota_geral}/10 — ${diag.saude_geral}`);
-  return { diagnostico: diag, dados_usados: ctx?.dados_reais ? { dados_reais: ctx.dados_reais, plano_estrategico_vigente: ctx.plano_estrategico_vigente || null, data_de_hoje: ctx.data_de_hoje } : ctx }; // v3.289: os valores que pautaram a análise
+  return { diagnostico: diag, dados_usados: { fatos_verificados: FV.fatos, fatos_que_faltaram: FV.faltou, dados_reais: ctx.dados_reais || null, plano_estrategico_vigente: ctx.plano_estrategico_vigente || null, data_de_hoje: ctx.data_de_hoje } }; // v3.289: os valores que pautaram a análise
 }
 
 // ── ANÁLISE DE RISCOS ─────────────────────────────────────────────────────────

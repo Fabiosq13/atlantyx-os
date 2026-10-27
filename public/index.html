@@ -7431,6 +7431,7 @@ function renderDiagnostico(d, el, dados) {
       <div class="diag-it" onclick="diagEvid('evidencias_gerais',-1,this)" title="Clique para ver os valores que pautaram a análise" style="flex:1;cursor:pointer;"><div style="font-family:var(--H);font-size:18px;font-weight:700;">${d.headline||''}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;">${d.momento||''}</div></div>
       <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${_corTxt(sc)};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${_corTxt(sc)};">● ${(d.saude_geral) || '—'}</div></div>
     </div>
+    ${_diagFatosResumo(dados)}
     <div class="kg k2" style="margin-bottom:12px;">
       ${card('MAIOR OPORTUNIDADE AGORA','var(--green)',`<div class="diag-it" onclick="diagEvid('evidencias_oportunidade',-1,this)" title="Clique para ver os valores" style="cursor:pointer;font-size:12px;line-height:1.6;">${d.maior_oportunidade_agora||''}</div>`)}
       ${card('MAIOR RISCO AGORA','var(--red)',`<div class="diag-it" onclick="diagEvid('evidencias_risco',-1,this)" title="Clique para ver os valores" style="cursor:pointer;font-size:12px;line-height:1.6;">${d.maior_risco_agora||''}</div>`)}
@@ -7447,9 +7448,35 @@ function renderDiagnostico(d, el, dados) {
     ${card('ALAVANCAS DE CRESCIMENTO','var(--green)',(d.alavancas_de_crescimento||[]).map((a,i)=>`<div class="diag-it" onclick="diagEvid('alavancas_de_crescimento',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.potencial_receita||''}</span></div><div style="font-size:11px;color:var(--t2);margin-top:2px;">Esforço: <span style="color:${_corTxt(impCor(a.esforco))}">${a.esforco}</span> · ${a.prazo} · <span style="color:var(--blue);">${a.acao_imediata||''}</span></div></div>`).join(''))}
     ${card('PRÓXIMOS 90 DIAS CRÍTICOS','var(--blue)',`<div style="font-size:12px;line-height:1.7;">${d.proximos_90_dias_criticos||''}</div>`)}
     <div style="font-size:10px;color:var(--t3);margin:4px 0 10px;">💡 Clique em qualquer ponto do diagnóstico para ver os valores que o sustentam e todos os dados que a IA recebeu.</div>
+    ${_diagFatosHtml(dados)}
     ${_diagAtlasHtml(el.id)}`;
 }
 
+
+// v3.290: números-base verificados pelo sistema (caixa projetado semana a semana, metas, funil, receita contratada)
+function _diagR(v) { return v == null || isNaN(v) ? '—' : (v < 0 ? '−' : '') + 'R$ ' + Math.round(Math.abs(v)).toLocaleString('pt-BR'); }
+function _diagFatosResumo(dados) {
+  const F = dados?.fatos_verificados; if (!F || !F.caixa && !F.metas_do_ano) return '';
+  const C = F.caixa || {}, M = F.metas_do_ano || {}, j = k => C[k] || {};
+  const kp = (rot, v, sub, cor) => '<div style="flex:1;min-width:150px;background:var(--bg4);border-radius:8px;padding:8px 10px;"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + rot + '</div><div style="font-size:15px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + v + '</div><div style="font-size:10px;color:var(--t2);">' + (sub || '') + '</div></div>';
+  return '<div style="margin:0 0 12px;"><div style="font-size:10px;color:var(--t2);margin-bottom:6px;font-weight:700;">📐 NÚMEROS-BASE VERIFICADOS PELO SISTEMA (a análise é obrigada a usar estes)</div><div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    + (F.caixa ? kp('Caixa hoje', _diagR(C.saldo_hoje), C.meses_de_caixa_sem_novas_entradas != null ? C.meses_de_caixa_sem_novas_entradas + ' meses de saídas sem nenhuma entrada' : '')
+      + [['30 dias', 'proximos_30_dias'], ['60 dias', 'proximos_60_dias'], ['90 dias', 'proximos_90_dias']].map(([r, k]) => kp('Próximos ' + r, 'menor saldo ' + _diagR(j(k).menor_saldo), '+' + _diagR(j(k).entradas_previstas) + ' entradas · −' + _diagR(j(k).saidas_previstas) + ' saídas' + (k === 'proximos_30_dias' && C.menor_saldo_30_dias_se_receber_os_vencidos != null ? '<br>recebendo os vencidos: ' + _diagR(C.menor_saldo_30_dias_se_receber_os_vencidos) : ''), j(k).menor_saldo < 0 ? 'var(--red)' : 'var(--green,#22d3a3)')).join('') : '')
+    + (F.metas_do_ano ? kp('Meta ' + (M.ano || ''), (M.pct_atingido ?? '—') + '% atingido', _diagR(M.realizado) + ' de ' + _diagR(M.meta_faturamento) + (M.ritmo_pct != null ? ' · ritmo ' + M.ritmo_pct + '%' : '')) : '')
+    + '</div></div>';
+}
+function _diagFatosHtml(dados) {
+  const F = dados?.fatos_verificados; if (!F) return '';
+  const C = F.caixa, S = C?.fluxo_semanal_13_semanas || [], RC = F.receita_contratada_prevista?.proximos_4_meses || [], FU = F.funil_hubspot;
+  return '<details class="panel" style="margin:6px 0;padding:10px 14px;"><summary style="cursor:pointer;font-size:12px;font-weight:700;">💰 Fluxo de caixa projetado e dados detalhados desta análise</summary><div style="margin-top:8px;font-size:11px;">'
+    + (C ? '<div style="color:var(--t2);margin-bottom:6px;">Saldo de hoje ' + _diagR(C.saldo_hoje) + ' + entradas previstas (faturas em aberto no QuickBooks, marcos, termos e sustentações a receber) − saídas previstas (contas a pagar e despesas programadas), semana a semana. Fora do fluxo: recebíveis vencidos ' + _diagR(C.recebiveis_vencidos_em_aberto) + ' e pagáveis vencidos ' + _diagR(C.pagaveis_vencidos_em_aberto) + '. Fonte: ' + (C.fonte || '') + '.</div>'
+      + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:640px;"><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;text-align:left;"><th style="padding:4px;">Semana</th><th style="padding:4px;text-align:right;">Entradas</th><th style="padding:4px;text-align:right;">Saídas</th><th style="padding:4px;text-align:right;">Saldo no fim</th><th style="padding:4px;">Maiores lançamentos</th></tr>'
+      + S.map(w => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;white-space:nowrap;">' + w.semana + '</td><td style="padding:4px;text-align:right;color:var(--green,#22d3a3);">' + _diagR(w.entradas) + '</td><td style="padding:4px;text-align:right;color:var(--red);">' + _diagR(w.saidas) + '</td><td style="padding:4px;text-align:right;font-weight:700;color:' + (w.saldo_fim < 0 ? 'var(--red)' : 'var(--t1)') + ';">' + _diagR(w.saldo_fim) + '</td><td style="padding:4px;color:var(--t2);font-size:10px;">' + (w.maiores || []).map(x => String(x).replace(/</g, '&lt;')).join('<br>') + '</td></tr>').join('') + '</table></div>' : '<div style="color:var(--gold);">Fluxo de caixa indisponível nesta análise.</div>')
+    + (RC.length ? '<div style="margin-top:10px;font-weight:700;">Receita contratada ainda não faturada</div><div>' + RC.map(m => m.mes + ': <b>' + _diagR(m.total) + '</b> <span style="color:var(--t3);">(marcos ' + _diagR(m.marcos_sem_termo) + ' · termos ' + _diagR(m.termos_no_faturamento) + ' · sustentações ' + _diagR(m.sustentacoes) + ')</span>').join('<br>') + '</div>' : '')
+    + (FU ? '<div style="margin-top:10px;font-weight:700;">Funil HubSpot</div><div>' + (FU.negocios_abertos ?? '—') + ' negócio(s) abertos · ' + _diagR(FU.valor_aberto) + ' (ponderado ' + _diagR(FU.ponderado) + ')' + (FU.abertos_sem_valor ? ' · <b style="color:var(--gold);">' + FU.abertos_sem_valor + ' sem valor</b>' : '') + (FU.observacao ? '<br><span style="color:var(--gold);">' + String(FU.observacao).replace(/</g, '&lt;') + '</span>' : '') + '</div>' : '')
+    + ((dados.fatos_que_faltaram || []).length ? '<div style="margin-top:8px;color:var(--gold);">Não disponível nesta análise: ' + dados.fatos_que_faltaram.map(x => String(x).replace(/</g, '&lt;')).join(' · ') + '</div>' : '')
+    + '</div></details>';
+}
 
 // v3.289: valores que pautaram cada ponto do diagnóstico + ATLAS dentro da tela
 function _diagRaiz(btn) { const r = btn && btn.closest('[data-diag]'); return r ? (window._diagDados || {})[r.dataset.diag] : null; }
@@ -35393,7 +35420,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.289] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.290] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35409,7 +35436,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.289';
+window.__ATX_BUILD_ID__ = 'ATX-v3.290';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
