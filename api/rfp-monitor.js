@@ -355,27 +355,34 @@ Responda APENAS com um array JSON.`,
   } finally { clearTimeout(t); }
 }
 async function lerPetronect({ dias = 90, reavaliar = false } = {}) {
-  const user = process.env.RFP_IMAP_USER || process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com';
-  const pass = (process.env.RFP_IMAP_PASS || process.env.EMAIL_IMAP_PASS || '').replace(/\s+/g, '');
-  const host = process.env.RFP_IMAP_HOST || process.env.EMAIL_IMAP_HOST || 'imap.gmail.com';
-  const port = parseInt(process.env.RFP_IMAP_PORT || process.env.EMAIL_IMAP_PORT || '993');
+  // v3.295: a caixa da Petronect é a contato@atlanteam.com.br (HostGator) — antes lia o Gmail das notas fiscais.
+  // Configuração própria no Vercel: RFP_IMAP_PASS (senha da caixa), e se preciso RFP_IMAP_USER / RFP_IMAP_HOST / RFP_IMAP_PORT.
+  // A senha do Gmail (EMAIL_IMAP_PASS) só é usada se RFP_IMAP_USER apontar para a mesma conta do EMAIL_IMAP_USER.
+  const user = process.env.RFP_IMAP_USER || 'contato@atlanteam.com.br';
+  const mesmaDoGmail = !!process.env.EMAIL_IMAP_USER && user.toLowerCase() === String(process.env.EMAIL_IMAP_USER).toLowerCase();
+  const pass = (process.env.RFP_IMAP_PASS || (mesmaDoGmail ? process.env.EMAIL_IMAP_PASS : '') || '').replace(/\s+/g, '');
+  const host = process.env.RFP_IMAP_HOST || (mesmaDoGmail ? process.env.EMAIL_IMAP_HOST : null) || (/@gmail\.com$/i.test(user) ? 'imap.gmail.com' : 'mail.' + user.split('@')[1]);
+  const port = parseInt(process.env.RFP_IMAP_PORT || '993');
   const cache = (reavaliar ? null : await _kvGetRfp(KV_PETRONECT)) || { processados: {}, oportunidades: [] };
   cache.processados = cache.processados || {}; cache.oportunidades = cache.oportunidades || []; cache.conta = user;
   const diag = { conta: user, pasta: null, encontrados: 0, novos: 0, avaliados_agora: 0, oportunidades_novas: 0, aderentes_novas: 0, faltam: 0 };
-  if (!pass) { cache.erro = 'EMAIL_IMAP_PASS não configurada no Vercel'; await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); return { diag, erro: cache.erro, ...(await petronectCache()) }; }
+  if (!pass) { cache.erro = 'Falta a senha da caixa ' + user + ': no Vercel crie RFP_IMAP_PASS com a senha dessa caixa (servidor usado: ' + host + ':' + port + ' — se for outro, crie RFP_IMAP_HOST) e faça Redeploy'; await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); return { diag, erro: cache.erro, ...(await petronectCache()) }; }
   let ImapFlow; try { ({ ImapFlow } = await import('imapflow')); } catch (_) { return { diag, erro: 'Pacote imapflow não instalado', ...(await petronectCache()) }; }
   const client = new ImapFlow({ host, port, secure: true, auth: { user, pass }, logger: false });
   const emails = [], novas = [];
   try {
     await client.connect();
     // Gmail: procura também nos arquivados (pasta "Todos os e-mails"); outros provedores: INBOX
-    let pasta = 'INBOX'; try { const l = await client.list(); const all = l.find(x => x.specialUse === '\\All'); if (all) pasta = all.path; } catch (_) {}
-    diag.pasta = pasta;
+    // v3.295: também lê a pasta de spam (aviso da Petronect às vezes cai lá na hospedagem)
+    let pasta = 'INBOX', pastas = []; try { const l = await client.list(); const all = l.find(x => x.specialUse === '\\All'); if (all) pasta = all.path;
+      const junk = l.find(x => x.specialUse === '\\Junk') || l.find(x => /^(INBOX\.)?(spam|junk|lixo)/i.test(x.path)); pastas = [pasta, ...(junk && junk.path !== pasta ? [junk.path] : [])]; } catch (_) { pastas = [pasta]; }
+    diag.pasta = pastas.join(' + ');
+    for (const pasta of pastas) {
     const lock = await client.getMailboxLock(pasta);
     try {
       const desde = new Date(Date.now() - dias * 864e5);
       const uids = (await client.search({ since: desde, from: 'petronect.com.br' }, { uid: true })) || [];
-      diag.encontrados = uids.length;
+      diag.encontrados += uids.length;
       for (const uid of uids.slice().reverse()) { // mais novos primeiro
         if (restante() < 35000 || emails.length >= 40) { diag.faltam++; continue; }
         let msg; try { msg = await client.fetchOne(uid, { envelope: true, bodyStructure: true }, { uid: true }); } catch (_) { continue; }
@@ -390,7 +397,10 @@ async function lerPetronect({ dias = 90, reavaliar = false } = {}) {
         emails.push({ id, uid, data: msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : null, assunto: String(msg.envelope?.subject || '').substring(0, 300), texto: texto.substring(0, 6000) });
       }
     } finally { lock.release(); }
-  } catch (e) { cache.erro = 'IMAP: ' + e.message; await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); try { await client.logout(); } catch (_) {} return { diag, erro: cache.erro, ...(await petronectCache()) }; }
+    }
+  } catch (e) { const m = String(e.responseText || e.message || e);
+    cache.erro = 'IMAP ' + user + ' (' + host + '): ' + m + (/altnames|certificate|self.signed|CERT_|hostname/i.test(m) ? ' — o certificado do servidor não é de "' + host + '": no painel da HostGator (E-mail › Configurar cliente) veja o servidor seguro (ex.: br###.hostgator.com.br) e crie RFP_IMAP_HOST com ele no Vercel'
+      : /auth|login|credential|invalid/i.test(m) ? ' — usuário ou senha recusados: confira RFP_IMAP_PASS (senha da caixa ' + user + ')' : /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|timeout/i.test(m) ? ' — servidor não encontrado/sem resposta: confira RFP_IMAP_HOST e RFP_IMAP_PORT (993)' : ''); await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); try { await client.logout(); } catch (_) {} return { diag, erro: cache.erro, ...(await petronectCache()) }; }
   try { await client.logout(); } catch (_) {}
   // avalia em lotes de 8 e-mails
   for (let k = 0; k < emails.length; k += 8) {
