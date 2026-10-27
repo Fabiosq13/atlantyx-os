@@ -610,12 +610,13 @@
   // ═══════════════════ v3.282 · NOVA OPORTUNIDADE POR VOZ → HUBSPOT ═══════════════════
   const VZ = { rec: null, ouvindo: false, base: '', plp: null, ext: null };
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  function vozFechar() { vozParar(); $('vdVozModal')?.remove(); }
+  function vozFechar() { const tx = ($('vzTexto')?.value || '').trim(), criado = $('vzBtnCriar')?.style.display === 'none';
+    if (tx && !criado && !confirm('Fechar sem criar a oportunidade? O texto gravado será perdido.')) return; vozParar(); $('vdVozModal')?.remove(); }
   async function vozAbrir() {
     $('vdVozModal')?.remove(); VZ.ext = null;
     const m = document.createElement('div'); m.id = 'vdVozModal';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;';
-    m.onclick = e => { if (e.target === m) vozFechar(); };
+    // v3.284: clicar fora NÃO fecha (perdia o que foi gravado); fecha só no ✕
     m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(820px,100%);">
       <div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;"><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">🎙 Nova oportunidade por voz</div>
         <div style="font-size:10.5px;color:var(--t2);">Fale como contaria a um colega: empresa, quem é o contato (cargo, e-mail, telefone), o que precisam, valor e quando fecha. A IA organiza e você confere antes de ir para o HubSpot.</div></div>
