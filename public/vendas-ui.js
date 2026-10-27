@@ -630,17 +630,32 @@
     document.body.appendChild(m);
     if (!VZ.plp) api('oport_voz_inicio', {}, 30000).then(d => { VZ.plp = d; if (!d.hubspot) $('vzStatus').innerHTML = '<span style="color:var(--red);">HubSpot não configurado (HUBSPOT_TOKEN no Vercel) — dá para organizar, mas não para gravar no CRM.</span>'; }).catch(() => {});
   }
+  // v3.283: no Chrome do Android o reconhecimento contínuo devolve cada trecho ACUMULADO ("falei", "falei com", "falei com a"…)
+  // e o texto saía repetido. Agora: no Android, uma frase por vez (continuous=false, reinicia sozinho); em qualquer aparelho,
+  // um trecho que repete o anterior SUBSTITUI em vez de somar. Erro "network" (serviço de voz do Google) tenta de novo 3x.
+  const ANDROID = /android/i.test(navigator.userAgent);
+  const juntar = (a, b) => { a = (a || '').trim(); b = (b || '').trim(); if (!a) return b; if (!b) return a; const la = a.toLowerCase(), lb = b.toLowerCase();
+    if (lb.startsWith(la)) return b; if (la.endsWith(lb) || (lb.length > 12 && la.includes(lb))) return a;
+    for (let k = Math.min(la.length, lb.length); k > 8; k--) if (la.endsWith(lb.substring(0, k))) return a + b.substring(k); return a + ' ' + b; };
   function vozGravar() {
     if (VZ.ouvindo) return vozParar();
-    const rec = new SR(); rec.lang = 'pt-BR'; rec.continuous = true; rec.interimResults = true;
-    VZ.base = ($('vzTexto').value.trim() ? $('vzTexto').value.trim() + ' ' : '');
-    rec.onresult = ev => { let fin = '', tmp = ''; for (let i = 0; i < ev.results.length; i++) { const t = ev.results[i][0].transcript; if (ev.results[i].isFinal) fin += t + ' '; else tmp += t; } $('vzTexto').value = (VZ.base + fin + tmp).replace(/\s+/g, ' '); };
-    rec.onerror = e => { $('vzStatus').innerHTML = '<span style="color:var(--red);">Microfone: ' + esc(e.error === 'not-allowed' ? 'permissão negada — libere o microfone no navegador' : e.error) + '</span>'; };
-    rec.onend = () => { if (VZ.ouvindo) { try { VZ.base = $('vzTexto').value.trim() + ' '; rec.start(); } catch (_) { vozParar(); } } };
-    try { rec.start(); } catch (e) { return nota('Não consegui abrir o microfone: ' + e.message, 'error'); }
-    VZ.rec = rec; VZ.ouvindo = true; $('vzBtnRec').innerHTML = '⏹ Parar'; $('vzBtnRec').classList.add('btn-or'); $('vzStatus').innerHTML = '<span style="color:var(--red);">● Gravando… fale normalmente</span>';
+    VZ.base = $('vzTexto').value.trim(); VZ.sessao = ''; VZ.falhas = 0; VZ.ouvindo = true;
+    const iniciar = () => {
+      const rec = new SR(); rec.lang = 'pt-BR'; rec.continuous = !ANDROID; rec.interimResults = true; rec.maxAlternatives = 1;
+      rec.onresult = ev => { let tmp = '';
+        for (let i = ev.resultIndex; i < ev.results.length; i++) { const t = ev.results[i][0].transcript;
+          if (ev.results[i].isFinal) { VZ.sessao = juntar(VZ.sessao, t); tmp = ''; } else tmp = t; }
+        VZ.falhas = 0; $('vzTexto').value = juntar(VZ.base, juntar(VZ.sessao, tmp)); };
+      rec.onerror = e => { if (e.error === 'no-speech' || e.error === 'aborted') return;
+        if (e.error === 'network' && ++VZ.falhas <= 3) { $('vzStatus').innerHTML = '<span style="color:var(--gold);">Conexão com o reconhecimento de voz oscilou — tentando de novo…</span>'; return; }
+        VZ.ouvindo = false; $('vzStatus').innerHTML = '<span style="color:var(--red);">Microfone: ' + esc(e.error === 'not-allowed' ? 'permissão negada — libere o microfone no navegador' : e.error === 'network' ? 'sem conexão com o serviço de voz — use o microfone do teclado para ditar no campo' : e.error) + '</span>'; vozParar(true); };
+      rec.onend = () => { if (!VZ.ouvindo) return; VZ.base = $('vzTexto').value.trim(); VZ.sessao = ''; setTimeout(() => { if (VZ.ouvindo) try { iniciar(); } catch (_) { vozParar(); } }, VZ.falhas ? 800 : 150); };
+      try { rec.start(); VZ.rec = rec; } catch (e) { VZ.ouvindo = false; nota('Não consegui abrir o microfone: ' + e.message, 'error'); vozParar(true); }
+    };
+    iniciar(); if (!VZ.ouvindo) return;
+    $('vzBtnRec').innerHTML = '⏹ Parar'; $('vzBtnRec').classList.add('btn-or'); $('vzStatus').innerHTML = '<span style="color:var(--red);">● Gravando… fale normalmente</span>';
   }
-  function vozParar() { VZ.ouvindo = false; try { VZ.rec?.stop(); } catch (_) {} VZ.rec = null; const b = $('vzBtnRec'); if (b) { b.innerHTML = '🎙 Gravar'; b.classList.remove('btn-or'); } const s = $('vzStatus'); if (s && SR) s.textContent = 'Gravação parada — revise o texto e clique em Organizar com IA.'; }
+  function vozParar(manterAviso) { VZ.ouvindo = false; try { VZ.rec?.stop(); } catch (_) {} VZ.rec = null; const b = $('vzBtnRec'); if (b) { b.innerHTML = '🎙 Gravar'; b.classList.remove('btn-or'); } const s = $('vzStatus'); if (s && SR && !manterAviso) s.textContent = 'Gravação parada — revise o texto e clique em Organizar com IA.'; }
   async function vozExtrair() {
     vozParar(); const texto = $('vzTexto').value.trim(); if (texto.length < 15) return nota('Fale ou escreva um pouco mais sobre a oportunidade', 'error');
     const fim = ocupado($('vzBtnIA'), '🤖 Organizando…');
