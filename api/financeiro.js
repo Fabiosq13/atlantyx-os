@@ -371,19 +371,21 @@ async function handler(req, res) {
       // v3.232: chamadas internas (TV, vendas, rito) pedem dado de no máximo alguns minutos — antes aceitavam até 12 h
       const maxIdade = Math.max(30, Math.min(12 * 3600, Number(_max_idade) || 12 * 3600));
       // v3.231: a data de hoje entra na chave — pedidos sem datas ("mês atual") não servem mais o mês anterior na virada
-      const chave = 'cache:fin:' + action + ':' + _hojeBR() + ':' + JSON.stringify(pChave).substring(0, 380);
+      const chave = 'cache:fin:c4:' + action + ':' + _hojeBR() + ':' + JSON.stringify(pChave).substring(0, 380);
       let sqlC = null; try { sqlC = await getSql(); } catch (_) {}
       if (sqlC && !_forcar) {
         try { const c = await sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`;
           if (c[0]) { const idade = (Date.now() - new Date(c[0].updated_at).getTime()) / 1000; const v = typeof c[0].value === 'string' ? JSON.parse(c[0].value) : c[0].value;
             if (idade < maxIdade && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
       }
+      await _camPreparar().catch(() => {}); // v3.291: config das camadas, alocação e agenda (cache de 60 s)
       const resultado = await acoes[action]();
       // v3.231: resultado com erro/incompleto (QuickBooks fora, limite de chamadas, saldo inicial não lido) não vai para o cache
       const _falho = r => !r || r.qb_erro || r.erro || r.dados_incompletos || (Array.isArray(r.erros) && r.erros.length) || r.saldo_inicial_origem === 'zero' || r.passado?.qb_erro || r.passado?.dados_incompletos;
       if (sqlC && !_falho(resultado)) { try { await sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(resultado)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
       return res.status(200).json({ success: true, action, ...resultado, _cache: { idade_s: 0, stale: false } });
     }
+    if (/resultado|dre|fin_v2|metas|painel|dashboard|kpi|diagnost|executiv/i.test(action)) await _camPreparar().catch(() => {}); // v3.291
     const resultado = await acoes[action]();
     // v3.109: qualquer gravação invalida o cache das telas financeiras (antes: lançar/ocultar/editar e a tela seguia
     // mostrando o número velho por até 3 min — e até 12h como "desatualizado")
@@ -5462,8 +5464,12 @@ function dreMensalSerie(rep, anoRef) {
   const G = {}; for (const r of rep?.Rows?.Row || []) if (r.group && r.Summary?.ColData) G[r.group] = r.Summary.ColData;
   const v = (g, i) => { const x = parseFloat(G[g]?.[i]?.value); return isFinite(x) ? x : 0; };
   const out = [];
-  idx.forEach((m, i) => { if (!m) return; const fat = v('Income', i), gastos = v('COGS', i) + v('Expenses', i) + v('OtherExpenses', i);
-    const luc = G.NetIncome ? v('NetIncome', i) : fat - gastos + v('OtherIncome', i);
+  const FL = _fv2Folhas(rep).folhas, hj = _hojeBR(); // v3.291: lucro de cada mês pela apuração em 4 camadas
+  idx.forEach((m, i) => { if (!m) return; const fat = v('Income', i);
+    const mes = m === hj.substring(0, 7) ? Math.round(parseInt(hj.substring(8)) / (365.25 / 12) * 100) / 100 : 1;
+    const cam = FL.length ? _camApurar(FL, { idx: i - 1, meses: mes }) : null;
+    const luc = cam ? cam.resultado_operacional : (G.NetIncome ? v('NetIncome', i) : fat - (v('COGS', i) + v('Expenses', i) + v('OtherExpenses', i)) + v('OtherIncome', i));
+    const gastos = fat + v('OtherIncome', i) - luc;
     out.push({ mes: m, faturamento: round(fat), gastos: round(gastos), lucro_liquido: round(luc), margem_liquida_pct: fat > 0 ? Math.round(luc / fat * 1000) / 10 : null }); });
   return out;
 }
@@ -5478,7 +5484,132 @@ function _plColunasMeses(rep, mIni, mFim, anoRef) {
   const soma = cd => { if (!cd) return cd; let t = 0; for (const i of idx) { const x = parseFloat(cd[i]?.value); if (isFinite(x)) t += x; } return [cd[0], { value: String(Math.round(t * 100) / 100) }]; };
   const cp = row => { const o = { ...row }; if (row.ColData) o.ColData = soma(row.ColData); if (row.Summary?.ColData) o.Summary = { ...row.Summary, ColData: soma(row.Summary.ColData) };
     if (row.Header?.ColData) o.Header = { ...row.Header, ColData: soma(row.Header.ColData) }; if (row.Rows?.Row) o.Rows = { ...row.Rows, Row: row.Rows.Row.map(cp) }; return o; };
-  return { ...rep, Columns: { Column: [cols[0], 'Total'].map(t => ({ ColTitle: t })) }, Rows: { ...rep.Rows, Row: (rep.Rows?.Row || []).map(cp) } };
+  return { ...rep, Header: { ...(rep.Header || {}), StartPeriod: mIni + '-01', EndPeriod: _fimDoMes(mFim + '-01') }, Columns: { Column: [cols[0], 'Total'].map(t => ({ ColTitle: t })) }, Rows: { ...rep.Rows, Row: (rep.Rows?.Row || []).map(cp) } };
+}
+// ═══ v3.291: APURAÇÃO DE MARGEM EM 4 CAMADAS — fonte ÚNICA do lucro e do % de lucro do sistema ═══
+// RECEITA BRUTA − impostos sobre receita = RECEITA LÍQUIDA − custos diretos por motor = MARGEM BRUTA
+// − custos fixos operacionais rateados (pela receita líquida de cada motor) = MARGEM DE CONTRIBUIÇÃO
+// − despesas corporativas não rateáveis (parcelamentos fiscais, juros/tarifas, provisões, extraordinários) = RESULTADO
+// OPERACIONAL (o "lucro" da empresa) − retiradas de sócio / distribuição = RESULTADO DO DONO.
+// Cada conta da DRE do QuickBooks cai numa camada pelo nome (ajustável em Financeiro → Configurar). Os profissionais
+// alocados em projetos (cadastro S8: custo/hora × horas × % de alocação) saem do custo fixo e viram custo direto do motor.
+// Os percentuais são sobre a RECEITA BRUTA (do motor ou da empresa).
+const CAM_CLASSES = { imposto: 'Impostos sobre receita', direto: 'Custo direto', fixo: 'Custo fixo rateável', corporativo: 'Despesa corporativa (não rateável)', retirada: 'Retirada de sócio' };
+const CAM_RX = {
+  retirada: /retirad|pr[oó][\s-]?labore|distribui[cç][aã]o (de )?(lucro|dividend)|dividendo|antecipa[cç][aã]o de lucro|lucros? distribu|s[oó]cios?\b/i,
+  parcelamento: /parcel|refis|\bpert\b|d[ií]vida|d[eé]bitos? (fiscais|tribut)|impostos? (em )?atras|transa[cç][aã]o tribut/i,
+  imposto: /\bISS(QN)?\b|\bPIS\b|COFINS|\bCSLL\b|\bIRPJ\b|simples nacional|\bDAS\b|impostos? (e taxas )?(sobre|s\/|incidentes)|tributos? (sobre|incidentes)|dedu[cç]([aã]o|[oõ]es) d[ae] receita|imposto de renda|contribui[cç][aã]o social|^(impostos?|tributos|impostos? e taxas|taxas e impostos)$/i,
+  financeiro: /juros|tarifa|banc[aá]ri|\biof\b|despesas? financeir|encargos financeiros|multa|\bmora\b/i,
+  extraordinario: /provis[aã]o|extraordin|n[aã]o recorrente|\bperdas?\b|baixa de|deprecia|amortiza/i,
+  folha: /sal[aá]ri|folha|encargos?|\binss\b|\bfgts\b|benef[ií]ci|vale[\s-]?(refei|alimen|transp)|plano de sa[uú]de|assist[eê]ncia m[eé]dic|odontol|f[eé]rias|d[eé]cimo|13[ºo°]?\s*sal|rescis|ordenado|pessoal|prestadores? de servi|\bpj\b|terceiriz|subcontrat|freelanc|consultor/i,
+};
+const CAM_MOTORES = ['pessoas', 'projetos', 'produtos'];
+// projeto do cadastro → motor (alocação de talentos × projeto sob medida × produto)
+const CAM_RX_PROJ = { pessoas: /aloca[cç]|outsourc|staff|body ?shop|squad|banco de horas|terceiriz/i };
+function _camClasse(nome, grupo, cfg) {
+  const o = cfg?.camadas?.[nome]; if (o && CAM_CLASSES[o]) return { classe: o, sub: 'manual', manual: true };
+  if (grupo === 'COGS' && !CAM_RX.imposto.test(nome) && !CAM_RX.retirada.test(nome)) return { classe: 'direto', sub: 'custo dos serviços' };
+  if (CAM_RX.retirada.test(nome)) return { classe: 'retirada', sub: 'retirada' };
+  if (CAM_RX.parcelamento.test(nome)) return { classe: 'corporativo', sub: 'parcelamento' };
+  if (CAM_RX.imposto.test(nome)) return { classe: 'imposto', sub: 'imposto' };
+  if (CAM_RX.financeiro.test(nome)) return { classe: 'corporativo', sub: 'financeiro' };
+  if (CAM_RX.extraordinario.test(nome)) return { classe: 'corporativo', sub: 'extraordinario' };
+  if (grupo === 'COGS') return { classe: 'direto', sub: 'custo dos serviços' };
+  const m = cfg?.motores?.[nome]; if (m && CAM_MOTORES.includes(m)) return { classe: 'direto', sub: 'conta do motor ' + m };
+  if (grupo === 'OtherExpenses') return { classe: 'corporativo', sub: 'outras despesas' };
+  return { classe: 'fixo', sub: CAM_RX.folha.test(nome) ? 'pessoal' : 'estrutura' };
+}
+// contexto carregado antes de cada cálculo (config, custo dos alocados e agenda) — o dreResumo é síncrono
+let _camCtx = { cfg: { motores: {}, camadas: {}, aliquota_pct: null, aliquota_motor: {} }, alocacao: null, agenda: null, em: 0 };
+async function _camPreparar(forcar) {
+  if (!forcar && Date.now() - _camCtx.em < 60000) return _camCtx;
+  const novo = { cfg: _camCtx.cfg, alocacao: null, agenda: null, em: Date.now() };
+  try { novo.cfg = await _fv2Cfg(); } catch (_) {}
+  let sql = null; try { sql = await getSql(); } catch (_) {}
+  if (sql) {
+    try { const F = await sql`SELECT f.id, f.nome, COALESCE(f.custo_hora,0)::float ch, COALESCE(f.horas_mensais_padrao,160)::float h, fp.alocacao_pct::float pct, p.nome projeto, p.descricao, p.status
+        FROM funcionarios f JOIN funcionarios_projetos fp ON fp.funcionario_id = f.id LEFT JOIN projetos_financeiros p ON p.id = fp.projeto_id WHERE f.ativo IS NOT FALSE`;
+      const A = { pessoas: 0, projetos: 0, produtos: 0, profissionais: 0, itens: [] }; const vistos = new Set(), usado = {};
+      for (const x of F) { if (/encerrad|conclu|cancel/i.test(x.status || '')) continue; const ja = usado[x.id] || 0; const pct = Math.max(0, Math.min(100 - ja, Number(x.pct) || 0)); if (!pct || !x.ch) continue; usado[x.id] = ja + pct;
+        const txt = (x.projeto || '') + ' ' + (x.descricao || ''), mo = CAM_RX_PROJ.pessoas.test(txt) ? 'pessoas' : FV2_RX.produtos.test(txt) ? 'produtos' : 'projetos';
+        const v = x.ch * x.h * pct / 100; A[mo] += v; vistos.add(x.id); A.itens.push({ profissional: x.nome, projeto: x.projeto, motor: mo, alocacao_pct: pct, custo_mes: round(v) }); }
+      A.profissionais = vistos.size; for (const k of CAM_MOTORES) A[k] = round(A[k]); novo.alocacao = A; } catch (_) {}
+    try { const mult = { mensal: 1, bimestral: 0.5, trimestral: 1 / 3, semestral: 1 / 6, anual: 1 / 12, semanal: 4.33, quinzenal: 2 };
+      const L = await sql`SELECT descricao, categoria, valor, recorrencia FROM despesas_programadas WHERE ativa AND (data_fim IS NULL OR data_fim >= ${_hojeBR()})`;
+      const G = { retirada: 0, parcelamento: 0 };
+      for (const d of L) { const t = (d.categoria || '') + ' ' + (d.descricao || ''), v = Number(d.valor || 0) * (mult[String(d.recorrencia || 'mensal').toLowerCase()] ?? 1);
+        if (CAM_RX.retirada.test(t)) G.retirada += v; else if (CAM_RX.parcelamento.test(t)) G.parcelamento += v; }
+      novo.agenda = { retirada_mensal: round(G.retirada), parcelamento_mensal: round(G.parcelamento) }; } catch (_) {}
+  }
+  _camCtx = novo; return novo;
+}
+function _camMeses(rep) {
+  const i = rep?.Header?.StartPeriod, f = rep?.Header?.EndPeriod; if (!i || !f) return null;
+  const fim = f > _hojeBR() ? _hojeBR() : f; const d = Math.round((Date.parse(fim) - Date.parse(i)) / 864e5) + 1;
+  return d > 0 ? Math.round(d / (365.25 / 12) * 100) / 100 : null;
+}
+// folhas: as de _fv2Folhas; idx = coluna (−1 = última/total); meses = duração do período (escala alocação e agenda)
+function _camApurar(folhas, { idx = -1, meses = null, ctx = _camCtx } = {}) {
+  const cfg = ctx.cfg || {}, M = {}, contas = [], avisos = [];
+  for (const k of CAM_MOTORES) M[k] = { receita: 0, impostos: 0, receita_liquida: 0, custo_direto: 0, custo_contas: 0, custo_compartilhado: 0, custo_alocados: 0, margem_bruta: 0, fixos_rateados: 0, margem_contribuicao: 0 };
+  let impQb = 0, ir = 0, dirComp = 0, fixo = 0, folhaFixo = 0, retQb = 0, outrasRec = 0; const corp = { parcelamento: 0, financeiro: 0, extraordinario: 0, 'outras despesas': 0, manual: 0 };
+  for (const f of folhas || []) {
+    const v = idx < 0 ? f.cols[f.cols.length - 1] : (f.cols[idx] || 0); if (!v) continue;
+    if (f.grupo === 'Income') { const mo = _fv2MotorConta(f.nome, f.grupo, cfg); const k = M[mo] ? mo : 'projetos'; M[k].receita += v; contas.push({ conta: f.nome, conta_id: f.id, grupo: f.grupo, classe: 'receita', motor: k, valor: round(v) }); continue; }
+    if (f.grupo === 'OtherIncome') { outrasRec += v; contas.push({ conta: f.nome, conta_id: f.id, grupo: f.grupo, classe: 'corporativo', sub: 'outras receitas (reduz)', valor: round(-v) }); continue; }
+    const c = _camClasse(f.nome, f.grupo, cfg); let motor = null;
+    if (c.classe === 'imposto') { impQb += v; if (RX_EB_IR.test(f.nome)) ir += v; }
+    else if (c.classe === 'retirada') retQb += v;
+    else if (c.classe === 'corporativo') corp[corp[c.sub] != null ? c.sub : 'manual'] += v;
+    else if (c.classe === 'fixo') { fixo += v; if (CAM_RX.folha.test(f.nome)) folhaFixo += v; }
+    else { motor = _fv2MotorConta(f.nome, f.grupo, cfg); if (motor === 'compartilhado' && !cfg.motores?.[f.nome] && /projet/i.test(f.nome)) motor = 'projetos'; if (M[motor]) M[motor].custo_contas += v; else { motor = 'compartilhado'; dirComp += v; } }
+    contas.push({ conta: f.nome, conta_id: f.id, grupo: f.grupo, classe: c.classe, sub: c.sub, manual: !!c.manual, motor, valor: round(v) });
+  }
+  const recTot = CAM_MOTORES.reduce((s, k) => s + M[k].receita, 0);
+  // CAMADA 1 — impostos: os lançados no QuickBooks; sem lançamento no período, a alíquota efetiva configurada (estimativa)
+  const aliqM = cfg.aliquota_motor || {}, aliqG = Number(cfg.aliquota_pct) || 0, temAliqM = CAM_MOTORES.some(k => Number(aliqM[k]) > 0);
+  let impFonte = 'quickbooks', impTot = impQb;
+  if (impQb > 0) { const peso = k => M[k].receita * (temAliqM ? (Number(aliqM[k]) || aliqG || 0) : 1), pt = CAM_MOTORES.reduce((s, k) => s + peso(k), 0);
+    for (const k of CAM_MOTORES) M[k].impostos = pt > 0 ? impQb * peso(k) / pt : (recTot ? impQb * M[k].receita / recTot : 0); }
+  else if (aliqG > 0 || temAliqM) { impFonte = 'estimado'; impTot = 0; for (const k of CAM_MOTORES) { M[k].impostos = M[k].receita * (Number(aliqM[k]) || aliqG) / 100; impTot += M[k].impostos; }
+    avisos.push('Impostos sobre receita ESTIMADOS pela alíquota efetiva configurada — nenhum imposto sobre receita lançado no QuickBooks neste período.'); }
+  else if (recTot > 0) { impFonte = 'ausente'; avisos.push('Nenhum imposto sobre receita (ISS, PIS, COFINS, IRPJ, CSLL) lançado no QuickBooks neste período e alíquota efetiva não configurada — o lucro pode estar superestimado. Configure em Financeiro → Configurar.'); }
+  for (const k of CAM_MOTORES) M[k].receita_liquida = M[k].receita - M[k].impostos;
+  const rlTot = CAM_MOTORES.reduce((s, k) => s + M[k].receita_liquida, 0);
+  const share = k => rlTot > 0 ? Math.max(0, M[k].receita_liquida) / CAM_MOTORES.reduce((s, j) => s + Math.max(0, M[j].receita_liquida), 0) : (recTot > 0 ? M[k].receita / recTot : 0);
+  // CAMADA 2 — custos diretos: contas do motor + custo direto sem motor (rateado) + profissionais alocados (saem do fixo de pessoal)
+  const A = ctx.alocacao, mFat = meses ?? 1; let movido = 0;
+  if (A && folhaFixo > 0) { const bruto = CAM_MOTORES.reduce((s, k) => s + (A[k] || 0), 0) * mFat; const fator = bruto > folhaFixo ? folhaFixo / bruto : 1;
+    for (const k of CAM_MOTORES) { M[k].custo_alocados = (A[k] || 0) * mFat * fator; movido += M[k].custo_alocados; }
+    if (fator < 1) avisos.push('Custo dos profissionais alocados (cadastro S8) maior que as contas de pessoal da DRE — limitado ao valor da DRE para não contar duas vezes.'); }
+  else if (A && A.profissionais && folhaFixo <= 0) avisos.push('Profissionais alocados no cadastro, mas nenhuma conta de pessoal no custo fixo da DRE — o custo deles já está nas contas de custo direto.');
+  else if (!A || !A.profissionais) avisos.push('Sem alocação de profissionais cadastrada (Pessoas → Funcionários × projetos) — o custo do time fica no custo fixo rateado.');
+  fixo -= movido;
+  const sh = Object.fromEntries(CAM_MOTORES.map(k => [k, share(k)])), shSum = CAM_MOTORES.reduce((s, k) => s + sh[k], 0);
+  for (const k of CAM_MOTORES) { const m = M[k]; m.custo_compartilhado = shSum ? dirComp * sh[k] / shSum : 0; m.custo_direto = m.custo_contas + m.custo_compartilhado + m.custo_alocados; m.margem_bruta = m.receita_liquida - m.custo_direto; }
+  // CAMADA 3 — rateio do custo fixo operacional pela receita líquida de cada motor
+  const semRateio = shSum ? 0 : fixo + dirComp;
+  for (const k of CAM_MOTORES) { const m = M[k]; m.fixos_rateados = shSum ? fixo * sh[k] / shSum : 0; m.margem_contribuicao = m.margem_bruta - m.fixos_rateados; }
+  // CAMADA 4 — corporativo (não rateável) e retiradas
+  let parcAgenda = 0; if (!corp.parcelamento && ctx.agenda?.parcelamento_mensal && meses) { parcAgenda = ctx.agenda.parcelamento_mensal * meses; }
+  const corpTot = Object.values(corp).reduce((s, v) => s + v, 0) + parcAgenda - outrasRec;
+  const pct = (v, b) => b > 0 ? Math.round(v / b * 1000) / 10 : null;
+  const custosDir = CAM_MOTORES.reduce((s, k) => s + M[k].custo_direto, 0);
+  const mb = rlTot - custosDir, mcTot = CAM_MOTORES.reduce((s, k) => s + M[k].margem_contribuicao, 0) - semRateio;
+  const ro = mcTot - corpTot;
+  let ret = retQb, retFonte = retQb ? 'quickbooks' : null;
+  if (!retQb && ctx.agenda?.retirada_mensal && meses) { ret = ctx.agenda.retirada_mensal * meses; retFonte = 'agenda'; avisos.push('Retiradas de sócio não aparecem na DRE do QuickBooks — usadas as da Agenda de pagamentos (' + Math.round(ctx.agenda.retirada_mensal).toLocaleString('pt-BR') + '/mês × ' + String(meses).replace('.', ',') + ' meses).'); }
+  if (parcAgenda) avisos.push('Parcelamentos de impostos/dívidas não aparecem na DRE do QuickBooks — usados os da Agenda de pagamentos (' + Math.round(ctx.agenda.parcelamento_mensal).toLocaleString('pt-BR') + '/mês).');
+  const motores = Object.fromEntries(CAM_MOTORES.map(k => { const m = M[k], r = m.receita; return [k, { receita: round(r), participacao_pct: pct(r, recTot), impostos: round(m.impostos), receita_liquida: round(m.receita_liquida),
+    custo_direto: round(m.custo_direto), custo_contas: round(m.custo_contas), custo_compartilhado: round(m.custo_compartilhado), custo_alocados: round(m.custo_alocados), margem_bruta: round(m.margem_bruta), margem_bruta_pct: pct(m.margem_bruta, r),
+    fixos_rateados: round(m.fixos_rateados), peso_rateio_pct: shSum ? Math.round(sh[k] / shSum * 1000) / 10 : null, margem_contribuicao: round(m.margem_contribuicao), margem_contribuicao_pct: pct(m.margem_contribuicao, r) }]; }));
+  return { receita_bruta: round(recTot), impostos: round(impTot), impostos_fonte: impFonte, aliquota_efetiva_pct: pct(impTot, recTot), ir_csll: round(ir), receita_liquida: round(rlTot),
+    custos_diretos: round(custosDir), margem_bruta: round(mb), margem_bruta_pct: pct(mb, recTot), custos_fixos: round(fixo), custos_fixos_sem_rateio: round(semRateio), pessoal_movido_para_direto: round(movido),
+    margem_contribuicao: round(mcTot), margem_contribuicao_pct: pct(mcTot, recTot),
+    despesas_corporativas: round(corpTot), corporativas_detalhe: { parcelamentos: round(corp.parcelamento + parcAgenda), parcelamentos_da_agenda: round(parcAgenda), financeiras: round(corp.financeiro), provisoes_extraordinarios: round(corp.extraordinario), outras: round(corp['outras despesas'] + corp.manual), outras_receitas: round(-outrasRec) },
+    resultado_operacional: round(ro), resultado_operacional_pct: pct(ro, recTot), retiradas: round(ret), retiradas_fonte: retFonte, resultado_dono: round(ro - ret), resultado_dono_pct: pct(ro - ret, recTot),
+    meses, motores, contas: contas.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)), avisos,
+    criterio: 'Impostos sobre receita por motor (alíquota efetiva); custos diretos por motor (contas do motor, custo direto sem motor rateado e profissionais alocados); custo fixo rateado pela receita líquida de cada motor; despesas corporativas e retiradas não rateadas. Percentuais sobre a receita bruta.' };
 }
 function dreResumo(rep) {
   const rows = rep?.Rows?.Row || [];
@@ -5501,15 +5632,23 @@ function dreResumo(rep) {
     const l = extrairLinhasRelatorio(rep); receita = dreReceita(l) || 0; despesas = dreDespesa(l) || 0; custos = 0; outrasRec = 0; outrasDesp = 0;
     lucro = dreLucro(l) ?? (receita - despesas);
   }
-  const lucroBruto = 'GrossProfit' in G ? G.GrossProfit : receita - custos;
-  const operacional = 'NetOperatingIncome' in G ? G.NetOperatingIncome : lucroBruto - despesas;
-  const ebitda = lucro + dep + juros + ir - recFin;
+  // v3.291: lucro e margens pela APURAÇÃO EM 4 CAMADAS (impostos → custos diretos → fixos rateados → corporativo);
+  // lucro = RESULTADO OPERACIONAL da empresa (antes das retiradas de sócio). O "Net Income" do QuickBooks fica como referência.
+  const cam = rows.length ? _camApurar(_fv2Folhas(rep).folhas, { meses: _camMeses(rep) }) : null;
+  const lucroQb = lucro; if (cam) lucro = cam.resultado_operacional;
+  const lucroBruto = cam ? cam.margem_bruta : ('GrossProfit' in G ? G.GrossProfit : receita - custos);
+  const operacional = cam ? cam.resultado_operacional : ('NetOperatingIncome' in G ? G.NetOperatingIncome : lucroBruto - despesas);
+  const irAdd = cam ? cam.ir_csll : ir;
+  const ebitda = lucro + dep + juros + irAdd - recFin;
   const pct = v => receita > 0 ? Math.round(v / receita * 1000) / 10 : null;
   return {
     faturamento: round(receita), custos: round(custos), lucro_bruto: round(lucroBruto), despesas_operacionais: round(despesas),
     resultado_operacional: round(operacional), outras_receitas: round(outrasRec), outras_despesas: round(outrasDesp),
-    gastos_totais: round(custos + despesas + outrasDesp), lucro_liquido: round(lucro), ebitda: round(ebitda),
-    ajustes_ebitda: { depreciacao_amortizacao: round(dep), juros_despesas_financeiras: round(juros), ir_csll: round(ir), receitas_financeiras: round(recFin) },
+    gastos_totais: round(cam ? receita + outrasRec - lucro : custos + despesas + outrasDesp), lucro_liquido: round(lucro), ebitda: round(ebitda),
+    lucro_contabil_qb: round(lucroQb), margem_contabil_qb_pct: pct(lucroQb),
+    margem_contribuicao: cam ? cam.margem_contribuicao : null, margem_contribuicao_pct: cam ? cam.margem_contribuicao_pct : null,
+    resultado_dono: cam ? cam.resultado_dono : null, resultado_dono_pct: cam ? cam.resultado_dono_pct : null, camadas: cam,
+    ajustes_ebitda: { depreciacao_amortizacao: round(dep), juros_despesas_financeiras: round(juros), ir_csll: round(irAdd), receitas_financeiras: round(recFin) },
     margem_bruta_pct: pct(lucroBruto), margem_operacional_pct: pct(operacional), margem_ebitda_pct: pct(ebitda), margem_liquida_pct: pct(lucro),
     maiores_gastos: contasGasto.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)).slice(0, 15).map(x => ({ conta: x.conta, valor: round(x.valor),
       grupo: x.grupo === 'COGS' ? 'custo' : x.grupo === 'OtherExpenses' ? 'outras despesas' : 'despesa', tipo: RX_EB_IR.test(x.conta) ? 'imposto sobre lucro' : RX_EB_DEP.test(x.conta) ? 'depreciação (não é saída de caixa)' : RX_EB_JUROS.test(x.conta) ? 'juros/financeiras' : null })),
@@ -9473,13 +9612,21 @@ const FV2_RX = {
 async function _fv2Cfg() {
   let v = {}; try { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = 'atx:fin_v2_cfg' LIMIT 1`; v = r[0]?.value; v = (typeof v === 'string' ? JSON.parse(v) : v) || {}; } catch (_) {}
   const lim = JSON.parse(JSON.stringify(FV2_LIMITES)); for (const [k, o] of Object.entries(v.limites || {})) if (lim[k] && typeof o === 'object') Object.assign(lim[k], o); else if (k in lim) lim[k] = o;
-  return { limites: lim, motores: v.motores || {}, produtos: v.produtos || {}, atualizado_em: v.atualizado_em || null };
+  const am = v.aliquota_motor || {};
+  return { limites: lim, motores: v.motores || {}, produtos: v.produtos || {}, camadas: v.camadas || {}, aliquota_pct: v.aliquota_pct ?? null,
+    aliquota_motor: Object.fromEntries(['pessoas', 'projetos', 'produtos'].map(k => [k, am[k] ?? null])), atualizado_em: v.atualizado_em || null };
 }
-async function finV2CfgSalvar({ limites, motores, produtos } = {}) {
+async function finV2CfgSalvar({ limites, motores, produtos, camadas, aliquota_pct, aliquota_motor } = {}) {
   const sql = await getSql(); const atual = await _fv2Cfg();
-  const novo = { limites: limites || {}, motores: motores || atual.motores, produtos: produtos || atual.produtos, atualizado_em: new Date().toISOString() };
+  const aliq = x => { if (x === '' || x == null) return null; const n = Number(String(x).replace(',', '.')); if (!isFinite(n) || n < 0 || n > 60) throw new Error('Alíquota efetiva inválida (use 0 a 60%)'); return Math.round(n * 100) / 100; };
+  const cam = camadas && typeof camadas === 'object' ? Object.fromEntries(Object.entries(camadas).filter(([, c]) => CAM_CLASSES[c])) : atual.camadas;
+  const novo = { limites: limites || {}, motores: motores || atual.motores, produtos: produtos || atual.produtos, camadas: cam,
+    aliquota_pct: aliquota_pct !== undefined ? aliq(aliquota_pct) : atual.aliquota_pct,
+    aliquota_motor: aliquota_motor && typeof aliquota_motor === 'object' ? Object.fromEntries(['pessoas', 'projetos', 'produtos'].map(k => [k, aliq(aliquota_motor[k])])) : atual.aliquota_motor,
+    atualizado_em: new Date().toISOString() };
   for (const [k, m] of Object.entries(novo.motores)) if (!['pessoas', 'projetos', 'produtos', 'compartilhado', 'auto'].includes(m)) delete novo.motores[k]; else if (m === 'auto') delete novo.motores[k];
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:fin_v2_cfg', ${JSON.stringify(novo)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  _camCtx.em = 0; // v3.291: recalcula as camadas com a nova configuração
   return { cfg: await _fv2Cfg() };
 }
 function _fv2Sem(v, lim) {
@@ -9527,15 +9674,10 @@ function _fv2MotorConta(nome, grupo, cfg) {
 }
 function _fv2ProdutoConta(nome, cfg) { if (cfg.produtos[nome]) return cfg.produtos[nome]; const p = FV2_PRODUTOS.find(([, re]) => re.test(nome)); return p ? p[0] : 'Não identificado'; }
 // receita, custo direto e margem por motor de um conjunto de folhas (coluna idx; -1 = última)
-function _fv2Motores(folhas, cfg, idx = -1) {
-  const M = { pessoas: { receita: 0, custo_direto: 0 }, projetos: { receita: 0, custo_direto: 0 }, produtos: { receita: 0, custo_direto: 0 } };
-  let comp = 0, recTot = 0;
-  for (const f of folhas) { const v = idx < 0 ? f.cols[f.cols.length - 1] : (f.cols[idx] || 0); if (!v) continue; const mo = _fv2MotorConta(f.nome, f.grupo, cfg);
-    if (f.grupo === 'Income') { (M[mo] || M.projetos).receita += v; recTot += v; }
-    else if (f.grupo === 'COGS' || f.grupo === 'Expenses' || f.grupo === 'OtherExpenses') { if (M[mo]) M[mo].custo_direto += v; else if (f.grupo === 'COGS') comp += v; } }
-  for (const [k, m] of Object.entries(M)) { const share = recTot > 0 ? m.receita / recTot : 0; m.custo_rateado = round(comp * share); m.receita = round(m.receita); m.custo_direto = round(m.custo_direto);
-    m.margem_bruta_pct = m.receita > 0 ? Math.round((m.receita - m.custo_direto - m.custo_rateado) / m.receita * 1000) / 10 : null; m.participacao_pct = recTot > 0 ? Math.round(m.receita / recTot * 1000) / 10 : null; }
-  return { motores: M, custo_compartilhado_direto: round(comp), receita_total: round(recTot) };
+function _fv2Motores(folhas, cfg, idx = -1, meses = null) { // v3.291: pela apuração em 4 camadas
+  const c = _camApurar(folhas, { idx, meses, ctx: { ..._camCtx, cfg: { ...(_camCtx.cfg || {}), ...cfg } } });
+  const M = Object.fromEntries(CAM_MOTORES.map(k => [k, { ...c.motores[k], custo_rateado: c.motores[k].fixos_rateados }]));
+  return { motores: M, custo_compartilhado_direto: round(CAM_MOTORES.reduce((s, k) => s + c.motores[k].custo_compartilhado, 0)), receita_total: c.receita_bruta, camadas: c };
 }
 function _fv2Var(a, b) { return a != null && b != null && b !== 0 ? Math.round((a - b) / Math.abs(b) * 1000) / 10 : null; }
 function _fv2Kpi(o) { return { fonte: 'QuickBooks', ...o, semaforo: o.semaforo || 'cinza' }; }
@@ -9589,7 +9731,7 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   const serieM = []; let F = null;
   if (S) { F = _fv2Folhas(S); const cols = F.cols.slice(1);
     cols.forEach((t, i) => { if (/total/i.test(t)) return; const mm = _mesDaColunaQB(t, anoB, i + 1); if (!mm) return; const sub = _plColunasMeses(S, mm, mm, parseInt(mm)); const d = sub ? dreResumo(sub) : null;
-      const mo = _fv2Motores(F.folhas, cfg, i).motores;
+      const mo = _fv2Motores(F.folhas, cfg, i, 1).motores;
       serieM.push({ mes: mm, receita: d?.faturamento ?? 0, margem_bruta_pct: d?.margem_bruta_pct ?? null, margem_ebitda_pct: d?.margem_ebitda_pct ?? null, ebitda: d?.ebitda ?? 0, lucro: d?.lucro_liquido ?? 0,
         pessoas: mo.pessoas.receita, projetos: mo.projetos.receita, produtos: mo.produtos.receita }); }); }
   const orcMes = {}; [OA, OB].filter(Boolean).forEach(o => Object.entries(o.por_tipo?.receita?.meses || {}).forEach(([k, v]) => { orcMes[k] = (orcMes[k] || 0) + (v.orcado || 0); }));
@@ -9658,10 +9800,11 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
     tendencia: serieM.slice(-7).map(s => ({ mes: s.mes, v: s.receita > 0 ? Math.round(s.produtos / s.receita * 1000) / 10 : null })), drill: { tipo: 'tela', tela: 'produtos' },
     formula: 'ARR (receita de produtos do último mês fechado × 12) ÷ receita dos últimos 12 meses fechados' }));
   // margem por motor no período (decisão: onde alocar foco)
-  let motores = null; if (ok(pAt)) { const fp = _fv2Folhas(pAt.value); motores = _fv2Motores(fp.folhas, cfg); }
+  let motores = null; if (ok(pAt)) { const fp = _fv2Folhas(pAt.value); motores = _fv2Motores(fp.folhas, cfg, -1, _camMeses(pAt.value)); }
   const alertas = kpis.filter(k => k.semaforo === 'vermelho' || k.semaforo === 'amarelo').map(k => ({ id: k.id, titulo: k.titulo, semaforo: k.semaforo }));
   return { kpis, serie: serieM, forecast: fm, motores, alertas, orcamento_nome: OA?.budget_nome || null,
-    criterio_rateio: 'Custo direto = contas de custo mapeadas ao motor (Configurar). Custo compartilhado (COGS sem motor) rateado proporcionalmente à receita de cada motor.' };
+    camadas: A?.camadas || null, // v3.291: apuração de margem em 4 camadas do período
+    criterio_rateio: 'Impostos por motor pela alíquota efetiva · custo direto = contas do motor + custo direto sem motor (rateado) + profissionais alocados (S8) · custo fixo rateado pela receita líquida de cada motor · despesas corporativas e retiradas não rateadas.' };
 }
 
 // ── TELA 2 · CAIXA E LIQUIDEZ ── "Temos caixa para os próximos meses?"
@@ -9729,7 +9872,7 @@ async function _fv2Pessoas({ P, met, cfg, L, token, base }) {
   if (fq.status === 'rejected') { base.avisos.push('Cadastro de funcionários indisponível: ' + fq.reason?.message); }
   const F = fq.status === 'fulfilled' ? fq.value : [], A = aq.status === 'fulfilled' ? aq.value : [];
   const meses = Math.max(1, (Math.round((Date.parse(P.fim) - Date.parse(P.ini)) / 864e5) + 1) / 30.4);
-  const motor = plq.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(plq.value).folhas, cfg).motores.pessoas : null;
+  const motor = plq.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(plq.value).folhas, cfg, -1, _camMeses(plq.value)).motores.pessoas : null;
   const CL = cliq.status === 'fulfilled' ? cliq.value : [];
   const prof = F.map(f => { const al = A.filter(a => a.funcionario_id === f.id && String(a.status || 'ativo') !== 'encerrado');
     const pct = Math.min(100, al.reduce((s, a) => s + (parseFloat(a.alocacao_pct) || 0), 0)), h = parseFloat(f.horas_mensais_padrao) || 160, ch = parseFloat(f.custo_hora) || 0;
@@ -9777,7 +9920,7 @@ async function _fv2Projetos({ P, met, cfg, L, token, base }) {
   ]);
   const PR = pq.status === 'fulfilled' ? pq.value : [], MK = mq.status === 'fulfilled' ? mq.value : [], AL = aq.status === 'fulfilled' ? aq.value : [];
   if (pq.status === 'rejected') base.avisos.push('Projetos indisponíveis: ' + pq.reason?.message);
-  const motor90 = pl90.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(pl90.value).folhas, cfg).motores.projetos : null;
+  const motor90 = pl90.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(pl90.value).folhas, cfg, -1, _camMeses(pl90.value)).motores.projetos : null;
   const recMesMotor = motor90 ? motor90.receita / 3 : null;
   const d = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
   const projetos = PR.map(p => { const ms = MK.filter(m => m.projeto_id === p.id), conc = ms.filter(m => m.status_kanban === 'concluido'), abertos = ms.filter(m => m.status_kanban !== 'concluido');
@@ -9848,7 +9991,7 @@ async function _fv2Produtos({ P, met, cfg, L, token, base }) {
   const gastoCom = F.folhas.filter(f => (f.grupo === 'Expenses' || f.grupo === 'COGS') && FV2_RX.comercial.test(f.nome)).reduce((s, f) => s + i3.reduce((a, i) => a + (f.cols[i] || 0), 0), 0);
   const novos3 = novosM.slice(-3).reduce((s, x) => s + x.novos, 0);
   const cac = novos3 ? round(gastoCom / novos3) : null;
-  const mProd = _fv2Motores(F.folhas, cfg).motores.produtos, mb = mProd.margem_bruta_pct != null ? mProd.margem_bruta_pct / 100 : null;
+  const mProd = _fv2Motores(F.folhas, cfg, -1, _camMeses(serie.value)).motores.produtos, mb = mProd.margem_bruta_pct != null ? mProd.margem_bruta_pct / 100 : null;
   const churnDec = churnLog != null ? Math.max(churnLog, 0.5) / 100 : null; // piso 0,5% a.m. (vida máx. 200 meses) para não dar LTV infinito
   const ltv = arpa && mb != null && churnDec ? round(arpa * mb / churnDec) : null;
   const ltvCac = ltv && cac ? Math.round(ltv / cac * 10) / 10 : null, payback = cac && arpa && mb ? Math.round(cac / (arpa * mb) * 10) / 10 : null;
@@ -9918,10 +10061,15 @@ async function _fv2ClientesTela({ P, met, cfg, L, token, base }) {
 async function _fv2Config({ P, met, cfg, L, token, base }) {
   const rep = await qbPL(_fv2AddMes(_fv2Mes(P.hoje), -12) + '-01', P.hoje, token, '', P.met || 'Cash');
   const F = _fv2Folhas(rep);
-  const contas = F.folhas.filter(f => ['Income', 'COGS', 'Expenses', 'OtherExpenses'].includes(f.grupo)).map(f => ({ nome: f.nome, grupo: f.grupo, valor_12m: round(f.cols[f.cols.length - 1]),
-    motor: _fv2MotorConta(f.nome, f.grupo, cfg), motor_manual: !!cfg.motores[f.nome], produto: f.grupo === 'Income' ? _fv2ProdutoConta(f.nome, cfg) : null }))
+  const contas = F.folhas.filter(f => ['Income', 'COGS', 'Expenses', 'OtherExpenses'].includes(f.grupo)).map(f => { const c = f.grupo === 'Income' ? null : _camClasse(f.nome, f.grupo, { ...cfg, camadas: {} });
+    return { nome: f.nome, grupo: f.grupo, valor_12m: round(f.cols[f.cols.length - 1]),
+    motor: _fv2MotorConta(f.nome, f.grupo, cfg), motor_manual: !!cfg.motores[f.nome], produto: f.grupo === 'Income' ? _fv2ProdutoConta(f.nome, cfg) : null,
+    camada_auto: c?.classe || null, camada_auto_sub: c?.sub || null, camada: cfg.camadas?.[f.nome] || null }; })
     .sort((a, b) => (a.grupo === 'Income' ? 0 : 1) - (b.grupo === 'Income' ? 0 : 1) || Math.abs(b.valor_12m) - Math.abs(a.valor_12m));
-  return { contas, motores_cfg: cfg.motores, produtos_cfg: cfg.produtos, limites_padrao: FV2_LIMITES, criterio_rateio: 'Custo compartilhado rateado proporcionalmente à receita de cada motor no período.' };
+  const ctx = await _camPreparar(true).catch(() => _camCtx), cam12 = _camApurar(F.folhas, { meses: _camMeses(rep), ctx: { ...ctx, cfg } });
+  return { contas, motores_cfg: cfg.motores, produtos_cfg: cfg.produtos, limites_padrao: FV2_LIMITES, camadas_cfg: cfg.camadas, aliquota_pct: cfg.aliquota_pct, aliquota_motor: cfg.aliquota_motor,
+    camadas_nomes: CAM_CLASSES, camadas_12m: cam12, alocacao: ctx.alocacao, agenda_camadas: ctx.agenda,
+    criterio_rateio: 'Custo fixo rateado pela receita líquida de cada motor; despesas corporativas e retiradas não rateadas.' };
 }
 
 

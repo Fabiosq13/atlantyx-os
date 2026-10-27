@@ -30280,6 +30280,54 @@ function _resCartaoMeta(rot, val, cor, tip, m, rodape) {
   } else if (m && m.semMeta) metaH = '<div class="rc-meta"><span class="rc-sem">sem meta · <a onclick="event.stopPropagation();metasEditar()">definir metas</a></span></div>';
   return '<div class="res-card rc2" style="--c:' + cor + ';"><div class="rl">' + rot + _tip(tip) + '</div><div class="rv" style="color:' + cor + ';">' + val + '</div>' + metaH + (rodape ? '<div class="rs">' + rodape + '</div>' : '') + '</div>';
 }
+// ═══ v3.291: APURAÇÃO DE MARGEM EM 4 CAMADAS — tabela (empresa + motores) e janela com as contas de cada camada ═══
+const _CAM_NOMES = { receita: 'Receita', imposto: 'Impostos sobre receita', direto: 'Custo direto', fixo: 'Custo fixo rateável', corporativo: 'Despesa corporativa', retirada: 'Retirada de sócio' };
+function _camHtml(c, opt) {
+  if (!c) return '<div style="font-size:11px;color:var(--t3);">Apuração indisponível (sem DRE do período).</div>';
+  opt = opt || {}; const MK = [['pessoas', 'Alocação'], ['projetos', 'Projetos'], ['produtos', 'Produtos']], M = c.motores || {};
+  const pc = v => v == null ? '—' : String(v).replace('.', ',') + '%', b = v => v == null ? '—' : fmtBRL(v), e = t => String(t == null ? '' : t).replace(/</g, '&lt;');
+  const neg = v => v != null && v < 0 ? 'color:var(--red);' : '';
+  const L = [ // [rótulo, campo empresa, campo motor, campo % empresa, campo % motor, tipo]
+    ['Receita bruta', 'receita_bruta', 'receita', null, null, 'tot'], ['(−) Impostos sobre receita', 'impostos', 'impostos', null, null, 'sub'], ['= Receita líquida', 'receita_liquida', 'receita_liquida', null, null, 'tot'],
+    ['(−) Custos diretos', 'custos_diretos', 'custo_direto', null, null, 'sub'], ['= MARGEM BRUTA', 'margem_bruta', 'margem_bruta', 'margem_bruta_pct', 'margem_bruta_pct', 'res'],
+    ['(−) Custos fixos operacionais rateados', 'custos_fixos', 'fixos_rateados', null, null, 'sub'], ['= MARGEM DE CONTRIBUIÇÃO', 'margem_contribuicao', 'margem_contribuicao', 'margem_contribuicao_pct', 'margem_contribuicao_pct', 'res'],
+    ['(−) Despesas corporativas não rateáveis', 'despesas_corporativas', null, null, null, 'sub'], ['= RESULTADO OPERACIONAL (lucro da empresa)', 'resultado_operacional', null, 'resultado_operacional_pct', null, 'res'],
+    ['(−) Retiradas de sócio / distribuição', 'retiradas', null, null, null, 'sub'], ['= RESULTADO DO DONO', 'resultado_dono', null, 'resultado_dono_pct', null, 'res']];
+  const th = 'padding:5px 6px;text-align:right;font-family:var(--M);font-size:9px;color:var(--t3);font-weight:600;white-space:nowrap;';
+  let h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;"><tr><th style="' + th + 'text-align:left;">Camada</th><th style="' + th + '">Empresa</th><th style="' + th + '">%</th>' + MK.map(([, n]) => '<th style="' + th + '">' + n + '</th><th style="' + th + '">%</th>').join('') + '</tr>';
+  for (const [rot, fe, fm, pe, pm, tp] of L) {
+    const st = tp === 'res' ? 'font-weight:700;background:var(--bg3);' : tp === 'tot' ? 'font-weight:600;' : 'color:var(--t2);';
+    const ve = c[fe], pctE = pe ? c[pe] : (c.receita_bruta ? Math.round(ve / c.receita_bruta * 1000) / 10 : null);
+    h += '<tr style="border-top:1px solid var(--bd);' + st + '"><td style="padding:5px 6px;">' + rot + '</td><td style="padding:5px 6px;text-align:right;font-family:var(--M);white-space:nowrap;' + neg(ve) + '">' + b(ve) + '</td><td style="padding:5px 6px;text-align:right;font-family:var(--M);' + neg(pctE) + '">' + pc(pctE) + '</td>'
+      + MK.map(([k]) => { const m = M[k] || {}; if (!fm) return '<td></td><td></td>'; const v = m[fm], pv = pm ? m[pm] : (m.receita ? Math.round(v / m.receita * 1000) / 10 : null);
+        return '<td style="padding:5px 6px;text-align:right;font-family:var(--M);white-space:nowrap;' + neg(v) + '">' + b(v) + '</td><td style="padding:5px 6px;text-align:right;font-family:var(--M);color:var(--t3);' + neg(pv) + '">' + (m.receita ? pc(pv) : '—') + '</td>'; }).join('') + '</tr>';
+  }
+  h += '</table></div>';
+  const D = c.corporativas_detalhe || {};
+  h += '<div style="font-size:10px;color:var(--t3);line-height:1.6;margin-top:6px;">'
+    + 'Impostos: <b>' + ({ quickbooks: 'lançados no QuickBooks', estimado: 'estimados pela alíquota configurada', ausente: 'nenhum lançado' })[c.impostos_fonte] + '</b> (alíquota efetiva ' + pc(c.aliquota_efetiva_pct) + ')'
+    + ' · Custo direto: contas do motor + custo direto sem motor rateado' + (c.pessoal_movido_para_direto ? ' + <b>' + b(c.pessoal_movido_para_direto) + '</b> de profissionais alocados (saíram do custo fixo)' : '')
+    + ' · Rateio do fixo pela receita líquida: ' + MK.map(([k, n]) => n + ' ' + pc(M[k]?.peso_rateio_pct)).join(', ')
+    + '<br>Corporativo: parcelamentos ' + b(D.parcelamentos) + (D.parcelamentos_da_agenda ? ' (da agenda)' : '') + ' · juros/tarifas ' + b(D.financeiras) + ' · provisões/extraordinários ' + b(D.provisoes_extraordinarios) + ' · outras ' + b(D.outras) + (D.outras_receitas ? ' · receitas financeiras ' + b(D.outras_receitas) : '')
+    + ' · Retiradas: ' + (c.retiradas_fonte === 'agenda' ? 'da Agenda de pagamentos' : c.retiradas_fonte === 'quickbooks' ? 'da DRE' : 'nenhuma encontrada') + '. Percentuais sobre a receita bruta.</div>'
+    + ((c.avisos || []).length ? '<div style="font-size:10.5px;color:var(--gold);margin-top:6px;line-height:1.5;">' + c.avisos.map(a => '⚠ ' + e(a)).join('<br>') + '</div>' : '');
+  if (opt.contas && (c.contas || []).length) {
+    const G = {}; c.contas.forEach(x => { (G[x.classe] = G[x.classe] || []).push(x); });
+    h += '<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;">🗂 Contas da DRE em cada camada (' + c.contas.length + ')</summary><div style="margin-top:6px;">'
+      + ['receita', 'imposto', 'direto', 'fixo', 'corporativo', 'retirada'].filter(k => G[k]).map(k => '<div style="font-size:10px;font-weight:700;color:var(--t2);margin:8px 0 3px;text-transform:uppercase;font-family:var(--M);">' + _CAM_NOMES[k] + ' · ' + b(G[k].reduce((s, x) => s + x.valor, 0)) + '</div>'
+        + G[k].map(x => '<div style="display:flex;gap:8px;font-size:10.5px;padding:2px 0;border-bottom:1px dashed var(--bd);"><span style="flex:1;">' + e(x.conta) + '</span><span style="color:var(--t3);">' + e(x.motor && x.motor !== 'compartilhado' ? x.motor : x.motor === 'compartilhado' ? 'sem motor (rateado)' : x.sub || '') + (x.manual ? ' · manual' : '') + '</span><span style="font-family:var(--M);white-space:nowrap;">' + b(x.valor) + '</span></div>').join('')).join('')
+      + '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Conta na camada errada? Ajuste em Dashboard Financeiro → Configurar (coluna Camada).</div></div></details>';
+  }
+  return h;
+}
+function camAbrir(qual) {
+  const c = qual && qual.receita_bruta != null ? qual : (window._camUlt || {})[qual]; if (!c) { toast('Apuração indisponível', 'error'); return; }
+  document.getElementById('camModal')?.remove();
+  const m = document.createElement('div'); m.id = 'camModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto;';
+  m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(980px,100%);"><div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;"><div style="flex:1;"><div style="font-family:var(--H);font-size:14px;font-weight:700;">📊 Apuração de margem em 4 camadas</div><div style="font-size:10.5px;color:var(--t3);">' + (window._camUltTit || {})[qual] + '</div></div><button class="btn btn-g" onclick="document.getElementById(\'camModal\').remove()">✕</button></div><div style="padding:14px 16px;">' + _camHtml(c, { contas: true }) + '</div></div>';
+  m.onclick = ev => { if (ev.target === m) m.remove(); };
+  document.body.appendChild(m);
+}
 function _resCardsHtml(R, modo) {
   const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
   if (!R) return '<div style="color:var(--t3);font-size:11px;padding:8px;">Sem dados de resultado.</div>';
@@ -30302,16 +30350,18 @@ function _resCardsHtml(R, modo) {
   const fonte = '\n\nFonte: DRE (Lucros e Perdas) do QuickBooks, regime de ' + (R.regime || 'caixa') + ', ' + per + '; o "ano" vai de 01/01 até ' + _resData(R.ano?.ate) + '.';
   const T = {
     fat: (R.regime === 'caixa' ? '**Faturamento (caixa)** = total do grupo Receita (Income) da DRE em regime de caixa: o que foi efetivamente RECEBIDO no período, pela data do recebimento.' + (R.periodo_outro ? '\nEmitido no período (competência): ' + brl(R.periodo_outro.faturamento) : '') : '**Faturamento** = total do grupo Receita (Income) da DRE: notas/faturas emitidas no período, pela data de emissão — não é o dinheiro recebido.') + '\n\nPeríodo: ' + brl(p.faturamento) + ' · ano: ' + brl(a.faturamento) + (R.periodo_caixa ? '\nRecebido no período (regime de caixa): ' + brl(R.periodo_caixa.receita_recebida) : '') + (semFat && U ? '\nSem nota emitida no período; último mês fechado (' + nomeMes(U.mes) + '): ' + brl(U.faturamento) : '') + fonte,
-    gastos: '**Gastos** = custo dos serviços (COGS) + despesas operacionais + outras despesas da DRE.\n\n' + brl(p.custos) + ' + ' + brl(p.despesas_operacionais) + ' + ' + brl(p.outras_despesas) + ' = ' + brl(p.gastos_totais) + '\nAno: ' + brl(a.gastos_totais)
+    gastos: '**Gastos** = impostos sobre receita + custos diretos + custos fixos + despesas corporativas (as retiradas de sócio NÃO entram — ficam abaixo do lucro).\n\n' + (p.camadas ? brl(p.camadas.impostos) + ' + ' + brl(p.camadas.custos_diretos) + ' + ' + brl(p.camadas.custos_fixos) + ' + ' + brl(p.camadas.despesas_corporativas) : '') + ' = ' + brl(p.gastos_totais) + '\nAno: ' + brl(a.gastos_totais)
       + ((p.maiores_gastos || []).length ? '\n\n**Maiores contas no período** (' + (p.qtd_contas_gasto || p.maiores_gastos.length) + ' contas):\n' + p.maiores_gastos.slice(0, 12).map(g => '• ' + g.conta + ': ' + brl(g.valor) + (g.tipo ? ' — ' + g.tipo : '')).join('\n') : '')
       + (R.regime === 'caixa' && R.periodo_outro ? '\n\nPor **competência** (despesa do mês, paga ou não): ' + brl(R.periodo_outro.gastos) + '. Aqui, em caixa, entra só o que foi efetivamente pago no período.' : '')
       + (R.regime !== 'caixa' && R.periodo_caixa && R.periodo_caixa.receita_recebida != null && R.periodo_caixa.lucro_caixa != null ? '\n\nPelo **caixa** (o que foi efetivamente pago no período): ' + brl(R.periodo_caixa.receita_recebida - R.periodo_caixa.lucro_caixa) + '. A DRE é por **competência**: entra a despesa do mês, paga ou não — uma conta lançada neste período e paga no seguinte conta aqui.' : '')
       + '\n\nAparece no lugar do lucro bruto porque não há custo direto (CPV) separado no QuickBooks.' + fonte,
-    lb: '**Lucro bruto** = faturamento − custo dos serviços prestados (COGS).\n\n' + brl(p.faturamento) + ' − ' + brl(p.custos) + ' = ' + brl(p.lucro_bruto) + '\nMargem bruta = lucro bruto ÷ faturamento = ' + _resFmtPct(p.margem_bruta_pct) + fonte,
+    lb: '**Margem bruta** = receita líquida (faturamento − impostos sobre receita) − custos diretos dos motores (contas de custo, subcontratados e profissionais alocados).\n\n' + (p.camadas ? brl(p.camadas.receita_bruta) + ' − ' + brl(p.camadas.impostos) + ' − ' + brl(p.camadas.custos_diretos) : '') + ' = ' + brl(p.lucro_bruto) + '\nMargem bruta = ' + _resFmtPct(p.margem_bruta_pct) + ' do faturamento' + fonte,
     eb: '**EBITDA** = lucro líquido + depreciação/amortização + juros e despesas financeiras + IR/CSLL − receitas financeiras.\n\n' + brl(p.lucro_liquido) + ' + ' + brl(aj.depreciacao_amortizacao) + ' + ' + brl(aj.juros_despesas_financeiras) + ' + ' + brl(aj.ir_csll) + ' − ' + brl(aj.receitas_financeiras) + ' = ' + brl(p.ebitda) + '\nMargem EBITDA = EBITDA ÷ faturamento = ' + _resFmtPct(p.margem_ebitda_pct) + '\n\nAs contas de depreciação, juros e IR/CSLL são reconhecidas pelo nome na DRE.' + fonte,
-    ll: '**Lucro líquido** = linha "Lucro líquido" (Net Income) da DRE = faturamento − gastos + outras receitas.\n\n' + brl(p.faturamento) + ' − ' + brl(p.gastos_totais) + ' + ' + brl(p.outras_receitas) + ' = ' + brl(p.lucro_liquido) + '\nAno: ' + brl(a.lucro_liquido) + fonte,
-    mg: '**Margem líquida** = lucro líquido ÷ faturamento.\n\n' + (semFat ? 'Sem faturamento no período → "—".' : brl(p.lucro_liquido) + ' ÷ ' + brl(p.faturamento) + ' = ' + _resFmtPct(p.margem_liquida_pct)) + '\nAno: ' + brl(a.lucro_liquido) + ' ÷ ' + brl(a.faturamento) + ' = ' + _resFmtPct(a.margem_liquida_pct) + '\n\nMeta: ' + _resFmtPct(meta.pct) + ' (' + (meta.fonte || '') + '). Cor: verde ≥ meta · amarelo entre 0 e a meta · vermelho negativa.' + fonte,
+    ll: '**Lucro (resultado operacional da empresa)** — apuração em 4 camadas:\nreceita bruta − impostos sobre receita = receita líquida − custos diretos = margem bruta − custos fixos rateados = margem de contribuição − despesas corporativas (parcelamentos, juros, tarifas, extraordinários) = **resultado operacional**.\nAs retiradas de sócio ficam abaixo: resultado do dono = lucro − retiradas.\n\n' + (p.camadas ? brl(p.camadas.margem_contribuicao) + ' − ' + brl(p.camadas.despesas_corporativas) + ' = ' + brl(p.lucro_liquido) + '\nRetiradas ' + brl(p.camadas.retiradas) + ' → resultado do dono ' + brl(p.camadas.resultado_dono) + ' (' + _resFmtPct(p.camadas.resultado_dono_pct) + ')' : brl(p.lucro_liquido)) + '\nAno: ' + brl(a.lucro_liquido) + (p.lucro_contabil_qb != null ? '\n\nReferência: "Lucro líquido" do QuickBooks (Net Income) ' + brl(p.lucro_contabil_qb) : '') + '\n\nClique em "ver as 4 camadas" para abrir a apuração completa.' + fonte,
+    mg: '**Margem de lucro** = lucro (resultado operacional) ÷ faturamento bruto.\n\n' + (semFat ? 'Sem faturamento no período → "—".' : brl(p.lucro_liquido) + ' ÷ ' + brl(p.faturamento) + ' = ' + _resFmtPct(p.margem_liquida_pct)) + '\nAno: ' + brl(a.lucro_liquido) + ' ÷ ' + brl(a.faturamento) + ' = ' + _resFmtPct(a.margem_liquida_pct) + '\n\nMeta: ' + _resFmtPct(meta.pct) + ' (' + (meta.fonte || '') + '). Cor: verde ≥ meta · amarelo entre 0 e a meta · vermelho negativa.' + fonte,
   };
+  window._camUlt = { p: p.camadas, a: a.camadas }; window._camUltTit = { p: 'Período ' + per + ' · regime de ' + (R.regime || 'caixa'), a: 'Ano ' + String(R.ano?.de || '').substring(0, 4) + ' até ' + _resData(R.ano?.ate) + ' · regime de ' + (R.regime || 'caixa') };
+  const camLk = (p.camadas || a.camadas) ? ' · <a href="#" onclick="event.preventDefault();event.stopPropagation();camAbrir(\'' + (p.camadas ? 'p' : 'a') + '\')" style="color:var(--blue);">ver as 4 camadas</a>' + (a.camadas && p.camadas ? ' · <a href="#" onclick="event.preventDefault();event.stopPropagation();camAbrir(\'a\')" style="color:var(--blue);">ano</a>' : '') : '';
   // v3.123: meta do período ao lado de cada indicador (Metas do ano ÷ 12 ou Orçamento Anual)
   const MP = R.metas_periodo || {}, fr = MP.fracao_decorrida, rotM = MP.meses > 1 ? 'do período' : 'do mês';
   const mm = (meta, real, extra) => futuro ? null : (meta != null ? { meta, real, frac: fr, rot: rotM, ...extra } : { semMeta: true });
@@ -30320,11 +30370,11 @@ function _resCardsHtml(R, modo) {
     _resCartaoMeta('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), semFat ? 'var(--gold)' : 'var(--blue)', T.fat + fm('faturamento'), mm(MP.faturamento, p.faturamento), subFat),
     semCpv
       ? _resCartaoMeta('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), 'var(--red)', T.gastos + fm('gastos'), mm(MP.gastos, p.gastos_totais, { tipo: 'menor', frac: null, rot: 'orçada' }), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · custos e despesas da DRE')
-      : _resCartaoMeta('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), corLuc(p.lucro_bruto), T.lb, null, 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct)),
+      : _resCartaoMeta('Margem bruta', futuro ? '—' : brl(p.lucro_bruto), corLuc(p.lucro_bruto), T.lb, null, 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct)),
     // v3.126: margem EBITDA em destaque ao lado do valor e linha de meta comparando com a margem líquida meta
     _resCartaoMeta('EBITDA', futuro ? '—' : brl(p.ebitda) + (p.margem_ebitda_pct != null ? ' <span style="font-size:13px;font-weight:600;opacity:.85;">' + _resFmtPct(p.margem_ebitda_pct) + '</span>' : ''), corLuc(p.ebitda), T.eb + fm('ebitda'), MP.ebitda != null ? mm(MP.ebitda, p.ebitda) : null, 'margem EBITDA <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> do faturamento · ' + anoTxt + ' <b>' + brl(a.ebitda) + '</b> (' + _resFmtPct(a.margem_ebitda_pct) + ')'),
-    _resCartaoMeta('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), corLuc(p.lucro_liquido), T.ll + fm('lucro'), mm(MP.lucro, p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : '')),
-    _resCartaoMeta('Margem líquida ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), T.mg + fm('margem'), semFat ? null : mm(MP.margem_pct ?? meta.pct, p.margem_liquida_pct, { fmt: 'pct' }), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>'),
+    _resCartaoMeta('Lucro ' + lblP, futuro ? '—' : brl(p.lucro_liquido), corLuc(p.lucro_liquido), T.ll + fm('lucro'), mm(MP.lucro, p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : '') + camLk),
+    _resCartaoMeta('Margem de lucro ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), T.mg + fm('margem'), semFat ? null : mm(MP.margem_pct ?? meta.pct, p.margem_liquida_pct, { fmt: 'pct' }), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>'),
   ];
   // v3.114: evolução mês a mês do ano (faturamento e lucro) — mostra de onde vem o acumulado
   const M = (R.mensal || []).filter(m => m.mes <= (R.ano?.ate || '9999').substring(0, 7));
@@ -30478,7 +30528,8 @@ function _fv2Render(aba, D, cache) {
   if (aba === 'executiva' && (D.alertas || []).length) alert = '<div class="fv2-alertas">' + D.alertas.map(a => '<button onclick="_fv2Drill(\'' + a.id + '\')" style="--pc:' + _FV2_SEM[a.semaforo][2] + ';">' + _FV2_SEM[a.semaforo][0] + ' ' + _fv2Esc(a.titulo) + ' — ' + _FV2_SEM[a.semaforo][1].toLowerCase() + '</button>').join('') + '</div>';
   let corpo = '';
   if (aba === 'executiva') corpo = '<div class="fv2-2col">' + _fv2Painel('fv2_rec', 'Receita vs. orçado', 'Últimos 13 meses') + _fv2Painel('fv2_mot', 'Receita por motor', 'Migração de pessoas para produto recorrente') + '</div>'
-    + '<div class="fv2-2col">' + _fv2Painel('fv2_fc', 'Forecast de caixa', 'Projeção rolling de 12 meses') + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Margem por motor</div><div class="fv2-pq">Qual motor dá margem? · clique para abrir</div></div></div><div id="fv2_mtab"></div></div></div>';
+    + '<div class="fv2-2col">' + _fv2Painel('fv2_fc', 'Forecast de caixa', 'Projeção rolling de 12 meses') + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Margem por motor</div><div class="fv2-pq">Qual motor dá margem? · clique para abrir</div></div></div><div id="fv2_mtab"></div></div></div>'
+    + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Apuração de margem em 4 camadas</div><div class="fv2-pq">Receita → impostos → custos diretos → fixos rateados → corporativo → retiradas · empresa e cada motor</div></div></div><div id="fv2_cam"></div></div>';
   if (aba === 'caixa') corpo = _fv2Painel('fv2_13', 'Projeção de 13 semanas', 'Entradas, saídas e saldo semana a semana') + '<div class="fv2-2col">' + _fv2Painel('fv2_agr', 'Aging de recebíveis', 'Faturas em aberto por faixa de atraso') + _fv2Painel('fv2_agp', 'Aging de pagáveis', 'Contas em aberto por faixa de atraso') + '</div>';
   if (aba === 'pessoas') corpo = '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Profissionais</div><div class="fv2-pq">Alocação, custo e margem por pessoa</div></div><button class="fv2-lnk" onclick="nav(\'s8funcionarios\')">abrir cadastro ›</button></div><div id="fv2_prof"></div></div>'
     + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Por cliente</div><div class="fv2-pq">Custo do time alocado × receita do cliente</div></div></div><div id="fv2_pcli"></div></div>';
@@ -30520,8 +30571,9 @@ function _fv2Graficos(aba, D) {
       const neg = F.find(f => f.saldo < 0), t = document.getElementById('fv2_fc_t'); if (t) t.textContent = neg ? 'Caixa fica negativo em ' + _fv2MesTxt(neg.mes) + ' (' + _fv2K(neg.saldo) + ')' : F.length ? 'Caixa positivo nos 12 meses · termina em ' + _fv2K(F[F.length - 1].saldo) : 'Forecast indisponível';
       _fv2Tabs.fv2_fc = _fv2TabHtml(['Mês', 'Entradas', 'Saídas', 'Saldo final'], F.map(f => [_fv2MesTxt(f.mes), fmtBRL(f.entradas), fmtBRL(Math.abs(f.saidas)), fmtBRL(f.saldo)])); }
     const mt = document.getElementById('fv2_mtab'), M = D.motores?.motores;
-    if (mt && M) mt.innerHTML = _fv2TabHtml(['Motor', 'Receita', 'Participação', 'Custo direto', 'Rateado', 'Margem bruta'], [['pessoas', 'Pessoas', 1], ['projetos', 'Projetos', 2], ['produtos', 'Produtos', 3]].map(([k, n, c]) => ['<span class="fv2-dot" style="background:' + cor(c) + ';"></span><a href="#" onclick="event.preventDefault();fv2IrAba(\'' + k + '\')">' + n + '</a>', fmtBRL(M[k].receita), _fv2Fmt(M[k].participacao_pct, 'pct'), fmtBRL(M[k].custo_direto), fmtBRL(M[k].custo_rateado), '<b>' + _fv2Fmt(M[k].margem_bruta_pct, 'pct') + '</b>']))
+    if (mt && M) mt.innerHTML = _fv2TabHtml(['Motor', 'Receita', 'Part.', 'Margem bruta', 'Margem de contribuição'], [['pessoas', 'Pessoas', 1], ['projetos', 'Projetos', 2], ['produtos', 'Produtos', 3]].map(([k, n, c]) => ['<span class="fv2-dot" style="background:' + cor(c) + ';"></span><a href="#" onclick="event.preventDefault();fv2IrAba(\'' + k + '\')">' + n + '</a>', fmtBRL(M[k].receita), _fv2Fmt(M[k].participacao_pct, 'pct'), fmtBRL(M[k].margem_bruta) + ' <b>' + _fv2Fmt(M[k].margem_bruta_pct, 'pct') + '</b>', fmtBRL(M[k].margem_contribuicao) + ' <b>' + _fv2Fmt(M[k].margem_contribuicao_pct, 'pct') + '</b>']))
       + '<div class="fv2-pq" style="padding:6px 2px;">' + _fv2Esc(D.criterio_rateio || '') + '</div>';
+    const ec = document.getElementById('fv2_cam'); if (ec) ec.innerHTML = _camHtml(D.camadas || D.motores?.camadas, { contas: true });
   }
   if (aba === 'caixa') {
     const W = D.semanas || [], el = document.getElementById('fv2_13');
@@ -30580,8 +30632,18 @@ function _fv2ConfigHtml(D) {
   const sel = c => '<select class="fsel fv2-mot" data-conta="' + _fv2Esc(c.nome) + '" style="font-size:10.5px;width:auto;"><option value="auto"' + (!c.motor_manual ? ' selected' : '') + '>automático (' + c.motor + ')</option>'
     + ['pessoas', 'projetos', 'produtos', 'compartilhado'].map(m => '<option value="' + m + '"' + (c.motor_manual && c.motor === m ? ' selected' : '') + '>' + m + '</option>').join('') + '</select>';
   const limTxt = [['runway', 'Runway (meses)'], ['orcado_receita', 'Realizado vs. orçado (± %)'], ['dso', 'DSO (dias)'], ['alocacao', 'Taxa de alocação (%)'], ['churn', 'Churn mensal de MRR (%)'], ['concentracao', 'Concentração 5 maiores (%)'], ['ltv_cac', 'LTV/CAC (x)'], ['vencido60', 'Vencido > 60 dias (% do a receber)'], ['nrr', 'NRR (%)'], ['cac_payback', 'CAC payback (meses)'], ['rule40', 'Rule of 40 (%)'], ['bench', 'Bench (% do time)'], ['backlog_cobertura', 'Cobertura de backlog (meses)'], ['ciclo_caixa', 'Ciclo de caixa (dias)']];
-  return '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Contas por motor</div><div class="fv2-pq">' + _fv2Esc(D.criterio_rateio || '') + ' Receita e custo dos últimos 12 meses.</div></div><button class="btn btn-gn" onclick="fv2CfgSalvar()">Salvar configuração</button></div>'
-    + '<div style="overflow-x:auto;">' + _fv2TabHtml(['Conta (QuickBooks)', 'Grupo', '12 meses', 'Motor', 'Produto (receita)'], C.map(c => ['<b>' + _fv2Esc(c.nome) + '</b>', { Income: 'Receita', COGS: 'Custo direto', Expenses: 'Despesa', OtherExpenses: 'Outras despesas' }[c.grupo] || c.grupo, fmtBRL(c.valor_12m), sel(c),
+  const CN = D.camadas_nomes || {}, selCam = c => c.grupo === 'Income' ? '<span style="font-size:10.5px;color:var(--t3);">receita</span>' : '<select class="fsel fv2-cam" data-conta="' + _fv2Esc(c.nome) + '" style="font-size:10.5px;width:auto;"><option value="auto"' + (!c.camada ? ' selected' : '') + '>automático (' + _fv2Esc((CN[c.camada_auto] || c.camada_auto || '').toLowerCase()) + ')</option>'
+    + Object.entries(CN).map(([k, n]) => '<option value="' + k + '"' + (c.camada === k ? ' selected' : '') + '>' + _fv2Esc(n) + '</option>').join('') + '</select>';
+  const am = D.aliquota_motor || {}, inA = (k, v) => '<input class="fi fv2-aliq" data-k="' + k + '" value="' + (v ?? '') + '" placeholder="—" style="width:64px;margin:0;padding:3px 6px;font-size:11px;">';
+  const AL = D.alocacao, AG = D.agenda_camadas;
+  const camPanel = '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Apuração de margem — impostos e alocação</div><div class="fv2-pq">Usado no lucro e no % de lucro de todo o sistema (Dashboard, LIVE, TV, Metas, Diagnóstico).</div></div></div>'
+    + '<div style="font-size:11px;line-height:1.9;">Alíquota efetiva sobre a receita (ISS + PIS + COFINS + IRPJ + CSLL), usada <b>só quando o QuickBooks não tiver imposto lançado no período</b>: geral ' + inA('geral', D.aliquota_pct) + '% · Alocação ' + inA('pessoas', am.pessoas) + '% · Projetos ' + inA('projetos', am.projetos) + '% · Produtos ' + inA('produtos', am.produtos) + '%'
+    + '<br>Nos últimos 12 meses o QuickBooks tem <b>' + fmtBRL(D.camadas_12m?.impostos_fonte === 'quickbooks' ? D.camadas_12m.impostos : 0) + '</b> de impostos sobre receita lançados (' + (D.camadas_12m?.impostos_fonte === 'quickbooks' ? 'alíquota efetiva real ' + _fv2Fmt(D.camadas_12m.aliquota_efetiva_pct, 'pct') : 'nenhum — configure a alíquota acima') + ').'
+    + '<br>Profissionais alocados (cadastro S8): ' + (AL && AL.profissionais ? '<b>' + AL.profissionais + '</b> · custo mensal alocado: Alocação ' + fmtBRL(AL.pessoas) + ' · Projetos ' + fmtBRL(AL.projetos) + ' · Produtos ' + fmtBRL(AL.produtos) + ' (sai do custo fixo e vira custo direto do motor)' : '<span style="color:var(--gold);">nenhuma alocação cadastrada — cadastre em Pessoas → Funcionários (custo/hora e % de alocação por projeto)</span>')
+    + (AG && (AG.retirada_mensal || AG.parcelamento_mensal) ? '<br>Agenda de pagamentos: retiradas ' + fmtBRL(AG.retirada_mensal) + '/mês · parcelamentos ' + fmtBRL(AG.parcelamento_mensal) + '/mês (usados só quando não aparecem na DRE)' : '') + '</div>'
+    + (D.camadas_12m ? '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;">📊 Apuração dos últimos 12 meses com a configuração atual</summary><div style="margin-top:6px;">' + _camHtml(D.camadas_12m) + '</div></details>' : '') + '</div>';
+  return camPanel + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Contas por motor e camada</div><div class="fv2-pq">' + _fv2Esc(D.criterio_rateio || '') + ' Receita e custo dos últimos 12 meses.</div></div><button class="btn btn-gn" onclick="fv2CfgSalvar()">Salvar configuração</button></div>'
+    + '<div style="overflow-x:auto;">' + _fv2TabHtml(['Conta (QuickBooks)', 'Grupo', '12 meses', 'Camada', 'Motor', 'Produto (receita)'], C.map(c => ['<b>' + _fv2Esc(c.nome) + '</b>', { Income: 'Receita', COGS: 'Custo direto', Expenses: 'Despesa', OtherExpenses: 'Outras despesas' }[c.grupo] || c.grupo, fmtBRL(c.valor_12m), selCam(c), sel(c),
       c.grupo === 'Income' ? '<input class="fi fv2-prod" data-conta="' + _fv2Esc(c.nome) + '" value="' + _fv2Esc(c.produto === 'Não identificado' ? '' : c.produto) + '" placeholder="ex.: Maestro" list="fv2ProdList" style="font-size:10.5px;width:150px;margin:0;padding:3px 6px;">' : '—']))
     + '</div><datalist id="fv2ProdList"><option>Atlantyx OS</option><option>Maestro</option><option>Sentinel</option><option>ConnEX</option><option>BRATECC Connect AI</option></datalist></div>'
     + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Limites dos semáforos</div><div class="fv2-pq">Verde dentro da meta · amarelo em atenção · vermelho exige ação. Valores iniciais da especificação.</div></div></div><div class="fv2-lims">'
@@ -30592,8 +30654,11 @@ async function fv2CfgSalvar() {
   const motores = {}, produtos = {}, limites = {};
   document.querySelectorAll('.fv2-mot').forEach(s => { if (s.value !== 'auto') motores[s.dataset.conta] = s.value; });
   document.querySelectorAll('.fv2-prod').forEach(i => { if (i.value.trim()) produtos[i.dataset.conta] = i.value.trim(); });
+  const camadas = {}, aliquota_motor = {}; let aliquota_pct = ''; // v3.291
+  document.querySelectorAll('.fv2-cam').forEach(s => { if (s.value !== 'auto') camadas[s.dataset.conta] = s.value; });
+  document.querySelectorAll('.fv2-aliq').forEach(i => { const v = String(i.value).trim().replace(',', '.'); if (i.dataset.k === 'geral') aliquota_pct = v; else aliquota_motor[i.dataset.k] = v; });
   document.querySelectorAll('.fv2-limv').forEach(i => { const v = parseFloat(String(i.value).replace(',', '.')); if (!isFinite(v)) return; if (i.dataset.c) { limites[i.dataset.k] = limites[i.dataset.k] || {}; limites[i.dataset.k][i.dataset.c] = v; } else limites[i.dataset.k] = v; });
-  try { await finApi('fin_v2_cfg_salvar', { motores, produtos, limites }); toast('Configuração salva — indicadores recalculados', 'success'); _fv2Dados = {}; fv2Carregar(true); }
+  try { await finApi('fin_v2_cfg_salvar', { motores, produtos, limites, camadas, aliquota_pct, aliquota_motor }); toast('Configuração salva — indicadores recalculados', 'success'); _fv2Dados = {}; fv2Carregar(true); }
   catch (e) { toast('Erro ao salvar: ' + e.message, 'error'); }
 }
 // ── exportar ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -35420,7 +35485,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.290] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.291] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35436,7 +35501,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.290';
+window.__ATX_BUILD_ID__ = 'ATX-v3.291';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
