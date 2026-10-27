@@ -7467,12 +7467,18 @@ function _diagFatosResumo(dados) {
 }
 function _diagFatosHtml(dados) {
   const F = dados?.fatos_verificados; if (!F) return '';
-  const C = F.caixa, S = C?.fluxo_semanal_13_semanas || [], RC = F.receita_contratada_prevista?.proximos_4_meses || [], FU = F.funil_hubspot;
+  const C = F.caixa, S = C?.fluxo_semanal_13_semanas || [], RC = F.receita_contratada_prevista?.proximos_12_meses || F.receita_contratada_prevista?.proximos_4_meses || [], FU = F.funil_hubspot;
+  const RV = F.recebiveis_vencidos, RA = F.receitas_com_previsao_vencida, AM = F.apuracao_margem_ano, e = x => String(x == null ? '' : x).replace(/</g, '&lt;'), pc = v => v == null ? '—' : String(v).replace('.', ',') + '%';
   return '<details class="panel" style="margin:6px 0;padding:10px 14px;"><summary style="cursor:pointer;font-size:12px;font-weight:700;">💰 Fluxo de caixa projetado e dados detalhados desta análise</summary><div style="margin-top:8px;font-size:11px;">'
     + (C ? '<div style="color:var(--t2);margin-bottom:6px;">Saldo de hoje ' + _diagR(C.saldo_hoje) + ' + entradas previstas (faturas em aberto no QuickBooks, marcos, termos e sustentações a receber) − saídas previstas (contas a pagar e despesas programadas), semana a semana. Fora do fluxo: recebíveis vencidos ' + _diagR(C.recebiveis_vencidos_em_aberto) + ' e pagáveis vencidos ' + _diagR(C.pagaveis_vencidos_em_aberto) + '. Fonte: ' + (C.fonte || '') + '.</div>'
       + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:640px;"><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;text-align:left;"><th style="padding:4px;">Semana</th><th style="padding:4px;text-align:right;">Entradas</th><th style="padding:4px;text-align:right;">Saídas</th><th style="padding:4px;text-align:right;">Saldo no fim</th><th style="padding:4px;">Maiores lançamentos</th></tr>'
       + S.map(w => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;white-space:nowrap;">' + w.semana + '</td><td style="padding:4px;text-align:right;color:var(--green,#22d3a3);">' + _diagR(w.entradas) + '</td><td style="padding:4px;text-align:right;color:var(--red);">' + _diagR(w.saidas) + '</td><td style="padding:4px;text-align:right;font-weight:700;color:' + (w.saldo_fim < 0 ? 'var(--red)' : 'var(--t1)') + ';">' + _diagR(w.saldo_fim) + '</td><td style="padding:4px;color:var(--t2);font-size:10px;">' + (w.maiores || []).map(x => String(x).replace(/</g, '&lt;')).join('<br>') + '</td></tr>').join('') + '</table></div>' : '<div style="color:var(--gold);">Fluxo de caixa indisponível nesta análise.</div>')
     + (RC.length ? '<div style="margin-top:10px;font-weight:700;">Receita contratada ainda não faturada</div><div>' + RC.map(m => m.mes + ': <b>' + _diagR(m.total) + '</b> <span style="color:var(--t3);">(marcos ' + _diagR(m.marcos_sem_termo) + ' · termos ' + _diagR(m.termos_no_faturamento) + ' · sustentações ' + _diagR(m.sustentacoes) + ')</span>').join('<br>') + '</div>' : '')
+    + (RV ? '<div style="margin-top:10px;font-weight:700;">Recebíveis vencidos — ' + _diagR(RV.total) + ' em ' + RV.qtd + ' fatura(s)' + (RV.conferir_antes_de_cobrar?.qtd ? ' · <span style="color:var(--blue);">conferir antes ' + _diagR(RV.conferir_antes_de_cobrar.valor) + '</span>' : '') + (RV.a_cobrar ? ' · a cobrar de fato ' + _diagR(RV.a_cobrar.valor) : '') + '</div>'
+      + (RV.faturas || []).map(f => '<div style="color:var(--t2);">• ' + e(f.cliente) + ' · ' + e(f.fatura || '—') + ' · ' + _diagR(f.valor) + ' · ' + f.dias_vencida + ' dias · <span style="color:' + (/^CONFERIR/.test(f.situacao) ? 'var(--blue)' : f.situacao === 'cobrar' ? 'var(--red)' : 'var(--gold)') + ';">' + e(f.situacao) + '</span></div>').join('') : '')
+    + (RA && RA.qtd ? '<div style="margin-top:10px;font-weight:700;">Receitas com previsão vencida (fora do saldo) — ' + _diagR(RA.valor) + ' · a faturar já ' + _diagR(RA.a_faturar_ja) + ' · termos atrasados ' + _diagR(RA.termos_com_pagamento_atrasado) + '</div>'
+      + (RA.itens || []).map(o => '<div style="color:var(--t2);">• ' + e(o.tipo) + ' · ' + e(o.cliente) + ' · ' + e(o.descricao) + ' · ' + _diagR(o.valor) + ' · previsto ' + e(String(o.previsto_para || '').split('-').reverse().join('/')) + ' (' + o.dias_de_atraso + ' dias)</div>').join('') : '')
+    + (AM ? '<div style="margin-top:10px;font-weight:700;">Apuração de margem do ano (4 camadas)</div><div style="color:var(--t2);">Receita ' + _diagR(AM.receita_bruta) + ' · impostos ' + _diagR(AM.impostos) + ' · margem bruta ' + pc(AM.margem_bruta_pct) + ' · margem de contribuição ' + pc(AM.margem_contribuicao_pct) + ' · <b>lucro (resultado operacional) ' + _diagR(AM.resultado_operacional) + ' (' + pc(AM.resultado_operacional_pct) + ')</b> · retiradas ' + _diagR(AM.retiradas) + ' · resultado do dono ' + _diagR(AM.resultado_dono) + '</div>' : '')
     + (FU ? '<div style="margin-top:10px;font-weight:700;">Funil HubSpot</div><div>' + (FU.negocios_abertos ?? '—') + ' negócio(s) abertos · ' + _diagR(FU.valor_aberto) + ' (ponderado ' + _diagR(FU.ponderado) + ')' + (FU.abertos_sem_valor ? ' · <b style="color:var(--gold);">' + FU.abertos_sem_valor + ' sem valor</b>' : '') + (FU.observacao ? '<br><span style="color:var(--gold);">' + String(FU.observacao).replace(/</g, '&lt;') + '</span>' : '') + '</div>' : '')
     + ((dados.fatos_que_faltaram || []).length ? '<div style="margin-top:8px;color:var(--gold);">Não disponível nesta análise: ' + dados.fatos_que_faltaram.map(x => String(x).replace(/</g, '&lt;')).join(' · ') + '</div>' : '')
     + '</div></details>';
@@ -22705,14 +22711,16 @@ function _fdRenderTabelas() {
   if (tbF) {
     // v3.219: formato de extrato — só o que acontece de hoje em diante. Vencidos em aberto não entram aqui:
     // ficam no Dashboard → Financeiro → "Vencidos em aberto". Um aviso no topo mostra quanto ficou de fora.
-    const noPer = fut.filter(l => !l.ja_paga && l.no_periodo !== false);
-    const foraPer = fut.filter(l => !l.ja_paga && l.no_periodo === false);
+    const atrSD = fut.filter(l => l.atrasada_sem_data); // v3.292: previsão vencida e ainda não faturada/paga — fora do saldo
+    const noPer = fut.filter(l => !l.ja_paga && !l.atrasada_sem_data && l.no_periodo !== false);
+    const foraPer = fut.filter(l => !l.ja_paga && !l.atrasada_sem_data && l.no_periodo === false);
     const secao = (titulo, lista, cor, nota, rotulo) => lista.length ? `<tr><td colspan="6" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} lançamento(s) · <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(lista.filter(x=>x.tipo==='entrada').reduce((a,x)=>a+x.valor,0))}</span> <span style="color:var(--red);">−${fmtBRLcompleto(lista.filter(x=>x.tipo==='saida').reduce((a,x)=>a+x.valor,0))}</span>${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
       + _fdComQuebraMes(lista, cor, rotulo) : '';
     const vf = d.futuro.vencidos_fora_do_extrato;
     const avisoVenc = vf && (vf.receber.qtd || vf.pagar.qtd) ? `<tr><td colspan="6" style="padding:8px;font-size:10px;color:var(--t2);background:rgba(245,185,75,.07);border-bottom:1px solid var(--bd);">ℹ Fora deste extrato (vencidos em aberto no QuickBooks, sem data para acontecer): <b>${vf.receber.qtd}</b> fatura(s) a receber · ${fmtBRLcompleto(vf.receber.valor)} e <b>${vf.pagar.qtd}</b> conta(s) a pagar · ${fmtBRLcompleto(vf.pagar.valor)}${vf.ja_pagas_no_extrato ? ' · ' + vf.ja_pagas_no_extrato + ' conta(s) a pagar já paga(s) no extrato' : ''}. <a href="#" onclick="event.preventDefault();_irVencidosDash()" style="color:var(--blue);">Ver no Dashboard → Financeiro → Vencidos em aberto</a></td></tr>` : '';
-    tbF.innerHTML = fut.length || avisoVenc
+    tbF.innerHTML = fut.length || avisoVenc /* v3.292 */
       ? avisoVenc + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)', '', 'no período')
+        + secao('RECEITAS COM PREVISÃO VENCIDA (fora do saldo)', atrSD.map(l => ({ ...l, saldo_acumulado: null })), 'var(--gold)', '— marcos, termos e sustentações cuja data prevista já passou e ainda não foram faturados/pagos: sem data para entrar, não somam no saldo. Atualize a previsão no marco/termo para voltarem ao fluxo', 'previsão vencida')
         + secao('DEPOIS DO PERÍODO CONSULTADO', foraPer, 'var(--t3)', '— o saldo continua acumulando; os totais do período (cartões acima) não incluem estes', 'depois do período')
       : (busca ? semNada('Nenhum lançamento futuro com "' + busca.replace(/</g, '&lt;') + '" na descrição.')
         : semNada('Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.'));
@@ -32005,6 +32013,10 @@ function vencDashRender() {
       + '</tbody></table></div>' : `<div style="font-size:10.5px;color:var(--t3);">${vazio}</div>`) + (extra || '') + '</div>';
   const ret = d.retidas || [];
   el.innerHTML = (ret.length ? `<div style="font-size:10.5px;line-height:1.6;padding:8px 10px;margin-bottom:10px;border:1px solid var(--gold);border-radius:7px;background:rgba(245,185,75,.08);">✓ <b>${ret.length} fatura(s) consideradas PAGAS</b>: o que resta em aberto no QuickBooks (${_fnRc(ret.reduce((a, x) => a + x.valor, 0))}) é só imposto retido na fonte pelo cliente, que não entra no caixa. Não aparecem como vencidas nem no fluxo. Para fechar no QuickBooks, registre a retenção no recebimento (conta de impostos a recuperar): ${ret.map(x => 'Fat. ' + _fnE(x.doc) + ' · ' + _fnE(x.contraparte) + ' · ' + _fnRc(x.valor) + ' (' + _fnE(x.retencao) + ')').join('; ')}.</div>` : '')
+    + (() => { const cf = (d.receber || []).filter(x => x.possivelmente_paga); if (!cf.length) return ''; // v3.292
+      return `<div style="font-size:10.5px;line-height:1.6;padding:8px 10px;margin-bottom:10px;border:1px solid var(--blue);border-radius:7px;background:rgba(79,124,255,.07);">🔎 <b>Conferir antes de cobrar — ${cf.length} fatura(s) (${_fnRc(cf.reduce((a, x) => a + x.valor, 0))}) podem JÁ TER SIDO PAGAS</b>: há entrada no extrato do mesmo cliente com o valor da fatura (cheio ou líquido de retenção) que não está ligada a nenhuma fatura no QuickBooks. Se for o pagamento, baixe a fatura no QuickBooks (Receber pagamento) e ela sai daqui.<br>`
+        + cf.map(x => `• ${_fnE(x.contraparte)} · fatura ${_fnE(x.doc || '—')} (${_fnRc(x.valor)}, venc. ${dt(x.vencimento)}) ↔ entrada de ${_fnRc(x.possivelmente_paga.valor)} em ${dt(x.possivelmente_paga.data)} — ${_fnE(x.possivelmente_paga.descricao)} <span style="color:var(--t3);">(${_fnE(x.possivelmente_paga.criterio)})</span>${x.possivelmente_paga.qb_url ? ` <a href="${x.possivelmente_paga.qb_url}" target="_blank" rel="noopener" style="color:var(--blue);">abrir no QuickBooks ↗</a>` : ''}`).join('<br>')
+        + (d.receber_cobrar ? `<br><b>Para cobrar de fato: ${d.receber_cobrar.qtd} fatura(s) · ${_fnRc(d.receber_cobrar.valor)}</b>` : '') + '</div>'; })()
     + tab('A receber — faturas vencidas', 'var(--green,#22d3a3)', d.receber, d.total_receber, 'Nenhuma fatura vencida em aberto.')
     + tab('A pagar — contas vencidas', 'var(--red)', d.pagar, d.total_pagar, 'Nenhuma conta a pagar vencida em aberto.',
       d.ja_pagas.length ? `<div style="font-size:10px;color:var(--t3);margin-top:5px;">+ ${d.ja_pagas.length} conta(s) a pagar vencida(s) (${_fnRc(d.ja_pagas.reduce((a, x) => a + x.valor, 0))}) já aparecem pagas no extrato — falta ligar o pagamento no QuickBooks: ${d.ja_pagas.map(x => _fnE(x.contraparte) + ' (' + dt(x.vencimento) + ')').join(', ')}.</div>` : '');
@@ -35485,7 +35497,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.291] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.292] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35501,7 +35513,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.291';
+window.__ATX_BUILD_ID__ = 'ATX-v3.292';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

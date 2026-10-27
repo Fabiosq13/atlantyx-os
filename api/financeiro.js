@@ -3068,7 +3068,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     entradas_mes: ext._erro ? null : round(ext.total_entradas), saidas_mes: ext._erro ? null : round(ext.total_saidas),
     // v3.113: se a consulta de faturas/contas falhou, a receber/pagar ficam null ("não lido") — antes viravam R$ 0 e "nenhum recebível"
     a_receber: fut.erro ? null : soma(reais), a_receber_vencido: fut.erro ? null : soma(reais, r => r.vencida), a_receber_30d: fut.erro ? null : soma(reais, r => !r.vencida && r.data <= em30),
-    qtd_receber: fut.erro ? null : reais.length, receita_prevista_marcos: soma(prev), erro_futuros: fut.erro || null,
+    qtd_receber: fut.erro ? null : reais.length, receita_prevista_marcos: soma(prev), receita_prevista_30d: soma(prev, r => !r.atrasada && r.data >= hoje && r.data <= em30), // v3.292 erro_futuros: fut.erro || null,
     // v3.85: faturas em aberto, uma a uma — alimenta os alertas de vencimento (A Receber + Dashboard LIVE)
     recebiveis_itens: fut.erro ? null : reais.map(r => { const qid = String(r.id || '').replace(/^inv_/, ''); return { id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida,
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
@@ -3828,6 +3828,48 @@ async function pendenciasFin() {
   return { hoje, itens, numeros: { pagar_vencido: soma('pagar_vencido'), pagar_hoje: soma('pagar_hoje'), receber_vencido: soma('receber_vencido'), receita_atrasada: soma('receita_atrasada'), termo: soma('termo'), retencao: soma('retencao'), duplicado: soma('duplicado') },
     total_alta: itens.filter(i => i.gravidade === 'alta').length, qb_erro: d?.qb_erro || null, erros, gerado_em: new Date().toISOString() };
 }
+// v3.292: FATURA VENCIDA JÁ PAGA POR FORA — o recebimento entrou no extrato como depósito/recebimento avulso (sem ligar à
+// fatura) e a fatura segue "em aberto" no QuickBooks. Casa cada fatura vencida com UMA entrada do extrato: mesmo cliente (nome
+// na descrição/memo), valor igual ao saldo ou ao saldo líquido de retenção comum (IR 1,5% · CSRF 4,65% · IR+CSRF 6,15% ·
+// + ISS), depois da emissão provável. Recebimento já ligado a fatura não entra. Resultado é "pode já ter sido paga": conferir.
+const _RET_COMUNS = [0, 0.015, 0.0465, 0.0615, 0.0815, 0.0965, 0.1115];
+async function _faturasPagasPorFora(receber, { timeoutMs = 9000 } = {}) {
+  const mapa = new Map(), hoje = _hojeBR();
+  const venc = (receber || []).filter(r => r && r.id && r.vencimento && r.valor > 0);
+  if (!venc.length || !qbConfigurado()) return mapa;
+  const minV = venc.reduce((m, r) => r.vencimento < m ? r.vencimento : m, hoje), lim = _diasMais(hoje, -400);
+  const ini = _diasMais(minV < lim ? lim : minV, -75), chave = 'rec|' + ini + '|' + hoje;
+  let c = _bpfCache.get(chave);
+  if (!c || Date.now() - c.t > 10 * 60000) {
+    const p = extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados: false })
+      .then(ext => (ext.lancamentos || []).filter(l => l.tipo === 'entrada' && (parseFloat(l.valor) || 0) > 0 && l.qb_txn_id && !(l.qb_tipo === 'pagamento' && (l._inv_ids || []).length) && l.qb_tipo !== 'transferencia'));
+    c = { t: Date.now(), p }; _bpfCache.set(chave, c); p.catch(() => _bpfCache.delete(chave));
+  }
+  const ent0 = await Promise.race([c.p, new Promise(r => setTimeout(() => r(null), timeoutMs))]).catch(() => null);
+  if (!ent0) return mapa;
+  const ent = ent0.filter(l => !(l.qb_tipo === 'pagamento' && (l._inv_ids || []).length) && l.qb_tipo !== 'transferencia'); // recebimento já ligado a fatura não é "pago por fora"
+  const usadas = new Set();
+  [...venc].sort((a, b) => a.vencimento.localeCompare(b.vencimento)).forEach(r => {
+    const toks = _bpfTokens(r.contraparte); const base = [r.valor, r.valor_total].filter(v => v > 0);
+    const alvos = [...new Set(base.flatMap(v => _RET_COMUNS.map(t => Math.round(v * (1 - t) * 100) / 100)))];
+    const piso = _diasMais(r.vencimento, -60);
+    let melhor = null;
+    for (const e of ent) {
+      if (usadas.has(e.qb_txn_id) || String(e.data).substring(0, 10) < piso) continue;
+      const v = parseFloat(e.valor) || 0, exato = base.some(x => Math.abs(x - v) <= 0.01);
+      if (!exato && !alvos.some(x => Math.abs(x - v) <= Math.max(0.5, x * 0.003))) continue;
+      const alvo = new Set(_bpfTokens([e.descricao, e.contraparte, e.memo, e.cliente].filter(Boolean).join(' ')));
+      const m = toks.filter(t => alvo.has(t)).length; if (!m) continue;
+      const dist = Math.abs((Date.parse(String(e.data).substring(0, 10)) - Date.parse(r.vencimento)) / 864e5);
+      const score = m * 10 + (exato ? 5 : 0) - dist / 15;
+      if (!melhor || score > melhor.score) melhor = { e, score, exato };
+    }
+    if (melhor) { usadas.add(melhor.e.qb_txn_id); const e = melhor.e;
+      mapa.set(r.id, { data: String(e.data).substring(0, 10), valor: round(parseFloat(e.valor) || 0), descricao: String(e.descricao || e.contraparte || e.memo || '').substring(0, 80), tipo: e.qb_tipo || '',
+        criterio: melhor.exato ? 'mesmo cliente e mesmo valor' : 'mesmo cliente e valor líquido de retenção', qb_url: _qbUrlTxn(e.qb_txn_id) }); }
+  });
+  return mapa;
+}
 async function vencidosPainel() {
   const hoje = _hojeBR();
   const fut = await qbFuturosDetalhado({ data_inicio: hoje, data_fim: null });
@@ -3846,13 +3888,20 @@ async function vencidosPainel() {
         obs: 'Só na Agenda (não lançada no QuickBooks)' + (dias(dv) > 60 ? ' · há mais de 60 dias — confira se já foi paga' : '') }); });
     pagar.sort((a, b) => b.dias - a.dias); } catch (_) {}
   const ja_pagas = (fut.pagaveis_ja_pagas || []).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), contraparte: l.fornecedor || String(l.descricao).split(' · ')[0], valor: round(l.valor), pago_em: l.ja_paga?.data }));
+  // v3.292: fatura vencida que pode JÁ TER SIDO PAGA — entrada no extrato do mesmo cliente com o valor da fatura (cheio ou
+  // líquido de retenção) que não está ligada a nenhuma fatura no QuickBooks. Antes de cobrar, conferir e baixar.
+  try { const pp = await _faturasPagasPorFora(receber); receber.forEach(r => { const m = pp.get(r.id); if (m) { r.possivelmente_paga = m; r.obs = (r.obs ? r.obs + ' · ' : '') + 'Pode já ter sido paga: entrada de ' + fmtNum(m.valor) + ' em ' + m.data.split('-').reverse().join('/') + ' (' + m.descricao + ') — confira e baixe no QuickBooks antes de cobrar'; } }); } catch (_) {}
+  const _fx = d => d <= 15 ? '1-15' : d <= 30 ? '16-30' : d <= 60 ? '31-60' : d <= 90 ? '61-90' : '90+';
+  const aging = {}; receber.forEach(r => { const k = _fx(r.dias); aging[k] = aging[k] || { qtd: 0, valor: 0 }; aging[k].qtd++; aging[k].valor = round(aging[k].valor + r.valor); });
+  const conf = receber.filter(r => r.possivelmente_paga), cob = receber.filter(r => !r.possivelmente_paga);
   // v3.231: consulta própria (sem o filtro automático de retenção) — antes lia um resultado guardado na memória da instância
   let retidas = [];
   try { const token = await qbToken(); const d = await qbQuery(`select * from Invoice where Balance > '0.009' maxresults 1000`, token);
     retidas = (d?.QueryResponse?.Invoice || []).map(i => ({ i, ret: _retencaoProvavel(parseFloat(i.Balance || 0), parseFloat(i.TotalAmt || 0)) })).filter(x => x.ret)
       .map(({ i, ret }) => ({ id: 'inv_' + i.Id, doc: i.DocNumber || '', contraparte: i.CustomerRef?.name || '', vencimento: i.DueDate || i.TxnDate, valor: round(parseFloat(i.Balance || 0)), valor_total: round(parseFloat(i.TotalAmt || 0)), retencao: ret })); }
   catch (_) { retidas = Date.now() - _retencaoUltimas.t < 15 * 60000 ? _retencaoUltimas.lista : []; }
-  return { hoje, receber, pagar, ja_pagas, retidas, total_receber: round(receber.reduce((a, x) => a + x.valor, 0)), total_pagar: round(pagar.reduce((a, x) => a + x.valor, 0)),
+  return { hoje, receber, pagar, ja_pagas, retidas, total_receber: round(receber.reduce((a, x) => a + x.valor, 0)), aging_receber: aging,
+    receber_conferir: { qtd: conf.length, valor: round(conf.reduce((a, x) => a + x.valor, 0)) }, receber_cobrar: { qtd: cob.length, valor: round(cob.reduce((a, x) => a + x.valor, 0)) }, total_pagar: round(pagar.reduce((a, x) => a + x.valor, 0)),
     retencoes: { qtd: receber.filter(x => x.retencao_provavel).length, valor: round(receber.filter(x => x.retencao_provavel).reduce((a, x) => a + x.valor, 0)) }, erro: fut.erro || null };
 }
 
@@ -3962,6 +4011,8 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const vencidosFora = { receber: { qtd: _venc.filter(l => l.tipo === 'entrada' && !l.ja_paga).length, valor: round(_venc.filter(l => l.tipo === 'entrada' && !l.ja_paga).reduce((x, l) => x + (l.valor || 0), 0)) },
     pagar: { qtd: _venc.filter(l => l.tipo === 'saida' && !l.ja_paga).length, valor: round(_venc.filter(l => l.tipo === 'saida' && !l.ja_paga).reduce((x, l) => x + (l.valor || 0), 0)) },
     ja_pagas_no_extrato: _venc.filter(l => l.ja_paga).length };
+  const _atr = _todosFut.filter(l => l.atrasada && l.origem === 'agenda_receitas' && l.tipo === 'entrada');
+  vencidosFora.receitas_atrasadas = { qtd: _atr.length, valor: round(_atr.reduce((x, l) => x + (l.valor || 0), 0)) }; // v3.292
   const futTodos = _todosFut.filter(l => l.data && String(l.data).substring(0, 10) >= hoje)
     .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
@@ -3970,6 +4021,9 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   // 'fora_do_saldo' segue marcando o que está fora do período, só para os totais/indicadores do período não somarem.
   const futuroComSaldo = futTodos.map(l => {
     if (l.ja_paga) return { ...l, saldo_acumulado: null, fora_do_saldo: true };
+    // v3.292: marco/termo/sustentação com PREVISÃO VENCIDA e ainda não faturado/pago não tem data para acontecer — antes era
+    // jogado para "entra hoje" e deixava o menor saldo otimista. Fica fora do saldo, listado à parte ("atrasado, sem data").
+    if (l.atrasada && l.origem === 'agenda_receitas') return { ...l, saldo_acumulado: null, fora_do_saldo: true, atrasada_sem_data: true };
     if (l.tipo === 'entrada') saldoCorrente += l.valor;
     else if (l.tipo === 'saida') saldoCorrente -= l.valor;
     const sa = Math.round(saldoCorrente * 100) / 100;
@@ -5234,6 +5288,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
         if (_b.a_receber != null) kpis.contas_receber = _b.a_receber; if (_b.a_pagar != null) kpis.contas_pagar = _b.a_pagar; // v3.113: falha não vira zero
         kpis.contas_receber_vencido = _b.a_receber_vencido; kpis.contas_pagar_vencido = _b.a_pagar_vencido;
         kpis.contas_receber_30d = _b.a_receber_30d; kpis.contas_pagar_30d = _b.a_pagar_30d; // v3.120: o que vence nos próximos 30 dias
+        kpis.receita_prevista_30d = _b.receita_prevista_30d ?? 0; // v3.292: marcos/termos/sustentações a receber em 30 dias
         kpis.fonte_caixa = _b.fonte;
       }
 
@@ -5283,13 +5338,17 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
     kpis.caixa_30d = round(kpis.saldo_caixa + (kpis.contas_receber_vencido || 0) + kpis.contas_receber_30d - (kpis.contas_pagar_vencido || 0) - kpis.contas_pagar_30d);
   kpis.caixa_filtrado_por_conta = !!conta_id;
 
-  // Liquidez corrente (simplificada: saldo + AR vs AP)
+  // Liquidez corrente (simplificada) — v3.292: o "a pagar" inclui as despesas programadas dos próximos 30 dias (folha,
+  // aluguel…), então o "a receber" passa a incluir também o que está programado para entrar em 30 dias (marcos, termos e
+  // sustentações). Antes só as faturas já emitidas: o lado do ativo ficava sem o mês seguinte e a liquidez saía < 1 por construção.
+  const _arLiq = (kpis.contas_receber || 0) + (kpis.receita_prevista_30d || 0);
   if (kpis.contas_pagar > 0) {
-    kpis.liquidez_corrente = round((kpis.saldo_caixa + kpis.contas_receber) / kpis.contas_pagar, 2);
+    kpis.liquidez_corrente = round((kpis.saldo_caixa + _arLiq) / kpis.contas_pagar, 2);
   }
 
   // Working capital
-  kpis.working_capital = round(kpis.saldo_caixa + kpis.contas_receber - kpis.contas_pagar);
+  kpis.working_capital = round(kpis.saldo_caixa + _arLiq - kpis.contas_pagar);
+  kpis.liquidez_composicao = { caixa: kpis.saldo_caixa, faturas_a_receber: kpis.contas_receber, receita_programada_30d: kpis.receita_prevista_30d || 0, a_pagar_ate_30d: kpis.contas_pagar };
 
   // Cobertura de despesas fixas — usa ocorrências previstas no mês atual
   try {

@@ -78,11 +78,13 @@ async function _finS1(action, params = {}) { // chama o Financeiro no mesmo proc
 async function fatosVerificados() {
   const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), mais = d => { const x = new Date(hoje + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + d); return x.toISOString().slice(0, 10); };
   const r2 = v => Math.round((Number(v) || 0) * 100) / 100, F = {}, faltou = [];
-  const [fx, me, ag, fu] = await Promise.allSettled([
+  const [fx, me, ag, fu, vp, rk] = await Promise.allSettled([
     _comPrazo(_finS1('fluxo_detalhado', { data_inicio: hoje, data_fim: mais(120), dias_passado: 0 }), 45000),
     _comPrazo(_finS1('metas_empresa_status', { ano: parseInt(hoje), com_crm: false }), 40000),
-    _comPrazo(_finS1('receitas_agenda', { meses: 4 }), 45000),
-    _comPrazo(_finS1('funil_vendas', { tipo: 'mes', ref: hoje.slice(0, 7), pipeline: 'todos' }), 45000)]);
+    _comPrazo(_finS1('receitas_agenda', { meses: 13 }), 45000), // v3.292: 12 meses (com 4 a IA via "nada a partir de fevereiro")
+    _comPrazo(_finS1('funil_vendas', { tipo: 'mes', ref: hoje.slice(0, 7), pipeline: 'todos' }), 45000),
+    _comPrazo(_finS1('vencidos_painel', {}), 45000), // v3.292: recebíveis vencidos fatura a fatura (com "pode já ter sido paga")
+    _comPrazo(_finS1('resultado_kpis', { ano: parseInt(hoje) }), 45000)]); // v3.292: apuração de margem em 4 camadas do ano
   if (fx.status === 'fulfilled') { const X = fx.value, L = (X.futuro?.lancamentos || []).filter(l => !l.ja_paga && !l.fora_do_saldo);
     const jan = d => { const ate = mais(d), sel = L.filter(l => String(l.data).slice(0, 10) <= ate), e = sel.filter(l => l.tipo === 'entrada').reduce((a, l) => a + (l.valor || 0), 0), sa = sel.filter(l => l.tipo === 'saida').reduce((a, l) => a + (l.valor || 0), 0);
       const sal = sel.filter(l => l.saldo_acumulado != null), mn = sal.reduce((m, l) => !m || l.saldo_acumulado < m.saldo_acumulado ? l : m, null);
@@ -104,9 +106,29 @@ async function fatosVerificados() {
       ritmo_pct: FA.ritmo_pct ?? null, projecao_fechamento: FA.projecao_fechamento ?? null, falta: FA.falta ?? null, margem_liquida_real_pct: MG.realizado_pct ?? M.realizado?.margem_pct ?? null, meta_margem_pct: MG.meta_pct ?? M.meta?.margem_pct ?? null,
       lucro_liquido: M.realizado?.lucro_liquido ?? null, regime: 'caixa (DRE do QuickBooks)', fonte: 'Planejamento › Metas da Empresa' }; }
   else faltou.push('metas: ' + (me.reason?.message || ''));
-  if (ag.status === 'fulfilled') { const A = ag.value.agenda || {}; F.receita_contratada_prevista = { proximos_4_meses: (A.por_mes || []).map(x => ({ mes: x.mes, total: r2(x.total), marcos_sem_termo: r2(x.marco), termos_no_faturamento: r2(x.termo), sustentacoes: r2(x.sustentacao), avulsas: r2(x.manual) })), fonte: 'Agenda de Receitas (marcos, termos e sustentações ainda não faturados)' }; }
+  if (vp.status === 'fulfilled') { const V = vp.value, R = V.receber || [];
+    F.recebiveis_vencidos = { total: r2(V.total_receber), qtd: R.length, a_cobrar: V.receber_cobrar || null, conferir_antes_de_cobrar: V.receber_conferir || null, por_faixa_de_atraso_dias: V.aging_receber || null,
+      faturas: R.slice(0, 15).map(x => ({ cliente: x.contraparte, fatura: x.doc, vencimento: x.vencimento, dias_vencida: x.dias, valor: r2(x.valor), situacao: x.possivelmente_paga ? 'CONFERIR: pode já ter sido paga (entrada de R$ ' + Math.round(x.possivelmente_paga.valor).toLocaleString('pt-BR') + ' em ' + x.possivelmente_paga.data + ')' : x.retencao_provavel ? 'saldo é imposto retido — baixar no QuickBooks' : 'cobrar' })),
+      pagaveis_vencidos: { total: r2(V.total_pagar), qtd: (V.pagar || []).length, ja_pagas_no_extrato_nao_baixadas: (V.ja_pagas || []).length },
+      fonte: 'Dashboard › Financeiro › Vencidos em aberto (faturas do QuickBooks; saldo que é só imposto retido já excluído)' }; }
+  else faltou.push('recebíveis vencidos: ' + (vp.reason?.message || ''));
+  if (rk.status === 'fulfilled') { const A = rk.value.resultado?.ano_res, C = A?.camadas;
+    if (C) { const { contas, motores, ...cam } = C; const topo = k => (contas || []).filter(x => x.classe === k).slice(0, 6).map(x => ({ conta: x.conta, valor: r2(x.valor) }));
+      F.apuracao_margem_ano = { ...cam, motores: Object.fromEntries(Object.entries(motores || {}).map(([k, m]) => [k, { receita: m.receita, margem_bruta_pct: m.margem_bruta_pct, margem_contribuicao: m.margem_contribuicao, margem_contribuicao_pct: m.margem_contribuicao_pct }])),
+        maiores_contas: { custo_direto: topo('direto'), custo_fixo: topo('fixo'), corporativo: topo('corporativo'), retiradas: topo('retirada') }, periodo: rk.value.resultado?.ano,
+        regra: 'lucro = resultado operacional (antes das retiradas de sócio); % sobre a receita bruta. Este é o lucro oficial do sistema.' }; } }
+  else faltou.push('apuração de margem: ' + (rk.reason?.message || ''));
+  if (ag.status === 'fulfilled') { const A = ag.value.agenda || {}; const atr = (A.ativas || []).filter(o => o.status === 'atrasada');
+    const dAtr = o => Math.max(0, Math.round((Date.parse(hoje) - Date.parse(o.data_prevista || hoje)) / 864e5));
+    F.receitas_com_previsao_vencida = { qtd: atr.length, valor: r2(atr.reduce((a, o) => a + (o.valor || 0), 0)),
+      a_faturar_ja: r2(atr.filter(o => o.origem !== 'termo').reduce((a, o) => a + (o.valor || 0), 0)), termos_com_pagamento_atrasado: r2(atr.filter(o => o.origem === 'termo').reduce((a, o) => a + (o.valor || 0), 0)),
+      itens: [...atr].sort((a, b) => (b.valor || 0) - (a.valor || 0)).slice(0, 15).map(o => ({ tipo: o.origem, cliente: o.cliente, descricao: String(o.descricao || '').slice(0, 70), valor: r2(o.valor), previsto_para: o.data_prevista, dias_de_atraso: dAtr(o) })),
+      leitura: 'marco/sustentação com previsão vencida e ainda NÃO faturado = dá para faturar já (é a única antecipação real); termo atrasado = termo em aprovação ou nota emitida com pagamento previsto vencido = destravar aprovação ou cobrar. Ficam FORA do saldo projetado até ganharem nova data.' };
+    F.receita_contratada_prevista = { proximos_12_meses: (A.por_mes || []).slice(0, 13).map(x => ({ mes: x.mes, total: r2(x.total), marcos_sem_termo: r2(x.marco), termos_no_faturamento: r2(x.termo), sustentacoes: r2(x.sustentacao), avulsas: r2(x.manual) })), fonte: 'Agenda de Receitas (marcos, termos e sustentações ainda não faturados; sem repetir marco que já está em termo)', observacao: 'A carteira futura JÁ está no fluxo de caixa nas datas programadas: antecipar um marco só muda o mês, não cria receita nova.',
+      por_cliente_12_meses: (() => { const g = {}; (A.ativas || []).forEach(o => { const k = o.cliente || 'Sem cliente'; g[k] = (g[k] || 0) + (o.valor || 0); }); const t = Object.values(g).reduce((x, y) => x + y, 0) || 1;
+        return Object.entries(g).sort((x, y) => y[1] - x[1]).slice(0, 8).map(([c, v]) => ({ cliente: c, valor: r2(v), pct_da_carteira: Math.round(v / t * 1000) / 10 })); })() }; }
   else faltou.push('agenda de receitas: ' + (ag.reason?.message || ''));
-  if (fu.status === 'fulfilled' && !fu.value.indisponivel) { const R = fu.value.resumo || {}; F.funil_hubspot = { negocios_abertos: R.aberto?.qtd ?? null, valor_aberto: R.aberto?.valor ?? null, ponderado: R.aberto?.ponderado ?? null, abertos_sem_valor: R.aberto?.sem_valor ?? null,
+  if (fu.status === 'fulfilled' && !fu.value.indisponivel) { const R = fu.value.resumo || {}; F.funil_hubspot = { o_que_e: 'negócios JÁ ABERTOS no funil do HubSpot (oportunidades em andamento) — NÃO são leads novos a prospectar', negocios_abertos: R.aberto?.qtd ?? null, valor_aberto: R.aberto?.valor ?? null, ponderado: R.aberto?.ponderado ?? null, abertos_sem_valor: R.aberto?.sem_valor ?? null,
       ganho_no_mes: R.ganho?.valor ?? null, taxa_ganho_pct: R.taxa_ganho_pct ?? null, por_etapa: (fu.value.etapas || []).map(e => ({ etapa: e.nome, qtd: e.agora?.qtd, valor: e.agora?.valor })), fonte: 'HubSpot (funil do Dashboard ao vivo)',
       observacao: R.aberto?.qtd && !R.aberto?.valor ? 'há negócios abertos, mas SEM VALOR preenchido no HubSpot — o funil em R$ aparece zerado por falta de cadastro, não por falta de negócios' : null }; }
   else faltou.push('funil HubSpot: ' + (fu.reason?.message || fu.value?.indisponivel || ''));
@@ -124,15 +146,17 @@ async function ctxReal(extra = {}) {
   ]);
   const real = {};
   if (finR.status === 'fulfilled') { const x = finR.value.dashboard || {}; fontes.push('Financeiro (QuickBooks + sistema)');
-    real.financeiro = { caixa: x.caixa, saude: { semaforo: x.saude?.semaforo, motivos: x.saude?.motivos, kpis: x.saude?.kpis }, planejado_x_real_mes: x.planejado_real?.totais, fluxo_6_meses: (x.grafico_6m?.meses || []).map(m => ({ mes: m.mes, receita_planejada: m.receita_planejada, receita_real: m.receita_real, despesa_planejada: m.despesa_planejada, despesa_real: m.despesa_real })),
-      marcos_em_fluxo: x.marcos, orcamento: x.orcamento_por_tipo, conciliacao: x.conciliacao, indicador_social: x.social ? { pct: x.social.pct, meta: x.social.meta, destinado: x.social.destinado } : null }; }
+    real.financeiro = { caixa: x.caixa, saude: { semaforo: x.saude?.semaforo, motivos: x.saude?.motivos, kpis: x.saude?.kpis }, planejado_x_real_mes: x.planejado_real?.totais, fluxo_6_meses: (x.grafico_6m?.meses || []).map(m => ({ mes: m.mes, receita_planejada: m.receita_planejada, receita_real: m.receita_real, despesa_lancada_ou_programada: m.despesa_planejada, saidas_reais_de_caixa: m.despesa_real })),
+      fluxo_6_meses_leitura: 'NÃO é orçamento. "despesa_lancada_ou_programada" = só contas a pagar lançadas no QuickBooks + despesas programadas na Agenda; "saidas_reais_de_caixa" = tudo que saiu do banco (inclui impostos, retiradas, cartão, pagamentos avulsos sem conta lançada). Real acima do lançado é falta de lançamento/programação, não estouro de orçamento.',
+      orcamento: x.orcamento_por_tipo, conciliacao: x.conciliacao, indicador_social: x.social ? { pct: x.social.pct, meta: x.social.meta, destinado: x.social.destinado } : null }; }
   else faltou.push('financeiro: ' + (finR.reason?.message || ''));
   if (vendR.status === 'fulfilled' && vendR.value) { fontes.push('Painel de Vendas'); const v = vendR.value.v || {};
     const vv = { metas: v.metas, propostas: v.propostas, margens: v.margens ? { geral: v.margens.geral } : undefined, calculo: v.calculo, atualizado_em: vendR.value.em };
     for (const k of ['calculo', 'margens', 'propostas']) if (JSON.stringify(vv).length > 6000) delete vv[k]; // cabe no contexto sem cortar JSON
+    vv.observacao = 'propostas = tabela local de propostas do sistema (pode estar vazia; o funil real está no HubSpot); win rate e ticket do cálculo podem ser PADRÃO quando não há histórico — veja calculo.win_fonte/ticket_fonte e diga quando for padrão.';
     real.vendas = vv; }
   else faltou.push('vendas: ' + (vendR.reason?.message || 'sem cálculo salvo'));
-  if (leadsR.status === 'fulfilled' && leadsR.value) { fontes.push('Leads (captura)'); real.leads = leadsR.value; } else faltou.push('leads: ' + (leadsR.reason?.message || ''));
+  if (leadsR.status === 'fulfilled' && leadsR.value) { fontes.push('Leads (captura)'); real.leads = { ...leadsR.value, observacao: 'só leads capturados pelo próprio sistema (formulários/robôs); não inclui contatos e negócios do HubSpot nem prospecção manual — não use como "geração de leads da empresa".' }; } else faltou.push('leads: ' + (leadsR.reason?.message || ''));
   // v3.240: PLANO ESTRATÉGICO VIGENTE (cadastrado e aprovado pelo fundador) — Plano Estratégico, Plano de Ação 90d e OKRs
   // partem dele. Sem plano aprovado (ou se a leitura falhar) segue como antes, só com os dados reais.
   let planoTxt = null;
@@ -142,27 +166,42 @@ async function ctxReal(extra = {}) {
   return { ctx: ctxAtlantyx({ dados_reais: real, data_de_hoje: new Date().toISOString().slice(0, 10), ...(planoTxt ? { plano_estrategico_vigente: planoTxt, instrucao_plano: 'Parta do plano estratégico vigente: detalhe e execute as alavancas, metas e prioridades aprovadas; se os dados reais contradisserem o plano, aponte a diferença e sugira o ajuste em vez de criar outra estratégia do zero.' } : {}), ...extra }), fontes, faltou };
 }
 let _ultimasFontes = null;
+// v3.292: TODA análise do S1 (diagnóstico, riscos, financeira, planejamento, plano de ação, replanejamento, OKRs, cenários)
+// recebe os fatos verificados e as mesmas regras de coerência — antes só o Diagnóstico Completo recebia.
+async function ctxComFatos(extra) {
+  const [ctxR, FV] = await Promise.all([ctxReal(extra), fatosVerificados().catch(e => ({ fatos: {}, faltou: [e.message] }))]);
+  const ctx = ctxR.ctx; ctx.fatos_verificados = FV.fatos; if (FV.faltou.length) ctx.fatos_que_faltaram = FV.faltou;
+  return { ...ctxR, ctx, fatos: FV };
+}
+const REGRAS_FATOS = `
+REGRAS DE COERÊNCIA (obrigatórias):
+- "fatos_verificados" foi calculado pelo sistema e PREVALECE sobre qualquer outro número do contexto. Não recalcule caixa, runway, metas, margem ou funil por conta própria.
+- Caixa: use fatos_verificados.caixa (saldo de hoje, entradas/saídas previstas em 30/60/90 dias e menor saldo projetado). Só diga que o caixa "não cobre" um período se o MENOR SALDO projetado desse período for negativo. Nunca compare o caixa com "contas a pagar totais".
+- Runway = fatos_verificados.caixa.meses_de_caixa_sem_novas_entradas. Não afirme falta de caixa e runway longo ao mesmo tempo.
+- As entradas previstas JÁ incluem faturas em aberto, marcos com entrega programada, termos e sustentações. Receitas com previsão vencida ficam FORA do saldo (fatos_verificados.receitas_com_previsao_vencida). Recebíveis vencidos são entrada provável com atraso: considere menor_saldo_30_dias_se_receber_os_vencidos.
+- Cobrança: cite clientes e faturas de fatos_verificados.recebiveis_vencidos. As marcadas "CONFERIR" podem já ter sido pagas — a ação é conferir no extrato e baixar no QuickBooks, não ligar para o cliente. Use "a_cobrar" como alvo de cobrança, não o total.
+- Antecipar faturamento: só os itens de receitas_com_previsao_vencida (a_faturar_ja). A carteira futura (receita_contratada_prevista e o Kanban de Marcos) já está no fluxo nas datas programadas; antecipar só muda o mês.
+- Lucro e margem: use fatos_verificados.apuracao_margem_ano (4 camadas; lucro = resultado operacional antes das retiradas) e metas_do_ano. Não use orçamento como meta. Para dizer que despesas estão "fora de controle", aponte as contas com valor (apuracao_margem_ano.maiores_contas) e compare com algo concreto (orçamento ou meses anteriores) — sem comparação, diga que é hipótese.
+- Funil: use fatos_verificados.funil_hubspot. São negócios JÁ ABERTOS, não leads. Sem valor no HubSpot = falta de cadastro: a ação é qualificar (valor, etapa, próximo passo), não "prospectar". Se o funil tiver etapas com números diferentes em telas diferentes, use o de fatos_verificados.
+- dados_reais.leads é só o que o sistema captura sozinho — não é a geração de leads da empresa. Win rate/ticket marcados como padrão não são histórico: diga que são premissa.
+- Liquidez/capital de giro do painel: veja a composição (liquidez_composicao) e prefira o menor saldo projetado; não conclua "pressão estrutural" sem menor saldo negativo.
+- Empresas-alvo, metas numéricas de ações (R$, nº de reuniões, contatos/dia) e tickets: só cite nomes e números que estejam no contexto; quando for sugestão sua, escreva "(sugestão)" ou "(estimativa)".
+- "Despesas acima do orçamento": só afirme comparando com o ORÇAMENTO (dados_reais.financeiro.orcamento). O fluxo_6_meses compara saídas reais com o que foi lançado/programado — não é orçamento (veja fluxo_6_meses_leitura).
+- Concentração de clientes: meça em % da receita (12 meses ou carteira contratada), não por um marco isolado; diga o percentual ou que o dado faltou.
+- Concorrência e mercado sem dado no contexto: escreva como hipótese de mercado, não como fato.
+- Se um fato estiver em fatos_que_faltaram, diga que o dado não estava disponível — não estime.`;
 const CONCISO = '\nSeja conciso: no máximo 4 itens por lista, frases curtas, valores em R$. Use os DADOS REAIS do contexto (dados_reais); se faltar um dado, diga que faltou — não invente números.';
 
 // ── DIAGNÓSTICO COMPLETO ──────────────────────────────────────────────────────
 async function diagnosticoCompleto(extra) {
-  const [ctxR, FV] = await Promise.all([ctxReal(extra), fatosVerificados().catch(e => ({ fatos: {}, faltou: [e.message] }))]);
-  const ctx = ctxR.ctx; ctx.fatos_verificados = FV.fatos; if (FV.faltou.length) ctx.fatos_que_faltaram = FV.faltou;
+  const ctxR = await ctxComFatos(extra), FV = ctxR.fatos;
+  const ctx = ctxR.ctx;
 
   const system = `Você é o sistema de Inteligência Estratégica da Atlantyx — uma consultoria de estratégia interna de nível McKinsey.
 Seu papel: analisar a empresa de forma completa, identificar o que está funcionando, o que está bloqueando crescimento e o que pode ser otimizado para maximizar lucro.
 Use frameworks reais: SWOT, PESTEL, Porter, Canvas, BCG, Ansoff.
 Seja direto, honesto e acionável. Não suavize problemas reais.
-Retorne APENAS JSON válido.` + CONCISO + `
-REGRAS DE COERÊNCIA (obrigatórias):
-- "fatos_verificados" foi calculado pelo sistema e PREVALECE sobre qualquer outro número do contexto. Não recalcule caixa, runway, metas ou funil por conta própria.
-- Caixa: use fatos_verificados.caixa (saldo de hoje, entradas/saídas previstas em 30/60/90 dias e menor saldo projetado). Só diga que o caixa "não cobre" um período se o MENOR SALDO projetado desse período for negativo. Nunca compare o caixa com "contas a pagar totais" — compare com as saídas previstas do mesmo período, já descontadas das entradas previstas.
-- As entradas previstas JÁ incluem faturas em aberto no QuickBooks, marcos com entrega programada, termos no faturamento e sustentações. Recebíveis vencidos ainda em aberto são entrada provável com atraso (cobrança), não perda: considere menor_saldo_30_dias_se_receber_os_vencidos ao avaliar o risco de caixa.
-- Runway = fatos_verificados.caixa.meses_de_caixa_sem_novas_entradas. Não afirme falta de caixa e runway longo ao mesmo tempo.
-- Metas e margem: use fatos_verificados.metas_do_ano (realizado, % atingido, ritmo, meta de margem). Não use orçamento como meta.
-- Funil/propostas: use fatos_verificados.funil_hubspot. Negócio sem valor no HubSpot é falta de cadastro, não ausência de pipeline.
-- Receita contratada: use fatos_verificados.receita_contratada_prevista.
-- Se um fato estiver em fatos_que_faltaram, diga que o dado não estava disponível — não estime.`;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Faça um DIAGNÓSTICO COMPLETO da empresa:
 ${JSON.stringify(ctx, null, 2)}
@@ -204,12 +243,12 @@ Cada item precisa de 1 a 3 evidências tiradas LITERALMENTE de fatos_verificados
 
 // ── ANÁLISE DE RISCOS ─────────────────────────────────────────────────────────
 async function analiseRiscos(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o Agente de Gestão de Riscos da Atlantyx.
 Mapeie TODOS os riscos reais — internos, externos, financeiros, operacionais, de mercado, jurídicos e de pessoas.
 Para cada risco: quantifique o impacto, defina a probabilidade e proponha uma ação de mitigação concreta.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Analise os riscos completos da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -248,12 +287,12 @@ Retorne:
 
 // ── ANÁLISE FINANCEIRA ────────────────────────────────────────────────────────
 async function analiseFinanceira(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o CFO-Agente da Atlantyx — modelo financeiro real para maximizar lucro e sustentabilidade.
 Pense como um CFO experiente de startup B2B SaaS/serviços.
 Modele os números com realismo: sem otimismo injustificado.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Análise financeira completa da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -307,12 +346,12 @@ Retorne:
 
 // ── ANÁLISE DE MERCADO ────────────────────────────────────────────────────────
 async function analiseMercado(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o Agente de Inteligência de Mercado da Atlantyx.
 Analise o mercado externo com profundidade: concorrência, tendências, PESTEL, forças de Porter.
 Identifique onde estão as maiores oportunidades e ameaças de mercado.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Análise completa do mercado para a Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -368,13 +407,13 @@ Retorne:
 
 // ── PLANEJAMENTO ESTRATÉGICO ──────────────────────────────────────────────────
 async function planejamentoEstrategico(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o Diretor de Estratégia da Atlantyx — nível McKinsey/Bain.
 Crie um planejamento estratégico real, acionável e com foco em maximização de lucro.
 Pense em 3 horizontes: 90 dias (execução), 1 ano (crescimento), 3 anos (escala).
 Cada ação deve ter: o QUÊ fazer, POR QUÊ, COMO, QUANDO e QUEM.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Crie o Planejamento Estratégico completo da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -427,13 +466,13 @@ Retorne:
 
 // ── PLANO DE AÇÃO COMPLETO ────────────────────────────────────────────────────
 async function planoAcao(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o COO-Agente da Atlantyx — responsável por transformar estratégia em ação.
 Crie um plano de ação COMPLETO, semana a semana, para os próximos 90 dias.
 Cada ação deve ser específica o suficiente para ser executada sem dúvida.
 Priorize pelo impacto na receita. Respeite a capacidade do time (pequeno).
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Crie o Plano de Ação completo dos próximos 90 dias da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -484,22 +523,19 @@ Retorne:
 
 // ── REPLANEJAMENTO CONTÍNUO ───────────────────────────────────────────────────
 async function replanejamento(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o sistema de Replanejamento Contínuo da Atlantyx.
 Com base nos dados atuais vs. o que foi planejado, identifique desvios e replaneie.
 Seja direto sobre o que não está funcionando. Ajuste o plano com base na realidade.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Faça o REPLANEJAMENTO com base na situação atual:
 ${JSON.stringify(ctx, null, 2)}
 
-Dados reais vs. planejado que você precisa avaliar:
-- Meta receita semana 1: R$500k | Realizado: R$0 (semana 1 ainda)
-- Pipeline: R$7.6M | Win rate histórico: 28%
-- Leads mapeados: 12 | Meta: 50/mês
-- Taxa resposta WA: 17% | Meta: >20%
-- Reuniões: 3 | Meta: 5/semana
+Avalie o planejado × realizado SÓ com o que está no contexto: metas_do_ano, apuracao_margem_ano, caixa, recebiveis_vencidos,
+receitas_com_previsao_vencida, receita_contratada_prevista e funil_hubspot (fatos_verificados) e o plano_estrategico_vigente, se houver.
+Métricas de prospecção (respostas, reuniões, contatos/dia) que não estiverem no contexto: diga que o dado não está no sistema — não invente.
 
 Retorne:
 {
@@ -547,13 +583,13 @@ Retorne:
 
 // ── GERADOR DE OKRs INTELIGENTE ───────────────────────────────────────────────
 async function okrGerador(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o Agente de OKR da Atlantyx — especialista em definir objetivos ambiciosos e mensuráveis.
 Gere OKRs reais para a Atlantyx com base na situação atual.
 Cada KR deve ser específico, mensurável, com prazo e responsável definido.
 Os OKRs devem ser ambiciosos mas atingíveis — stretch goals de 70% de confiança.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Gere os OKRs completos para a Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -601,12 +637,12 @@ Retorne:
 
 // ── CENÁRIOS DE FUTURO ────────────────────────────────────────────────────────
 async function cenariosFuturo(extra) {
-  const ctx = (await ctxReal(extra)).ctx;
+  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
 
   const system = `Você é o Agente de Cenários Estratégicos da Atlantyx.
 Projete 3 futuros possíveis para a empresa — pessimista, realista e otimista.
 Para cada cenário: o que precisaria acontecer, onde a empresa estaria e o que fazer hoje para se preparar.
-Retorne APENAS JSON válido.` + CONCISO;
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Projete os cenários de futuro da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
