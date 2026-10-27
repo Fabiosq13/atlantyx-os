@@ -94,7 +94,9 @@ async function handler(req, res) {
       s1_financial:            () => genericAgentCall(req.body, 'financeiro'),
       projecao_receita:        () => genericAgentCall(req.body, 'financeiro'),
       fluxo_caixa:             () => genericAgentCall(req.body, 'financeiro'),
-      plano_integrado_proposito: () => genericAgentCall(req.body, 'financeiro'),
+      plano_integrado_proposito: async () => { // v3.293: + números reais da empresa (antes só os dados pessoais do fundador)
+        let emp = null; try { emp = (await (await import('./s1-intel.js')).ctxComFatos({})).ctx.fatos_verificados; } catch (_) {}
+        return genericAgentCall({ ...req.body, payload: { ...(req.body.payload || {}), empresa_numeros_reais: emp || 'indisponível agora — não suponha metas nem números da empresa' } }, 'financeiro'); },
 
       contrato_analisar:       () => analisarContrato(req.body), // v3.35
       ideia_proposta:          () => propostaNegociacaoIdeia(req.body), // v3.35
@@ -194,7 +196,7 @@ async function analisarIdeia({ titulo, desc, descricao, origem, cat, perguntas, 
 
   const system = `Você é o Agente S1-03 de Análise Profunda de Produto da Atlantyx.
 Analise a ideia com profundidade real — não seja genérico.
-Contexto da Atlantyx: empresa de BI/Dados/IA, 1 dev senior, 1 fundador, ICP = donos, sócios, C-levels e diretores de médias e grandes empresas (R$100M+) com dados complexos — nunca público técnico nem pessoa física.
+Contexto da Atlantyx: empresa de BI/Dados/IA com 17 anos, time próprio de dados/IA (tamanho no cadastro de RH), ICP = donos, sócios, C-levels e diretores de médias e grandes empresas (R$100M+) com dados complexos — nunca público técnico nem pessoa física.
 Seja honesto e direto — inclua pontos negativos reais se existirem.
 Retorne APENAS JSON válido.`;
 
@@ -224,7 +226,7 @@ Retorne JSON completo:
   "riscos": ["risco real 1", "risco real 2"],
   "mercado": "TAM estimado, concorrentes principais, janela de oportunidade",
   "viabilidade_financeira": "custo de dev, receita potencial ano 1, tempo de payback",
-  "prazo_desenvolvimento": "prazo realista para MVP com 1 dev senior",
+  "prazo_desenvolvimento": "prazo realista para MVP com o time atual (declare a premissa de equipe usada)",
   "fit_icp": "Alto | Médio | Baixo — justificativa de 1 linha",
   "proximos_passos": ["ação 1 com responsável e prazo", "ação 2"],
   "analise_arquivos": "${tem_arquivos ? 'Análise do conteúdo dos arquivos anexados — o que revelam sobre a ideia' : 'Nenhum arquivo anexado'}",
@@ -514,9 +516,10 @@ Use premissas conservadoras para o cenário base. Retorne APENAS JSON válido.`;
 
   const user = `Modele financeiramente:
 Produto: ${titulo}
-Custo de desenvolvimento estimado: ${custo_dev || 'R$30.000'}
-Preço médio de mercado: ${preco_medio || 'R$3.000/mês'}
-TAM estimado: ${tam || 'R$500M'}
+Custo de desenvolvimento estimado: ${custo_dev || 'não informado — estime e marque como premissa'}
+Preço médio de mercado: ${preco_medio || 'não informado — estime e marque como premissa'}
+TAM estimado: ${tam || 'não informado — estime e marque como premissa'}
+(v3.293: valores não informados devem aparecer nas premissas como "estimativa", nunca como dado)
 
 Retorne:
 {
@@ -660,35 +663,28 @@ Retorne:
 }
 
 // ── S1-09: STATUS OKR ────────────────────────────────────────────────────────
-async function statusOKR({ trimestre, objetivos }) {
+async function statusOKR({ trimestre, objetivos } = {}) {
   const system = `Você é o Agente S1-09 de OKR da Atlantyx.
 Avalie o progresso dos OKRs e gere recomendações de ajuste.
 Retorne APENAS JSON válido.`;
 
-  const okrsAtivos = objetivos || [
-    { objetivo: 'Atingir R$1.5M de ARR', krs: [
-      { kr: 'Fechar 3 contratos enterprise', meta: 3, atual: 0, unidade: 'contratos' },
-      { kr: 'Pipeline de R$7.6M ativo', meta: 7600000, atual: 7600000, unidade: 'R$' },
-      { kr: 'NPS > 70 nos clientes ativos', meta: 70, atual: 0, unidade: 'pontos' },
-    ]},
-    { objetivo: 'Lançar 2 produtos S1 aprovados', krs: [
-      { kr: 'Pipeline de ideias com 5+ ideias em análise', meta: 5, atual: 0, unidade: 'ideias' },
-      { kr: '1 produto aprovado e em dev', meta: 1, atual: 0, unidade: 'produtos' },
-    ]},
-    { objetivo: 'Escalar prospecção a 50 leads/mês', krs: [
-      { kr: 'S2-02 mapeando 50 leads/mês', meta: 50, atual: 0, unidade: 'leads' },
-      { kr: 'Taxa de resposta WA > 20%', meta: 20, atual: 17, unidade: '%' },
-      { kr: '5 reuniões por semana', meta: 5, atual: 0, unidade: 'reuniões' },
-    ]},
-  ];
+  // v3.293: sem OKRs informados, usa os ÚLTIMOS OKRs gerados em Planejamento (histórico) — antes usava OKRs de exemplo
+  // fixos no código ("Pipeline de R$7.6M", "50 leads/mês", "resposta 17%") e avaliava números inventados.
+  let okrsAtivos = objetivos, origemOkr = 'informados na chamada';
+  if (!okrsAtivos) { try { const { listarHistorico, obterHistorico } = await import('../lib/historico-s1.js'); const [u] = await listarHistorico(['okr_gerador'], 1);
+    const h = u ? await obterHistorico(u.id) : null, d = h?.dados?.okrs || h?.dados; okrsAtivos = d?.objetivos || null; if (okrsAtivos) { origemOkr = 'OKRs gerados em ' + String(u.criado_em).slice(0, 10); trimestre = trimestre || d?.trimestre; } } catch (_) {} }
+  if (!okrsAtivos?.length) return { okr: { saude_geral: null, aviso: 'Nenhum OKR cadastrado — gere os OKRs em Planejamento › OKRs antes de avaliar o status.', objetivos: [] } };
+  let fatos = null; try { const { ctxComFatos } = await import('./s1-intel.js'); fatos = (await ctxComFatos({})).ctx.fatos_verificados; } catch (_) {}
 
-  const user = `Analise os OKRs do trimestre ${trimestre || 'Q2 2026'}:
+  const tri = trimestre || (await import('./s1-intel.js'))._trimestreAtual();
+  const user = `Analise os OKRs do trimestre ${tri} (${origemOkr}):
 ${JSON.stringify(okrsAtivos)}
+${fatos ? '\nNÚMEROS VERIFICADOS DA EMPRESA (use para medir o "atual" de cada KR; KR sem fonte de medição → progresso "não medido", não invente):\n' + JSON.stringify(fatos) : ''}
 
 Para cada KR calcule o % de progresso e dê um semáforo.
 Retorne:
 {
-  "trimestre": "${trimestre || 'Q2 2026'}",
+  "trimestre": "${tri}",
   "objetivos": [
     {
       "objetivo": "...",
@@ -716,9 +712,12 @@ async function relatorioExecutivo({ periodo }) {
 Gere um relatório executivo completo do período para o fundador.
 Seja conciso, direto e acionável. Retorne APENAS JSON válido.`;
 
+  // v3.293: antes o contexto era fixo ("empresa iniciando, meta R$5M em 3 meses, 12 leads, 3 reuniões") — agora os números reais
+  let ctxR = null, REG = ''; try { const m = await import('./s1-intel.js'); ctxR = (await m.ctxComFatos({})).ctx; REG = m.REGRAS_FATOS; } catch (e) { console.warn('[S1-10] contexto:', e.message); }
   const user = `Gere o relatório executivo do período: ${periodo || 'Semana atual'}
 
-Contexto Atlantyx: empresa iniciando, meta R$5M em 3 meses, 12 leads no pipeline, 3 reuniões agendadas.
+${ctxR ? 'DADOS REAIS DA ATLANTYX:\n' + JSON.stringify(ctxR) : 'Dados reais indisponíveis agora — diga isso no relatório e não invente números.'}
+${REG}
 
 Retorne:
 {

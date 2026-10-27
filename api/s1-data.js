@@ -388,7 +388,7 @@ async function analisarFinanceiro() {
       max_tokens: 3000,
       system: `Você é o Agente S1-04 (CFO-Agente) da Atlantyx.
 Analise os dados financeiros reais e gere insights estratégicos.
-A Atlantyx é empresa de BI/Dados/IA, meta R$5M em 90 dias.
+A Atlantyx é empresa de BI/Dados/IA. Use só as metas e números que estiverem nos dados abaixo; se faltar meta, diga que faltou (não suponha).
 Retorne APENAS JSON válido.`,
       messages: [{
         role: 'user',

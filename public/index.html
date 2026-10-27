@@ -1097,7 +1097,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         <div style="flex:1;min-width:180px;">
           <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--blue);margin-bottom:4px;">META MENSAL — <span id="mesAtual">ABR</span><span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Meta mensal** = meta anual ÷ 12. Realizado = faturamento do mês corrente até hoje na DRE do QuickBooks (notas emitidas no mês). % = realizado ÷ meta mensal.">i</span></div>
           <div style="display:flex;align-items:baseline;gap:8px;">
-            <span style="font-family:var(--H);font-size:28px;font-weight:700;" id="metaMensalVal">R$1.5M</span>
+            <span style="font-family:var(--H);font-size:28px;font-weight:700;" id="metaMensalVal">—</span>
             <span style="font-size:11px;color:var(--t2);">MRR</span>
           </div>
           <div style="background:var(--bg4);border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
@@ -2139,7 +2139,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </div>
     <div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">Agentes S1</div><span class="tag live">10 Ativos</span></div><div class="pb" id="s1AgentList"></div></div>
-      <div class="panel"><div class="ph"><div class="pt">OKRs — Saúde Geral</div><span class="tag on">Q2 2026</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadOKR()">↻</button></div><div class="pb" id="s1OkrDash"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique ↻ para carregar</div></div></div>
+      <div class="panel"><div class="ph"><div class="pt">OKRs — Saúde Geral</div><span class="tag on okrTri">trimestre atual</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadOKR()">↻</button></div><div class="pb" id="s1OkrDash"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique ↻ para carregar</div></div></div>
     </div>
     <div class="panel"><div class="ph"><div class="pt">Fluxo de Aprovação — 13 Etapas</div></div>
       <div class="pb"><div style="display:flex;gap:0;overflow-x:auto;padding-bottom:4px;" id="s1FluxoBar"></div></div>
@@ -2383,7 +2383,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div id="mcApp" class="fv2-app"></div>
   </div>
   <div class="page" id="page-s1okr">
-    <div class="panel"><div class="ph"><div class="pt">S1-09 · OKRs — Q2 2026</div><span class="tag on">Claude IA</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadOKR()">↻ Atualizar</button></div><div class="pb" id="s1OkrFull"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Clique em ↻ para carregar</div></div></div>
+    <div class="panel"><div class="ph"><div class="pt">S1-09 · OKRs — <span class="okrTri">trimestre atual</span></div><span class="tag on">Claude IA</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadOKR()">↻ Atualizar</button></div><div class="pb" id="s1OkrFull"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Clique em ↻ para carregar</div></div></div>
   </div>
 
   <!-- S1 RELATÓRIO -->
@@ -2527,7 +2527,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div class="panel"><div class="ph"><div class="pt">Plano de Ação — Semana a Semana</div><span class="tag on">90 dias</span></div>
         <div class="pb" id="s1AcoesResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em "Gerar Plano de Ação" para ter o plano semana a semana com responsáveis e prazos</div></div>
       </div>
-      <div class="panel"><div class="ph"><div class="pt">OKRs Gerados com IA</div><span class="tag on">Q2 2026</span></div>
+      <div class="panel"><div class="ph"><div class="pt">OKRs Gerados com IA</div><span class="tag on okrTri">trimestre atual</span></div>
         <div class="pb" id="s1OkrGenResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em "Gerar OKRs" para definir objetivos e resultados-chave com IA</div></div>
       </div>
     </div>
@@ -2881,7 +2881,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div class="ph"><div class="pt">① Briefing da campanha</div><span style="font-size:10px;color:var(--t2);">a IA escreve a partir daqui</span></div>
           <div class="pb">
             <div class="fg"><label class="fl">Nome da Campanha</label>
-              <input class="fi" id="cNome" placeholder="Ex: Prospecção Energia Q2 2026"/>
+              <input class="fi" id="cNome" placeholder="Ex: Prospecção Energia Q4 2026"/>
             </div>
             <div class="fg"><label class="fl">Objetivo</label>
               <select class="fsel" id="cObj">
@@ -3525,7 +3525,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             </div>
             <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
               <span id="f_realMensalLabel">R$0 realizado</span>
-              <span id="f_metaMensalLabel">meta R$1.5M</span>
+              <span id="f_metaMensalLabel">meta —</span>
             </div>
           </div>
         </div>
@@ -7202,14 +7202,14 @@ async function fundadorDecide(decisao) {
 }
 
 async function loadOKR(salvo) {
-  addLog('info', '[S1-09] ' + (salvo ? 'Abrindo versão salva dos OKRs' : 'Carregando status OKRs Q2 2026...'));
-  const data = salvo ? { success: true, ...salvo } : await api('/api/s1-strategy', 'POST', { action: 'status_okr', trimestre: 'Q2 2026' }); // v3.90: salvo = versão do histórico
+  addLog('info', '[S1-09] ' + (salvo ? 'Abrindo versão salva dos OKRs' : 'Carregando status dos OKRs...'));
+  const data = salvo ? { success: true, ...salvo } : await api('/api/s1-strategy', 'POST', { action: 'status_okr' }); // v3.90: salvo = versão do histórico
 
   const renderOKR = (id) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (!data?.success) { el.innerHTML = '<div style="color:var(--red);font-size:11px;">Erro ao carregar OKRs</div>'; return; }
-    const okr = data.okr || {}; okr.saude_geral = okr.saude_geral || 'sem avaliação'; okr.trimestre = okr.trimestre || 'Q2 2026';
+    const okr = data.okr || {}; okr.saude_geral = okr.saude_geral || 'sem avaliação'; okr.trimestre = okr.trimestre || ''; document.querySelectorAll('.okrTri').forEach(x => { if (okr.trimestre) x.textContent = okr.trimestre; });
     setTimeout(() => _semUndef(el), 0);
     const corSaude = okr.saude_geral === 'Verde' ? 'var(--green)' : okr.saude_geral === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
 
@@ -7217,7 +7217,7 @@ async function loadOKR(salvo) {
       el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
         <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${_corTxt(corSaude)};">● ${(okr.saude_geral) || '—'}</span>
         <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${okr.trimestre}</span>
-      </div>` + (okr.objetivos||[]).map(o => `<div style="padding:5px 0;border-bottom:1px solid var(--bd);">
+      </div>` + (okr.aviso ? '<div style="font-size:11px;color:var(--gold);padding:4px 0;">' + String(okr.aviso).replace(/</g, '&lt;') + '</div>' : '') + (okr.objetivos||[]).map(o => `<div style="padding:5px 0;border-bottom:1px solid var(--bd);">
         <div style="display:flex;justify-content:space-between;font-size:11px;">
           <span>${o.objetivo}</span>
           <span style="font-family:var(--M);font-size:9px;color:${o.progresso_geral>60?'var(--green)':o.progresso_geral>30?'var(--gold)':'var(--red)'};">${o.progresso_geral||0}%</span>
@@ -9761,8 +9761,8 @@ async function salvarEGerarPlano() {
           empresa: {
             nome: 'Atlantyx',
             segmento: 'BI, Dados e IA para grandes empresas',
-            meta_receita_90d: 'R$5M',
-            estagio: 'Early-stage, semana 1 de operacao'
+            // v3.293: antes "meta R$5M em 90 dias" e "semana 1 de operação" (fixos e falsos) — a meta real vem do servidor
+            historia: '17 anos de mercado'
           }
         }
       })
@@ -35497,7 +35497,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.292] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.293] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35513,7 +35513,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.292';
+window.__ATX_BUILD_ID__ = 'ATX-v3.293';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

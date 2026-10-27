@@ -229,7 +229,7 @@ Retorne:
   "vantagem_competitiva_real": "qual é a real vantagem defensável da Atlantyx hoje",
   "maior_risco_agora": "o risco número 1 que pode travar o crescimento nos próximos 90 dias",
   "maior_oportunidade_agora": "a oportunidade número 1 que pode acelerar o crescimento nos próximos 90 dias",
-  "proximos_90_dias_criticos": "o que precisa acontecer nos próximos 90 dias para a empresa atingir R$5M",
+  "proximos_90_dias_criticos": "o que precisa acontecer nos próximos 90 dias para a empresa atingir a meta do ano (fatos_verificados.metas_do_ano)",
   "evidencias_risco": [EV], "evidencias_oportunidade": [EV]
 }
 EV = {"indicador":"nome do dado","valor":"valor EXATO como está no contexto (R$, %, quantidade)","fonte":"caminho no contexto, ex.: fatos_verificados.caixa.proximos_30_dias.menor_saldo","leitura":"por que esse número sustenta o ponto (1 frase)"}.
@@ -596,7 +596,7 @@ ${JSON.stringify(ctx, null, 2)}
 
 Retorne:
 {
-  "trimestre": "Q2 2026 (Abr-Jun)",
+  "trimestre": "${_trimestreAtual()}",
   "tema_do_trimestre": "frase que resume o foco estratégico",
   "objetivos": [
     {
@@ -760,4 +760,8 @@ async function whatsapp(phone, message) {
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+// v3.293: trimestre corrente (antes fixo "Q2 2026") e o contexto com fatos para os agentes do S1-Strategy
+function _trimestreAtual() { const h = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })), q = Math.floor(h.getMonth() / 3);
+  return 'Q' + (q + 1) + ' ' + h.getFullYear() + ' (' + ['Jan-Mar', 'Abr-Jun', 'Jul-Set', 'Out-Dez'][q] + ')'; }
+export { ctxComFatos, REGRAS_FATOS, _trimestreAtual };
 export default comGuarda(handler, 's1-intel');

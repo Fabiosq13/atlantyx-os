@@ -619,7 +619,7 @@ Retorne APENAS JSON válido.`;
 Campanha: ${campanha || 'Prospecção BI e Analytics para grandes empresas'}
 Keywords base: ${keywords || 'consultoria de dados para diretoria, indicadores para CFO, painel executivo de resultados, inteligência de negócio para grandes empresas'}
 REGRA ICP C-level: palavras com intenção de COMPRA de quem decide (empresa/diretoria/resultado), nunca de quem aprende ou procura emprego; negativas obrigatórias: ${NEGATIVAS_BUSCA.join(', ')}
-Orçamento: ${orcamento || 'R$5.000/mês'}
+Orçamento: ${orcamento || 'não informado — sugira um valor e marque como sugestão'}
 Objetivo: ${objetivo || 'Leads qualificados — donos, sócios e C-levels de médias e grandes empresas'}
 
 Retorne:
@@ -677,7 +677,7 @@ Retorne APENAS JSON válido.`;
 Campanha: ${campanha || 'Prospecção C-Level Energia e Indústria'}
 Segmentação: ${segmentacao || 'Donos/sócios, CEO, CFO, COO, CIO, CTO, CDO e diretores/VPs — senioridade Owner, Partner, CXO, VP, Director — empresas 500+ funcionários — Energia/Utilities, Bancos/Seguros, Indústria, Infraestrutura, Varejo'}
 REGRA ICP C-level: nunca segmente por cargos técnicos/operacionais (analista, engenheiro, desenvolvedor, coordenador, gerente técnico) nem por habilidades técnicas.
-Orçamento: ${orcamento || 'R$5.000/mês'}
+Orçamento: ${orcamento || 'não informado — sugira um valor e marque como sugestão'}
 Formato: ${formato || 'Single Image + Lead Gen Form'}
 
 Retorne:

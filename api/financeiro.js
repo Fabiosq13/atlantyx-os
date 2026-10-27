@@ -1916,7 +1916,7 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
         vistos.add(chave);
         // v1.41 FIX (2ª dupla contagem): no QuickBooks, receber um Payment e depois DEPOSITAR
         // esse pagamento gera DOIS registros — o Payment e o Deposit que o contém. Contar os
-        // dois duplica a entrada (era o caso do CPFL R$ 43.280,98 repetido em 27/08).
+        // dois duplica a entrada (um recebimento de cliente aparecia repetido no mesmo dia).
         // Regra: um Deposit só entra pelo valor das linhas SEM vínculo (LinkedTxn) com Payment,
         // porque as vinculadas já foram contadas no próprio Payment.
         let valorItem = parseFloat(item.TotalAmt || 0);
@@ -2516,8 +2516,8 @@ async function ofxIncluir({ conta_id, data, valor, descricao, categoria_id, fiti
 // v1.57: saldo REAL de uma conta numa data, pelo Balanço Patrimonial.
 // Substitui o retroagir a partir do CurrentBalance, que estava errado: o CurrentBalance
 // inclui lançamentos com DATA FUTURA, e ao retroagir esse excesso era arrastado para trás.
-// (No caso real: razão do Itaú fechava 31/07 em R$ 91.913,38, mas o CurrentBalance dizia
-//  -R$ 137.644,04 porque somava lançamentos datados depois do período.)
+// (Num caso real o razão do banco fechava o mês positivo, mas o CurrentBalance dizia
+//  um valor muito negativo porque somava lançamentos datados depois do período.)
 // v3.109: cache do saldo inicial expira em 5 min (antes nunca expirava — lançamento retroativo não mudava o saldo até reiniciar)
 const _cacheSaldoEm = new Map();
 const _cacheSaldoOrig = new Map();
