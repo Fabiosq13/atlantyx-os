@@ -23277,8 +23277,8 @@ function _fatCard(t, col) {
   const _dt = d => d ? d.split('-').reverse().slice(0,2).join('/') : null;
   // v3.281: previsão de pagamento (empresas ainda não pagas / confirmação do cliente) — separada do "último pagamento recebido"
   const _hjF = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), _prevP = t.data_prevista_pagamento;
-  const datasBadge = (t.data_emissao || t.data_pagamento || _prevP) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
-      ${_prevP ? `<span title="Previsão de pagamento (${t.data_prevista_origem || ''})" style="color:${_corTxt(_prevP < _hjF ? 'var(--red)' : 'var(--t2)')};">📅 prev. ${_dt(_prevP)}${_prevP < _hjF ? ' vencida' : ''}</span>` : ''}
+  const datasBadge = (t.data_emissao || t.data_pagamento) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
+
       ${t.data_emissao ? `<span title="Data de emissão da nota fiscal${t.data_emissao_ultima ? ' (primeira; última em ' + _dt(t.data_emissao_ultima) + ')' : ''}" style="color:var(--t2);">🧾 ${_dt(t.data_emissao)}${t.data_emissao_ultima ? '+' : ''}</span>` : ''}
       ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${_corTxt(t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)')};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
     </div>` : '';
@@ -23311,6 +23311,16 @@ function _fatCard(t, col) {
     </div>
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
+    ${(() => { // v3.288: data de pagamento do termo em destaque no card — pago em / previsto para / sem data
+      const hj = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), br = d => String(d).substring(0, 10).split('-').reverse().join('/');
+      const pagoEm = t.pago_em ? String(t.pago_em).substring(0, 10) : (t.pagamento_completo && t.data_pagamento ? t.data_pagamento : null);
+      if (col === 'pago') return ''; // a coluna Pago já mostra "💵 pago em"
+      if (col === 'concluido' || t.pagamento_completo) return pagoEm ? `<div style="font-size:10.5px;margin-top:3px;color:${_corTxt('var(--green,#22d3a3)')};font-weight:700;" title="Data em que o pagamento entrou">💵 Pago em ${br(pagoEm)}</div>` : '';
+      const pv = t.data_prevista_pagamento;
+      if (pv) { const venc = pv < hj, dd = Math.round((Date.parse(pv) - Date.parse(hj)) / 864e5);
+        return `<div style="font-size:10.5px;margin-top:3px;font-weight:700;color:${_corTxt(venc ? 'var(--red)' : dd <= 7 ? 'var(--gold)' : 'var(--blue)')};" title="Previsão de pagamento (${t.data_prevista_origem || ''})">📅 Pagamento ${venc ? 'era para' : 'previsto para'} ${br(pv)}${venc ? ' · vencido' : dd === 0 ? ' · hoje' : dd <= 7 ? ' · em ' + dd + ' dia(s)' : ''}${t.data_pagamento ? ' <span style="font-weight:400;color:var(--t3);">(parcial em ' + br(t.data_pagamento) + ')</span>' : ''}</div>`; }
+      return ['envio_nf', 'pagamento'].includes(col) ? `<div style="font-size:10.5px;margin-top:3px;color:${_corTxt('var(--gold)')};">📅 Pagamento sem data prevista</div>` : '';
+    })()}
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
     ${pendBadge}${prazoBadge}${mesAntBadge}${nfFiltroBadge}${pagoBadgeData}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
   </div>`;
@@ -35319,7 +35329,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.287] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.288] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35335,7 +35345,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.287';
+window.__ATX_BUILD_ID__ = 'ATX-v3.288';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
