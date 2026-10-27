@@ -31864,8 +31864,8 @@ function dashProjRender() {
   const kpi = (rot, v, cor) => '<div style="flex:1;min-width:110px;background:var(--bg4);border-radius:8px;padding:9px 11px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + rot + '</div><div style="font-size:20px;font-weight:700;color:' + cor + ';">' + v + '</div></div>';
   c.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' + kpi('No prazo', r.verde ?? 0, 'var(--green,#22d3a3)') + kpi('Atenção', r.amarelo ?? 0, 'var(--gold)') + kpi('Crítico', r.vermelho ?? 0, 'var(--red)') + kpi('Com bloqueio', r.com_bloqueio ?? 0, 'var(--red)') + kpi('Sem report na semana', (r.pendentes_de_atualizacao || []).length, 'var(--gold)') + '</div>'
     + (d.aviso ? '<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;">⚠ ' + _dsE(d.aviso) + '</div>' : '')
-    + (lista.length ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;"><thead><tr style="border-bottom:1px solid var(--bd);">'
-      + ['Projeto', 'Gerente', 'Farol', 'Avanço / planejado', 'Desvio', 'Próximo marco', 'Último report'].map(h => '<th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">' + h.toUpperCase() + '</th>').join('') + '</tr></thead><tbody>'
+    + (lista.length ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:860px;"><thead><tr style="border-bottom:1px solid var(--bd);">'
+      + ['Projeto', 'Gerente', 'Farol', 'Entrega', 'Avanço / planejado', 'Desvio', 'Próximo marco', 'Último report'].map(h => '<th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">' + h.toUpperCase() + '</th>').join('') + '</tr></thead><tbody>'
       + lista.map(l => { const sust = l.tipo === 'sustentacao'; const pm = (l.marcos_proximos || [])[0];
         const pmTxt = pm ? (typeof pm === 'string' ? pm : (pm.descricao || pm.desc || (pm.data ? String(pm.data).split('-').reverse().join('/') : '—'))) : '—';
         const av = sust ? (l.sla_cumprido_pct != null ? 'SLA ' + l.sla_cumprido_pct + '%' : '—') : (l.pct_concluido != null ? l.pct_concluido + '%' : '—') + (!sust && l.pct_planejado != null ? ' / ' + l.pct_planejado + '%' : '');
@@ -31873,6 +31873,8 @@ function dashProjRender() {
         const rep = l.dias_sem_report != null ? (l.dias_sem_report === 0 ? 'hoje' : l.dias_sem_report + ' dia(s)') : (l.atualizado_na_semana ? 'nesta semana' : 'sem report');
         return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:6px;font-weight:600;">' + _dsE(l.projeto) + (sust ? ' <span style="font-size:9px;color:var(--t3);">sustentação</span>' : '') + (l.bloqueios || l.com_bloqueio ? ' <span title="bloqueio aberto">⛔</span>' : '') + '</td>'
           + '<td style="padding:6px;color:var(--t2);">' + _dsE(l.gerente || '—') + '</td><td style="padding:6px;white-space:nowrap;">' + ico(l.farol) + ' ' + _dsE(l.farol || 'sem report') + '</td>'
+          + (() => { const dt = l.conclusao ? String(l.conclusao).substring(0, 10) : null, hj = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); const atr = dt && dt < hj && !sust, dd = dt ? Math.round((Date.parse(dt) - Date.parse(hj)) / 864e5) : null; // v3.287: data de entrega do projeto
+            return '<td style="padding:6px;white-space:nowrap;font-family:var(--M);" title="' + _dsE(l.conclusao_fonte || '') + '">' + (dt ? '<span style="color:' + (atr ? 'var(--red)' : dd != null && dd <= 30 ? 'var(--gold)' : 'var(--t1)') + ';">' + dt.split('-').reverse().join('/') + '</span>' + (atr ? '<div style="font-size:9px;color:var(--red);">' + (l.dias_atraso || -dd) + ' dia(s) de atraso</div>' : dd != null && dd <= 30 ? '<div style="font-size:9px;color:var(--gold);">em ' + dd + ' dia(s)</div>' : '') : '<span style="color:var(--t3);">—</span>') + '</td>'; })()
           + '<td style="padding:6px;font-family:var(--M);">' + av + '</td><td style="padding:6px;font-family:var(--M);">' + dv + '</td>'
           + '<td style="padding:6px;color:var(--t2);font-size:10.5px;">' + _dsE(pmTxt) + '</td><td style="padding:6px;color:' + (l.atualizado_na_semana ? 'var(--t2)' : 'var(--gold)') + ';font-size:10.5px;">' + _dsE(rep) + '</td></tr>'; }).join('')
       + '</tbody></table></div>' : '<div style="color:var(--t3);font-size:11px;">Nenhum projeto cadastrado no PMO.</div>');
@@ -35317,7 +35319,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.286] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.287] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35333,7 +35335,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.286';
+window.__ATX_BUILD_ID__ = 'ATX-v3.287';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

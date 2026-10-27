@@ -1488,7 +1488,8 @@ async function painelMestre({ semana } = {}) {
       const pctDe = lista => ms.length ? Math.round((totPeso > 0 ? lista.reduce((a, m) => a + peso(m), 0) / totPeso : lista.length / ms.length) * 1000) / 10 : null;
       const prox = ms.find(m => !m.conc);
       fin[norm(p.nome)] = { gerente: p.gerente_projeto_nome || null, pct_real: pctDe(ms.filter(m => m.conc)), pct_plan: pctDe(ms.filter(m => m.data <= hoje)),
-        proximo: prox ? { descricao: prox.descricao, data: prox.data, valor: num(prox.valor) } : null, marcos: ms.length };
+        proximo: prox ? { descricao: prox.descricao, data: prox.data, valor: num(prox.valor) } : null, marcos: ms.length,
+        entrega: ms.map(m => m.data).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().pop() || null }; // v3.287: data do último marco = entrega prevista
     });
   } catch (_) {}
 
@@ -1541,7 +1542,7 @@ async function painelMestre({ semana } = {}) {
       gerente: r?.gerente || M?.gerente || p.gerente || c.gerente || f.gerente || null,
       farol: (localMaisNovo ? r?.farol : null) || M?.farol || r?.farol || null,
       farol_origem: localMaisNovo && r?.farol ? 'status report (Atlantyx OS)' : M?.farol ? (M.origem === 'status report' ? 'status report (Maestro)' : 'calculado pelo Maestro') : null,
-      motivos: M?.motivos || [], conclusao: M?.conclusao || null, dias_atraso: M?.dias_atraso || 0, cliente: M?.cliente || p.cliente || null,
+      motivos: M?.motivos || [], conclusao: M?.conclusao || f.entrega || null, conclusao_fonte: M?.conclusao ? 'Maestro' : f.entrega ? 'último marco do projeto' : null, dias_atraso: M?.dias_atraso || 0, cliente: M?.cliente || p.cliente || null,
       pct_concluido: pctReal,
       pct_planejado: pctPlan,
       desvio_pct: desvio,
