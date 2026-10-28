@@ -1041,10 +1041,11 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div class="panel" id="liveResPanel" style="margin-bottom:13px;border-color:rgba(34,211,163,.35);">
       <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128200; Resultado da empresa · ao vivo<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Resultado da empresa** — DRE do QuickBooks em competência: mês corrente até hoje e acumulado do ano. Segunda linha: caixa, fôlego, liquidez, ROE e saúde (KPIs de Saúde). Passe o mouse no ⓘ de cada cartão para ver a conta com os valores.">i</span></div><span class="tag live">QuickBooks</span>
         <span id="liveResAt" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
-        <div style="margin-left:auto;display:flex;gap:6px;">
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
           <select class="fsel finRegimeSel" title="Regime da DRE: competência = pela data da nota/conta · caixa = pela data do recebimento/pagamento" aria-label="Regime" style="font-size:9.5px;width:auto;padding:2px 6px;" onchange="_finMetodoSet(this.value)"><option value="Accrual">Competência</option><option value="Cash">Caixa</option></select>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="dreAbrir({})" title="DRE completa do mês corrente — clique nas contas para ver os lançamentos">&#128269; Abrir DRE</button>
           <button class="btn btn-g" id="liveResBtn" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarResultadoLive(true)">&#8635; Atualizar</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;color:var(--blue);border-color:var(--blue);" onclick="audIndicadores()" title="Compara cada indicador com o relatório de origem no QuickBooks">&#128270; Conferir nas origens</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s3dashboard',document.querySelector('.sbi[onclick*=&quot;s3dashboard&quot;]'))">Dashboard Financeiro &#8594;</button>
         </div></div>
       <div class="pb"><div class="res-grid" id="liveRes"><div style="color:var(--t3);font-size:11px;padding:8px;">Carregando faturamento, lucro e margem do QuickBooks…</div></div>
@@ -3567,6 +3568,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <select class="fsel contaFiltro" id="dash_conta" title="Conta bancária" aria-label="Conta bancária" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarDashboardFinanceiro()"><option value="">Todas as contas</option></select>
     <button class="btn" style="font-size:10px;" onclick="_dashMesAtual()" title="Voltar para o mês corrente">&#8634; Mês atual</button>
     <button class="btn btn-gn" id="dfBtnAtualizar" onclick="window._dfForcar=true;carregarDashboardFinanceiro()">&#8635; Atualizar</button>
+    <button class="btn" style="color:var(--blue);border-color:var(--blue);" onclick="audIndicadores()" title="Compara cada indicador com o relatório/lançamento de origem no QuickBooks">&#128270; Conferir nas origens</button>
+    <button class="btn" onclick="fv2IrAba('config')" title="Alíquota efetiva de impostos, camada e motor de cada conta, limites dos semáforos">&#9881; Configurar impostos e contas</button>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="previewRelatorioPagamentos()">&#128231; Relatório de Pagamentos</button>
     <button class="btn btn-p" onclick="nav('s3gerente')">&#129302; Perguntar ao Gerente IA</button>
   </div>
@@ -35546,7 +35549,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.306] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.307] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35562,7 +35565,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.306';
+window.__ATX_BUILD_ID__ = 'ATX-v3.307';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
