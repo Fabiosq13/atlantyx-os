@@ -3512,6 +3512,28 @@ const _bpfCache = new Map();
 const _bpfId = id => String(id || '').replace(/^(bill_|qb_)/, ''); // a mesma Bill tem id 'bill_9', 'qb_9' ou '9' conforme a tela
 const _bpfStop = new Set(['ltda', 'eireli', 'epp', 'cia', 'servicos', 'servico', 'comercio', 'brasil', 'internet', 'tecnologia', 'solucoes', 'consultoria', 'pagamento', 'enviado', 'recebido', 'transferencia', 'para', 'pix', 'ted', 'doc', 'santos', 'silva', 'souza', 'oliveira']);
 const _bpfTokens = s => [...new Set(String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !_bpfStop.has(w)))];
+// v3.309: casa Bill em aberto (vencida ou vencendo em até 5 dias) com "Pagamento de conta" solto do MESMO fornecedor
+// (id do QuickBooks) e mesmo valor (± máx(R$1; 0,5%)), pago a partir de 20 dias antes da emissão. Um-para-um.
+async function _billsComPagamentoSolto(contas, { timeoutMs = 6000 } = {}) {
+  const mapa = new Map(), hoje = _hojeBR(), lim = _diasMais(hoje, 5);
+  const alvo = (contas || []).filter(b => b?.fornecedor_id && String(b.data).substring(0, 10) <= lim && (parseFloat(b.valor) || 0) > 0);
+  if (!alvo.length || !qbConfigurado()) return mapa;
+  const ini = alvo.reduce((m, b) => { const d = String(b.emissao || b.data).substring(0, 10); return d < m ? d : m; }, hoje);
+  const desde = _diasMais(ini < _diasMais(hoje, -400) ? _diasMais(hoje, -400) : ini, -20);
+  const token = await qbToken();
+  const r = await Promise.race([qbQuery(`select * from BillPayment where TxnDate >= '${desde}' maxresults 1000`, token), new Promise(res => setTimeout(() => res(null), timeoutMs))]);
+  const bps = (r?.QueryResponse?.BillPayment || []).map(bp => ({ bp, solto: _bpSolto(bp) })).filter(x => x.solto > 0.5);
+  const usados = new Set();
+  [...alvo].sort((a, b) => String(a.data).localeCompare(String(b.data))).forEach(b => {
+    const v = parseFloat(b.valor) || 0, emis = String(b.emissao || b.data).substring(0, 10);
+    const c = bps.filter(x => !usados.has(x.bp.Id) && x.bp.VendorRef?.value === b.fornecedor_id && Math.abs(x.solto - v) <= Math.max(1, v * 0.005) && String(x.bp.TxnDate) >= _diasMais(emis, -20))
+      .sort((x, y) => Math.abs(Date.parse(x.bp.TxnDate) - Date.parse(b.data)) - Math.abs(Date.parse(y.bp.TxnDate) - Date.parse(b.data)))[0];
+    if (!c) return; usados.add(c.bp.Id);
+    mapa.set(_bpfId(b.id), { data: c.bp.TxnDate, descricao: 'Pagamento de conta #' + c.bp.Id + ' sem a conta ligada', conta: c.bp.CheckPayment?.BankAccountRef?.name || c.bp.CreditCardPayment?.CCAccountRef?.name || '', valor: c.solto, confianca: 'alta', pagamento_solto: c.bp.Id });
+  });
+  return mapa;
+}
+const _bpsNota = m => `Já paga no QuickBooks em ${String(m.data).split('-').reverse().join('/')}${m.conta ? ' (' + m.conta + ')' : ''} · ${_brl(m.valor)}, mas o "Pagamento de conta" foi lançado sem marcar esta conta — por isso ela continua em aberto e o valor caiu em "despesas não aplicadas" na DRE. Não entra no saldo projetado. Para corrigir: Dashboard Financeiro → 🔗 Ligar pagamentos soltos → Ligar.`;
 async function _billsPagasPorFora(contas, { timeoutMs = 7000, tolerancia_dias = 45 } = {}) {
   const mapa = new Map();
   const hoje = _hojeBR();
@@ -3615,7 +3637,7 @@ async function _qbFuturosDetalhadoQB({ data_inicio, data_fim, sem_estimativas = 
       id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
       categoria: 'A Pagar (Bill)', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0), tipo: 'saida', origem: 'quickbooks_futuro',
       no_periodo: (!data_inicio || (b.DueDate || b.TxnDate) >= data_inicio) && (!data_fim || (b.DueDate || b.TxnDate) <= data_fim), vencida: b.DueDate ? b.DueDate < _hojeBR() : false,
-      fornecedor: b.VendorRef?.name || '', doc: b.DocNumber || '', emissao: b.TxnDate, memo: b.PrivateNote || '', // v3.125: drill-down do cartão A pagar
+      fornecedor: b.VendorRef?.name || '', fornecedor_id: b.VendorRef?.value || null, doc: b.DocNumber || '', emissao: b.TxnDate, memo: b.PrivateNote || '', // v3.125: drill-down do cartão A pagar
       conta: [...new Set((b.Line || []).map(l => l.AccountBasedExpenseLineDetail?.AccountRef?.name).filter(Boolean))].join(', '),
     }));
     try { const bd = await billsDedupeP; if (bd) out.bills_dedupe = (bd.QueryResponse?.Bill || []).map(b => ({ id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, fornecedor: b.VendorRef?.name || '', descricao: b.VendorRef?.name || '', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0) })); } catch (_) {}
@@ -3625,6 +3647,12 @@ async function _qbFuturosDetalhadoQB({ data_inicio, data_fim, sem_estimativas = 
       if (jp.size) out.pagaveis = out.pagaveis.filter(p => { const m = jp.get(_bpfId(p.id)); if (!m) return true;
         out.pagaveis_ja_pagas.push({ ...p, ja_paga: m, nota_dedup: _bpfNota(m) }); return false; });
     } catch (e) { console.warn('[qbFuturos] contas já pagas no extrato:', e.message); }
+    // v3.309: conta a pagar quitada por um "Pagamento de conta" SOLTO (BillPayment do mesmo fornecedor, sem a conta ligada).
+    // O extrato acima ignora BillPayments (supõe que já estão ligados) — esses não estão: o dinheiro já saiu e a conta segue aberta.
+    try { const sp = await _billsComPagamentoSolto(out.pagaveis);
+      if (sp.size) out.pagaveis = out.pagaveis.filter(p => { const m = sp.get(_bpfId(p.id)); if (!m) return true;
+        out.pagaveis_ja_pagas.push({ ...p, ja_paga: m, nota_dedup: _bpsNota(m) }); return false; });
+    } catch (e) { console.warn('[qbFuturos] contas com pagamento solto:', e.message); }
   } catch (e) { out.erro = e.message; }
   return out;
 }
