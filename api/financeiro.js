@@ -10162,4 +10162,5 @@ async function _fv2Config({ P, met, cfg, L, token, base }) {
 
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export { _camClasse as camadaDaConta, _camPreparar as camadasPreparar }; // v3.298: o Business Plan classifica as contas igual ao lucro oficial
 export default comGuarda(handler, 'financeiro');

@@ -13293,6 +13293,7 @@ async function bpApi(action, body = {}) {
 }
 
 function bpTab(aba) {
+  if (aba !== _bpAba && aba === 'atlantyx') { if (_bpSujo && _bpAtual && !confirm('Há alterações não salvas neste Business Plan. Continuar e descartar?')) return; _bpSujo = false; } // v3.298
   _bpAba = aba;
   const i = document.getElementById('bpAbaIdeia'), a = document.getElementById('bpAbaAtx');
   if (!i || !a) return;
@@ -13341,6 +13342,7 @@ function _bpCarregando(msg) {
 }
 
 async function bpGerar(ideia, docs_texto, instrucoes) {
+  if (_bpSujo && _bpAtual && !confirm('Há alterações não salvas neste Business Plan. Continuar e descartar?')) return; // v3.298
   if (!ideia?.titulo) { toast('Escolha uma ideia', 'error'); return; }
   const btn = document.getElementById('btnBpGerar'); if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   _bpCarregando('Montando premissas com IA e calculando DRE, fluxo de caixa de 36 meses, TIR, VPL e payback de "' + _bpE(ideia.titulo) + '"... (até 1 minuto)');
@@ -13386,6 +13388,7 @@ async function bpGerarParaIdeia(k) {
 function bpAbrirDaIdeia(k) { const x = (window._s1IdeiasCache || [])[k]; if (x?.business_plan?.id) { nav('s1bp', document.querySelector('.sbi[onclick*="s1bp"]')); bpTab('ideia'); bpAbrir(x.business_plan.id); } }
 
 async function bpAbrir(id) {
+  if (_bpSujo && _bpAtual && !confirm('Há alterações não salvas neste Business Plan. Continuar e descartar?')) return; // v3.298
   _bpCarregando('Abrindo plano...');
   try { const d = await bpApi('obter', { id }); _bpAtual = d.bp; _bpSujo = false; bpRender(); document.getElementById('bpView')?.scrollIntoView({ behavior: 'smooth' }); }
   catch (e) { _bpCarregando('<span style="color:var(--red);">' + _bpE(e.message) + '</span>'); }
@@ -13695,7 +13698,7 @@ function s1HistAbrirBp() { s1HistAbrir('bp_analise', 'bpIAAnalise'); }
 
 // ── Atlantyx dinâmico ───────────────────────────────────────────────────
 function _bpAjustesTela() {
-  const n = id => { const e = document.getElementById(id); return e && e.value !== '' ? Number(e.value) : undefined; };
+  const n = id => { const e = document.getElementById(id); if (!e || String(e.value).trim() === '') return undefined; const v = _numBR(e.value); return v == null || isNaN(v) ? undefined : v; }; // v3.298: aceita 2,5 / 1.234,56
   const ov = {};
   const g = [n('bpAx_g1'), n('bpAx_g2'), n('bpAx_g3')];
   if (g.some(x => x !== undefined)) ov.crescimento_pct = g.map((x, i) => x ?? g.slice(0, i).reverse().find(y => y !== undefined) ?? 20);
@@ -13705,13 +13708,16 @@ function _bpAjustesTela() {
   return ov;
 }
 function _bpPreencherAjustes(b) {
+  // v3.298: campo só tem VALOR quando foi ajustado por você; o valor calculado dos dados reais aparece como sugestão (placeholder).
+  // Antes todos os campos eram preenchidos com o calculado e voltavam como "ajuste" — o BP parava de seguir o QuickBooks.
   const p = b.premissas, dg = b.diagnostico || {}, aj = b.ajustes || {};
-  const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v == null || isNaN(v) ? '' : Math.round(v * 100) / 100; };
-  const g = dg.crescimento_usado_pct || [];
-  set('bpAx_g1', g[0]); set('bpAx_g2', g[1]); set('bpAx_g3', g[2]);
-  set('bpAx_base', aj.receita_base_mensal ?? dg.receita_media_6m); set('bpAx_tma', p.taxa_desconto_anual); set('bpAx_inf', aj.inflacao_pct ?? 5);
-  set('bpAx_ded', p.deducoes_pct); set('bpAx_cv', p.custos_variaveis?.[0]?.pct_receita); set('bpAx_ir', p.ir_csll_pct); set('bpAx_mkt', p.marketing?.pct_receita); set('bpAx_social', p.social_pct ?? 5);
-  const inv = (p.investimentos || []).find(x => /valor base/i.test(x.descricao || '')); set('bpAx_inv', inv?.valor);
+  const fmt = v => v == null || isNaN(v) ? '' : String(Math.round(v * 100) / 100);
+  const set = (id, usuario, auto) => { const e = document.getElementById(id); if (!e) return; e.value = usuario == null || isNaN(usuario) ? '' : fmt(usuario); e.placeholder = auto == null || isNaN(auto) ? '' : fmt(auto); e.title = 'Vazio = usa o valor calculado dos dados reais' + (auto != null && !isNaN(auto) ? ' (' + fmt(auto) + ')' : ''); };
+  const g = dg.crescimento_usado_pct || [], gu = Array.isArray(aj.crescimento_pct) ? aj.crescimento_pct : [];
+  set('bpAx_g1', gu[0], g[0]); set('bpAx_g2', gu[1], g[1]); set('bpAx_g3', gu[2], g[2]);
+  set('bpAx_base', aj.receita_base_mensal, dg.receita_media_6m); set('bpAx_tma', aj.taxa_desconto_anual, p.taxa_desconto_anual); set('bpAx_inf', aj.inflacao_pct, 5);
+  set('bpAx_ded', aj.deducoes_pct, p.deducoes_pct); set('bpAx_cv', aj.custo_variavel_pct, p.custos_variaveis?.[0]?.pct_receita); set('bpAx_ir', aj.ir_csll_pct, p.ir_csll_pct); set('bpAx_mkt', aj.marketing_pct_receita, p.marketing?.pct_receita); set('bpAx_social', aj.social_pct, p.social_pct ?? 5);
+  const invU = (aj.investimentos || []).find(x => /valor base/i.test(x.descricao || '')), inv = (p.investimentos || []).find(x => /valor base/i.test(x.descricao || '')); set('bpAx_inv', invU?.valor, inv?.valor);
 }
 async function bpAtlantyx(salvar) {
   const btn = document.getElementById('btnBpAtx'); if (btn) { btn.disabled = true; btn.textContent = 'Lendo QuickBooks e carteira...'; }
@@ -30770,8 +30776,11 @@ async function _mcSugerirBP() {
     const [a0, m0] = ini.split('-').map(Number), N = (M.receita_bruta || []).length, mens = Array(12).fill(0); let rec = 0, luc = 0, eb = 0, achou = 0;
     for (let k = 0; k < N; k++) { const dt = new Date(a0, m0 - 1 + k, 1); if (dt.getFullYear() !== _mcAno) continue; achou++; mens[dt.getMonth()] = M.receita_bruta[k] || 0; rec += M.receita_bruta[k] || 0; luc += (M.lucro_liquido || [])[k] || 0; eb += (M.ebitda || [])[k] || 0; }
     if (!achou) { toast('O BP Atlantyx não cobre ' + _mcAno + ' (horizonte a partir de ' + ini + ')', 'error'); return; }
-    if (achou < 12) { const media = rec / achou; for (let i = 0; i < 12; i++) if (!mens[i]) mens[i] = media; rec = mens.reduce((a, b) => a + b, 0); }
-    _mcPreencher({ faturamento: rec, margem_pct: rec ? Math.round(luc / rec * 1000) / 10 : null, margem_ebitda_pct: rec ? Math.round(eb / rec * 1000) / 10 : null, mensal: mens, fonte: 'BP Atlantyx' + (achou < 12 ? ' (' + achou + ' meses no plano; demais pela média)' : '') });
+    // v3.298: meses já passados do ano vêm do REALIZADO do QuickBooks (antes eram preenchidos com a média dos meses projetados)
+    const RM = _mcDados?.realizado?.mensal || [], usados = [];
+    if (achou < 12) { for (let i = 0; i < 12; i++) if (!mens[i] && RM[i]?.faturamento != null) { mens[i] = RM[i].faturamento; rec += RM[i].faturamento; luc += RM[i].lucro || 0; usados.push(i); }
+      const falt = mens.filter(v => !v).length; if (falt) { const media = rec / (12 - falt); for (let i = 0; i < 12; i++) if (!mens[i]) mens[i] = media; rec = mens.reduce((a, b) => a + b, 0); } }
+    _mcPreencher({ faturamento: rec, margem_pct: rec ? Math.round(luc / rec * 1000) / 10 : null, margem_ebitda_pct: rec ? Math.round(eb / rec * 1000) / 10 : null, mensal: mens, fonte: 'BP Atlantyx' + (achou < 12 ? ' (' + achou + ' meses do plano' + (usados.length ? ' + ' + usados.length + ' realizados' : '') + '; margem = lucro antes das retiradas)' : '') });
   } catch (e) { toast('BP Atlantyx: ' + e.message, 'error'); }
 }
 async function metasPadraoSalvar() {
@@ -35477,7 +35486,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.298] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.299] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35493,7 +35502,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.298';
+window.__ATX_BUILD_ID__ = 'ATX-v3.299';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

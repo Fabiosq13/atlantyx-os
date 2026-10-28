@@ -250,13 +250,18 @@ async function planoAtlantyx({ overrides } = {}) {
 
   // Classificação das contas da DRE
   const inflacao = Number(ov.inflacao_pct ?? 5);
-  let impostos = 0, cogs = 0;
+  let impostos = 0, cogs = 0, retiradas = 0;
   const pes = [], mkt = [], ger = [];
+  // v3.298: mesma classificação do lucro oficial (Financeiro › Configurar): retirada de sócio fica FORA do custo (o lucro do
+  // sistema é antes das retiradas); parcelamento de imposto é despesa corporativa, não imposto sobre receita
+  let F = null, camCtx = null; try { F = await import('./financeiro.js'); camCtx = await F.camadasPreparar(); } catch (_) {}
   for (const c of (dre?.contas || [])) {
     if (!['Expenses', 'COGS', 'OtherExpenses'].includes(c.grupo)) continue;
     const tot = Object.values(c.valores || {}).reduce((s, v) => s + Number(v || 0), 0);
     if (Math.abs(tot) < 1) continue;
-    if (RX.imposto.test(c.nome)) { impostos += tot; continue; }
+    const cl = F?.camadaDaConta ? F.camadaDaConta(c.nome, c.grupo, camCtx?.cfg || {}) : null;
+    if (cl?.classe === 'retirada') { retiradas += tot; continue; }
+    if (cl ? cl.classe === 'imposto' : RX.imposto.test(c.nome)) { impostos += tot; continue; }
     if (c.grupo === 'COGS') { cogs += tot; continue; }
     const item = { nome: c.nome, valor_mensal: r2(tot / nH), total_12m: r2(tot) };
     if (RX.pessoal.test(c.nome)) pes.push(item); else if (RX.marketing.test(c.nome)) mkt.push(item); else ger.push(item);
@@ -272,8 +277,10 @@ async function planoAtlantyx({ overrides } = {}) {
   const despesas = [...agrupar(pes, 8, 'Outros gastos com pessoal', 'pessoal'), ...agrupar(mkt, 4, 'Outros gastos de marketing', 'marketing'), ...agrupar(ger, 12, 'Outras despesas', 'geral')];
   for (const d of (Array.isArray(ov.despesas_extras) ? ov.despesas_extras : [])) despesas.push({ ...d, grupo: d.grupo || 'geral' });
 
-  const dedCalc = recTotHist > 0 && impostos > 0 ? Math.min(30, impostos / recTotHist * 100) : null;
-  if (dedCalc == null) avisos.push('Nenhuma conta de impostos identificada na DRE — deduções estimadas em 16,33% (Lucro Presumido).');
+  const aliqCfg = Number(camCtx?.cfg?.aliquota_pct) > 0 ? Number(camCtx.cfg.aliquota_pct) : null;
+  const dedCalc = recTotHist > 0 && impostos > 0 ? Math.min(30, impostos / recTotHist * 100) : aliqCfg;
+  if (!(recTotHist > 0 && impostos > 0)) avisos.push(aliqCfg ? 'Nenhuma conta de impostos sobre receita na DRE — deduções pela alíquota efetiva configurada (' + String(aliqCfg).replace('.', ',') + '%).' : 'Nenhuma conta de impostos identificada na DRE — deduções estimadas em 16,33% (Lucro Presumido). Configure a alíquota efetiva em Financeiro › Configurar.');
+  if (retiradas > 0) avisos.push('Retiradas de sócio (' + Math.round(retiradas / nH).toLocaleString('pt-BR') + '/mês) ficam fora dos custos — o lucro do BP é antes das retiradas, igual ao resto do sistema.');
   const cvCalc = recTotHist > 0 ? Math.max(0, cogs / recTotHist * 100) : 0;
 
   // Receita: carteira contratada (sistema) + receita nova para atingir a meta de crescimento
