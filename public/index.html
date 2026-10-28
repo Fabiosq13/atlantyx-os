@@ -32740,6 +32740,10 @@ async function dreConta(contaId, nome, colIdx, p) {
   td.innerHTML = '<div style="padding:8px 10px 10px 30px;color:var(--t3);font-size:10.5px;">Carregando lançamentos de ' + esc(nome) + ' (' + esc(rot) + ')…</div>';
   try {
     const d = await finApi('dre_conta_lancamentos', { conta_id: contaId, data_inicio: ini, data_fim: fim, metodo });
+    // v3.306: confere a soma dos lançamentos com o valor da linha da DRE — diferença aparece em vez de passar despercebida
+    try { let no = null, L = D.arvore; for (const k of String(p).split('.')) { no = (L || [])[+k]; L = no?.filhos; }
+      const vDre = no ? (colIdx != null ? no.valores?.[colIdx] : no.total) : null;
+      if (vDre != null && Math.abs((d.total || 0) - vDre) > Math.max(1, Math.abs(vDre) * 0.005)) d.aviso = (d.aviso ? d.aviso + ' · ' : '') + '⚠ Os lançamentos listados somam ' + brl(d.total) + ', mas a linha da DRE mostra ' + brl(vDre) + ' (diferença ' + brl(vDre - (d.total || 0)) + '). No regime de caixa o QuickBooks reparte pagamentos entre contas e meses — abra a conta no QuickBooks pelo link da DRE para ver o relatório oficial.'; } catch (_) {}
     const L = d.lancamentos || [];
     td.innerHTML = '<div style="margin:2px 0 8px 26px;border-left:3px solid var(--blue);background:var(--bg3);border-radius:6px;padding:8px 10px;">'
       + (d.aviso ? '<div style="font-size:10px;color:var(--gold);margin-bottom:6px;">ℹ ' + esc(d.aviso) + '</div>' : '') + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>' + esc(nome) + '</b> · ' + esc(rot) + ' · ' + d.qtd + ' lançamento(s) · total ' + brl(d.total) + ' · maiores primeiro</div>'
@@ -35542,7 +35546,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.305] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.306] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35558,7 +35562,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.305';
+window.__ATX_BUILD_ID__ = 'ATX-v3.306';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
