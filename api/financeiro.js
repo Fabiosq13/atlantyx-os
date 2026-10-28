@@ -5958,7 +5958,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   if (pA.status === 'fulfilled') { out.ano_res = pA.value ? dreResumo(pA.value) : vazio; out.mensal = pA.value ? dreMensalSerie(pA.value, parseInt(anoIni)) : []; }
   else out.erros.push('DRE do ano: ' + pA.reason?.message);
   if (pC.status === 'fulfilled' && pC.value) { const c = dreResumo(pC.value);
-    out.periodo_outro = { regime: outro === 'Cash' ? 'caixa' : 'competência', faturamento: c.faturamento, gastos: c.gastos_totais, lucro: c.lucro_liquido };
+    out.periodo_outro = { regime: outro === 'Cash' ? 'caixa' : 'competência', faturamento: c.faturamento, gastos: c.gastos_totais, lucro: c.lucro_liquido, margem_pct: c.margem_liquida_pct, ebitda: c.ebitda, impostos: c.camadas?.impostos ?? null, retiradas: c.camadas?.retiradas ?? null, resultado_dono: c.camadas?.resultado_dono ?? null }; // v3.302: comparação caixa × competência
     if (outro === 'Cash') out.periodo_caixa = { receita_recebida: c.faturamento, lucro_caixa: c.lucro_liquido }; }
   // último mês FECHADO com faturamento (referência quando o mês corrente ainda não tem notas emitidas)
   { const mesH = hoje.substring(0, 7); const fech = (out.mensal || []).filter(m => m.mes < mesH && m.faturamento); out.ultimo_mes_fechado = fech.length ? fech[fech.length - 1] : null; }

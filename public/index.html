@@ -30397,6 +30397,20 @@ function _resCardsHtml(R, modo) {
         + '<div style="width:9px;background:' + (m.lucro_liquido < 0 ? 'var(--red)' : 'var(--green)') + ';border-radius:2px 2px 0 0;height:' + Math.max(1, Math.round(Math.abs(m.lucro_liquido) / mx * 52)) + 'px;"></div></div>'
         + '<div style="font-family:var(--M);font-size:8.5px;color:var(--t3);">' + nomeMes(m.mes).substring(0, 3) + '</div></div>').join('')
       + '</div><div class="rs"><span style="color:var(--blue);">■</span> faturamento · <span style="color:var(--green);">■</span> lucro (<span style="color:var(--red);">■</span> prejuízo) · passe o mouse para ver os valores</div></div>'); }
+  // v3.302: o mesmo período nos DOIS regimes, lado a lado (caixa = o que entrou/saiu do banco · competência = notas e contas do período)
+  const O = R.periodo_outro;
+  if (!futuro && O && (O.faturamento != null || O.lucro != null)) {
+    const cx = R.regime === 'caixa', C = cx ? p : null, K = cx ? null : p;
+    const v = (lado, k) => { if (lado === 'caixa') return cx ? ({ fat: p.faturamento, gas: p.gastos_totais, luc: p.lucro_liquido, mg: p.margem_liquida_pct, eb: p.ebitda, dono: p.resultado_dono })[k] : ({ fat: O.faturamento, gas: O.gastos, luc: O.lucro, mg: O.margem_pct, eb: O.ebitda, dono: O.resultado_dono })[k];
+      return !cx ? ({ fat: p.faturamento, gas: p.gastos_totais, luc: p.lucro_liquido, mg: p.margem_liquida_pct, eb: p.ebitda, dono: p.resultado_dono })[k] : ({ fat: O.faturamento, gas: O.gastos, luc: O.lucro, mg: O.margem_pct, eb: O.ebitda, dono: O.resultado_dono })[k]; };
+    const cel = (x, pct) => x == null ? '<td style="text-align:right;padding:5px 8px;color:var(--t3);">—</td>' : '<td style="text-align:right;padding:5px 8px;font-family:var(--M);white-space:nowrap;' + (x < 0 ? 'color:var(--red);' : '') + '">' + (pct ? _resFmtPct(x) : brl(x)) + '</td>';
+    const dif = k => { const a = v('caixa', k), b = v('comp', k); return a == null || b == null ? '<td></td>' : '<td style="text-align:right;padding:5px 8px;font-family:var(--M);color:var(--t3);white-space:nowrap;">' + (k === 'mg' ? (b - a >= 0 ? '+' : '') + String(Math.round((b - a) * 10) / 10).replace('.', ',') + ' p.p.' : (b - a >= 0 ? '+' : '−') + brl(Math.abs(b - a))) + '</td>'; };
+    const lin = (rot, k, pct) => '<tr style="border-top:1px solid var(--bd);"><td style="padding:5px 8px;">' + rot + '</td>' + cel(v('caixa', k), pct) + cel(v('comp', k), pct) + dif(k) + '</tr>';
+    cards.push('<div class="res-card" style="--c:var(--blue);grid-column:1/-1;"><div class="rl">' + (lblP === 'do mês' ? 'O mês' : 'O período') + ' nos dois regimes · ' + per + _tip('**Caixa** = o que efetivamente entrou e saiu do banco no período (recebimentos e pagamentos).\n**Competência** = notas emitidas e contas do período, pagas ou não.\n\nA diferença no faturamento é o que foi faturado e ainda não foi recebido (ou recebido de meses anteriores). O lucro nos dois regimes segue a apuração em 4 camadas (antes das retiradas de sócio).') + '</div>'
+      + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;min-width:440px;"><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;font-family:var(--M);"><th style="text-align:left;padding:4px 8px;"></th><th style="text-align:right;padding:4px 8px;">Caixa</th><th style="text-align:right;padding:4px 8px;">Competência</th><th style="text-align:right;padding:4px 8px;">Diferença</th></tr>'
+      + lin('Faturamento', 'fat') + lin('Gastos', 'gas') + lin('Lucro (resultado operacional)', 'luc') + lin('Margem de lucro', 'mg', true) + lin('EBITDA', 'eb') + lin('Resultado do dono (após retiradas)', 'dono')
+      + '</table></div><div class="rs">Os cartões acima estão em <b>' + (cx ? 'caixa' : 'competência') + '</b> — troque o regime no seletor do dashboard para ver todos os indicadores no outro.</div></div>');
+  }
   return '<div class="rc-row">' + cards.slice(0, 5).join('') + '</div>' + cards.slice(5).join(''); // v3.123: os 5 indicadores ocupam a largura toda
 }
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -35507,7 +35521,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.301] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.302] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35523,7 +35537,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.301';
+window.__ATX_BUILD_ID__ = 'ATX-v3.302';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
