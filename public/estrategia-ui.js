@@ -152,7 +152,7 @@
     const f = $('estFalas'); if (f) f.scrollTop = f.scrollHeight;
   }
   function sinteseHtml(s) {
-    const Y = s.sintese, feitos = Object.fromEntries((s.acoes || []).filter(a => !a.erro).map(a => [a.indice, a]));
+    const Y = s.sintese, feitos = Object.fromEntries((s.acoes || []).filter(a => !a.erro && !a.sintese_anterior).map(a => [a.indice, a]));
     const sec = (t, h) => h ? `<div style="margin-top:10px;"><div style="font-family:var(--M);font-size:9.5px;text-transform:uppercase;color:var(--t2);margin-bottom:3px;">${t}</div>${h}</div>` : '';
     return `<div style="margin-top:12px;border:1px solid rgba(0,196,204,.4);border-radius:10px;padding:12px;background:rgba(0,196,204,.05);font-size:12.5px;line-height:1.6;">
       <div style="font-family:var(--M);font-size:9.5px;text-transform:uppercase;color:var(--t2);">Decisão</div><div style="font-size:14px;font-weight:700;">${esc(Y.decisao)}</div><div style="margin-top:4px;color:var(--t2);">${esc(Y.racional || '')}</div>
@@ -180,8 +180,9 @@
     if (!itens.length) return nota('Escolha o destino de pelo menos uma iniciativa', 'error');
     const rito_id = $('estRito')?.value || null; if (itens.some(x => x.destino === 'pauta') && !rito_id) return nota('Escolha a reunião semanal para as iniciativas que vão para a pauta', 'error');
     if (!confirm(`Enviar ${itens.length} iniciativa(s)?\n\nDemandas entram como SUGERIDAS na Esteira (você ainda aprova); ideias entram como Recebidas no Pipeline; pautas entram na próxima reunião escolhida.`)) return;
+    const bt = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null; if (bt) { if (bt.disabled) return; bt.disabled = true; } // v3.298: sem clique duplo
     try { const r = await api('sala_acoes', { sessao_id: sala.id, itens, rito_id }); const ok = r.feitos.filter(f => !f.erro).length, er = r.feitos.filter(f => f.erro); nota(ok + ' enviada(s)' + (er.length ? ' · ' + er.length + ' com erro: ' + er[0].erro : ''), er.length ? 'error' : 'success'); await salaAbrir(sala.id); }
-    catch (e) { nota(e.message, 'error'); }
+    catch (e) { nota(e.message, 'error'); } finally { if (bt) bt.disabled = false; }
   }
   function salaNova() { sala = null; renderSalas(); }
   async function salaExcluir() { if (!confirm('Excluir esta sessão?')) return; try { await api('sala_excluir', { id: sala.id }); sala = null; D = await api('inicio'); renderSalas(); } catch (e) { nota(e.message, 'error'); } }

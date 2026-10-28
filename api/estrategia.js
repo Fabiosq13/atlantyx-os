@@ -61,8 +61,9 @@ async function contexto(forcar) {
   const [tv, reu] = await Promise.all([import('./tv.js'), import('./reunioes.js')]);
   const F = reu.fontesPauta || {};
   const pegar = async (k) => { try { const r = await F[k].coletar(); return { resumo: r.resumo, tabela: r.tabela ? { cab: r.tabela.cab, linhas: r.tabela.linhas.slice(0, 10) } : null, alertas: (r.assuntos || []).slice(0, 6).map(a => a.titulo) }; } catch (e) { return { erro: e.message }; } };
-  const [gestao, projetos, ideias, demandas, entrega] = await Promise.all([tv.dadosGestao(false).catch(e => ({ erro: e.message })), pegar('projetos_pmo'), pegar('ideias'), pegar('esteira_demandas'), pegar('esteira_entrega')]);
-  const out = { em: new Date().toISOString(), financeiro: gestao.fin || gestao, comercial: gestao.com || null, projetos, ideias, esteira_demandas: demandas, esteira_entrega: entrega };
+  const [gestao, projetos, ideias, demandas, entrega] = await Promise.all([tv.dadosGestao(!!forcar).catch(e => ({ erro: e.message })), pegar('projetos_pmo'), pegar('ideias'), pegar('esteira_demandas'), pegar('esteira_entrega')]);
+  const out = { em: new Date().toISOString(), dados_de: gestao.gerado_em || gestao.em || null, aviso_dados: [gestao.aviso_cache, gestao.erro, gestao.fin?.erro].filter(Boolean).join(' · ') || null, financeiro: gestao.fin || gestao, comercial: gestao.com || null, projetos, ideias, esteira_demandas: demandas, esteira_entrega: entrega };
+  if (forcar) { try { await contextoAmplo(true); } catch (_) {} } // v3.298: "Atualizar os números" também relê histórico, metas, carteira e motores
   await kv('est:contexto', out); return out;
 }
 async function propositoPessoal() {
@@ -77,12 +78,17 @@ async function premissasCtx() {
   return prem;
 }
 async function planoVigente() { return await kv('est:plano'); }
-function resumoCtx(ctx) { // compacto para o prompt
+function resumoCtxObj(ctx) { // v3.298: objeto (antes string cortada em 30 mil caracteres → JSON quebrado)
   const f = ctx.financeiro || {}, fu = ctx.comercial?.funil || null;
-  return JSON.stringify({ atualizado_em: ctx.em, financeiro: { mes: f.mes, ano: f.ano, caixa: f.caixa, a_receber: f.receber, recebiveis_vencidos: f.receber_vencido, a_pagar: f.pagar, serie_mensal: (f.mensal || []).slice(-12) },
+  return ({ atualizado_em: ctx.em, dados_de: ctx.dados_de || null, aviso_dados: ctx.aviso_dados || null, financeiro: { mes: f.mes, ano: f.ano, caixa: f.caixa, a_receber: f.receber, recebiveis_vencidos: f.receber_vencido, a_pagar: f.pagar, serie_mensal: (f.mensal || []).slice(-12) },
     funil_hubspot: fu && { periodo: fu.rotulo, aberto: fu.resumo?.aberto, ganho_mes: fu.resumo?.ganho, meta_mes: fu.resumo?.meta, pct_meta: fu.resumo?.pct_meta, taxa_ganho_pct: fu.resumo?.taxa_ganho_pct, cobertura_pct: fu.resumo?.cobertura_pct, leads: fu.leads, etapas: (fu.etapas || []).map(e => ({ etapa: e.nome, qtd: e.agora?.qtd, valor: e.agora?.valor })) },
-    projetos: ctx.projetos, ideias: ctx.ideias, esteira_demandas: ctx.esteira_demandas, esteira_entrega: ctx.esteira_entrega, empresa_ampla: ctx.amplo || null }).substring(0, 30000);
+    projetos: ctx.projetos, ideias: ctx.ideias, esteira_demandas: ctx.esteira_demandas, esteira_entrega: ctx.esteira_entrega, empresa_ampla: ctx.amplo || null });
 }
+function _enxugar(o, lim) { let t = JSON.stringify(o); if (t.length <= lim) return o; const c = JSON.parse(t);
+  if (c.empresa_ampla) { const A = c.empresa_ampla; c.empresa_ampla = { ano_atual: A.ano_atual, historico: A.historico, metas_por_ano: A.metas_por_ano, motores_12m: A.motores_12m, carteira_contratada: A.carteira_contratada && { total_previsto_13m: A.carteira_contratada.total_previsto_13m, por_mes: (A.carteira_contratada.por_mes || []).slice(0, 6) }, despesas_recorrentes: A.despesas_recorrentes && { mensal_equivalente: A.despesas_recorrentes.mensal_equivalente }, pessoas: A.pessoas && { ativos: A.pessoas.ativos, custo_mensal: A.pessoas.custo_mensal }, projecao_3anos: A.projecao_3anos, erros: A.erros }; }
+  for (const k of ['esteira_entrega', 'esteira_demandas', 'ideias', 'projetos']) { if (JSON.stringify(c).length <= lim) break; if (c[k]?.tabela) c[k] = { resumo: c[k].resumo, alertas: c[k].alertas }; }
+  if (JSON.stringify(c).length > lim) delete c.empresa_ampla; if (c.financeiro?.serie_mensal && JSON.stringify(c).length > lim) c.financeiro.serie_mensal = c.financeiro.serie_mensal.slice(-6); return c; }
+function resumoCtx(ctx, lim = 30000) { return JSON.stringify(_enxugar(resumoCtxObj(ctx), lim)); }
 // v3.286: CONTEXTO AMPLO para o ATLAS e para a Projeção de 3 anos — histórico de resultado, metas por ano, carteira contratada,
 // despesas recorrentes, motores de negócio (margem), pessoas e custo, propostas, contratos e a projeção salva. Cache de 30 min.
 const _t = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('demorou')), ms))]);
@@ -91,15 +97,17 @@ async function contextoAmplo(forcar) {
   if (!forcar && c && Date.now() - Date.parse(c.em) < 30 * 60000) return c;
   const sql = await getSql(), hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), Y = parseInt(hoje), ini12 = (() => { const d = new Date(hoje + 'T12:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() - 1); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })(); // v3.294: 12 meses exatos (antes ~12,9)
   const fin = (action, params, ms = 45000) => _t(chamar('financeiro', { action, params }), ms);
-  const [me, ...rs] = await Promise.allSettled([fin('metas_empresa_status', { ano: Y, com_crm: false }), ...[Y - 3, Y - 2, Y - 1].map(a => fin('resultado_kpis', { ano: a }))]);
-  const [ag, mo] = await Promise.allSettled([fin('receitas_agenda', { meses: 13 }, 50000), fin('fin_v2', { tela: 'executiva', data_inicio: ini12, data_fim: hoje }, 50000)]);
+  // v3.298: todas as consultas ao financeiro em paralelo (antes 3 esperas em sequência — até ~2 min antes da IA começar)
+  const [me, r3, r2, r1, ag, mo, ml] = await Promise.allSettled([fin('metas_empresa_status', { ano: Y, com_crm: false }), ...[Y - 3, Y - 2, Y - 1].map(a => fin('resultado_kpis', { ano: a })),
+    fin('receitas_agenda', { meses: 13 }, 50000), fin('fin_v2', { tela: 'executiva', data_inicio: ini12, data_fim: hoje }, 50000), fin('metas_empresa_ler', { ano: Y }, 45000)]);
+  const rs = [r3, r2, r1];
   const v = p => p.status === 'fulfilled' ? p.value : null, er = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 100) : null;
   const ME = v(me)?.metas || {}, erros = [];
   // v3.294: QuickBooks fora devolve sucesso com 'erros' dentro — antes a tela mostrava zeros como se fossem reais
   if (er(me)) erros.push('Metas do ano: ' + er(me)); (v(me)?.metas?.erros || v(me)?.erros || []).forEach(x => erros.push('Metas do ano: ' + x));
   rs.forEach((p, i) => (v(p)?.resultado?.erros || []).forEach(x => erros.push('Resultado ' + (Y - 3 + i) + ': ' + x)));
-  const historico = rs.map((p, i) => { const R = v(p)?.resultado?.periodo_res; if (!R) { if (er(p)) erros.push('Resultado ' + (Y - 3 + i) + ': ' + er(p)); return null; } return { ano: Y - 3 + i, faturamento: R.faturamento, lucro: R.lucro_liquido, margem_pct: R.margem_liquida_pct, ebitda: R.ebitda }; }).filter(Boolean);
-  let metas = {}; try { const m = await fin('metas_empresa_ler', { ano: Y }, 30000); metas = Object.fromEntries(Object.entries(m.metas_cadastro?.todos_anos || m.todos_anos || {}).filter(([a]) => +a >= Y - 1).map(([a, x]) => [a, { faturamento: x.faturamento, margem_pct: x.margem_pct, recorrencia_pct: x.recorrencia_pct, crescimento_pct: x.crescimento_pct, motores: x.motores, padrao: !!x.padrao }])); } catch (e) { erros.push('Metas: ' + e.message); }
+  const historico = rs.map((p, i) => { const R = v(p)?.resultado?.periodo_res; if (!R) { if (er(p)) erros.push('Resultado ' + (Y - 3 + i) + ': ' + er(p)); return null; } return { ano: Y - 3 + i, faturamento: R.faturamento, lucro_resultado_operacional: R.lucro_liquido, margem_de_lucro_pct: R.margem_liquida_pct, resultado_do_dono: R.resultado_dono ?? null, ebitda: R.ebitda }; }).filter(Boolean); // v3.298: lucro = resultado operacional (4 camadas, antes das retiradas) — é o mesmo conceito da meta de margem
+  let metas = {}; try { if (ml.status !== 'fulfilled') throw ml.reason; const m = ml.value; metas = Object.fromEntries(Object.entries(m.metas_cadastro?.todos_anos || m.todos_anos || {}).filter(([a]) => +a >= Y - 1).map(([a, x]) => [a, { faturamento: x.faturamento, margem_pct: x.margem_pct, recorrencia_pct: x.recorrencia_pct, crescimento_pct: x.crescimento_pct, motores: x.motores, padrao: !!x.padrao }])); } catch (e) { erros.push('Metas: ' + e.message); }
   const AG = v(ag)?.agenda; const carteira = AG ? { total_previsto_13m: AG.total_ativo, por_mes: (AG.por_mes || []).map(x => ({ mes: x.mes, total: x.total, marcos: x.marco, termos: x.termo, sustentacao: x.sustentacao, avulsas: x.manual })) } : null; if (!AG && er(ag)) erros.push('Carteira: ' + er(ag));
   const _mo = v(mo)?.fin_v2, MOw = _mo?.motores?.motores || null; // v3.294: fin_v2 devolve { motores: { pessoas, projetos, produtos }, camadas, … } — antes lia o invólucro e os motores saíam sempre vazios
   const MO = MOw ? Object.fromEntries(Object.entries(MOw).map(([k, m]) => [k, { receita: m.receita, participacao_pct: m.participacao_pct, margem_bruta_pct: m.margem_bruta_pct, margem_contribuicao_pct: m.margem_contribuicao_pct }])) : null;
@@ -118,6 +126,7 @@ async function contextoAmplo(forcar) {
       projecao_fechamento: ME.faturamento?.projecao_fechamento ?? null, lucro: ME.realizado?.lucro_liquido ?? null, margem_pct: ME.realizado?.margem_pct ?? null, meta_margem_pct: ME.meta?.margem_pct ?? null },
     historico, metas_por_ano: metas, carteira_contratada: carteira, motores_12m: MO, despesas_recorrentes: despesas, pessoas, propostas_12m: propostas, contratos,
     projecao_3anos: proj?.projecao ? projecao3Texto(proj.projecao) : null, erros };
+  if (erros.length) out.em = new Date(Date.now() - 29 * 60000).toISOString(); // v3.298: com erro, o cache vale só ~1 min (antes 30 min repetindo a falha)
   await kv('est:contexto_amplo', out); return out;
 }
 // base da projeção a partir dos dados reais
@@ -129,7 +138,7 @@ async function baseProjecao(forcar) {
   const _hj = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })), _fracAno = Math.max(0.05, ((_hj - new Date(_hj.getFullYear(), 0, 1)) / 864e5 + 1) / (((Y % 4 === 0 && Y % 100 !== 0) || Y % 400 === 0) ? 366 : 365));
   // v3.294: sem projeção de fechamento, o realizado do ano é ANUALIZADO (antes entrava o acumulado até hoje como se fosse o ano todo)
   const receita = A.ano_atual?.projecao_fechamento || (A.ano_atual?.realizado ? A.ano_atual.realizado / _fracAno : 0) || tot || (A.historico.at(-1)?.faturamento) || 0;
-  const margemLiq = A.ano_atual?.margem_pct ?? A.historico.at(-1)?.margem_pct ?? 10;
+  const margemLiq = A.ano_atual?.margem_pct ?? A.historico.at(-1)?.margem_de_lucro_pct ?? 10;
   const mcTot = mc && mix ? Object.keys(MOTORES).reduce((s, k) => s + mix[k] * mc[k] / 100, 0) : 35;
   const fixas = receita ? Math.max(0, receita * (mcTot - margemLiq) / 100) : null;
   const pes = A.pessoas?.ativos || null, rpp = pes && recM?.pessoas ? Math.round(recM.pessoas / 12 / Math.max(1, pes - 3)) : null;
@@ -221,7 +230,7 @@ PROPÓSITO E METAS PESSOAIS (cadastrados em S1 · Propósito e Metas Pessoais) +
 
 PREMISSAS E METAS DA EMPRESA: ${prem}
 PLANO ESTRATÉGICO VIGENTE: ${plano ? JSON.stringify(plano.sintese).substring(0, 2000) : '(nenhum)'}
-RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { mes: ctx.financeiro?.mes, ano: ctx.financeiro?.ano }, comercial: { meta_mes_pct: ctx.comercial?.meta_mes_pct, meta_ano_pct: ctx.comercial?.meta_ano_pct } })}` : null;
+RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { mes: ctx.financeiro?.mes, ano: ctx.financeiro?.ano }, comercial: { meta_mes_pct: ctx.financeiro?.mes?.pct ?? null, meta_ano_pct: ctx.financeiro?.ano?.pct ?? null } })}` : null;
   const resposta = await claude(sysNorte || system, [...hist, { role: 'user', content: m }], voz ? 600 : 1400);
   const msgs = [...(conv.mensagens || []), { role: 'user', content: m, em: new Date().toISOString(), voz: !!voz }, { role: 'assistant', content: resposta, em: new Date().toISOString() }].slice(-60);
   await sql`UPDATE est_conversas SET mensagens=${JSON.stringify(msgs)}, atualizado_em=NOW() WHERE id=${conv.id}`;
@@ -295,11 +304,13 @@ async function planoEstrSugerir({ automatico = false } = {}) {
   const t = await claude(`Você é ATLAS, estrategista-chefe da Atlantyx. Faça o AJUSTE FINO do plano estratégico vigente comparando o planejado com o realizado. ${REGRAS}
 Proponha no máximo 5 mudanças, só onde o dado justifica (ex.: trilha com muitos leads e nenhuma reunião → revisar oferta; trilha sem lead em 60 dias → baixar peso; meta fora do alcance → ajustar). Campos que pode mudar por alavanca: peso_campanha (0–100), status (${Object.keys(ALV_STATUS).join('|')}), receita_meta, margem_pct, taxa_fechamento, oferta. Se faltar dado para decidir, diga isso em vez de mudar.
 Responda SOMENTE JSON: {"resumo":"2 frases","mudancas":[{"alavanca":"id","campo":"...","de":"valor atual","para":"novo valor (número simples sem R$ nem %, ex.: 400000 ou 35; texto só em status/oferta)","por_que":"1 frase com o dado"}],"faltam_dados":["..."]}`,
-    [{ role: 'user', content: JSON.stringify({ plano_vigente: { versao: vig.versao, ...P }, simulacao: planoSimular(P), realizado: real, contexto: JSON.parse(resumoCtx(ctx)) }).substring(0, 22000) }], 1800);
+    [{ role: 'user', content: JSON.stringify({ plano_vigente: { versao: vig.versao, ...P }, simulacao: planoSimular(P), realizado: real, contexto: _enxugar(resumoCtxObj(ctx), 12000) }) }], 1800);
   const j = json(t); if (!j || !Array.isArray(j.mudancas)) throw new Error('A IA não devolveu a sugestão no formato esperado — tente de novo');
   const ids = new Set(P.alavancas.map(a => a.id)), CAMPOS = ['peso_campanha', 'status', 'receita_meta', 'margem_pct', 'taxa_fechamento', 'oferta'];
   const mud = j.mudancas.filter(m => ids.has(m.alavanca) && CAMPOS.includes(m.campo)).slice(0, 5)
     .map(m => ({ alavanca: m.alavanca, nome: P.alavancas.find(a => a.id === m.alavanca)?.nome, campo: m.campo, de: P.alavancas.find(a => a.id === m.alavanca)?.[m.campo], para: m.para, por_que: String(m.por_que || '').substring(0, 300) }));
+  mud.forEach(m => { if (m.campo === 'status' && !ALV_STATUS[m.para]) { const k = Object.keys(ALV_STATUS).find(k => String(m.para || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').startsWith(k.slice(0, 5))); m.para_original = m.para; m.para = k || null; } }); // v3.298: "Pausada"/"pausar" → chave válida
+  for (let i = mud.length - 1; i >= 0; i--) if (mud[i].campo === 'status' && !mud[i].para) mud.splice(i, 1);
   const aj = { id: novoId('aj'), em: _hoje(), base_versao: vig.versao, resumo: String(j.resumo || '').substring(0, 600), mudancas: mud, faltam_dados: (j.faltam_dados || []).slice(0, 5), status: 'pendente', automatico: !!automatico };
   const L = (await kv(K_AJUSTES)) || []; await kv(K_AJUSTES, [aj, ...L].slice(0, 40)); return { ajuste: aj };
 }
@@ -329,7 +340,11 @@ async function salaAbrir({ tema, objetivo, agentes }) {
   await sql`INSERT INTO est_sessoes (id, tema, objetivo, agentes) VALUES (${id}, ${String(tema).substring(0, 300)}, ${objetivo || null}, ${JSON.stringify(ag.length ? ag : COMITE_PADRAO)})`;
   return { sessao_id: id };
 }
-const fmtFalas = F => F.map(f => `[rodada ${f.rodada}] ${f.autor === 'fundador' ? 'FUNDADOR (Fabio)' : (AGENTES[f.autor]?.nome || f.autor)}: ${f.texto}`).join('\n\n').substring(0, 16000);
+// v3.298: guarda o FIM do debate (rodada atual e a intervenção do fundador) — antes cortava os primeiros 16 mil caracteres e,
+// da 2ª/3ª rodada em diante, os agentes e a síntese não viam as posições novas nem a intervenção
+const fmtFalas = (F, lim = 16000) => { const L = F.map(f => `[rodada ${f.rodada}] ${f.autor === 'fundador' ? 'FUNDADOR (Fabio)' : (AGENTES[f.autor]?.nome || f.autor)}: ${f.texto}`);
+  const out = []; let n = 0; for (let i = L.length - 1; i >= 0; i--) { if (n + L[i].length + 2 > lim) { out.unshift(`(… ${i + 1} fala(s) mais antigas omitidas por espaço)`); break; } out.unshift(L[i]); n += L[i].length + 2; }
+  return out.join('\n\n'); };
 async function salaRodada({ sessao_id, intervencao }) {
   const sql = await getSql(); const s = (await sql`SELECT * FROM est_sessoes WHERE id=${sessao_id}`)[0]; if (!s) throw new Error('Sessão não encontrada');
   const F = s.falas || []; const rodada = F.reduce((m, f) => Math.max(m, f.rodada || 0), 0) + 1;
@@ -365,9 +380,9 @@ async function salaSintese({ sessao_id }) {
   const t = await claude(`Você é ATLAS, estrategista-chefe da Atlantyx. Feche a Sala de Estratégia num PLANO acionável, baseado SÓ no debate e no contexto. ${REGRAS}
 Responda SOMENTE JSON: {"decisao":"a escolha central em 1-2 frases","racional":"por que (3-4 frases, com os números)","objetivos":[{"objetivo":"...","kr":["resultado-chave mensurável com número e prazo"]}],"iniciativas":[{"titulo":"ação concreta","dono":"área ou papel","prazo":"AAAA-MM ou trimestre","impacto":"alto|medio|baixo","esforco":"P|M|G","destino_sugerido":"demanda|ideia|pauta"}],"riscos":[{"risco":"...","mitigacao":"..."}],"nao_fazer":["o que deixa de fazer para manter o foco"],"proximos_90_dias":["semana/mês: entrega"],"divergencias":["onde o comitê não concordou"],"pergunta_ao_fundador":"a decisão que só o fundador pode tomar"}
 destino_sugerido: "demanda" = mudança no sistema Atlantyx OS; "ideia" = novo negócio/produto a estudar; "pauta" = assunto para decidir na reunião semanal.`,
-    [{ role: 'user', content: `TEMA: ${s.tema}\nOBJETIVO: ${s.objetivo || '-'}\nPREMISSAS: ${prem}\nCONTEXTO: ${resumoCtx(ctx)}\n\nDEBATE COMPLETO:\n${fmtFalas(s.falas)}` }], 3500);
+    [{ role: 'user', content: `TEMA: ${s.tema}\nOBJETIVO: ${s.objetivo || '-'}\nPREMISSAS: ${prem}\nCONTEXTO: ${resumoCtx(ctx)}\n\nDEBATE (mais recente por último):\n${fmtFalas(s.falas, 24000)}` }], 3500);
   const sintese = json(t); if (!sintese?.decisao) throw new Error('A IA não devolveu a síntese no formato esperado — tente de novo');
-  await sql`UPDATE est_sessoes SET sintese=${JSON.stringify(sintese)}, status='sintetizada', atualizado_em=NOW() WHERE id=${s.id}`;
+  await sql`UPDATE est_sessoes SET sintese=${JSON.stringify(sintese)}, acoes=${JSON.stringify((s.acoes || []).map(a => ({ ...a, sintese_anterior: true })).slice(-100))}, status='sintetizada', atualizado_em=NOW() WHERE id=${s.id}`; // v3.298: nova síntese → ações enviadas ficam no histórico, não grudam nas iniciativas novas
   return { sintese };
 }
 async function salaAprovar({ sessao_id }, usuario) {
@@ -388,8 +403,9 @@ async function chamar(mod, body) {
 async function salaAcoes({ sessao_id, itens = [], rito_id }) {
   const sql = await getSql(); const s = (await sql`SELECT * FROM est_sessoes WHERE id=${sessao_id}`)[0]; if (!s?.sintese) throw new Error('Sessão sem síntese');
   const I = s.sintese.iniciativas || [], feitos = [], pauta = [];
+  const jaEnviado = new Set((s.acoes || []).filter(a => !a.erro && !a.sintese_anterior).map(a => a.indice)); // v3.298: clique duplo / reenvio não duplica
   for (const it of itens) {
-    const x = I[it.indice]; if (!x) continue; const origem = `Sala de Estratégia · ${s.tema}`.substring(0, 140);
+    const x = I[it.indice]; if (!x) continue; if (jaEnviado.has(it.indice)) { feitos.push({ indice: it.indice, destino: it.destino, ja_enviado: true }); continue; } jaEnviado.add(it.indice); const origem = `Sala de Estratégia · ${s.tema}`.substring(0, 140);
     try {
       if (it.destino === 'demanda') { const r = await chamar('agente-ideias', { action: 'nova', dados: { titulo: x.titulo, proposta: `${x.titulo}\n\nVem da Sala de Estratégia ("${s.tema}"). Decisão: ${s.sintese.decisao}`, problema: s.sintese.racional || '', impacto: x.impacto === 'alto' ? 5 : x.impacto === 'baixo' ? 2 : 3, esforco: x.esforco || 'M', risco: 'medio', area: 'plataforma' } });
         feitos.push({ indice: it.indice, destino: 'demanda', ref: r.id }); }
@@ -406,7 +422,7 @@ async function salaAcoes({ sessao_id, itens = [], rito_id }) {
       pauta.forEach(p => feitos.push({ indice: p.indice, destino: 'pauta', ref: o.reuniao.id, data: o.reuniao.data }));
     } catch (e) { pauta.forEach(p => feitos.push({ indice: p.indice, destino: 'pauta', erro: e.message })); }
   }
-  const acoes = [...(s.acoes || []), ...feitos.map(f => ({ ...f, em: new Date().toISOString() }))];
+  const acoes = [...(s.acoes || []).filter(a => !a.erro || !feitos.some(f => f.indice === a.indice && !f.erro)), ...feitos.filter(f => !f.ja_enviado).map(f => ({ ...f, em: new Date().toISOString() }))];
   await sql`UPDATE est_sessoes SET acoes=${JSON.stringify(acoes)}, atualizado_em=NOW() WHERE id=${s.id}`;
   return { feitos };
 }
