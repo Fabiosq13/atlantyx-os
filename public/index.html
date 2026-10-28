@@ -30336,6 +30336,15 @@ async function pgSoltoLigar(btn, bpId, billId, forn, valor) {
     if (box) box.style.opacity = '.6';
   } catch (err) { box?.querySelectorAll('button').forEach(b => b.disabled = false); if (res) res.innerHTML = '<span style="color:var(--red);">⚠ ' + String(err.message || err).replace(/</g, '&lt;') + '</span>'; }
 }
+// v3.310: composição dos dois lados de uma divergência (sistema × origem), a ponte entre eles e as diferenças por nome
+function _audPartes(P, e) {
+  const R = x => x == null ? '—' : 'R$ ' + Number(x).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const tab = (tit, L) => (L || []).length ? '<div style="font-weight:700;margin:6px 0 2px;">' + tit + '</div><table style="width:100%;border-collapse:collapse;">' + L.map(([r, x]) => '<tr><td style="padding:1px 4px;' + (/^=/.test(r) ? 'font-weight:700;border-top:1px solid var(--bd);' : '') + '">' + e(r) + '</td><td style="padding:1px 4px;text-align:right;font-family:var(--M);white-space:nowrap;' + (/^=|Sobra/.test(r) ? 'font-weight:700;' : '') + (/Sobra/.test(r) && Math.abs(x || 0) > 1 ? 'color:var(--red);' : '') + '">' + R(x) + '</td></tr>').join('') + '</table>' : '';
+  const nm = (P.nomes || []).length ? '<div style="font-weight:700;margin:6px 0 2px;">Diferenças por ' + e((P.rot_nomes || ['Nome'])[0].toLowerCase()) + ' (' + P.nomes.length + ')</div><table style="width:100%;border-collapse:collapse;"><tr style="color:var(--t3);font-size:9px;"><td>' + (P.rot_nomes || []).map(e).join('</td><td style="text-align:right;">') + '</td><td style="text-align:right;">Diferença</td></tr>'
+    + P.nomes.map(x => '<tr style="border-top:1px solid var(--bd);"><td style="padding:1px 4px;">' + e(x.nome) + '</td><td style="padding:1px 4px;text-align:right;font-family:var(--M);">' + R(x.sistema) + '</td><td style="padding:1px 4px;text-align:right;font-family:var(--M);">' + R(x.origem) + '</td><td style="padding:1px 4px;text-align:right;font-family:var(--M);color:' + (x.dif > 0 ? 'var(--gold)' : 'var(--red)') + ';">' + R(x.dif) + '</td></tr>').join('') + '</table>' : '';
+  return '<details style="margin-top:4px;font-size:10.5px;"><summary style="cursor:pointer;color:var(--blue);">Ver as diferenças de um lado e do outro</summary><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:4px 14px;">'
+    + '<div>' + tab('Sistema', P.sistema) + '</div><div>' + tab('Origem (QuickBooks)', P.origem) + '</div></div>' + tab('Ponte entre os dois', P.ponte) + tab('Lançamentos com data futura nas contas bancárias', P.itens) + nm + '</div></details>';
+}
 async function audIndicadores() {
   document.getElementById('audModal')?.remove();
   const m = document.createElement('div'); m.id = 'audModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;';
@@ -30350,7 +30359,7 @@ async function audIndicadores() {
     const h = '<div style="margin-bottom:8px;">Mês ' + e(A.mes) + ' (' + e(String(A.de).split('-').reverse().join('/')) + ' a ' + e(String(A.ate).split('-').reverse().join('/')) + ') · <b>' + (R.batem || 0) + '</b> batem · <b style="color:' + (R.divergem ? 'var(--red)' : 'var(--t2)') + ';">' + (R.divergem || 0) + '</b> divergem · ' + (R.informativos || 0) + ' informativos</div>'
       + ((A.erros || []).length ? '<div style="color:var(--gold);margin-bottom:8px;">Não foi possível ler: ' + A.erros.map(e).join(' · ') + '</div>' : '')
       + grupos.map(g => '<div style="font-family:var(--M);font-size:9.5px;text-transform:uppercase;color:var(--t2);margin:12px 0 4px;">' + e(g) + '</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:640px;"><tr style="color:var(--t3);font-size:9.5px;text-align:left;"><th style="padding:4px;">Indicador</th><th style="padding:4px;text-align:right;">Sistema</th><th style="padding:4px;text-align:right;">Origem</th><th style="padding:4px;text-align:right;">Diferença</th><th style="padding:4px;">Situação</th></tr>'
-        + A.itens.filter(i => i.grupo === g).map(i => '<tr style="border-top:1px solid var(--bd);vertical-align:top;"><td style="padding:5px 4px;">' + e(i.indicador) + '<div style="font-size:10px;color:var(--t3);">' + e(i.fonte) + '</div>' + (i.explicacao ? '<div style="font-size:10px;color:var(--t2);">' + e(i.explicacao) + '</div>' : '') + (i.erro ? '<div style="font-size:10px;color:var(--gold);">' + e(i.erro) + '</div>' : '') + '</td>'
+        + A.itens.filter(i => i.grupo === g).map(i => '<tr style="border-top:1px solid var(--bd);vertical-align:top;"><td style="padding:5px 4px;">' + e(i.indicador) + '<div style="font-size:10px;color:var(--t3);">' + e(i.fonte) + '</div>' + (i.explicacao ? '<div style="font-size:10px;color:var(--t2);">' + e(i.explicacao) + '</div>' : '') + (i.partes ? _audPartes(i.partes, e) : '') + (i.erro ? '<div style="font-size:10px;color:var(--gold);">' + e(i.erro) + '</div>' : '') + '</td>'
           + '<td style="padding:5px 4px;text-align:right;font-family:var(--M);white-space:nowrap;">' + f(i.sistema, i.pct, i.num) + '</td><td style="padding:5px 4px;text-align:right;font-family:var(--M);white-space:nowrap;">' + f(i.origem, i.pct, i.num) + '</td><td style="padding:5px 4px;text-align:right;font-family:var(--M);white-space:nowrap;color:var(--t2);">' + (i.diferenca == null ? '—' : f(i.diferenca, i.pct, i.num)) + '</td><td style="padding:5px 4px;white-space:nowrap;">' + ic(i.ok) + '</td></tr>').join('') + '</table></div>').join('')
       + '<div style="color:var(--t3);font-size:10px;margin-top:10px;">"Diverge" com explicação de diferença esperada (impostos retidos, agenda de pagamentos, lançamentos com data futura) não é erro — confira se o valor da diferença bate com a explicação. Me mande o print de qualquer outra divergência.</div>';
     m.innerHTML = caixa(h);
@@ -35589,7 +35598,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.309] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.310] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35605,7 +35614,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.309';
+window.__ATX_BUILD_ID__ = 'ATX-v3.310';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

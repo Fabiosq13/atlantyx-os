@@ -2996,6 +2996,8 @@ async function qbSaldoContas() {
   };
 }
 
+function _agingGrandTotal(rep) { const gt = (rep?.Rows?.Row || []).find(r => r.group === 'GrandTotal' && r.Summary?.ColData); if (gt) { const c = gt.Summary.ColData; return parseFloat(c[c.length - 1]?.value) || 0; }
+  const l = extrairLinhasRelatorio(rep).filter(x => x.tipo === 'total'); return l.length ? l[l.length - 1].valor : null; }
 function extrairLinhasRelatorio(data) {
   const linhas = [];
   const rows = data?.Rows?.Row || [];
@@ -5306,13 +5308,11 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
       }
 
       if (ar.status === 'fulfilled') {
-        const l = extrairLinhasRelatorio(ar.value);
-        kpis.contas_receber = l.find(x => x.tipo === 'total')?.valor || 0;
+        kpis.contas_receber = _agingGrandTotal(ar.value) || 0; // v3.310: TOTAL geral (antes pegava o 1º subtotal — de um cliente com subclientes)
       }
 
       if (ap.status === 'fulfilled') {
-        const l = extrairLinhasRelatorio(ap.value);
-        kpis.contas_pagar = l.find(x => x.tipo === 'total')?.valor || 0;
+        kpis.contas_pagar = _agingGrandTotal(ap.value) || 0; // v3.310
       }
       if (_b) {
         if (_b.saldo_hoje != null) kpis.saldo_caixa = _b.saldo_hoje;
@@ -5518,6 +5518,22 @@ async function pagamentoSoltoVincular({ billpayment_id, bill_id } = {}) {
 // ═══ v3.303: CONFERÊNCIA DOS INDICADORES NAS ORIGENS ═══
 // Para cada indicador do Dashboard: o valor que o sistema mostra × o que a ORIGEM diz (relatórios e lançamentos do
 // QuickBooks, Metas da Empresa) e a ponte entre os dois quando a regra do sistema é diferente da do relatório de origem.
+// v3.310: lançamentos já registrados nas contas bancárias com data DEPOIS de hoje — o CurrentBalance do QuickBooks já os inclui
+async function _bancoLancFuturos(B, token) {
+  const ids = new Set((B?.contas || []).map(c => String(c.id))), nomeC = Object.fromEntries((B?.contas || []).map(c => [String(c.id), c.nome])), hoje = _hojeBR();
+  if (!ids.size) return { total: 0, itens: [] };
+  const q = ent => qbQuery(`select * from ${ent} where TxnDate > '${hoje}' maxresults 1000`, token).then(r => r?.QueryResponse?.[ent] || []).catch(() => []);
+  const [pu, de, bp, pa, sr, tr] = await Promise.all(['Purchase', 'Deposit', 'BillPayment', 'Payment', 'SalesReceipt', 'Transfer'].map(q));
+  const it = [], pf = (data, tipo, nome, contaId, valor) => { if (ids.has(String(contaId || '')) && valor) it.push({ data, tipo, nome: nome || '', conta: nomeC[String(contaId)] || '', valor: round(valor) }); };
+  pu.forEach(x => pf(x.TxnDate, 'despesa', x.EntityRef?.name, x.AccountRef?.value, (x.Credit ? 1 : -1) * parseFloat(x.TotalAmt || 0)));
+  de.forEach(x => pf(x.TxnDate, 'depósito', (x.Line || [])[0]?.DepositLineDetail?.Entity?.name || x.PrivateNote, x.DepositToAccountRef?.value, parseFloat(x.TotalAmt || 0)));
+  bp.forEach(x => pf(x.TxnDate, 'pagamento de conta', x.VendorRef?.name, x.CheckPayment?.BankAccountRef?.value, -parseFloat(x.TotalAmt || 0)));
+  pa.forEach(x => pf(x.TxnDate, 'recebimento', x.CustomerRef?.name, x.DepositToAccountRef?.value, parseFloat(x.TotalAmt || 0)));
+  sr.forEach(x => pf(x.TxnDate, 'venda', x.CustomerRef?.name, x.DepositToAccountRef?.value, parseFloat(x.TotalAmt || 0)));
+  tr.forEach(x => { pf(x.TxnDate, 'transferência (saída)', x.ToAccountRef?.name, x.FromAccountRef?.value, -parseFloat(x.Amount || 0)); pf(x.TxnDate, 'transferência (entrada)', x.FromAccountRef?.name, x.ToAccountRef?.value, parseFloat(x.Amount || 0)); });
+  it.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+  return { total: round(it.reduce((a, x) => a + x.valor, 0)), qtd: it.length, itens: it.slice(0, 40) };
+}
 async function auditoriaIndicadores({ mes } = {}) {
   if (!qbConfigurado()) return { auditoria: { erro: 'QuickBooks não conectado', itens: [] } };
   const hoje = _hojeBR(), m = /^\d{4}-\d{2}$/.test(mes || '') ? mes : hoje.substring(0, 7), ini = m + '-01', fimM = _fimDoMes(ini), fim = fimM > hoje ? hoje : fimM;
@@ -5537,7 +5553,7 @@ async function auditoriaIndicadores({ mes } = {}) {
   const itens = [], R2 = x => x == null || !isFinite(x) ? null : Math.round(x * 100) / 100;
   const add = (grupo, indicador, sistema, origem, fonte, opt = {}) => { const tol = opt.tol ?? Math.max(1, Math.abs(origem || 0) * 0.005);
     const ok = sistema == null || origem == null ? null : Math.abs(sistema - origem) <= tol;
-    itens.push({ grupo, indicador, sistema: R2(sistema), origem: R2(origem), diferenca: sistema != null && origem != null ? R2(sistema - origem) : null, ok: opt.ok ?? ok, fonte, explicacao: opt.explicacao || null, pct: !!opt.pct, num: !!opt.num, erro: opt.erro || null }); };
+    itens.push({ grupo, indicador, sistema: R2(sistema), origem: R2(origem), diferenca: sistema != null && origem != null ? R2(sistema - origem) : null, ok: opt.ok ?? ok, fonte, explicacao: opt.explicacao || null, pct: !!opt.pct, num: !!opt.num, erro: opt.erro || null, partes: opt.partes || null }); };
   const G = rep => { const o = {}; for (const r of rep?.Rows?.Row || []) if (r.group && r.Summary?.ColData) { const x = parseFloat(r.Summary.ColData[r.Summary.ColData.length - 1]?.value); o[r.group] = isFinite(x) ? x : 0; } return o; };
   const PC = v(rc)?.resultado?.periodo_res, PA = v(ra)?.resultado?.periodo_res, gC = v(plC) ? G(v(plC)) : null, gA = v(plA) ? G(v(plA)) : null;
   // 1) faturamento
@@ -5560,13 +5576,42 @@ async function auditoriaIndicadores({ mes } = {}) {
     if (P.faturamento) add('Lucro', 'Margem de lucro (' + rot + ') = lucro ÷ faturamento', P.margem_liquida_pct, Math.round(P.lucro_liquido / P.faturamento * 1000) / 10, 'Conta do próprio sistema', { tol: 0.15, pct: true }); }
   // 3) caixa, a receber, a pagar
   const K = v(kp)?.kpis, B = v(bank);
-  if (K && B) add('Caixa', 'Saldo em caixa', K.saldo_caixa, B.saldo_total, 'QuickBooks › contas bancárias (saldo atual)', { tol: Math.max(1, Math.abs(B.saldo_total) * 0.002),
-    explicacao: 'O saldo do QuickBooks inclui lançamentos com data FUTURA; o sistema mostra o saldo até hoje. Diferença = lançamentos já registrados com data à frente (ou conta bancária fora do filtro).', erro: er(kp) || er(bank) });
-  const totAging = rep => { const l = extrairLinhasRelatorio(rep); return l.find(x => x.tipo === 'total')?.valor ?? null; };
-  if (K && v(arA)) add('Caixa', 'A receber (faturas em aberto)', K.contas_receber, totAging(v(arA)), 'QuickBooks › Contas a receber por vencimento › Total', { tol: Math.max(1, Math.abs(totAging(v(arA)) || 0) * 0.01),
-    explicacao: 'O sistema desconta as faturas cujo saldo é só imposto retido na fonte (não entra no caixa) — essa é a diferença esperada.' });
-  if (K && v(apA)) add('Caixa', 'A pagar (contas em aberto no QuickBooks)', K.liquidez_composicao?.a_pagar_total_em_aberto ?? K.contas_pagar, totAging(v(apA)), 'QuickBooks › Contas a pagar por vencimento › Total', { tol: Math.max(1, Math.abs(totAging(v(apA)) || 0) * 0.01),
-    explicacao: 'O sistema soma também as despesas da Agenda de pagamentos dos próximos 30 dias que ainda não viraram conta no QuickBooks — essa é a diferença esperada.' });
+  // v3.310: cada divergência vem com a COMPOSIÇÃO dos dois lados e a ponte entre eles (antes só um texto genérico)
+  const [fuS, bcS, futBank] = await Promise.allSettled([T(qbFuturosDetalhado({ data_inicio: hoje, data_fim: null }), 30000), T(baseCaixaHoje({}), 30000), T(_bancoLancFuturos(B, token), 30000)]);
+  const FU = v(fuS), BC = v(bcS), FB = v(futBank);
+  const grp = (arr, k) => { const o = {}; (arr || []).forEach(x => { const n = String(k(x) || '(sem nome)').trim(); o[n] = round((o[n] || 0) + (parseFloat(x.valor) || 0)); }); return o; };
+  const difNomes = (sis, ori) => { const nk = t => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+    const m = {}; Object.entries(sis).forEach(([n, x]) => { const k = nk(n); m[k] = m[k] || { nome: n, sistema: 0, origem: 0 }; m[k].sistema = round(m[k].sistema + x); });
+    Object.entries(ori).forEach(([n, x]) => { const k = nk(n); m[k] = m[k] || { nome: n, sistema: 0, origem: 0 }; m[k].origem = round(m[k].origem + x); });
+    return Object.values(m).map(x => ({ ...x, dif: round(x.sistema - x.origem) })).filter(x => Math.abs(x.dif) > 1).sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif)).slice(0, 40); };
+  if (K && B) { const dif = round((K.saldo_caixa || 0) - B.saldo_total), fut = FB ? FB.total : null, resto = fut == null ? null : round(dif + fut);
+    add('Caixa', 'Saldo em caixa', K.saldo_caixa, B.saldo_total, 'QuickBooks › contas bancárias (saldo atual = CurrentBalance, inclui datas futuras)', { tol: Math.max(1, Math.abs(B.saldo_total) * 0.002),
+      explicacao: fut == null ? 'O saldo do QuickBooks (CurrentBalance) inclui lançamentos com data FUTURA; o sistema mostra o saldo até hoje.' : 'Lançamentos já registrados nas contas bancárias com data depois de hoje: ' + brlTxt(fut) + ' (o QuickBooks já desconta/soma no saldo atual; o sistema só quando a data chegar).' + (Math.abs(resto) > 1 ? ' Sobra sem explicação: ' + brlTxt(resto) + ' — veja as contas abaixo.' : ' Isso explica toda a diferença.'),
+      erro: er(kp) || er(bank),
+      partes: { sistema: [['Saldo das contas bancárias no fim do mês anterior (Balanço do QuickBooks)', BC?.saldo_abertura_mes], ['+ entradas do mês até hoje', BC?.entradas_mes], ['− saídas do mês até hoje', BC?.saidas_mes != null ? -BC.saidas_mes : null], ['= saldo até hoje', K.saldo_caixa]],
+        origem: (B.contas || []).map(c => [c.nome + (c.numero ? ' · ' + c.numero : ''), c.saldo]).concat([['= soma das contas (CurrentBalance)', B.saldo_total]]),
+        ponte: fut == null ? [] : [['Diferença (sistema − QuickBooks)', dif], ['Lançamentos com data futura nas contas bancárias (efeito líquido)', fut], ['Sobra sem explicação', resto]],
+        itens: (FB?.itens || []).map(x => [x.data + ' · ' + x.tipo + ' · ' + x.nome + ' · ' + x.conta, x.valor]) } }); }
+  const agTot = rep => { const gt = (rep?.Rows?.Row || []).find(r => r.group === 'GrandTotal' && r.Summary?.ColData); if (gt) { const c = gt.Summary.ColData; return parseFloat(c[c.length - 1]?.value) || 0; } const l = extrairLinhasRelatorio(rep).filter(x => x.tipo === 'total'); return l.length ? l[l.length - 1].valor : null; };
+  const agNomes = rep => { const o = {}; const w = rr => (rr || []).forEach(r => { if (r.type === 'Data' && r.ColData) { const c = r.ColData, n = c[0]?.value, x = parseFloat(c[c.length - 1]?.value) || 0; if (n && x) o[n] = round((o[n] || 0) + x); } else if (r.Rows?.Row) w(r.Rows.Row); }); w(rep?.Rows?.Row); return o; };
+  if (K && v(arA)) { const oT = agTot(v(arA)), reais = (FU?.recebiveis || []).filter(r => !r.previsao), ret = (_retencaoUltimas.lista || []), sRet = round(ret.reduce((a, x) => a + x.valor, 0));
+    const sis = grp(reais, r => r.cliente || String(r.descricao || '').split(' · ')[0]); ret.forEach(x => { sis[x.contraparte] = round((sis[x.contraparte] || 0) + x.valor); });
+    const ori = agNomes(v(arA)), neg = round(Object.values(ori).filter(x => x < 0).reduce((a, x) => a + x, 0));
+    add('Caixa', 'A receber (faturas em aberto)', K.contas_receber, oT, 'QuickBooks › Contas a receber por vencimento › TOTAL', { tol: Math.max(1, Math.abs(oT || 0) * 0.01),
+      explicacao: 'Esperado: QuickBooks = sistema + saldos que são só imposto retido (' + brlTxt(sRet) + ')' + (neg ? ' − créditos/recebimentos não aplicados de clientes (' + brlTxt(neg) + ')' : '') + '. Sobra sem explicação: ' + brlTxt(round(oT - (K.contas_receber || 0) - sRet - neg)) + '.',
+      partes: { sistema: [['Faturas em aberto no QuickBooks (sem as que só têm imposto retido)', K.contas_receber]], origem: [['Total do relatório Contas a receber por vencimento', oT]],
+        ponte: [['Saldos que são só imposto retido (o sistema não conta)', sRet], ['Créditos/recebimentos não aplicados de clientes (negativos no relatório)', neg], ['Sobra sem explicação', round(oT - (K.contas_receber || 0) - sRet - neg)]],
+        nomes: difNomes(sis, ori), rot_nomes: ['Cliente', 'Sistema (faturas + retidos)', 'QuickBooks'] } }); }
+  if (K && v(apA)) { const oT = agTot(v(apA)), sisT = K.liquidez_composicao?.a_pagar_total_em_aberto ?? K.contas_pagar, bills = FU?.pagaveis || [], jp = FU?.pagaveis_ja_pagas || [];
+    const sB = round(bills.reduce((a, x) => a + (x.valor || 0), 0)), sJ = round(jp.reduce((a, x) => a + (x.valor || 0), 0)), sAg = BC?.a_pagar_agenda ?? null;
+    const sis = grp([...bills, ...jp], x => x.fornecedor || String(x.descricao || '').split(' · ')[0]), ori = agNomes(v(apA)), neg = round(Object.values(ori).filter(x => x < 0).reduce((a, x) => a + x, 0));
+    const resto = round(oT - (sB + sJ) - neg);
+    add('Caixa', 'A pagar (contas em aberto no QuickBooks)', sisT, oT, 'QuickBooks › Contas a pagar por vencimento › TOTAL', { tol: Math.max(1, Math.abs(oT || 0) * 0.01),
+      explicacao: 'Sistema = contas a pagar do QuickBooks ainda não pagas (' + brlTxt(sB) + ') + despesas só da Agenda até 30 dias (' + brlTxt(sAg) + '). QuickBooks = todas as contas abertas, inclusive ' + brlTxt(sJ) + ' já pagas no extrato/pagamento solto' + (neg ? ' e ' + brlTxt(neg) + ' de créditos/pagamentos não aplicados a fornecedores' : '') + '. Sobra sem explicação: ' + brlTxt(resto) + '.',
+      partes: { sistema: [['Contas a pagar do QuickBooks ainda não pagas', sB], ['+ despesas que só existem na Agenda (vencidas até 60 dias e próximos 30)', sAg], ['= total do sistema', sisT]],
+        origem: [['Contas a pagar abertas no QuickBooks (positivas)', round(oT - neg)], ['Créditos/pagamentos não aplicados a fornecedores (negativos)', neg], ['= total do relatório', oT]],
+        ponte: [['Contas já pagas (extrato ou pagamento solto) que seguem abertas no QuickBooks — o sistema tira', sJ], ['Agenda (só no sistema)', sAg], ['Sobra sem explicação (QuickBooks − contas do sistema − já pagas − créditos)', resto]],
+        nomes: difNomes(sis, ori), rot_nomes: ['Fornecedor', 'Sistema (contas QB, inclusive já pagas)', 'QuickBooks'] } }); }
   if (K?.liquidez_composicao) { const L = K.liquidez_composicao; if (L.a_pagar) add('Caixa', 'Liquidez de 30 dias = (caixa + a receber) ÷ a pagar', K.liquidez_corrente, Math.round((L.caixa + L.a_receber) / L.a_pagar * 100) / 100, 'Conta do próprio sistema (' + (L.horizonte || '') + ')', { tol: 0.02, num: true }); }
   // 4) metas
   const M = v(me)?.metas;
