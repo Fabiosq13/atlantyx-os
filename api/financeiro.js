@@ -277,6 +277,7 @@ async function handler(req, res) {
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
       kpis_saude:            () => kpisSaude(params),
+      auditoria_indicadores: () => auditoriaIndicadores(params), // v3.303: confere cada indicador contra a origem
       resultado_kpis:        () => resultadoKpis(params), // v3.112: faturamento, lucro, margens e EBITDA (período + ano)
       metas_empresa_status:  () => metasEmpresaStatus(params), // v3.113: metas do ano (faturamento e % de lucro), falta, semáforo e CRM
       metas_empresa_salvar:  () => metasEmpresaSalvar(params),
@@ -5437,6 +5438,69 @@ function dreLucro(linhas) {
   return t ? t.valor : null;
 }
 
+
+// ═══ v3.303: CONFERÊNCIA DOS INDICADORES NAS ORIGENS ═══
+// Para cada indicador do Dashboard: o valor que o sistema mostra × o que a ORIGEM diz (relatórios e lançamentos do
+// QuickBooks, Metas da Empresa) e a ponte entre os dois quando a regra do sistema é diferente da do relatório de origem.
+async function auditoriaIndicadores({ mes } = {}) {
+  if (!qbConfigurado()) return { auditoria: { erro: 'QuickBooks não conectado', itens: [] } };
+  const hoje = _hojeBR(), m = /^\d{4}-\d{2}$/.test(mes || '') ? mes : hoje.substring(0, 7), ini = m + '-01', fimM = _fimDoMes(ini), fim = fimM > hoje ? hoje : fimM;
+  await _camPreparar(true).catch(() => {});
+  const token = await qbToken(); const T = (p, ms = 45000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('origem não respondeu em ' + ms / 1000 + 's')), ms))]);
+  const soma = (arr, k = 'TotalAmt') => (arr || []).reduce((a, x) => a + (parseFloat(x[k]) || 0), 0);
+  const [rc, ra, plC, plA, inv, pay, sr, cm, arA, apA, bank, kp, me] = await Promise.allSettled([
+    T(resultadoKpis({ data_inicio: ini, data_fim: fim, metodo: 'Cash', _forcar: true })), T(resultadoKpis({ data_inicio: ini, data_fim: fim, metodo: 'Accrual', _forcar: true })),
+    T(qbPL(ini, fim, token, '', 'Cash')), T(qbPL(ini, fim, token, '', 'Accrual')),
+    T(qbQuery(`select TotalAmt, DocNumber, TxnDate from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults 1000`, token)),
+    T(qbQuery(`select TotalAmt, TxnDate from Payment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults 1000`, token)),
+    T(qbQuery(`select TotalAmt, TxnDate from SalesReceipt where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults 1000`, token)),
+    T(qbQuery(`select TotalAmt, TxnDate from CreditMemo where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults 1000`, token)),
+    T(qbFetch(`/reports/AgedReceivables?date_macro=Today`, token)), T(qbFetch(`/reports/AgedPayables?date_macro=Today`, token)),
+    T(qbSaldoContas()), T(kpisSaude({}), 50000), T(metasEmpresaStatus({ ano: parseInt(m), com_crm: false }), 45000)]);
+  const v = x => x.status === 'fulfilled' ? x.value : null, er = x => x.status === 'rejected' ? String(x.reason?.message || x.reason).slice(0, 140) : null;
+  const itens = [], R2 = x => x == null || !isFinite(x) ? null : Math.round(x * 100) / 100;
+  const add = (grupo, indicador, sistema, origem, fonte, opt = {}) => { const tol = opt.tol ?? Math.max(1, Math.abs(origem || 0) * 0.005);
+    const ok = sistema == null || origem == null ? null : Math.abs(sistema - origem) <= tol;
+    itens.push({ grupo, indicador, sistema: R2(sistema), origem: R2(origem), diferenca: sistema != null && origem != null ? R2(sistema - origem) : null, ok: opt.ok ?? ok, fonte, explicacao: opt.explicacao || null, pct: !!opt.pct, num: !!opt.num, erro: opt.erro || null }); };
+  const G = rep => { const o = {}; for (const r of rep?.Rows?.Row || []) if (r.group && r.Summary?.ColData) { const x = parseFloat(r.Summary.ColData[r.Summary.ColData.length - 1]?.value); o[r.group] = isFinite(x) ? x : 0; } return o; };
+  const PC = v(rc)?.resultado?.periodo_res, PA = v(ra)?.resultado?.periodo_res, gC = v(plC) ? G(v(plC)) : null, gA = v(plA) ? G(v(plA)) : null;
+  // 1) faturamento
+  add('Faturamento', 'Faturamento do mês — caixa', PC?.faturamento, gC?.Income, 'QuickBooks › Lucros e Perdas (regime de caixa) › Total Receita', { erro: er(rc) || er(plC) });
+  const recebido = v(pay) || v(sr) ? soma(v(pay)?.QueryResponse?.Payment) + soma(v(sr)?.QueryResponse?.SalesReceipt) : null;
+  if (recebido != null) add('Faturamento', 'Recebimentos lançados no mês (pagamentos de fatura + recibos de venda)', PC?.faturamento, recebido, 'QuickBooks › Payment + SalesReceipt pela data', { ok: null,
+    explicacao: 'Informativo: a receita em caixa também conta depósitos lançados direto em conta de receita e desconta impostos retidos; a diferença mostra o quanto entrou fora de "receber pagamento".' });
+  add('Faturamento', 'Faturamento do mês — competência', PA?.faturamento, gA?.Income, 'QuickBooks › Lucros e Perdas (competência) › Total Receita', { erro: er(ra) || er(plA) });
+  const emit = v(inv) ? soma(v(inv).QueryResponse?.Invoice) - (v(cm) ? soma(v(cm).QueryResponse?.CreditMemo) : 0) : null;
+  if (emit != null) add('Faturamento', 'Notas emitidas no mês (faturas − notas de crédito)', PA?.faturamento, emit, 'QuickBooks › Invoice e CreditMemo pela data de emissão', { tol: Math.max(50, Math.abs(emit) * 0.02),
+    explicacao: 'A receita por competência pode diferir das faturas por lançamentos manuais de receita ou faturas de outra data; até 2% é tolerado.' });
+  // 2) lucro e gastos: ponte do "Lucro líquido" do QuickBooks para o lucro do sistema (4 camadas)
+  for (const [P, g, rot] of [[PC, gC, 'caixa'], [PA, gA, 'competência']]) { if (!P || !g) continue; const C = P.camadas || {};
+    add('Lucro', 'Lucro líquido do QuickBooks (' + rot + ')', P.lucro_contabil_qb, g.NetIncome ?? null, 'QuickBooks › Lucros e Perdas › Lucro líquido', { explicacao: 'Confere a leitura do relatório.' });
+    const retQb = C.retiradas_fonte === 'quickbooks' ? (C.retiradas || 0) : 0, impEst = C.impostos_fonte === 'estimado' ? (C.impostos || 0) : 0, parcAg = C.corporativas_detalhe?.parcelamentos_da_agenda || 0;
+    const ponte = (g.NetIncome ?? 0) + retQb - impEst - parcAg;
+    add('Lucro', 'Lucro do sistema (' + rot + ') = QuickBooks + retiradas − impostos estimados − parcelamentos da agenda', P.lucro_liquido, ponte, 'Ponte a partir do Lucro líquido do QuickBooks',
+      { explicacao: 'Lucro líquido QB ' + brlTxt(g.NetIncome) + ' + retiradas de sócio lançadas como despesa ' + brlTxt(retQb) + ' − impostos sobre receita estimados ' + brlTxt(impEst) + ' − parcelamentos que só estão na agenda ' + brlTxt(parcAg) + '.' });
+    add('Lucro', 'Gastos (' + rot + ') = faturamento + outras receitas − lucro', P.gastos_totais, (P.faturamento || 0) + (P.outras_receitas || 0) - (P.lucro_liquido || 0), 'Conta do próprio sistema');
+    if (P.faturamento) add('Lucro', 'Margem de lucro (' + rot + ') = lucro ÷ faturamento', P.margem_liquida_pct, Math.round(P.lucro_liquido / P.faturamento * 1000) / 10, 'Conta do próprio sistema', { tol: 0.15, pct: true }); }
+  // 3) caixa, a receber, a pagar
+  const K = v(kp)?.kpis, B = v(bank);
+  if (K && B) add('Caixa', 'Saldo em caixa', K.saldo_caixa, B.saldo_total, 'QuickBooks › contas bancárias (saldo atual)', { tol: Math.max(1, Math.abs(B.saldo_total) * 0.002),
+    explicacao: 'O saldo do QuickBooks inclui lançamentos com data FUTURA; o sistema mostra o saldo até hoje. Diferença = lançamentos já registrados com data à frente (ou conta bancária fora do filtro).', erro: er(kp) || er(bank) });
+  const totAging = rep => { const l = extrairLinhasRelatorio(rep); return l.find(x => x.tipo === 'total')?.valor ?? null; };
+  if (K && v(arA)) add('Caixa', 'A receber (faturas em aberto)', K.contas_receber, totAging(v(arA)), 'QuickBooks › Contas a receber por vencimento › Total', { tol: Math.max(1, Math.abs(totAging(v(arA)) || 0) * 0.01),
+    explicacao: 'O sistema desconta as faturas cujo saldo é só imposto retido na fonte (não entra no caixa) — essa é a diferença esperada.' });
+  if (K && v(apA)) add('Caixa', 'A pagar (contas em aberto no QuickBooks)', K.liquidez_composicao?.a_pagar_total_em_aberto ?? K.contas_pagar, totAging(v(apA)), 'QuickBooks › Contas a pagar por vencimento › Total', { tol: Math.max(1, Math.abs(totAging(v(apA)) || 0) * 0.01),
+    explicacao: 'O sistema soma também as despesas da Agenda de pagamentos dos próximos 30 dias que ainda não viraram conta no QuickBooks — essa é a diferença esperada.' });
+  if (K?.liquidez_composicao) { const L = K.liquidez_composicao; if (L.a_pagar) add('Caixa', 'Liquidez de 30 dias = (caixa + a receber) ÷ a pagar', K.liquidez_corrente, Math.round((L.caixa + L.a_receber) / L.a_pagar * 100) / 100, 'Conta do próprio sistema (' + (L.horizonte || '') + ')', { tol: 0.02, num: true }); }
+  // 4) metas
+  const M = v(me)?.metas;
+  if (M) { const md = M.meta || {}; itens.push({ grupo: 'Metas', indicador: 'Meta de faturamento ' + M.ano, sistema: md.faturamento ?? null, origem: md.faturamento ?? null, ok: md.faturamento != null ? true : null, fonte: md.fonte || (md.padrao ? 'meta padrão da empresa' : 'Metas da Empresa'), explicacao: md.definida ? 'Cadastrada em Planejamento › Metas da Empresa.' : 'Sem cadastro próprio — vale a meta padrão.' });
+    itens.push({ grupo: 'Metas', indicador: 'Meta de margem de lucro ' + M.ano, sistema: md.margem_pct ?? null, origem: md.margem_pct ?? null, ok: md.margem_pct != null ? true : null, pct: true, fonte: 'Metas da Empresa', explicacao: 'Comparada com a margem de lucro do sistema (resultado operacional ÷ faturamento).' }); }
+  const erros = [[rc, 'resultado (caixa)'], [ra, 'resultado (competência)'], [plC, 'DRE caixa'], [plA, 'DRE competência'], [kp, 'indicadores de caixa'], [bank, 'contas bancárias'], [arA, 'contas a receber'], [apA, 'contas a pagar'], [me, 'metas']].filter(([x]) => er(x)).map(([x, n]) => n + ': ' + er(x));
+  const ok = itens.filter(i => i.ok === true).length, div = itens.filter(i => i.ok === false).length;
+  return { auditoria: { mes: m, de: ini, ate: fim, em: new Date().toISOString(), resumo: { conferidos: itens.length, batem: ok, divergem: div, informativos: itens.filter(i => i.ok == null).length }, itens, erros } };
+}
+const brlTxt = v => v == null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // ═══ v3.112: RESULTADO DA EMPRESA (faturamento, lucro, margens, EBITDA) — base ÚNICA para Dashboard, LIVE e KPIs ═══
 // Lê a DRE do QuickBooks pelo "group" de cada seção (Income, COGS, Expenses, OtherIncome, OtherExpenses, NetIncome),
 // que não depende do idioma nem do nome das contas. Regime de COMPETÊNCIA (accrual): faturamento = notas emitidas.

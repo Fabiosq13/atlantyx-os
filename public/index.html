@@ -30292,6 +30292,27 @@ function _resCartaoMeta(rot, val, cor, tip, m, rodape) {
   } else if (m && m.semMeta) metaH = '<div class="rc-meta"><span class="rc-sem">sem meta · <a onclick="event.stopPropagation();metasEditar()">definir metas</a></span></div>';
   return '<div class="res-card rc2" style="--c:' + cor + ';"><div class="rl">' + rot + _tip(tip) + '</div><div class="rv" style="color:' + cor + ';">' + val + '</div>' + metaH + (rodape ? '<div class="rs">' + rodape + '</div>' : '') + '</div>';
 }
+// v3.303: CONFERÊNCIA DOS INDICADORES NAS ORIGENS — valor do sistema × relatório/lançamentos do QuickBooks, com a ponte
+async function audIndicadores() {
+  document.getElementById('audModal')?.remove();
+  const m = document.createElement('div'); m.id = 'audModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;';
+  const caixa = h => '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(980px,100%);"><div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;"><b style="flex:1;font-size:13.5px;">🔎 Conferência dos indicadores nas origens</b><button class="btn btn-g" onclick="audIndicadores()">↻</button><button class="btn btn-g" onclick="document.getElementById(\'audModal\').remove()">✕</button></div><div style="padding:12px 16px;font-size:11.5px;">' + h + '</div></div>';
+  m.innerHTML = caixa('<div style="color:var(--t3);padding:20px;text-align:center;">Lendo os relatórios e lançamentos do QuickBooks e recalculando cada indicador… (até 1–2 minutos)</div>');
+  m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m);
+  try { const d = await finApi('auditoria_indicadores', {}, { timeoutMs: 125000 }); const A = d.auditoria || {}; const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const f = (x, pct, num) => x == null ? '—' : pct ? String(x).replace('.', ',') + '%' : num ? String(x).replace('.', ',') : 'R$ ' + Number(x).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const ic = o => o === true ? '<span style="color:var(--green);">✓ bate</span>' : o === false ? '<span style="color:var(--red);font-weight:700;">⚠ diverge</span>' : '<span style="color:var(--t3);">ℹ informativo</span>';
+    const grupos = [...new Set((A.itens || []).map(i => i.grupo))];
+    const R = A.resumo || {};
+    const h = '<div style="margin-bottom:8px;">Mês ' + e(A.mes) + ' (' + e(String(A.de).split('-').reverse().join('/')) + ' a ' + e(String(A.ate).split('-').reverse().join('/')) + ') · <b>' + (R.batem || 0) + '</b> batem · <b style="color:' + (R.divergem ? 'var(--red)' : 'var(--t2)') + ';">' + (R.divergem || 0) + '</b> divergem · ' + (R.informativos || 0) + ' informativos</div>'
+      + ((A.erros || []).length ? '<div style="color:var(--gold);margin-bottom:8px;">Não foi possível ler: ' + A.erros.map(e).join(' · ') + '</div>' : '')
+      + grupos.map(g => '<div style="font-family:var(--M);font-size:9.5px;text-transform:uppercase;color:var(--t2);margin:12px 0 4px;">' + e(g) + '</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:640px;"><tr style="color:var(--t3);font-size:9.5px;text-align:left;"><th style="padding:4px;">Indicador</th><th style="padding:4px;text-align:right;">Sistema</th><th style="padding:4px;text-align:right;">Origem</th><th style="padding:4px;text-align:right;">Diferença</th><th style="padding:4px;">Situação</th></tr>'
+        + A.itens.filter(i => i.grupo === g).map(i => '<tr style="border-top:1px solid var(--bd);vertical-align:top;"><td style="padding:5px 4px;">' + e(i.indicador) + '<div style="font-size:10px;color:var(--t3);">' + e(i.fonte) + '</div>' + (i.explicacao ? '<div style="font-size:10px;color:var(--t2);">' + e(i.explicacao) + '</div>' : '') + (i.erro ? '<div style="font-size:10px;color:var(--gold);">' + e(i.erro) + '</div>' : '') + '</td>'
+          + '<td style="padding:5px 4px;text-align:right;font-family:var(--M);white-space:nowrap;">' + f(i.sistema, i.pct, i.num) + '</td><td style="padding:5px 4px;text-align:right;font-family:var(--M);white-space:nowrap;">' + f(i.origem, i.pct, i.num) + '</td><td style="padding:5px 4px;text-align:right;font-family:var(--M);white-space:nowrap;color:var(--t2);">' + (i.diferenca == null ? '—' : f(i.diferenca, i.pct, i.num)) + '</td><td style="padding:5px 4px;white-space:nowrap;">' + ic(i.ok) + '</td></tr>').join('') + '</table></div>').join('')
+      + '<div style="color:var(--t3);font-size:10px;margin-top:10px;">"Diverge" com explicação de diferença esperada (impostos retidos, agenda de pagamentos, lançamentos com data futura) não é erro — confira se o valor da diferença bate com a explicação. Me mande o print de qualquer outra divergência.</div>';
+    m.innerHTML = caixa(h);
+  } catch (err) { m.innerHTML = caixa('<div style="color:var(--red);">Não consegui conferir: ' + String(err.message).replace(/</g, '&lt;') + '</div>'); }
+}
 // ═══ v3.291: APURAÇÃO DE MARGEM EM 4 CAMADAS — tabela (empresa + motores) e janela com as contas de cada camada ═══
 const _CAM_NOMES = { receita: 'Receita', imposto: 'Impostos sobre receita', direto: 'Custo direto', fixo: 'Custo fixo rateável', corporativo: 'Despesa corporativa', retirada: 'Retirada de sócio' };
 function _camHtml(c, opt) {
@@ -30409,7 +30430,7 @@ function _resCardsHtml(R, modo) {
     cards.push('<div class="res-card" style="--c:var(--blue);grid-column:1/-1;"><div class="rl">' + (lblP === 'do mês' ? 'O mês' : 'O período') + ' nos dois regimes · ' + per + _tip('**Caixa** = o que efetivamente entrou e saiu do banco no período (recebimentos e pagamentos).\n**Competência** = notas emitidas e contas do período, pagas ou não.\n\nA diferença no faturamento é o que foi faturado e ainda não foi recebido (ou recebido de meses anteriores). O lucro nos dois regimes segue a apuração em 4 camadas (antes das retiradas de sócio).') + '</div>'
       + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;min-width:440px;"><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;font-family:var(--M);"><th style="text-align:left;padding:4px 8px;"></th><th style="text-align:right;padding:4px 8px;">Caixa</th><th style="text-align:right;padding:4px 8px;">Competência</th><th style="text-align:right;padding:4px 8px;">Diferença</th></tr>'
       + lin('Faturamento', 'fat') + lin('Gastos', 'gas') + lin('Lucro (resultado operacional)', 'luc') + lin('Margem de lucro', 'mg', true) + lin('EBITDA', 'eb') + lin('Resultado do dono (após retiradas)', 'dono')
-      + '</table></div><div class="rs">Os cartões acima estão em <b>' + (cx ? 'caixa' : 'competência') + '</b> — troque o regime no seletor do dashboard para ver todos os indicadores no outro.</div></div>');
+      + '</table></div><div class="rs">Os cartões acima estão em <b>' + (cx ? 'caixa' : 'competência') + '</b> — troque o regime no seletor do dashboard para ver todos os indicadores no outro. · <a href="#" onclick="event.preventDefault();audIndicadores()" style="color:var(--blue);">🔎 conferir os indicadores nas origens</a></div></div>');
   }
   return '<div class="rc-row">' + cards.slice(0, 5).join('') + '</div>' + cards.slice(5).join(''); // v3.123: os 5 indicadores ocupam a largura toda
 }
@@ -32752,7 +32773,7 @@ function _resNota(R) {
   const aj = R.periodo_res?.ajustes_ebitda || {}, brl = v => fmtBRL(v || 0);
   const ajTxt = [aj.depreciacao_amortizacao ? 'depreciação ' + brl(aj.depreciacao_amortizacao) : '', aj.juros_despesas_financeiras ? 'juros/financeiras ' + brl(aj.juros_despesas_financeiras) : '', aj.ir_csll ? 'IR/CSLL ' + brl(aj.ir_csll) : '', aj.receitas_financeiras ? '− receitas financeiras ' + brl(aj.receitas_financeiras) : ''].filter(Boolean).join(' · ');
   return 'DRE do QuickBooks em regime de <b>' + (R.regime || 'caixa') + '</b> · ' + (R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) + (R.periodo.parcial ? ' (até hoje)' : '') : '')
-    + ' · acumulado do ano até ' + _resData(R.ano?.ate) + (ajTxt ? ' · ajustes do EBITDA: ' + ajTxt : ' · EBITDA = lucro (resultado operacional) + depreciação, juros e IR/CSLL — nenhum lançado no período')
+    + ' · acumulado do ano até ' + _resData(R.ano?.ate) + (ajTxt ? ' · ajustes do EBITDA: ' + ajTxt : ' · EBITDA = lucro (resultado operacional) + depreciação, juros e IR/CSLL — nenhum lançado no período') + ' · <a href="#" onclick="event.preventDefault();audIndicadores()" style="color:var(--blue);">🔎 conferir nas origens</a>'
     + ((R.erros || []).length ? ' · <span style="color:var(--gold);">⚠ ' + R.erros.map(_errQbAmigavel).join(' · ').replace(/</g, '&lt;') + '</span>' : '');
 }
 // v3.119: erro cru do QuickBooks (JSON do 429) vira uma frase legível
@@ -35521,7 +35542,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.302] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.303] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35537,7 +35558,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.302';
+window.__ATX_BUILD_ID__ = 'ATX-v3.303';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
