@@ -178,6 +178,9 @@ Gere o plano de impulsionamento em JSON:
 
     const t0 = Date.now();
     const resultado = await acoes[action]();
+    // v3.300: resposta da IA ilegível vira erro claro (antes ia {raw} com success:true e a tela mostrava "undefined")
+    if (Object.values(resultado || {}).some(v => v && typeof v === 'object' && !Array.isArray(v) && 'raw' in v && Object.keys(v).length === 1))
+      return res.status(502).json({ success: false, action, error: 'A IA devolveu uma resposta que não deu para ler — tente de novo.' });
     console.log(`[s2-creative] ${action} OK em ${Date.now()-t0}ms`);
     return res.status(200).json({ success: true, action, timestamp: new Date().toISOString(), ...resultado });
 

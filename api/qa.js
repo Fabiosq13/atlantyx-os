@@ -500,7 +500,10 @@ async function mktPasso(base, passo, c = {}) {
     else if (lr[0].campanha !== camp || lr[0].origem !== 'linkedin') add('alta', 'Lead gravado sem a campanha/origem correta', JSON.stringify(lr[0]), 'A atribuição por UTM está quebrada.', 'api/lead-capture.js');
     try { await sql`DELETE FROM leads WHERE campanha = ${camp}`; } catch (_) {}
   }
-  else if (passo === 'publicar') {
+  else if (passo === 'publicar' || passo === 'verificar' || passo === 'apagar') { // v3.300: regra da empresa — robô de QA nunca faz ação social real
+    cont.ignorado = true; cont.nota = 'O robô de QA não publica nas redes (regra da Atlantyx).';
+  }
+  else if (false && passo === 'publicar') {
     const redes = (c.redes_teste && c.redes_teste.length ? c.redes_teste : (ctx.redes_conectadas || []).filter(r => ['linkedin', 'facebook', 'instagram'].includes(r)));
     if (!redes.length) { add('alta', 'Sem rede para publicar o teste', 'nenhuma rede conectada', '', 'Metricool'); cont.ok = false; }
     else {

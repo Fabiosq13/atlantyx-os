@@ -173,12 +173,13 @@ async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_i
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
   const hoje = new Date(), ini = new Date(hoje.getTime() - dias * 864e5), f = d => d.toISOString().substring(0, 10);
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ini)}T00:00:00&end=${f(hoje)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
-  const lista = (Array.isArray(r) ? r : (r?.data || r?.posts || [])).filter(p => (p.providers || []).some(x => /error|fail|reject/i.test(String(x.status || x.publishStatus || ''))));
+  const jaRep = new Set(((await _kvMc('mc:republicados').catch(() => null)) || []).map(String)); // v3.300: post já reenviado não volta para a lista
+  const lista = (Array.isArray(r) ? r : (r?.data || r?.posts || [])).filter(p => !jaRep.has(String(p.id)) && (p.providers || []).some(x => /error|fail|reject/i.test(String(x.status || x.publishStatus || ''))));
   const alvo = Array.isArray(ids) && ids.length ? lista.filter(p => ids.map(String).includes(String(p.id))) : lista;
   const itens = alvo.map(p => { const prov = (p.providers || []).filter(x => /error|fail|reject/i.test(String(x.status || x.publishStatus || '')));
     const motivo = _motivoErroMc(p, prov);
     return { id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 16), redes: prov.map(x => String(x.network).toLowerCase()), texto: String(p.text || '').substring(0, 90), motivo, categoria: _categoriaErroMc(motivo),
-      tipo: prov.some(x => x?.data?.postType === 'STORY') ? 'STORY' : prov.some(x => x?.data?.postType === 'REEL') ? 'REEL' : 'POST', midias: (p.media || p.medias || []).length, _p: p, _prov: prov }; });
+      tipo: prov.some(x => x?.data?.postType === 'STORY') ? 'STORY' : prov.some(x => x?.data?.postType === 'REEL') ? 'REEL' : 'POST', midias: (p.media || p.medias || []).length, _p: p, _prov: prov, _todas_falharam: prov.length === (p.providers || []).length }; });
   const conexao = itens.filter(i => i.categoria === 'conexão da rede');
   if (!aplicar) return { total: itens.length, itens: itens.map(({ _p, _prov, ...x }) => x), por_categoria: itens.reduce((a, i) => { a[i.categoria] = (a[i.categoria] || 0) + 1; return a; }, {}),
     aviso: conexao.length ? conexao.length + ' falharam por conexão da rede (token/permissão) — reconecte a rede no Metricool antes de republicar, senão vão falhar de novo.' : null };
@@ -205,10 +206,13 @@ async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_i
         ...(midias.length ? { media: midias, medias: midias } : {}) };
       const novo = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
       const novoId = novo?.data?.id || novo?.id || null;
-      try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (_) {}
-      feitos.push({ id_antigo: it.id, id_novo: novoId, redes: it.redes, quando: slot.data + ' ' + slot.hora, texto: it.texto });
+      // v3.300: só apaga o original quando TODAS as redes dele falharam (antes apagava também as que tinham publicado);
+      // se o apagar falhar, avisa — senão a próxima rodada republicava de novo
+      let apagou = null; if (it._todas_falharam) { try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); apagou = true; } catch (e) { apagou = false; } }
+      feitos.push({ id_antigo: it.id, id_novo: novoId, redes: it.redes, quando: slot.data + ' ' + slot.hora, texto: it.texto, original_apagado: apagou, aviso: apagou === false ? 'o post original com erro não foi apagado no Metricool — apague-o lá para não republicar de novo' : !it._todas_falharam ? 'o original ficou (outras redes dele publicaram); só as redes com erro foram reenviadas' : null });
     } catch (e) { vagos.unshift(slot); falhas.push({ id: it.id, erro: e.message.substring(0, 200) }); }
   }
+  if (feitos.length) { try { await _kvMc('mc:republicados', [...jaRep, ...feitos.map(f => String(f.id_antigo))].slice(-500)); } catch (_) {} }
   return { republicados: feitos.length, feitos, falhas };
 }
 
@@ -1150,10 +1154,14 @@ async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunh
   if (!slots.length) throw new Error('nenhum slot');
   const sql = await _filaTabela();
   const lote = 'lt_' + Date.now().toString(36);
+  // v3.300: horário que já passou (São Paulo) não entra na fila — o Metricool recusava e a fila tentava 3 vezes
+  const agoraSP = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(Date.now() + 15 * 60000)).replace(' ', 'T');
+  const futuro = (d, h) => `${d}T${String(h || '00:00').padStart(5, '0')}` > agoraSP;
+  slots = slots.filter(x => futuro(x.data, x.hora)); if (!slots.length) throw new Error('Todos os horários escolhidos já passaram — escolha datas/horários futuros');
   // v2.73: um STORY do Instagram por dia do plano
   if (stories) {
     const dias = [...new Set(slots.map(s => s.data))];
-    for (const d of dias) {
+    for (const d of dias) { if (!futuro(d, story_hora)) continue;
       const id = `${lote}_story_${d}`;
       await sql`INSERT INTO autocampanha_fila (id, lote, data, hora, tema, redes, blog_id, apenas_rascunho, com_imagem)
         VALUES (${id}, ${lote}, ${d}, ${story_hora}, ${tema || null}, ${JSON.stringify(['instagram'])}, ${blog_id || null}, ${!!apenas_rascunho}, true) ON CONFLICT (id) DO NOTHING`;
@@ -1204,8 +1212,10 @@ async function filaProcessar({ lote } = {}) {
       await sql`UPDATE autocampanha_fila SET etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, tentativas = 0, erro = ${'sem imagem: ' + String(msg).substring(0, 200)}, atualizado_em = NOW() WHERE id = ${it.id}`;
       return { id: it.id, etapa: 'imagem', erro: msg, seguiu_sem_imagem: true };
     }
-    await sql`UPDATE autocampanha_fila SET status = ${t >= 3 ? 'falhou' : 'pendente'}, tentativas = ${t}, erro = ${String(msg).substring(0, 300)}, atualizado_em = NOW() WHERE id = ${it.id}`;
-    return { id: it.id, etapa: it.etapa, erro: msg, tentativa: t, desistiu: t >= 3 };
+    // v3.300: falha NA ETAPA DE AGENDAR não é repetida sozinha — o Metricool pode ter criado o post antes do erro (até 3 cópias)
+    const agendarFinal = it.etapa === 'agendar';
+    await sql`UPDATE autocampanha_fila SET status = ${t >= 3 || agendarFinal ? 'falhou' : 'pendente'}, tentativas = ${t}, erro = ${(agendarFinal ? 'agendamento falhou — confira no Metricool antes de reenviar: ' : '') + String(msg).substring(0, 260)}, atualizado_em = NOW() WHERE id = ${it.id}`;
+    return { id: it.id, etapa: it.etapa, erro: msg, tentativa: t, desistiu: t >= 3 || it.etapa === 'agendar' };
   };
   const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
   const NEG = 'animal, monkey, ape, dog, cat, bird, cartoon, anime, illustration, character, mascot, toy, childish, fantasy, text, letters, words, watermark, logo, close-up face, distorted, blurry, low quality';
@@ -1292,7 +1302,7 @@ async function filaProcessar({ lote } = {}) {
     }
     await sql`UPDATE autocampanha_fila SET status = 'pronto', atualizado_em = NOW() WHERE id = ${it.id}`;
     return { id: it.id, ok: true };
-  } catch (e) { return await falhar(e.message); }
+  } catch (e) { if (e.metricool_id) { try { await sql`UPDATE autocampanha_fila SET metricool_id = ${e.metricool_id} WHERE id = ${it.id}`; } catch (_) {} } return await falhar(e.message); }
 }
 // v2.70: agenda os RASCUNHOS já prontos — sem reescrever texto nem regerar imagem.
 // Muda os itens prontos e não agendados para a etapa "agendar"; a fila faz o resto.
@@ -1726,6 +1736,7 @@ async function handler(req, res) {
     const { action, payload: _pl, ...resto } = req.body || {};
     const payload = (_pl && typeof _pl === 'object') ? { ...resto, ..._pl } : resto;
     if (!action) return res.status(400).json({ error: 'Campo "action" obrigatório' });
+    if (action === 'erros_publicacao') return res.status(200).json({ success: true, erros: ((await _kvMc('mc:erros_publicacao').catch(() => null)) || []).slice(0, Math.min(200, Number(payload.limite) || 60)) }); // v3.300
 
     // Status da conexão — sempre disponível, mesmo sem credenciais
     if (action === 'status') {
@@ -1812,7 +1823,7 @@ async function handler(req, res) {
     autocampanha_diagnostico: () => autoCampanhaDiagnostico(),
     story_agendar:          () => storyAgendar(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
-    autocampanha_executar:  () => autoCampanhaExecutar(payload),
+    autocampanha_executar:  () => { throw new Error('Desativado (v3.300): use a fila da autocampanha — o caminho direto agendava sem checar mídia e fuso'); },
       // Publicar/agendar post
       // payload: { texto, redes: ['linkedin','instagram','facebook'], data_hora (ISO opcional), imagem_url (opcional), campanha_id, peca_id }
       publicar: async () => {
@@ -1837,6 +1848,12 @@ async function handler(req, res) {
         const _spLocal = d => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(d).map(x => [x.type, x.value]));
           return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}`; };
         const dataHoraSP = _semFuso ? String(data_hora).trim().replace(' ', 'T').substring(0, 19).padEnd(19, ':00').substring(0, 19) : _spLocal(quando);
+        // v3.300: horário no passado (ou em menos de 3 min) o Metricool recusa/publica errado — barra antes, com mensagem clara
+        { const agoraSP = _spLocal(new Date(Date.now() + 3 * 60000)); if (data_hora && dataHoraSP < agoraSP) { const e = new Error('Horário de publicação já passou (' + dataHoraSP.replace('T', ' ').substring(0, 16) + ', horário de Brasília) — escolha um horário pelo menos 3 minutos à frente'); e.dica = 'Reagende a peça para um horário futuro.'; e.validacao = true; throw e; } }
+        // v3.300: limites de texto por rede (Instagram 2.200, LinkedIn 3.000, X 280) e carrossel até 10 imagens
+        { const lim = { INSTAGRAM: 2200, LINKEDIN: 3000, TWITTER: 280, FACEBOOK: 63000, TIKTOK: 2200 }, tam = String(texto || '').length, estoura = providers.filter(p => lim[p] && tam > lim[p]);
+          if (estoura.length) { const e = new Error('Texto com ' + tam + ' caracteres passa do limite de ' + estoura.map(p => p.toLowerCase() + ' (' + lim[p] + ')').join(', ')); e.dica = 'Encurte o texto ou publique só nas redes que aceitam esse tamanho.'; e.validacao = true; throw e; }
+          const nImg = Array.isArray(imagens_urls) ? imagens_urls.length : 0; if (nImg > 10) { const e = new Error('Carrossel com ' + nImg + ' imagens — o máximo é 10'); e.validacao = true; throw e; } }
 
         const body = {
           // v1.8: Story do Instagram/Facebook — provider com data { postType: STORY }
@@ -1903,7 +1920,7 @@ async function handler(req, res) {
               const tam = parseInt(resp.headers.get('content-length') || '0');
               if (!resp.ok) problemas.push(`${url.substring(0,60)} — HTTP ${resp.status} (o Metricool não consegue baixar)`);
               else if (ct.includes('text/html')) problemas.push(`${url.substring(0,60)} — devolveu HTML em vez de mídia (link de página, não do arquivo?)`);
-              else if (tipo === 'REEL' && !ct.includes('video')) problemas.push(`${url.substring(0,60)} — Reel exige vídeo MP4, veio "${ct}"`);
+              else if (tipo === 'REEL' && !/video\/(mp4|quicktime)/.test(ct)) problemas.push(`${url.substring(0,60)} — Reel exige vídeo MP4 ou MOV, veio "${ct}"${ct.includes('webm') ? ' (gravação WebM do navegador: o Instagram não aceita — grave/converta em MP4)' : ''}`);
               else if (tipo !== 'REEL' && ct && !ct.includes('image')) problemas.push(`${url.substring(0,60)} — esperado imagem, veio "${ct}"`);
               else if (tam && tam < 1024) problemas.push(`${url.substring(0,60)} — arquivo muito pequeno (${tam} bytes), pode estar corrompido`);
             } catch (e) {
@@ -1923,7 +1940,7 @@ async function handler(req, res) {
         // ficou só no Facebook e o sistema achava que estava nos dois)
         const devolvidas = ((r?.data || r)?.providers || []).map(x => String(x.network || x).toUpperCase()).filter(Boolean);
         const faltando = devolvidas.length ? providers.filter(p => !devolvidas.includes(p)) : [];
-        if (faltando.length && faltando.length === providers.length) throw new Error('O Metricool criou o post sem nenhuma das redes pedidas (' + providers.join(', ') + ')');
+        if (faltando.length && faltando.length === providers.length) { const e = new Error('O Metricool criou o post sem nenhuma das redes pedidas (' + providers.join(', ') + ')'); e.post_criado = true; e.metricool_id = r?.data?.id || r?.id || null; throw e; } // v3.300: post existe — não reenviar
         return {
           publicado: true,
           agendado_para: quando.toISOString(),
@@ -2062,9 +2079,14 @@ async function handler(req, res) {
 
   } catch (error) {
     console.error('[ERRO metricool]', error.message);
+    // v3.300: guarda o histórico dos erros de publicação (antes só ficavam no log do Vercel) — tela Marketing › "Erros de publicação"
+    const _ac = String(req.body?.action || '');
+    if (/publicar|agendar|republicar|story|reel|carrossel|fila/i.test(_ac)) { try { const pl = req.body?.payload || req.body || {}; const L = (await _kvMc('mc:erros_publicacao')) || [];
+      L.unshift({ em: new Date().toISOString(), acao: _ac, erro: String(error.message || '').slice(0, 500), dica: error.dica || null, redes: pl.redes || null, tipo: pl.tipo || null, data_hora: pl.data_hora || null, texto: String(pl.texto || '').slice(0, 140), metricool_id: error.metricool_id || null });
+      await _kvMc('mc:erros_publicacao', L.slice(0, 200)); } catch (_) {} }
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error.message, dica: error.dica || null, midias_com_problema: error.midias_com_problema || null, metricool_id: error.metricool_id || null, // v3.300: a tela já lê a dica
       module: 'metricool',
       hint: error.message?.includes('401') || error.message?.includes('403')
         ? 'Token Metricool inválido ou expirado. Regenere em Settings → API no Metricool.'

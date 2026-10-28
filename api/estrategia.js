@@ -293,7 +293,16 @@ async function planoEstrRealizado(plano) {
     FROM leads WHERE criado_em > NOW() - INTERVAL '90 days' AND COALESCE(status,'') <> 'qa_teste' AND utm->>'campaign' LIKE 'alv-%' GROUP BY 1`; }
   catch (_) { rows = []; } // tabela de leads ainda não existe — sem realizado, sem erro
   const por = Object.fromEntries(rows.filter(r => r.alv).map(r => [r.alv, r]));
-  return { janela: '90 dias', alavancas: P.alavancas.map(a => ({ id: a.id, leads_90d: por[a.id]?.leads || 0, leads_30d: por[a.id]?.leads_30d || 0, reunioes_90d: por[a.id]?.reunioes || 0, receita_realizada: a.receita_realizada })),
+  // v3.300: leads de CAMPANHAS DE MARKETING ligadas ao plano (utm "cm_…" + utms das ações) também contam para as alavancas
+  // da campanha — antes só "alv-…" contava e as trilhas trabalhadas por campanha apareciam com zero leads
+  const viaCamp = {};
+  try { const C = ((await kv('mkt:campanhas')) || {}).lista || [];
+    for (const c of C) { const alvs = c.plano?.tipo === 'estrategico' ? (c.plano.alavancas || []) : []; if (!alvs.length) continue;
+      const utms = [c.utm, ...((c.acoes || []).map(x => x.utm || x.utm_campaign))].filter(Boolean).map(x => String(x).toLowerCase()); if (!utms.length) continue;
+      const r = await sql`SELECT COUNT(*)::int AS leads, COUNT(reuniao_marcada_em)::int AS reunioes FROM leads WHERE criado_em > NOW() - INTERVAL '90 days' AND COALESCE(status,'') <> 'qa_teste' AND lower(utm->>'campaign') = ANY(${utms})`;
+      for (const a of alvs) { const v = viaCamp[a] = viaCamp[a] || { leads: 0, reunioes: 0, campanhas: [] }; v.leads += r[0]?.leads || 0; v.reunioes += r[0]?.reunioes || 0; v.campanhas.push(c.nome + (alvs.length > 1 ? ' (dividida com ' + (alvs.length - 1) + ' trilha(s))' : '')); } } } catch (_) {}
+  return { janela: '90 dias', alavancas: P.alavancas.map(a => ({ id: a.id, leads_90d: (por[a.id]?.leads || 0) + (viaCamp[a.id]?.leads || 0), leads_30d: por[a.id]?.leads_30d || 0, reunioes_90d: (por[a.id]?.reunioes || 0) + (viaCamp[a.id]?.reunioes || 0),
+    leads_via_campanhas_90d: viaCamp[a.id]?.leads || 0, campanhas: viaCamp[a.id]?.campanhas || [], receita_realizada: a.receita_realizada })),
     sem_trilha_aviso: rows.length ? null : 'Nenhum lead com trilha ainda — os posts e anúncios passam a marcar a trilha (utm_campaign "alv-…") a partir desta versão.' };
 }
 // ATLAS sugere o AJUSTE FINO (pesos, metas, status) a partir do realizado — fica PENDENTE até o fundador aprovar

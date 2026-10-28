@@ -611,7 +611,7 @@
           <label><input type="checkbox" class="qaMktRede" value="linkedin" checked/> LinkedIn</label>
           <label><input type="checkbox" class="qaMktRede" value="facebook" checked/> Facebook</label>
           <label><input type="checkbox" class="qaMktRede" value="instagram"/> Instagram</label>
-          <label title="Só gera e testa links/captura; não publica nada"><input type="checkbox" id="qaMktSemPublicar"/> não publicar</label>
+          <label title="Regra da Atlantyx: robô de QA nunca faz ação social real (publicar, curtir, seguir, enviar)"><input type="checkbox" id="qaMktSemPublicar" checked disabled/> não publica (regra)</label>
           <button class="btn btn-or" style="margin-left:auto;" id="qaBtnMkt" onclick="QA.marketing()">▶ Rodar teste de marketing</button>
           <button class="btn btn-g" id="qaBtnLeads" onclick="QA.analiseLeads()">🔎 Só a análise de leads</button></div>
         <div id="qaMktPassos" style="margin-top:8px;"></div></div></div>
@@ -724,7 +724,7 @@
   };
   async function rodarMarketing(soAnalise) {
     if (S.rodando) return; S.rodando = true; S.erro = null;
-    const semPub = !!document.getElementById('qaMktSemPublicar')?.checked;
+    const semPub = true; // v3.300: regra — robô de QA nunca publica de verdade nas redes
     const redes = [...document.querySelectorAll('.qaMktRede:checked')].map(x => x.value);
     let blog = null; try { blog = localStorage.getItem('atx:metricool_blog_id'); } catch (_) {}
     const MK = S.mkt = { em: Date.now(), rodando: true, passos: [], achados: [], ctx: { blog_id: blog || null, redes_teste: redes }, leads: null };

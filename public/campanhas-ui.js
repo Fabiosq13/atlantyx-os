@@ -104,7 +104,7 @@
   let rasc = null;
   async function editar(id) {
     try { await opcoes(); } catch (e) { return nota(e.message, 'error'); }
-    const c = id ? det?.campanha : null; const hoje = new Date().toISOString().slice(0, 10), f30 = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+    const c = id ? det?.campanha : null; const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), f30 = new Date(Date.now() + 30 * 864e5).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
     rasc = { id: c?.id || null, plano: c?.plano ? JSON.parse(JSON.stringify(c.plano)) : { tipo: O.plano ? 'estrategico' : 'proprio', alavancas: [] } };
     const M = c?.metas || {};
     modal(c ? 'Editar campanha' : 'Nova campanha', `

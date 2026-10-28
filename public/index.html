@@ -8854,10 +8854,10 @@ async function runAds() {
   try {
     const action = tipo === 'seo' ? 'seo_analise' : tipo === 'linkedin' ? 'linkedin_ads' : 'google_ads';
     const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action, payload:{campanha:camp, orcamento:orc, keywords:kw, segmentacao:kw}})});
+      body:JSON.stringify({action, payload:{campanha:camp, orcamento:orc, keywords:kw}})}); // v3.300: palavras-chave não substituem mais a segmentação do ICP
     const data = await r.json();
     const out = data.ads || data.liads || data.seo || {};
-    res.innerHTML = `<div style="font-size:11.5px;line-height:1.7;white-space:pre-wrap;max-height:500px;overflow-y:auto;">${JSON.stringify(out, null, 2)}</div>`;
+    res.innerHTML = `<div style="font-size:11.5px;line-height:1.7;white-space:pre-wrap;max-height:500px;overflow-y:auto;">${_dsE(JSON.stringify(out, null, 2))}</div>`;
     tag.textContent = 'Concluído'; tag.className = 'tag live';
     addLog('ok', '[S2-Ads] Estrutura gerada: ' + camp);
   } catch(e) { res.innerHTML = '<span style="color:var(--red)">Erro: '+e.message+'</span>'; addLog('err','[S2-Ads] Erro'); }
@@ -8921,7 +8921,7 @@ async function runEmail() {
     tag.textContent = 'Concluído'; tag.className = 'tag live';
     addLog('ok', '[S2-Email] Criado: ' + (out.assunto_principal||assunto));
     // Adicionar ao Kanban
-    adicionarAoKanban('E-mail: ' + (out.assunto_principal||assunto), 'E-mail', 'S2-EmailMarketing', '', (out.estrutura?.corpo||out.cadencia?.[0]?.texto_completo||''), '');
+    adicionarAoKanban('E-mail: ' + (out.assunto_principal||assunto), 'E-mail', 'S2-EmailMarketing', '', (out.estrutura ? [out.estrutura.abertura, out.estrutura.problema, out.estrutura.solucao, out.estrutura.prova, out.estrutura.cta_principal ? '👉 ' + out.estrutura.cta_principal : '', out.estrutura.assinatura].filter(Boolean).join('\n\n') : (out.cadencia?.[0]?.texto_completo||'')), '');
   } catch(e) { res.innerHTML = '<div style="color:var(--red)">Erro: '+e.message+'</div>'; tag.textContent = 'Erro'; tag.className = 'tag off'; addLog('err','[S2-Email] Erro: ' + e.message); }
   btn.disabled = false; btn.textContent = '◆ Criar com IA';
 }
@@ -8939,17 +8939,18 @@ async function runDM() {
     const r = await fetch('/api/s2-creative', {method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'dm_response',payload:{mensagem:msg,rede,perfil_remetente:perfil}})});
     const data = await r.json();
-    const dm = data.dm || {};
+    const dm = data.dm || {}; if (!data.success || dm.raw) throw new Error(data.error || 'a IA não devolveu a resposta no formato esperado — tente de novo');
+    const _e = v => String(v ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); window._dmResp = String(dm.resposta_sugerida || ''); // v3.300: texto de fora escapado; copiar sem montar JS com o texto
     const sr = document.getElementById('socialResult');
     if (sr) sr.innerHTML = `
       <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;">
-        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;background:${dm.oportunidade_comercial==='Alta'?'var(--g2)':dm.oportunidade_comercial==='Média'?'var(--go2)':'var(--bg4)'};color:${dm.oportunidade_comercial==='Alta'?'var(--green)':dm.oportunidade_comercial==='Média'?'var(--gold)':'var(--t2)'};">Oportunidade: ${dm.oportunidade_comercial}</span>
-        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;background:var(--b2);color:var(--blue);">Sentimento: ${dm.sentimento}</span>
-        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2);">Próximo: ${dm.encaminhar_para}</span>
+        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;background:${dm.oportunidade_comercial==='Alta'?'var(--g2)':dm.oportunidade_comercial==='Média'?'var(--go2)':'var(--bg4)'};color:${dm.oportunidade_comercial==='Alta'?'var(--green)':dm.oportunidade_comercial==='Média'?'var(--gold)':'var(--t2)'};">Oportunidade: ${_e(dm.oportunidade_comercial)}</span>
+        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;background:var(--b2);color:var(--blue);">Sentimento: ${_e(dm.sentimento)}</span>
+        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2);">Próximo: ${_e(dm.encaminhar_para)}</span>
       </div>
       <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">RESPOSTA SUGERIDA</div>
-      <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;line-height:1.75;">${dm.resposta_sugerida||''}</div>
-      <button class="btn btn-gn" style="margin-top:8px;font-size:10px;" onclick="navigator.clipboard.writeText('${(dm.resposta_sugerida||'').replace(/'/g,"\'")}');toast('Copiado!','success')">Copiar Resposta</button>`;
+      <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;line-height:1.75;white-space:pre-wrap;">${_e(dm.resposta_sugerida||'')}</div>
+      <button class="btn btn-gn" style="margin-top:8px;font-size:10px;" onclick="navigator.clipboard.writeText(window._dmResp||'').then(()=>toast('Copiado!','success'))">Copiar Resposta</button>`;
     addLog('ok', '[S2-DM] Resposta gerada -- Oportunidade: ' + dm.oportunidade_comercial);
     if (dm.oportunidade_comercial === 'Alta') toast('DM de alto potencial! Resposta pronta.', 'success');
   } catch(e) { addLog('err', '[S2-DM] Erro: ' + e.message); }
@@ -9302,29 +9303,33 @@ async function runCadeiaCLevel() {
     st.textContent = data.decisores.length + ' decisores';
     st.className = 'tag live';
 
-    // Render resultado
+    // v3.300: texto da IA/empresa escapado, LinkedIn só https, só cargos do ICP (decisores) e botão por índice
+    const _E = _dsE, _emp = _E(empresa), _set = _E(setor);
+    const _dec = (data.decisores || []).filter(d => _icpCli(d.cargo) !== 'fora').map(d => ({ ...d, _icp: _icpCli(d.cargo) }));
+    window._prospDec = _dec.map(d => ({ nome: d.nome || d.cargo || '', empresa, cargo: d.cargo || '', icp: d._icp }));
+    const _fora = (data.decisores || []).length - _dec.length;
     res.innerHTML = `
       <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-        <span style="font-size:13px;font-weight:600;">${empresa}</span>
-        <span style="font-family:var(--M);font-size:8.5px;padding:2px 8px;border-radius:4px;background:var(--go2);color:var(--gold);">${setor}</span>
-        <span style="font-family:var(--M);font-size:8.5px;padding:2px 8px;border-radius:4px;background:var(--g2);color:var(--green);">${data.decisores.length} decisores</span>
+        <span style="font-size:13px;font-weight:600;">${_emp}</span>
+        <span style="font-family:var(--M);font-size:8.5px;padding:2px 8px;border-radius:4px;background:var(--go2);color:var(--gold);">${_set}</span>
+        <span style="font-family:var(--M);font-size:8.5px;padding:2px 8px;border-radius:4px;background:var(--g2);color:var(--green);">${_dec.length} decisores</span>${_fora ? `<span style="font-size:9.5px;color:var(--t3);">${_fora} fora do ICP ocultado(s)</span>` : ''}
       </div>
-      ${(data.decisores || []).map((d, i) => `
+      ${_dec.map((d, i) => `
         <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:11px;margin-bottom:8px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
-            <div style="width:32px;height:32px;border-radius:50%;background:rgba(240,112,48,.15);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:var(--or);">${(d.nome||d.cargo||'?')[0]}</div>
+            <div style="width:32px;height:32px;border-radius:50%;background:rgba(240,112,48,.15);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:var(--or);">${_E((d.nome||d.cargo||'?')[0])}</div>
             <div style="flex:1;">
-              <div style="font-size:12px;font-weight:600;">${d.nome || 'A identificar'}</div>
-              <div style="font-size:10px;color:var(--t2);">${d.cargo} — ${empresa}</div>
+              <div style="font-size:12px;font-weight:600;">${_E(d.nome || 'A identificar')}</div>
+              <div style="font-size:10px;color:var(--t2);">${_E(d.cargo)} — ${_emp}${d._icp !== 'decisor' ? ' · <span style="color:var(--gold);">confirmar se é decisor</span>' : ''}</div>
             </div>
             <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${d.prioridade==='Alta'?'var(--r2)':d.prioridade==='Media'?'var(--go2)':'var(--bg)'};color:${d.prioridade==='Alta'?'var(--red)':d.prioridade==='Media'?'var(--gold)':'var(--t3)'};">${d.prioridade||'Media'}</span>
           </div>
-          <div style="font-size:11px;color:var(--t2);margin-bottom:6px;">${d.perfil || d.descricao || ''}</div>
-          <div style="font-size:11px;margin-bottom:6px;"><span style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--red);">Dores: </span>${(d.dores||[]).join(' · ')}</div>
-          ${d.mensagem_wa ? `<div style="background:var(--bg3);border:1px solid rgba(34,211,163,.2);border-radius:5px;padding:9px;font-size:11px;line-height:1.6;margin-bottom:6px;white-space:pre-wrap;">${d.mensagem_wa}</div>` : ''}
+          <div style="font-size:11px;color:var(--t2);margin-bottom:6px;">${_E(d.perfil || d.descricao || '')}</div>
+          <div style="font-size:11px;margin-bottom:6px;"><span style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--red);">Dores: </span>${_E([].concat(d.dores||[]).join(' · '))}</div>
+          ${d.mensagem_wa ? `<div style="background:var(--bg3);border:1px solid rgba(34,211,163,.2);border-radius:5px;padding:9px;font-size:11px;line-height:1.6;margin-bottom:6px;white-space:pre-wrap;">${_E(d.mensagem_wa)}</div>` : ''}
           <div style="display:flex;gap:6px;">
-            ${d.linkedin ? `<a href="${d.linkedin}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
-            <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="adicionarAoKanbanWA('${d.nome||d.cargo}','${empresa}','${d.cargo}')">+ WA Batch</button>
+            ${/^https:\/\//i.test(String(d.linkedin || '')) ? `<a href="${_E(d.linkedin)}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
+            <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="const x=window._prospDec[${i}];adicionarAoKanbanWA(x.nome,x.empresa,x.cargo,x.icp)">+ WA Batch</button>
           </div>
         </div>`).join('')}`;
 
@@ -9344,7 +9349,12 @@ async function runCadeiaCLevel() {
   btn.textContent = 'Mapear Cadeia C-Level Completa';
 }
 
-function adicionarAoKanbanWA(nome, empresa, cargo) {
+// v3.300: ICP no navegador — decisor (dono, sócio, C-level, diretor, VP) · fora (técnico/operacional) · outro
+function _icpCli(cargo) { const t = String(cargo || '');
+  if (/\b(assistente|assistant|secret[aá]ri[ao]|auxiliar|estagi[aá]ri[oa]|intern|trainee|analista|analyst|desenvolvedor[a]?|developer|programador[a]?|engenheir[oa]|engineer|t[eé]cnic[oa]|coordenador[a]?|supervisor[a]?|especialista|consultor[a]?)\b/i.test(t)) return 'fora';
+  if (/\b(ceo|cfo|cto|cio|coo|cdo|cmo|chief|presidente|president|fundador[a]?|founder|s[oó]ci[oa]|partner|dono|owner|propriet[aá]ri[oa]|diretor[a]?|director|vp|vice[- ]?presidente)\b/i.test(t)) return 'decisor';
+  return 'outro'; }
+function adicionarAoKanbanWA(nome, empresa, cargo, icp) {
   // Adiciona ao batch de mensagens WA para aprovacao
   if (!batchMensagens) return;
   batchMensagens.push({
@@ -9355,7 +9365,7 @@ function adicionarAoKanbanWA(nome, empresa, cargo) {
     phone: '',
     mensagem: '',
     followup: '',
-    score: 'A',
+    score: (icp || _icpCli(cargo)) === 'decisor' ? 'A' : 'B', // v3.300: antes sempre A
     status: 'pendente',
     enviado: false
   });
@@ -26193,6 +26203,17 @@ async function acInstagramParaBio() {
     try { await sincronizarStatusMetricool(true); } catch (_) {}
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v3.300: histórico dos erros de publicação/agendamento devolvidos pelo Metricool (antes só no log do Vercel)
+async function acErrosPublicacao() {
+  try { const d = await mcApi('erros_publicacao', { limite: 80 }); const L = d.erros || [];
+    document.getElementById('mcErrModal')?.remove(); const m = document.createElement('div'); m.id = 'mcErrModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto;';
+    const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(900px,100%);"><div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;"><b style="flex:1;font-size:13px;">⚠ Erros de publicação no Metricool (' + L.length + ')</b><button class="btn btn-g" onclick="document.getElementById(\'mcErrModal\').remove()">✕</button></div><div style="padding:12px 16px;font-size:11px;">'
+      + (L.length ? L.map(x => '<div style="padding:7px 0;border-bottom:1px solid var(--bd);"><div style="color:var(--t3);font-size:10px;">' + new Date(x.em).toLocaleString('pt-BR').slice(0, 17) + ' · ' + e(x.acao) + (x.tipo ? ' · ' + e(x.tipo) : '') + (x.redes ? ' · ' + e([].concat(x.redes).join(', ')) : '') + (x.data_hora ? ' · para ' + e(String(x.data_hora).replace('T', ' ').slice(0, 16)) : '') + '</div><div style="color:var(--red);margin-top:2px;">' + e(x.erro) + '</div>' + (x.dica ? '<div style="color:var(--gold);">Como resolver: ' + e(x.dica) + '</div>' : '') + (x.texto ? '<div style="color:var(--t2);">“' + e(x.texto) + '…”</div>' : '') + '</div>').join('') : '<div style="color:var(--t3);">Nenhum erro registrado desde a v3.300.</div>')
+      + '<div style="color:var(--t3);font-size:10px;margin-top:8px;">Posts que o Metricool aceitou mas falharam depois na rede aparecem em "Republicar falhas".</div></div></div>';
+    m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m);
+  } catch (err) { toast('Erro: ' + err.message, 'error'); }
+}
 // v3.72: apaga do Metricool os posts com erro (já corrigidos de outro jeito) — limpa a auditoria
 async function acApagarFalhas() {
   try {
@@ -26277,7 +26298,7 @@ async function acAuditoria() {
           <div>${String(e.texto||'').replace(/</g,'&lt;')}…</div>
           <div style="color:var(--red);font-size:10px;margin-top:3px;">${e.categoria ? '<b>[' + e.categoria + ']</b> ' : ''}${String(e.motivo||'').replace(/</g,'&lt;')}</div></div>`).join('')}
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">${Object.entries(p.erros_por_categoria || {}).map(([k, n]) => '<span class="tag off">' + k + ': ' + n + '</span>').join('')}
-          <button class="btn" style="font-size:10.5px;margin-left:auto;color:var(--red);border-color:var(--red);" onclick="acApagarFalhas()" title="Apaga do Metricool os posts com erro que você já corrigiu/publicou de outro jeito — não republica">🗑 Apagar os que falharam (já corrigidos)</button>
+          <button class="btn" style="font-size:10.5px;margin-left:auto;color:var(--red);border-color:var(--red);" onclick="acApagarFalhas()" title="Apaga do Metricool os posts com erro que você já corrigiu/publicou de outro jeito — não republica">🗑 Apagar os que falharam (já corrigidos)</button><button class="btn" style="font-size:10.5px;" onclick="acErrosPublicacao()" title="Histórico dos erros que o Metricool devolveu ao agendar/publicar (motivo e dica)">⚠ Erros de publicação</button>
           <button class="btn btn-or" style="font-size:10.5px;" onclick="acRepublicarFalhas()" title="Revisa os posts que falharam e publica de novo nos próximos horários vagos, com as imagens copiadas para endereço permanente">♻ Revisar e republicar os que falharam</button></div>
       </div></div>` : ''}
       ${d.funil_por_rede ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🔎 Funil por rede — onde o lead se perde (30 dias)</div></div><div class="pb" style="overflow-x:auto;">
@@ -31860,7 +31881,7 @@ async function _trProduzirUma(p, k) {
     p.midia_urls = [url];
     const redes = (cfg.redes || ['instagram']).filter(x => x !== 'linkedin'); // Reel: Instagram (e Facebook); LinkedIn recebe o texto num post separado
     r = await trMc('publicar', { tipo: 'REEL', texto: legenda, redes, data_hora: quando, imagem_url: url, encurtar_link: false });
-    if ((cfg.redes || []).includes('linkedin')) { try { await trMc('publicar', { texto: p.legenda || '', redes: ['linkedin'], data_hora: quando, imagem_url: url, tipo: 'POST' }); } catch (e) { addLog('warn', '[Tendências] LinkedIn: ' + e.message); } }
+    if ((cfg.redes || []).includes('linkedin')) { try { await trMc('publicar', { texto: p.legenda || '', redes: ['linkedin'], data_hora: quando, tipo: 'POST' }); /* v3.300: sem o MP4 como imagem (o LinkedIn recusava sempre) */ } catch (e) { addLog('warn', '[Tendências] LinkedIn: ' + e.message); toast('LinkedIn não agendado para "' + String(p.legenda || '').slice(0, 40) + '…": ' + e.message, 'error'); } }
   } else if (p.tipo === 'carrossel') {
     const urls = []; for (let i = 0; i < p.roteiro.slides.length; i++) urls.push(await _trSubir(await _trImagem(p, k, i, 1080, 1080), 'tend-' + p.id + '-' + (i + 1) + '.jpg', 'carrossel', 'jpg', 'image/'));
     p.midia_urls = urls; r = await trMc('publicar', { texto: legenda, redes: cfg.redes || ['instagram'], data_hora: quando, imagem_url: urls[0], imagens_urls: urls, encurtar_link: false });
@@ -33911,7 +33932,7 @@ async function usarLPComoLink(url) {
 // v3.46: STATUS REAL no Metricool — antes qualquer post com data passada aparecia como "publicado", mesmo
 // quando o Metricool tinha recusado (imagem, token da rede, texto). Lê o status/erro de cada rede e grava
 // em _publicacoes (status 'publicado' | 'erro'), no máximo a cada 10 min.
-function _pubPublicada(p) { if (p.status === 'publicado') return true; if (p.status === 'erro') return false; if (p.status_mc) return /PUBLISHED|SUCCESS/i.test(p.status_mc); return new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id; }
+function _pubPublicada(p) { if (p.status === 'publicado') return true; if (p.status === 'erro') return false; if (p.status_mc) return /PUBLISHED|SUCCESS/i.test(p.status_mc); return new Date(p.agendado_para || p.data) < new Date() && new Date(p.agendado_para || p.data) > new Date(Date.now() - 3600e3) && !!p.metricool_id; } // v3.300: sem confirmação do Metricool por mais de 1 h não conta como publicado
 let _syncMcEm = 0, _syncMcRodando = false;
 function _escCal(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 // v3.52: posts agendados pela FILA do servidor (Autocampanha) entram no calendário e no desempenho
@@ -34411,7 +34432,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
     if (addD === 0 && quando <= new Date()) addD = 7;
     quando.setDate(quando.getDate() + addD);
     // v2.94: na Autocampanha, a data/hora é a do horário vago planejado (e não a sugerida pela IA)
-    if (_viaAc && opts.slots[_ix]) { const _q = new Date(opts.slots[_ix].data + 'T' + opts.slots[_ix].hora + ':00'); if (!isNaN(_q)) quando.setTime(_q.getTime()); }
+    if (_viaAc && opts.slots[_ix]) { const _q = new Date(opts.slots[_ix].data + 'T' + opts.slots[_ix].hora + ':00-03:00'); /* v3.300: horário de Brasília, mesmo com o navegador em outro fuso */ if (!isNaN(_q)) quando.setTime(_q.getTime()); }
 
     // 3c. Peça no kanban
     const pecaId = 'peca_auto_' + Date.now() + '_' + Math.random().toString(36).substr(2,4);
@@ -35486,7 +35507,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.299] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.300] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35502,7 +35523,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.299';
+window.__ATX_BUILD_ID__ = 'ATX-v3.300';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

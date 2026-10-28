@@ -90,11 +90,22 @@ async function handler(req, res) {
     // ── 1. NORMALIZAR DADOS DO LEAD (Meta, LinkedIn ou formulário próprio) ──
     // v3.190: ANTI-ROBÔ do formulário do site — campo invisível preenchido ou envio em menos de 3 s = robô.
     // Responde "ok" (o robô não aprende a contornar) mas não grava nem dispara nada.
-    if (body.form_name === 'captura-publica' && (String(body.website || '').trim() || (Number(body.t_preenchimento_ms) > 0 && Number(body.t_preenchimento_ms) < 3000))) {
+    // v3.300: origem confiável = usuário logado no sistema, webhook com segredo (LEADS_WEBHOOK_SECRET) ou lead ads da plataforma
+    // (Meta leadgen). Qualquer outro envio anônimo passa pelo anti-robô, tem limite por IP e SÓ recebe WhatsApp com consentimento.
+    const _segredo = process.env.LEADS_WEBHOOK_SECRET, _hdr = String(req.headers?.['x-lead-secret'] || '');
+    const confiavel = !!req.sessao || (!!_segredo && _hdr === _segredo) || !!(body.leadgen_id || body.field_data);
+    if (!confiavel) {
+      const ip = String(req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || '?').split(',')[0].trim().slice(0, 64);
+      try { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL); const k = 'rl:lead:' + ip + ':' + new Date().toISOString().slice(0, 13);
+        const r = await sq`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, '1'::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = to_jsonb(COALESCE((kv_store.value)::text::int, 0) + 1), updated_at = NOW() RETURNING value`;
+        if (Number(r[0]?.value) > 10) return res.status(429).json({ success: false, error: 'Muitos envios — tente mais tarde' }); } catch (_) {}
+    }
+    if ((body.form_name === 'captura-publica' || !confiavel) && (String(body.website || '').trim() || (Number(body.t_preenchimento_ms) > 0 && Number(body.t_preenchimento_ms) < 3000))) {
       console.warn('[S2] envio descartado (robô):', String(body.email || '').substring(0, 60));
       return res.status(200).json({ success: true, lead_id: null });
     }
     const lead = normalizeLead(body);
+    if (!confiavel) lead.exige_consentimento = true; // v3.300: envio anônimo fora do formulário do site também precisa de consentimento para WhatsApp
     lead.title = lead.job_title || null; // v3.234: banco e alerta liam lead.title (sempre vazio) — cargo nunca aparecia
   lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
     lead.campanha = lead.utm.campaign || body.campaign_name || null;
@@ -310,6 +321,10 @@ function normalizeLead(body) {
     interesse: ([body.oferta === 'diagnostico_gratuito' ? 'Diagnóstico gratuito' : '', String(body.interesse || body.desafio || '')].filter(Boolean).join(' · ')).substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
     timestamp: new Date().toISOString(),
   };
+  // v3.300: tudo vira texto com tamanho limitado (telefone numérico derrubava o lead; campos sem limite)
+  for (const k of ['name', 'email', 'phone', 'company', 'job_title', 'source']) lead[k] = String(lead[k] ?? '').trim().slice(0, k === 'phone' ? 30 : 160);
+  if (lead.email && !/^[^@\s<>"']+@[^@\s<>"']+\.[a-z]{2,}$/i.test(lead.email)) { lead.email_invalido = lead.email.slice(0, 80); lead.email = ''; }
+  if (!lead.name) lead.name = 'Não informado';
 
   // Score ICP Atlantyx
   // v1.43 (report DEV, item 4): "todos os leads com score C" NÃO é bug de algoritmo nem cron
