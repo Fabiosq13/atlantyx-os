@@ -365,7 +365,7 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1 };
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1, metas_empresa_status: 1 }; // v3.301: + metas (o cartão esgotava os 30 s)
     if (CACHE_FIN[action]) {
       const { _forcar, _max_idade, ...pChave } = params || {};
       // v3.232: chamadas internas (TV, vendas, rito) pedem dado de no máximo alguns minutos — antes aceitavam até 12 h
@@ -5341,14 +5341,19 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
   // Liquidez corrente (simplificada) — v3.292: o "a pagar" inclui as despesas programadas dos próximos 30 dias (folha,
   // aluguel…), então o "a receber" passa a incluir também o que está programado para entrar em 30 dias (marcos, termos e
   // sustentações). Antes só as faturas já emitidas: o lado do ativo ficava sem o mês seguinte e a liquidez saía < 1 por construção.
-  const _arLiq = (kpis.contas_receber || 0) + (kpis.receita_prevista_30d || 0);
-  if (kpis.contas_pagar > 0) {
-    kpis.liquidez_corrente = round((kpis.saldo_caixa + _arLiq) / kpis.contas_pagar, 2);
+  // v3.301: liquidez no MESMO horizonte dos dois lados — 30 dias (vencidos + o que vence em 30 dias). Antes o "a pagar" somava
+  // TODAS as contas em aberto no QuickBooks (inclusive parcelas que vencem em meses/anos, ex.: parcelamentos) contra só as
+  // faturas do lado do receber: dava 0,87 enquanto o cartão de caixa ao lado mostrava receber 425k × pagar 252k em 30 dias.
+  const _tem30 = kpis.contas_receber_30d != null && kpis.contas_pagar_30d != null;
+  const _ar30 = _tem30 ? (kpis.contas_receber_vencido || 0) + kpis.contas_receber_30d + (kpis.receita_prevista_30d || 0) : (kpis.contas_receber || 0) + (kpis.receita_prevista_30d || 0);
+  const _ap30 = _tem30 ? (kpis.contas_pagar_vencido || 0) + kpis.contas_pagar_30d : kpis.contas_pagar;
+  if (_ap30 > 0) {
+    kpis.liquidez_corrente = round((kpis.saldo_caixa + _ar30) / _ap30, 2);
   }
 
-  // Working capital
-  kpis.working_capital = round(kpis.saldo_caixa + _arLiq - kpis.contas_pagar);
-  kpis.liquidez_composicao = { caixa: kpis.saldo_caixa, faturas_a_receber: kpis.contas_receber, receita_programada_30d: kpis.receita_prevista_30d || 0, a_pagar_ate_30d: kpis.contas_pagar };
+  // Working capital (mesmo horizonte de 30 dias)
+  kpis.working_capital = round(kpis.saldo_caixa + _ar30 - (_ap30 || 0));
+  kpis.liquidez_composicao = { horizonte: _tem30 ? '30 dias (vencidos + a vencer em 30 dias)' : 'total em aberto', caixa: kpis.saldo_caixa, a_receber: round(_ar30), receita_programada_30d: kpis.receita_prevista_30d || 0, a_pagar: round(_ap30 || 0), a_pagar_total_em_aberto: kpis.contas_pagar };
 
   // Cobertura de despesas fixas — usa ocorrências previstas no mês atual
   try {
@@ -5388,7 +5393,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
       else if (kpis.margem_semaforo === 'amarelo') { score += 1; motivos.push(`Margem no ano ${mg}%${metaMg != null ? ' (meta ' + metaMg + '%)' : ''}`); }
       else motivos.push(`Margem no ano ${mg}%${metaMg != null ? ' — abaixo da meta de ' + metaMg + '%' : ''} ⚠`);
     } }
-  if (kpis.liquidez_corrente === null && !(kpis.contas_pagar > 0) && (kpis.saldo_caixa + kpis.contas_receber) > 0) {
+  if (kpis.liquidez_corrente === null && !(_ap30 > 0) && (kpis.saldo_caixa + _ar30) > 0) {
     score += 2; motivos.push('Sem contas a pagar em aberto ✓'); // v3.112: antes ficava sem nota e o semáforo nunca chegava ao verde
   } else if (kpis.liquidez_corrente !== null) {
     if (kpis.liquidez_corrente >= 1.5) { score += 2; motivos.push(`Liquidez ${kpis.liquidez_corrente} ✓`); }
