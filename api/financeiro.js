@@ -278,6 +278,8 @@ async function handler(req, res) {
       // ── KPIs determinísticos de saúde ────────────────────────────────────
       kpis_saude:            () => kpisSaude(params),
       auditoria_indicadores: () => auditoriaIndicadores(params), // v3.303: confere cada indicador contra a origem
+      pagamentos_soltos:     () => pagamentosSoltos(params),     // v3.308: pagamentos de conta sem conta a pagar ligada
+      pagamento_solto_vincular: () => pagamentoSoltoVincular(params), // v3.308: liga (só com clique do usuário, reconferido aqui)
       resultado_kpis:        () => resultadoKpis(params), // v3.112: faturamento, lucro, margens e EBITDA (período + ano)
       metas_empresa_status:  () => metasEmpresaStatus(params), // v3.113: metas do ano (faturamento e % de lucro), falta, semáforo e CRM
       metas_empresa_salvar:  () => metasEmpresaSalvar(params),
@@ -5439,6 +5441,52 @@ function dreLucro(linhas) {
 }
 
 
+
+// ═══ v3.308: PAGAMENTOS DE CONTA SOLTOS — "Pagamento de conta" (BillPayment) sem a conta a pagar (Bill) ligada ═══
+// No regime de caixa o QuickBooks não sabe a categoria desses pagamentos e joga o valor em "Despesas de pagamento de contas
+// não aplicadas"; a conta a pagar fica em aberto como se não tivesse sido paga. Aqui: lista cada pagamento com a parte solta e
+// a conta a pagar provável (mesmo fornecedor, saldo igual ou maior, data até 60 dias). Ligar só acontece no clique do usuário
+// e o servidor reconfere tudo no QuickBooks antes de gravar.
+const _bpSolto = bp => round(parseFloat(bp.TotalAmt || 0) - (bp.Line || []).filter(l => (l.LinkedTxn || []).some(t => t.TxnType === 'Bill')).reduce((a, l) => a + (parseFloat(l.Amount) || 0), 0));
+async function pagamentosSoltos({ dias = 120 } = {}) {
+  if (!qbConfigurado()) return { soltos: [], erro: 'QuickBooks não conectado' };
+  const token = await qbToken(), hoje = _hojeBR(), ini = _diasMais(hoje, -Math.min(400, Math.max(15, Number(dias) || 120)));
+  const [bps, bills] = await Promise.all([qbQuery(`select * from BillPayment where TxnDate >= '${ini}' maxresults 1000`, token), qbQuery(`select * from Bill where Balance > '0' maxresults 1000`, token)]);
+  const B = (bills?.QueryResponse?.Bill || []).map(b => ({ id: b.Id, fornecedor_id: b.VendorRef?.value, fornecedor: b.VendorRef?.name || '', doc: b.DocNumber || '', data: b.TxnDate, vencimento: b.DueDate || null, saldo: round(parseFloat(b.Balance || 0)), total: round(parseFloat(b.TotalAmt || 0)),
+    categorias: [...new Set((b.Line || []).map(l => l.AccountBasedExpenseLineDetail?.AccountRef?.name || l.ItemBasedExpenseLineDetail?.ItemRef?.name).filter(Boolean))].slice(0, 3) }));
+  const usados = new Set(), dist = (a, b) => Math.abs((Date.parse(a) - Date.parse(b)) / 864e5);
+  const soltos = (bps?.QueryResponse?.BillPayment || []).map(bp => ({ bp, solto: _bpSolto(bp) })).filter(x => x.solto > 0.5).sort((a, b) => String(a.bp.TxnDate).localeCompare(String(b.bp.TxnDate))).map(({ bp, solto }) => {
+    const cand = B.filter(b => b.fornecedor_id === bp.VendorRef?.value && b.saldo >= solto - 0.01 && dist(b.data, bp.TxnDate) <= 60)
+      .map(b => ({ ...b, exato: Math.abs(b.saldo - solto) <= Math.max(1, solto * 0.005), dias: Math.round(dist(b.data, bp.TxnDate)) }))
+      .sort((a, b) => (b.exato - a.exato) || (a.dias - b.dias));
+    const melhor = cand.find(c => !usados.has(c.id) && c.exato) || null; if (melhor) usados.add(melhor.id);
+    return { id: bp.Id, data: bp.TxnDate, fornecedor: bp.VendorRef?.name || '', fornecedor_id: bp.VendorRef?.value || null, total: round(parseFloat(bp.TotalAmt || 0)), solto,
+      banco: bp.CheckPayment?.BankAccountRef?.name || bp.CreditCardPayment?.CCAccountRef?.name || '', sugestao: melhor, outras: cand.filter(c => c !== melhor).slice(0, 4),
+      qb_url: (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/billpayment?txnId=' + bp.Id,
+      orientacao: melhor ? null : cand.length ? 'Há conta(s) a pagar do mesmo fornecedor com saldo diferente — confira qual é antes de ligar.' : 'Nenhuma conta a pagar aberta deste fornecedor: lance a conta a pagar (com a categoria) e ligue, ou troque o pagamento por uma Despesa com a categoria certa no QuickBooks.' };
+  });
+  return { soltos, total_solto: round(soltos.reduce((a, x) => a + x.solto, 0)), com_sugestao: soltos.filter(x => x.sugestao).length, desde: ini };
+}
+async function pagamentoSoltoVincular({ billpayment_id, bill_id } = {}) {
+  const idP = String(billpayment_id || '').replace(/\D/g, ''), idB = String(bill_id || '').replace(/\D/g, '');
+  if (!idP || !idB) throw new Error('billpayment_id e bill_id obrigatórios');
+  const token = await qbToken();
+  const [rp, rb] = await Promise.all([_qbFetchReal(`/billpayment/${idP}?minorversion=65`, token, 'GET'), _qbFetchReal(`/bill/${idB}?minorversion=65`, token, 'GET')]) /* leitura fresca (sem cache): SyncToken e saldo atuais */;
+  const bp = rp?.BillPayment, b = rb?.Bill; if (!bp) throw new Error('Pagamento #' + idP + ' não encontrado no QuickBooks'); if (!b) throw new Error('Conta a pagar #' + idB + ' não encontrada no QuickBooks');
+  // reconfere no servidor: mesmo fornecedor, parte solta e saldo da conta suficientes
+  if (bp.VendorRef?.value !== b.VendorRef?.value) throw new Error('Fornecedores diferentes (' + (bp.VendorRef?.name || '?') + ' × ' + (b.VendorRef?.name || '?') + ') — não ligado');
+  const solto = _bpSolto(bp), saldo = round(parseFloat(b.Balance || 0));
+  if (solto <= 0.5) return { ja_ligado: true, mensagem: 'Este pagamento já está todo ligado a contas a pagar' };
+  if (saldo <= 0) throw new Error('A conta a pagar já está quitada no QuickBooks');
+  const valor = round(Math.min(solto, saldo));
+  const linhas = (bp.Line || []).filter(l => (l.LinkedTxn || []).some(t => t.TxnType === 'Bill')).map(l => ({ Amount: l.Amount, LinkedTxn: l.LinkedTxn }));
+  linhas.push({ Amount: valor, LinkedTxn: [{ TxnId: String(b.Id), TxnType: 'Bill' }] });
+  const r = await qbFetch('/billpayment?minorversion=65', token, 'POST', { Id: bp.Id, SyncToken: bp.SyncToken, sparse: true, VendorRef: bp.VendorRef, PayType: bp.PayType, TotalAmt: bp.TotalAmt, Line: linhas,
+    PrivateNote: String((bp.PrivateNote ? bp.PrivateNote + ' · ' : '') + 'Ligado à conta a pagar ' + (b.DocNumber || '#' + b.Id) + ' pelo Atlantyx OS').slice(0, 4000) });
+  console.log(`[QB] BillPayment ${bp.Id} ligado à Bill ${b.Id} (${b.VendorRef?.name}): ${valor}`);
+  try { await _limparCacheFin(); } catch (_) {}
+  return { ok: true, billpayment_id: bp.Id, bill_id: b.Id, valor, fornecedor: b.VendorRef?.name || '', restou_solto: round(solto - valor), billpayment: r?.BillPayment?.Id || null };
+}
 // ═══ v3.303: CONFERÊNCIA DOS INDICADORES NAS ORIGENS ═══
 // Para cada indicador do Dashboard: o valor que o sistema mostra × o que a ORIGEM diz (relatórios e lançamentos do
 // QuickBooks, Metas da Empresa) e a ponte entre os dois quando a regra do sistema é diferente da do relatório de origem.
@@ -5588,7 +5636,7 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
   lanc.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
   const aviso = zeros.length ? zeros.length + ' lançamento(s) sem valor no período ocultado(s)' + (_met(metodo) === 'Cash' && zeros.some(z => /fatura|invoice/i.test(z.tipo)) ? ' — no regime de CAIXA a fatura só entra quando é recebida; para ver as notas emitidas troque o regime para competência' : '') + ': ' + zeros.slice(0, 8).map(z => (z.tipo + ' ' + (z.doc || '') + ' ' + (z.nome || '')).trim()).join('; ') : null;
   const naoAplic = RX_NAO_APLICADO.test(conta) ? 'Esta conta é criada pelo QuickBooks no regime de caixa para PAGAMENTOS DE CONTAS que não foram ligados à conta a pagar (ou foram feitos antes de a conta ser lançada). A categoria real (folha/Payroll, aluguel, impostos…) fica escondida aqui. Para corrigir: no QuickBooks, abra cada "Pagamento de conta" desta lista e marque a conta (Bill) que ele paga — o valor passa para a categoria certa.' : null;
-  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500), aviso: [naoAplic, aviso].filter(Boolean).join(' · ') || null, sem_valor: zeros.slice(0, 50) };
+  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500), aviso: [naoAplic, aviso].filter(Boolean).join(' · ') || null, nao_aplicado: !!naoAplic, sem_valor: zeros.slice(0, 50) };
 }
 // v3.124: regime escolhido na tela (competência = Accrual, padrão · caixa = Cash) — vale para todos os indicadores da DRE
 // v3.232: padrão da Atlantyx = REGIME DE CAIXA; competência só quando pedida explicitamente

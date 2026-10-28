@@ -1046,6 +1046,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="dreAbrir({})" title="DRE completa do mês corrente — clique nas contas para ver os lançamentos">&#128269; Abrir DRE</button>
           <button class="btn btn-g" id="liveResBtn" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarResultadoLive(true)">&#8635; Atualizar</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;color:var(--blue);border-color:var(--blue);" onclick="audIndicadores()" title="Compara cada indicador com o relatório de origem no QuickBooks">&#128270; Conferir nas origens</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;color:var(--gold);border-color:var(--gold);" onclick="pgSoltos()" title="Pagamentos de conta sem a conta a pagar ligada no QuickBooks">&#128279; Ligar pagamentos soltos</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s3dashboard',document.querySelector('.sbi[onclick*=&quot;s3dashboard&quot;]'))">Dashboard Financeiro &#8594;</button>
         </div></div>
       <div class="pb"><div class="res-grid" id="liveRes"><div style="color:var(--t3);font-size:11px;padding:8px;">Carregando faturamento, lucro e margem do QuickBooks…</div></div>
@@ -3569,6 +3570,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <button class="btn" style="font-size:10px;" onclick="_dashMesAtual()" title="Voltar para o mês corrente">&#8634; Mês atual</button>
     <button class="btn btn-gn" id="dfBtnAtualizar" onclick="window._dfForcar=true;carregarDashboardFinanceiro()">&#8635; Atualizar</button>
     <button class="btn" style="color:var(--blue);border-color:var(--blue);" onclick="audIndicadores()" title="Compara cada indicador com o relatório/lançamento de origem no QuickBooks">&#128270; Conferir nas origens</button>
+    <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="pgSoltos()" title="Pagamentos de conta no QuickBooks que não estão ligados à conta a pagar (caem em &quot;despesas não aplicadas&quot;)">&#128279; Ligar pagamentos soltos</button>
     <button class="btn" onclick="fv2IrAba('config')" title="Alíquota efetiva de impostos, camada e motor de cada conta, limites dos semáforos">&#9881; Configurar impostos e contas</button>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="previewRelatorioPagamentos()">&#128231; Relatório de Pagamentos</button>
     <button class="btn btn-p" onclick="nav('s3gerente')">&#129302; Perguntar ao Gerente IA</button>
@@ -30296,6 +30298,44 @@ function _resCartaoMeta(rot, val, cor, tip, m, rodape) {
   return '<div class="res-card rc2" style="--c:' + cor + ';"><div class="rl">' + rot + _tip(tip) + '</div><div class="rv" style="color:' + cor + ';">' + val + '</div>' + metaH + (rodape ? '<div class="rs">' + rodape + '</div>' : '') + '</div>';
 }
 // v3.303: CONFERÊNCIA DOS INDICADORES NAS ORIGENS — valor do sistema × relatório/lançamentos do QuickBooks, com a ponte
+// v3.308: LIGAR PAGAMENTOS SOLTOS — pagamento de conta (BillPayment) sem a conta a pagar ligada no QuickBooks.
+// Mostra a conta a pagar provável; a ligação só acontece no clique e o servidor reconfere no QuickBooks antes de gravar.
+async function pgSoltos(dias) {
+  document.getElementById('pgsModal')?.remove();
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), q = v => "'" + String(v ?? '').replace(/\D/g, '') + "'";
+  const R$ = x => 'R$ ' + Number(x || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), dt = d => d ? String(d).split('-').reverse().join('/') : '—';
+  const m = document.createElement('div'); m.id = 'pgsModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;';
+  const caixa = h => '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(980px,100%);"><div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><b style="flex:1;font-size:13.5px;">&#128279; Pagamentos de conta soltos no QuickBooks</b><select id="pgsDias" class="inp" style="font-size:10.5px;padding:3px 6px;" onchange="pgSoltos(this.value)">' + [60, 120, 365].map(n => '<option value="' + n + '"' + (Number(dias || 120) === n ? ' selected' : '') + '>últimos ' + n + ' dias</option>').join('') + '</select><button class="btn btn-g" onclick="pgSoltos(document.getElementById(\'pgsDias\').value)">↻</button><button class="btn btn-g" onclick="document.getElementById(\'pgsModal\').remove()">✕</button></div><div style="padding:12px 16px;font-size:11.5px;">' + h + '</div></div>';
+  m.innerHTML = caixa('<div style="color:var(--t3);padding:20px;text-align:center;">Lendo os pagamentos de conta e as contas a pagar em aberto no QuickBooks…</div>');
+  m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m);
+  try {
+    const d = await finApi('pagamentos_soltos', { dias: Number(dias || 120) }, { timeoutMs: 90000 });
+    if (d.erro) throw new Error(d.erro);
+    const L = d.soltos || [];
+    const conta = (c, p, rot) => '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:3px;"><span>' + rot + ' <b>' + e(c.doc || '#' + c.id) + '</b> · lançada ' + dt(c.data) + (c.vencimento ? ' · vence ' + dt(c.vencimento) : '') + ' · saldo ' + R$(c.saldo) + (c.categorias?.length ? ' · <span style="color:var(--t3);">' + e(c.categorias.join(', ')) + '</span>' : '') + '</span>'
+      + '<button class="btn" style="font-size:10px;padding:2px 9px;color:var(--green);border-color:var(--green);" onclick="pgSoltoLigar(this,' + q(p.id) + ',' + q(c.id) + ',\'' + e(p.fornecedor).replace(/'/g, '') + '\',' + Number(Math.min(p.solto, c.saldo)) + ')">Ligar</button></div>';
+    const h = '<div style="margin-bottom:10px;color:var(--t2);">Desde ' + dt(d.desde) + ': <b>' + L.length + '</b> pagamento(s) com <b>' + R$(d.total_solto) + '</b> sem conta a pagar ligada · <b>' + (d.com_sugestao || 0) + '</b> com conta a pagar provável (mesmo fornecedor e mesmo valor). Enquanto não forem ligados, no regime de caixa esses valores ficam em <i>"despesas de pagamento de contas não aplicadas"</i> e a conta a pagar continua aberta.</div>'
+      + (!L.length ? '<div style="color:var(--green);padding:14px;text-align:center;">✓ Nenhum pagamento de conta solto no período.</div>' : L.map(p => '<div id="pgs_' + e(p.id) + '" style="border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:8px;">'
+        + '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;"><b>' + e(p.fornecedor || '(sem fornecedor)') + '</b><span style="color:var(--t3);">pago ' + dt(p.data) + (p.banco ? ' · ' + e(p.banco) : '') + '</span><span style="flex:1;"></span><span style="font-family:var(--M);">solto <b style="color:var(--gold);">' + R$(p.solto) + '</b>' + (p.total !== p.solto ? ' de ' + R$(p.total) : '') + '</span> <a href="' + e(p.qb_url) + '" target="_blank" rel="noopener" style="color:var(--blue);font-size:10.5px;">abrir no QB ↗</a></div>'
+        + (p.sugestao ? conta(p.sugestao, p, '✓ Conta a pagar provável:') : '')
+        + (p.outras || []).map(c => conta(c, p, 'Outra conta deste fornecedor:')).join('')
+        + (p.orientacao ? '<div style="font-size:10.5px;color:' + (p.outras?.length ? 'var(--t2)' : 'var(--gold)') + ';margin-top:4px;">' + (p.outras?.length ? 'ℹ ' : '⚠ Virar despesa: ') + e(p.orientacao) + '</div>' : '')
+        + '<div class="pgs-res" style="font-size:10.5px;margin-top:3px;"></div></div>').join(''))
+      + '<div style="color:var(--t3);font-size:10px;margin-top:8px;">"Ligar" grava no QuickBooks a ligação do pagamento com a conta a pagar (o valor sai de "não aplicadas" e vai para a categoria da conta). Antes de gravar, o sistema reconfere no QuickBooks se o fornecedor é o mesmo e se há saldo. Para desfazer: abra o pagamento no QuickBooks e desmarque a conta.</div>';
+    m.innerHTML = caixa(h);
+  } catch (err) { m.innerHTML = caixa('<div style="color:var(--red);">⚠ ' + e(err.message || err) + '</div>'); }
+}
+async function pgSoltoLigar(btn, bpId, billId, forn, valor) {
+  if (!confirm('Ligar no QuickBooks o pagamento de ' + forn + ' à conta a pagar #' + billId + ' (R$ ' + Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ')?')) return;
+  const box = document.getElementById('pgs_' + bpId), res = box?.querySelector('.pgs-res');
+  box?.querySelectorAll('button').forEach(b => b.disabled = true); if (res) res.innerHTML = '<span style="color:var(--t3);">Gravando no QuickBooks…</span>';
+  try {
+    const r = await finApi('pagamento_solto_vincular', { billpayment_id: bpId, bill_id: billId }, { timeoutMs: 60000 });
+    if (r.ja_ligado) { if (res) res.innerHTML = '<span style="color:var(--t2);">ℹ ' + String(r.mensagem || '').replace(/</g, '&lt;') + '</span>'; return; }
+    if (res) res.innerHTML = '<span style="color:var(--green);">✓ Ligado: R$ ' + Number(r.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + (r.restou_solto > 0.5 ? ' · ainda solto R$ ' + Number(r.restou_solto).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' — reabra a lista' : '') + '. A DRE se atualiza na próxima leitura.</span>';
+    if (box) box.style.opacity = '.6';
+  } catch (err) { box?.querySelectorAll('button').forEach(b => b.disabled = false); if (res) res.innerHTML = '<span style="color:var(--red);">⚠ ' + String(err.message || err).replace(/</g, '&lt;') + '</span>'; }
+}
 async function audIndicadores() {
   document.getElementById('audModal')?.remove();
   const m = document.createElement('div'); m.id = 'audModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;';
@@ -32749,7 +32789,7 @@ async function dreConta(contaId, nome, colIdx, p) {
       if (vDre != null && Math.abs((d.total || 0) - vDre) > Math.max(1, Math.abs(vDre) * 0.005)) d.aviso = (d.aviso ? d.aviso + ' · ' : '') + '⚠ Os lançamentos listados somam ' + brl(d.total) + ', mas a linha da DRE mostra ' + brl(vDre) + ' (diferença ' + brl(vDre - (d.total || 0)) + '). No regime de caixa o QuickBooks reparte pagamentos entre contas e meses — abra a conta no QuickBooks pelo link da DRE para ver o relatório oficial.'; } catch (_) {}
     const L = d.lancamentos || [];
     td.innerHTML = '<div style="margin:2px 0 8px 26px;border-left:3px solid var(--blue);background:var(--bg3);border-radius:6px;padding:8px 10px;">'
-      + (d.aviso ? '<div style="font-size:10px;color:var(--gold);margin-bottom:6px;">ℹ ' + esc(d.aviso) + '</div>' : '') + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>' + esc(nome) + '</b> · ' + esc(rot) + ' · ' + d.qtd + ' lançamento(s) · total ' + brl(d.total) + ' · maiores primeiro</div>'
+      + (d.aviso ? '<div style="font-size:10px;color:var(--gold);margin-bottom:6px;">ℹ ' + esc(d.aviso) + '</div>' : '') + (d.nao_aplicado ? '<div style="margin-bottom:8px;"><button class="btn" style="color:var(--gold);border-color:var(--gold);font-size:10.5px;" onclick="pgSoltos()">&#128279; Ligar estes pagamentos às contas a pagar</button></div>' : '') + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>' + esc(nome) + '</b> · ' + esc(rot) + ' · ' + d.qtd + ' lançamento(s) · total ' + brl(d.total) + ' · maiores primeiro</div>'
       + (L.length ? '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);font-family:var(--M);font-size:8.5px;text-transform:uppercase;text-align:left;"><th style="padding:3px;">Data</th><th style="padding:3px;">Tipo</th><th style="padding:3px;">Nº</th><th style="padding:3px;">Fornecedor / cliente</th><th style="padding:3px;">Descrição</th><th style="padding:3px;">Contrapartida</th><th style="padding:3px;text-align:right;">Valor</th><th></th></tr>'
         + L.map(l => '<tr style="border-top:1px solid var(--bd);"><td style="padding:3px;font-family:var(--M);white-space:nowrap;">' + esc((l.data || '').split('-').reverse().join('/')) + '</td><td style="padding:3px;">' + esc(l.tipo) + '</td><td style="padding:3px;">' + esc(l.doc) + '</td><td style="padding:3px;">' + esc(l.nome) + '</td><td style="padding:3px;color:var(--t2);">' + esc(l.memo).substring(0, 80) + '</td><td style="padding:3px;color:var(--t2);">' + esc(l.contrapartida) + '</td>'
           + '<td style="padding:3px;text-align:right;font-family:var(--M);white-space:nowrap;">' + brl(l.valor) + '</td><td style="padding:3px;">' + (l.qb_url ? '<a href="' + l.qb_url + '" target="_blank" rel="noopener" style="color:var(--blue);white-space:nowrap;">abrir ↗</a>' : '') + '</td></tr>').join('') + '</table>'
@@ -35549,7 +35589,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.307] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.308] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35565,7 +35605,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.307';
+window.__ATX_BUILD_ID__ = 'ATX-v3.308';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
