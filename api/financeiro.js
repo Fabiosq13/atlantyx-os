@@ -5558,7 +5558,12 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
   const { ini, fim } = _drePeriodo({ data_inicio, data_fim, mes, ano });
   const token = await qbToken();
   const id = String(conta_id).replace(/[^\w]/g, '');
-  const rep = await qbFetch(`/reports/GeneralLedger?start_date=${ini}&end_date=${fim}&accounting_method=${_met(metodo)}&account=${id}&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount`, token);
+  // v3.304: pede também débito/crédito e o valor "natural" — no regime de CAIXA o QuickBooks deixa a coluna "Valor" vazia em
+  // linhas de fatura (o valor reconhecido vem pelo débito/crédito); antes essas linhas apareciam como R$ 0,00
+  const [rep, acc] = await Promise.all([
+    qbFetch(`/reports/GeneralLedger?start_date=${ini}&end_date=${fim}&accounting_method=${_met(metodo)}&account=${id}&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount,nat_amount,debt_amt,credit_amt`, token),
+    qbQuery(`select Classification, AccountType from Account where Id = '${id}'`, token).catch(() => null)]);
+  const cls = String(acc?.QueryResponse?.Account?.[0]?.Classification || ''), credora = /revenue|liability|equity/i.test(cls);
   const cols = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
   const ix = k => cols.indexOf(k);
   const base = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
@@ -5567,7 +5572,9 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
     const sec = r.Header?.ColData?.[0]?.value || nomeSec;
     if (r.type === 'Data' && r.ColData) { const cd = r.ColData, tipo = cd[ix('txn_type')]?.value || '', tid = cd[ix('txn_type')]?.id || null;
       const tela = (_QB_TIPO_TELA.find(([re]) => re.test(tipo)) || [])[1];
-      const valor = parseFloat(cd[ix('subt_nat_amount')]?.value);
+      const num = k => { const i = ix(k); if (i < 0) return NaN; const x = parseFloat(String(cd[i]?.value ?? '').replace(/,/g, '')); return x; };
+      let valor = num('subt_nat_amount'); if (!isFinite(valor) || (valor === 0 && (isFinite(num('debt_amt')) || isFinite(num('credit_amt'))))) { const n = num('nat_amount');
+        if (isFinite(n) && n !== 0) valor = n; else { const d = num('debt_amt'), c = num('credit_amt'); if (isFinite(d) || isFinite(c)) valor = credora ? (c || 0) - (d || 0) : (d || 0) - (c || 0); } }
       if (!cd[ix('tx_date')]?.value && !isFinite(valor)) return;
       linhas.push({ data: cd[ix('tx_date')]?.value || '', tipo, doc: cd[ix('doc_num')]?.value || '', nome: cd[ix('name')]?.value || '', memo: cd[ix('memo')]?.value || '',
         contrapartida: cd[ix('split_acc')]?.value || '', conta: sec, valor: isFinite(valor) ? round(valor) : 0, qb_url: tid && tela ? `${base}/app/${tela}?txnId=${tid}` : null }); }
@@ -5575,9 +5582,12 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
     if (r.Rows?.Row) andar(r.Rows.Row, sec);
   });
   andar(rep?.Rows?.Row, '');
-  const lanc = linhas.filter(l => l.data && !/^(beginning|saldo inicial)/i.test(l.tipo));
+  const todos = linhas.filter(l => l.data && !/^(beginning|saldo inicial)/i.test(l.tipo));
+  // v3.304: no regime de caixa, fatura ainda não recebida aparece no razão sem valor — sai da lista e vira um aviso
+  const zeros = todos.filter(l => !l.valor), lanc = todos.filter(l => l.valor);
   lanc.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
-  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500) };
+  const aviso = zeros.length ? zeros.length + ' lançamento(s) sem valor no período ocultado(s)' + (_met(metodo) === 'Cash' && zeros.some(z => /fatura|invoice/i.test(z.tipo)) ? ' — no regime de CAIXA a fatura só entra quando é recebida; para ver as notas emitidas troque o regime para competência' : '') + ': ' + zeros.slice(0, 8).map(z => (z.tipo + ' ' + (z.doc || '') + ' ' + (z.nome || '')).trim()).join('; ') : null;
+  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500), aviso, sem_valor: zeros.slice(0, 50) };
 }
 // v3.124: regime escolhido na tela (competência = Accrual, padrão · caixa = Cash) — vale para todos os indicadores da DRE
 // v3.232: padrão da Atlantyx = REGIME DE CAIXA; competência só quando pedida explicitamente

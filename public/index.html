@@ -32742,7 +32742,7 @@ async function dreConta(contaId, nome, colIdx, p) {
     const d = await finApi('dre_conta_lancamentos', { conta_id: contaId, data_inicio: ini, data_fim: fim, metodo });
     const L = d.lancamentos || [];
     td.innerHTML = '<div style="margin:2px 0 8px 26px;border-left:3px solid var(--blue);background:var(--bg3);border-radius:6px;padding:8px 10px;">'
-      + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>' + esc(nome) + '</b> · ' + esc(rot) + ' · ' + d.qtd + ' lançamento(s) · total ' + brl(d.total) + ' · maiores primeiro</div>'
+      + (d.aviso ? '<div style="font-size:10px;color:var(--gold);margin-bottom:6px;">ℹ ' + esc(d.aviso) + '</div>' : '') + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>' + esc(nome) + '</b> · ' + esc(rot) + ' · ' + d.qtd + ' lançamento(s) · total ' + brl(d.total) + ' · maiores primeiro</div>'
       + (L.length ? '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);font-family:var(--M);font-size:8.5px;text-transform:uppercase;text-align:left;"><th style="padding:3px;">Data</th><th style="padding:3px;">Tipo</th><th style="padding:3px;">Nº</th><th style="padding:3px;">Fornecedor / cliente</th><th style="padding:3px;">Descrição</th><th style="padding:3px;">Contrapartida</th><th style="padding:3px;text-align:right;">Valor</th><th></th></tr>'
         + L.map(l => '<tr style="border-top:1px solid var(--bd);"><td style="padding:3px;font-family:var(--M);white-space:nowrap;">' + esc((l.data || '').split('-').reverse().join('/')) + '</td><td style="padding:3px;">' + esc(l.tipo) + '</td><td style="padding:3px;">' + esc(l.doc) + '</td><td style="padding:3px;">' + esc(l.nome) + '</td><td style="padding:3px;color:var(--t2);">' + esc(l.memo).substring(0, 80) + '</td><td style="padding:3px;color:var(--t2);">' + esc(l.contrapartida) + '</td>'
           + '<td style="padding:3px;text-align:right;font-family:var(--M);white-space:nowrap;">' + brl(l.valor) + '</td><td style="padding:3px;">' + (l.qb_url ? '<a href="' + l.qb_url + '" target="_blank" rel="noopener" style="color:var(--blue);white-space:nowrap;">abrir ↗</a>' : '') + '</td></tr>').join('') + '</table>'
@@ -35542,7 +35542,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.303] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.304] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35558,7 +35558,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.303';
+window.__ATX_BUILD_ID__ = 'ATX-v3.304';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
