@@ -5525,8 +5525,8 @@ function dreMensalSerie(rep, anoRef) {
   const out = [];
   const FL = _fv2Folhas(rep).folhas, hj = _hojeBR(); // v3.291: lucro de cada mês pela apuração em 4 camadas
   idx.forEach((m, i) => { if (!m) return; const fat = v('Income', i);
-    const mes = m === hj.substring(0, 7) ? Math.min(1, Math.round(parseInt(hj.substring(8)) / (365.25 / 12) * 100) / 100) : 1;
-    const cam = FL.length ? _camApurar(FL, { idx: i - 1, meses: mes }) : null;
+    const mes = m === hj.substring(0, 7) ? Math.round(parseInt(hj.substring(8)) / new Date(Date.UTC(parseInt(hj), parseInt(hj.substring(5, 7)), 0)).getUTCDate() * 100) / 100 : 1;
+    const cam = FL.length ? _camApurar(FL, { idx: i - 1, meses: mes, mesesAgenda: m === hj.substring(0, 7) ? mes : 0 }) : null;
     const luc = cam ? cam.resultado_operacional : (G.NetIncome ? v('NetIncome', i) : fat - (v('COGS', i) + v('Expenses', i) + v('OtherExpenses', i)) + v('OtherIncome', i));
     const gastos = fat + v('OtherIncome', i) - luc;
     out.push({ mes: m, faturamento: round(fat), gastos: round(gastos), lucro_liquido: round(luc), margem_liquida_pct: fat > 0 ? Math.round(luc / fat * 1000) / 10 : null }); });
@@ -5612,7 +5612,15 @@ function _camMeses(rep) { // v3.294: em meses de calendário (mês cheio = 1; m�
   return Math.max(0, Math.round(meses * 100) / 100) || null;
 }
 // folhas: as de _fv2Folhas; idx = coluna (−1 = última/total); meses = duração do período (escala alocação e agenda)
-function _camApurar(folhas, { idx = -1, meses = null, ctx = _camCtx } = {}) {
+// v3.297: parcelamentos/retiradas da AGENDA (quando não estão na DRE) só valem para o mês em curso — a agenda é a de hoje;
+// aplicá-la a 2023–2025 tirava do lucro histórico parcelas que nem existiam (e os meses não somavam o ano)
+function _camMesesAgenda(rep) {
+  const i = rep?.Header?.StartPeriod, f = rep?.Header?.EndPeriod, hj = _hojeBR(); if (!i || !f) return 0;
+  const mIni = hj.substring(0, 8) + '01'; const de = i > mIni ? i : mIni, ate = f < hj ? f : hj; if (ate < de) return 0;
+  const dm = new Date(Date.UTC(parseInt(hj), parseInt(hj.substring(5, 7)), 0)).getUTCDate();
+  return Math.round(((Date.parse(ate) - Date.parse(de)) / 864e5 + 1) / dm * 100) / 100;
+}
+function _camApurar(folhas, { idx = -1, meses = null, mesesAgenda = 0, ctx = _camCtx } = {}) {
   const cfg = ctx.cfg || {}, M = {}, contas = [], avisos = [];
   for (const k of CAM_MOTORES) M[k] = { receita: 0, impostos: 0, receita_liquida: 0, custo_direto: 0, custo_contas: 0, custo_compartilhado: 0, custo_alocados: 0, margem_bruta: 0, fixos_rateados: 0, margem_contribuicao: 0 };
   let impQb = 0, ir = 0, dirComp = 0, fixo = 0, folhaFixo = 0, retQb = 0, outrasRec = 0; const corp = { parcelamento: 0, financeiro: 0, extraordinario: 0, 'outras despesas': 0, manual: 0 };
@@ -5654,14 +5662,14 @@ function _camApurar(folhas, { idx = -1, meses = null, ctx = _camCtx } = {}) {
   const semRateio = shSum ? 0 : fixo + dirComp;
   for (const k of CAM_MOTORES) { const m = M[k]; m.fixos_rateados = shSum ? fixo * sh[k] / shSum : 0; m.margem_contribuicao = m.margem_bruta - m.fixos_rateados; }
   // CAMADA 4 — corporativo (não rateável) e retiradas
-  let parcAgenda = 0; if (!corp.parcelamento && ctx.agenda?.parcelamento_mensal && meses) { parcAgenda = ctx.agenda.parcelamento_mensal * meses; }
+  let parcAgenda = 0; if (!corp.parcelamento && ctx.agenda?.parcelamento_mensal && mesesAgenda > 0) { parcAgenda = ctx.agenda.parcelamento_mensal * mesesAgenda; }
   const corpTot = Object.values(corp).reduce((s, v) => s + v, 0) + parcAgenda - outrasRec;
   const pct = (v, b) => b > 0 ? Math.round(v / b * 1000) / 10 : null;
   const custosDir = CAM_MOTORES.reduce((s, k) => s + M[k].custo_direto, 0);
   const mb = rlTot - custosDir, mcTot = CAM_MOTORES.reduce((s, k) => s + M[k].margem_contribuicao, 0) - semRateio;
   const ro = mcTot - corpTot;
   let ret = retQb, retFonte = retQb ? 'quickbooks' : null;
-  if (!retQb && ctx.agenda?.retirada_mensal && meses) { ret = ctx.agenda.retirada_mensal * meses; retFonte = 'agenda'; avisos.push('Retiradas de sócio não aparecem na DRE do QuickBooks — usadas as da Agenda de pagamentos (' + Math.round(ctx.agenda.retirada_mensal).toLocaleString('pt-BR') + '/mês × ' + String(meses).replace('.', ',') + ' meses).'); }
+  if (!retQb && ctx.agenda?.retirada_mensal && mesesAgenda > 0) { ret = ctx.agenda.retirada_mensal * mesesAgenda; retFonte = 'agenda'; avisos.push('Retiradas de sócio não aparecem na DRE do QuickBooks — usadas as da Agenda de pagamentos no mês em curso (' + Math.round(ctx.agenda.retirada_mensal).toLocaleString('pt-BR') + '/mês × ' + String(mesesAgenda).replace('.', ',') + ').'); }
   if (parcAgenda) avisos.push('Parcelamentos de impostos/dívidas não aparecem na DRE do QuickBooks — usados os da Agenda de pagamentos (' + Math.round(ctx.agenda.parcelamento_mensal).toLocaleString('pt-BR') + '/mês).');
   const motores = Object.fromEntries(CAM_MOTORES.map(k => { const m = M[k], r = m.receita; return [k, { receita: round(r), participacao_pct: pct(r, recTot), impostos: round(m.impostos), receita_liquida: round(m.receita_liquida),
     custo_direto: round(m.custo_direto), custo_contas: round(m.custo_contas), custo_compartilhado: round(m.custo_compartilhado), custo_alocados: round(m.custo_alocados), margem_bruta: round(m.margem_bruta), margem_bruta_pct: pct(m.margem_bruta, r),
@@ -5697,7 +5705,7 @@ function dreResumo(rep) {
   }
   // v3.291: lucro e margens pela APURAÇÃO EM 4 CAMADAS (impostos → custos diretos → fixos rateados → corporativo);
   // lucro = RESULTADO OPERACIONAL da empresa (antes das retiradas de sócio). O "Net Income" do QuickBooks fica como referência.
-  const cam = rows.length ? _camApurar(_fv2Folhas(rep).folhas, { meses: _camMeses(rep) }) : null;
+  const cam = rows.length ? _camApurar(_fv2Folhas(rep).folhas, { meses: _camMeses(rep), mesesAgenda: _camMesesAgenda(rep) }) : null;
   const lucroQb = lucro; if (cam) lucro = cam.resultado_operacional;
   const lucroBruto = cam ? cam.margem_bruta : ('GrossProfit' in G ? G.GrossProfit : receita - custos);
   const operacional = cam ? cam.resultado_operacional : ('NetOperatingIncome' in G ? G.NetOperatingIncome : lucroBruto - despesas);
@@ -5791,17 +5799,30 @@ async function metasEmpresaLer({ ano, metodo } = {}) {
   const a = parseInt(ano) || parseInt(_hojeBR()), m = await _metasComPadrao([a]), hoje = _hojeBR();
   const cad = m.por_ano?.[String(a)] || null;
   const out = { ano: a, metas: cad && !cad.padrao ? cad : null, meta_padrao: cad?.padrao ? cad : null, padrao: m.padrao_efetivo, todos_anos: m.por_ano || {}, realizado: null, sugestoes: {}, erros: [] };
-  const [rA, rP, orc] = await Promise.allSettled([
+  // v3.297: ano anterior ainda EM CURSO (planejar 2027 em out/2026) — antes era tratado como ano fechado: a sazonalidade saía
+  // com nov/dez = 0 (meta mês a mês zerada) e o crescimento era medido sobre o acumulado parcial (≈60% em vez de 25%)
+  const anoAtual = parseInt(hoje), antParcial = a - 1 >= anoAtual, anoSaz = antParcial ? anoAtual - 1 : a - 1;
+  const [rA, rP, orc, rS] = await Promise.allSettled([
     a <= parseInt(hoje) ? resultadoKpis({ data_inicio: `${a}-01-01`, data_fim: `${a}-12-31`, metodo }) : Promise.resolve(null),
-    resultadoKpis({ data_inicio: `${a - 1}-01-01`, data_fim: `${a - 1}-12-31`, metodo }),
+    a - 1 <= anoAtual ? resultadoKpis({ data_inicio: `${a - 1}-01-01`, data_fim: `${a - 1}-12-31`, metodo }) : Promise.resolve(null),
     Promise.race([orcamentoConsolidado({ ano: a }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]),
+    antParcial ? resultadoKpis({ data_inicio: `${anoSaz}-01-01`, data_fim: `${anoSaz}-12-31`, metodo }) : Promise.resolve(null),
   ]);
   const mesesDe = (R, ano) => { const mm = Array(12).fill(null); (R?.resultado?.mensal || []).forEach(x => { if (parseInt(x.mes) === ano) mm[parseInt(x.mes.substring(5, 7)) - 1] = { faturamento: x.faturamento, lucro: x.lucro_liquido, margem: x.margem_liquida_pct }; }); return mm; };
   if (rA.status === 'fulfilled' && rA.value) out.realizado = { mensal: mesesDe(rA.value, a), ano: rA.value.resultado?.periodo_res || null };
   else if (rA.status === 'rejected') out.erros.push('Realizado: ' + rA.reason?.message);
   if (rP.status === 'fulfilled' && rP.value) { const P = rP.value.resultado?.periodo_res, mm = mesesDe(rP.value, a - 1);
     out.ano_anterior = { faturamento: P?.faturamento ?? null, margem_pct: P?.margem_liquida_pct ?? null, margem_ebitda_pct: P?.margem_ebitda_pct ?? null, mensal: mm.map(x => x?.faturamento ?? null) };
-    const tot = mm.reduce((s, x) => s + (x?.faturamento || 0), 0); if (tot > 0) out.sugestoes.sazonalidade = mm.map(x => Math.round((x?.faturamento || 0) / tot * 10000) / 10000); }
+    if (antParcial) { // base do crescimento = meta do ano anterior (cadastrada ou padrão); sem meta, o realizado anualizado
+      const metaAnt = m.por_ano?.[String(a - 1)]?.faturamento, ini = Date.parse(`${a - 1}-01-01`), frac = Math.min(1, Math.max(0.05, (Date.parse(hoje) - ini + 864e5) / (Date.parse(`${a}-01-01`) - ini)));
+      out.ano_anterior.realizado_parcial = out.ano_anterior.faturamento; out.ano_anterior.parcial = true;
+      out.ano_anterior.faturamento = metaAnt || (out.ano_anterior.faturamento ? round(out.ano_anterior.faturamento / frac) : null);
+      out.ano_anterior.base_fonte = metaAnt ? 'meta de ' + (a - 1) + ' (o ano ainda não fechou)' : 'realizado de ' + (a - 1) + ' até hoje, anualizado (o ano ainda não fechou)'; }
+    else { const tot = mm.reduce((s, x) => s + (x?.faturamento || 0), 0); if (tot > 0) out.sugestoes.sazonalidade = mm.map(x => Math.round((x?.faturamento || 0) / tot * 10000) / 10000); } }
+  if (antParcial && !out.ano_anterior) { const metaAnt = m.por_ano?.[String(a - 1)]?.faturamento ?? null; // ano anterior também é futuro: cresce sobre a meta dele
+    out.ano_anterior = { faturamento: metaAnt, margem_pct: m.por_ano?.[String(a - 1)]?.margem_pct ?? null, margem_ebitda_pct: null, mensal: Array(12).fill(null), parcial: true, base_fonte: 'meta de ' + (a - 1) }; }
+  if (antParcial && rS.status === 'fulfilled' && rS.value) { const ms = mesesDe(rS.value, anoSaz), tot = ms.reduce((s, x) => s + (x?.faturamento || 0), 0);
+    if (tot > 0) { out.sugestoes.sazonalidade = ms.map(x => Math.round((x?.faturamento || 0) / tot * 10000) / 10000); out.sugestoes.sazonalidade_fonte = 'meses de ' + anoSaz + ' (último ano fechado)'; } }
   if (orc.status === 'fulfilled' && orc.value) { const pt = orc.value.por_tipo || {}, mr = Array(12).fill(0), md = Array(12).fill(0);
     Object.entries(pt.receita?.meses || {}).forEach(([k, v]) => { if (parseInt(k) === a) mr[parseInt(k.substring(5, 7)) - 1] += v.orcado || 0; });
     Object.entries(pt.despesa?.meses || {}).forEach(([k, v]) => { if (parseInt(k) === a) md[parseInt(k.substring(5, 7)) - 1] += Math.abs(v.orcado || 0); });
@@ -5955,7 +5976,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   // v3.123: METAS DO PERÍODO ao lado de cada indicador — 1º as Metas do ano (faturamento anual ÷ 12 × meses do período,
   // lucro = faturamento × % de lucro); 2º o Orçamento Anual do QuickBooks (receita e despesa orçadas nos meses do período).
   try {
-    const pFim = futuro ? fimPedido : fimPedido, aRef = ini.substring(0, 4);
+    const pFim = futuro ? fimPedido : fimPedido, aRef = anoIni.substring(0, 4); // v3.297: mesmo ano da meta de margem (antes: ano do início)
     const nMeses = (parseInt(pFim.substring(0, 4)) - parseInt(ini.substring(0, 4))) * 12 + parseInt(pFim.substring(5, 7)) - parseInt(ini.substring(5, 7)) + 1;
     const mUserAno = mt.status === 'fulfilled' ? mt.value?.por_ano?.[aRef] : null;
     const pt = orc.status === 'fulfilled' ? (orc.value?.por_tipo || {}) : {}, mi = ini.substring(0, 7), mf = pFim.substring(0, 7);

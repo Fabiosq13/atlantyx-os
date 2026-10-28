@@ -14051,7 +14051,8 @@ function _rskFinanceiro(kpi, orc) {
   const s = { chave: 'financeiro', titulo: 'Risco financeiro', origem: 'KPIs QuickBooks', tela: 's3kpis', extra: ['s3orcamento', 'Orçamento Anual'], itens: [] };
   if (kpi.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(kpi) };
   const k = (kpi.value && kpi.value.kpis) || {}, m = k.margem_liquida_ano_pct ?? k.margem_liquida_pct; // v3.113: margem do ANO (o mês corrente é parcial — no começo do mês ficava vermelho à toa)
-  const { meta, fonte } = _rskMetaMargem(orc);
+  // v3.297: a meta de margem é a das Metas da Empresa (a mesma do Dashboard e da tela Metas); orçamento só se não houver
+  const _mOrc = _rskMetaMargem(orc), meta = k.margem_meta_pct != null ? Number(k.margem_meta_pct) : _mOrc.meta, fonte = k.margem_meta_pct != null ? 'Metas da Empresa' : _mOrc.fonte;
   if (m == null || !isFinite(m)) return { ...s, nivel: 'cinza', resumo: 'Margem do mês indisponível (sem receita lançada no QuickBooks).', itens: [`Meta de margem: ${meta}% (${_recEsc(fonte)})`] };
   s.nivel = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
   s.resumo = `Margem líquida ${k.margem_liquida_ano_pct != null ? 'no ano' : 'do mês'} ${m}% · meta ${meta}%` + (m < meta ? ` · ${Math.round((meta - m) * 10) / 10} p.p. abaixo` : '');
@@ -30670,7 +30671,10 @@ function fv2Pdf() { document.body.classList.add('fv2-print'); setTimeout(() => {
 let _mcAno = new Date().getFullYear(), _mcDados = null;
 const _MC_MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const _mcV = id => { const e = document.getElementById(id); if (!e) return null; const t = String(e.value || '').trim(); return t === '' ? null : t; };
-const _mcNum = t => t == null ? null : (/%$/.test(t) ? _numBR(t.replace('%', '')) : (/[R$]|\d\.\d{3}|[kKmM]$/.test(t) ? parseMoeda(t) : _numBR(t)));
+// v3.297: "6,5 mi", "6,5 milhões", "400 mil" também são lidos como valor (antes "6,5 mi" virava R$ 6,50)
+const _mcNum = t => { if (t == null) return null; const x = String(t).trim(); if (/%$/.test(x)) return _numBR(x.replace('%', ''));
+  const m = x.match(/^(-?[\d.,]+)\s*(k|mil|m|mi|milh[õo]es|milh[ãa]o)\.?$/i); if (m) { const b = _numBR(m[1]); return b == null ? null : b * (/^(k|mil)$/i.test(m[2]) ? 1e3 : 1e6); }
+  return /[R$]|\d\.\d{3}/.test(x) ? parseMoeda(x) : _numBR(x); };
 async function metasCadastroAbrir(ano) {
   if (ano) _mcAno = parseInt(ano);
   nav('s1metas', document.querySelector('.sbi[onclick*="s1metas"]'));
@@ -30704,7 +30708,7 @@ function _mcRender() {
     + (AA.faturamento ? '<button class="btn btn-g" onclick="_mcSugerirHist()">↗ ' + (anoTxt - 1) + ' + 25% (' + _fv2K(AA.faturamento) + ' → ' + _fv2K(AA.faturamento * 1.25) + ')</button>' : '')
     + '</div></div>'
     + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Metas de ' + anoTxt + '</div><div class="fv2-pq">Valores em R$ e percentuais · aceita "4,8M", "4.800.000" ou "20%"</div></div></div><div class="mc-grid">'
-    + campo('mcCresc', 'Crescimento do faturamento (% a.a.)', pct(M.crescimento_pct ?? PAD.crescimento_pct), String(PAD.crescimento_pct), 'meta da empresa: ' + _fv2N(PAD.crescimento_pct) + '% ao ano' + (AA.faturamento ? ' · aplica sobre ' + (anoTxt - 1) : ''))
+    + campo('mcCresc', 'Crescimento do faturamento (% a.a.)', pct(M.crescimento_pct ?? PAD.crescimento_pct), String(PAD.crescimento_pct), 'meta da empresa: ' + _fv2N(PAD.crescimento_pct) + '% ao ano' + (AA.faturamento ? ' · aplica sobre ' + (anoTxt - 1) + (AA.parcial ? ' — base: ' + fmtBRL(AA.faturamento) + ' (' + _fv2Esc(AA.base_fonte || '') + ')' : '') : ''))
     + campo('mcFat', 'Faturamento do ano (R$) *', brl(M.faturamento ?? PD?.faturamento ?? null), 'ex.: 4.800.000', AA.faturamento ? 'realizado em ' + (anoTxt - 1) + ': ' + fmtBRL(AA.faturamento) : '')
     + campo('mcMg', 'Margem de lucro líquido (%) *', pct(M.margem_pct ?? PAD.margem_pct), String(PAD.margem_pct), 'meta da empresa: ' + _fv2N(PAD.margem_pct) + '%' + (AA.margem_pct != null ? ' · em ' + (anoTxt - 1) + ': ' + _fv2N(AA.margem_pct) + '%' : ''))
     + campo('mcEb', 'Margem EBITDA (%)', pct(M.margem_ebitda_pct), 'ex.: 25', AA.margem_ebitda_pct != null ? 'em ' + (anoTxt - 1) + ': ' + _fv2N(AA.margem_ebitda_pct) + '%' : '')
@@ -32784,15 +32788,15 @@ function _mtHtml(M) {
   const fonteM = '\n\nRealizado: faturamento da DRE do QuickBooks (' + _finRegimeTxt() + ') de 01/01/' + M.ano + ' até hoje. Metas: definidas em "Definir metas".';
   const T1 = '**Meta de faturamento** do ano e quanto já foi faturado.\n\nRealizado ' + brl(F.realizado) + ' ÷ meta ' + brl(F.meta) + ' = ' + _resFmtPct(F.pct_atingido) + ' atingido.\nEsperado até hoje = meta × ' + (F.fracao_pela_meta_mensal ? 'parte da meta mês a mês já vencida' : 'fração do ano decorrida') + ' = ' + brl(F.meta) + ' × ' + _resFmtPct(F.fracao_meta ?? M.fracao_ano) + ' = ' + brl(F.esperado_ate_hoje) + '.' + fonteM;
   const T2 = '**Falta faturar** = meta − realizado = ' + brl(F.meta) + ' − ' + brl(F.realizado) + ' = ' + brl(F.falta) + '.\nPor mês necessário = falta ÷ ' + (F.meses_restantes ?? '—') + ' mes(es) restantes = ' + brl(F.por_mes_necessario) + '.\nRitmo = realizado ÷ esperado até hoje = ' + _resFmtPct(F.ritmo_pct) + '.\nProjeção de fechamento = realizado ÷ fração do ano = ' + brl(F.projecao_fechamento) + '.\n\nSemáforo pelo ritmo: verde ≥ 100% · amarelo ≥ 85% · vermelho abaixo.' + fonteM;
-  const T3 = G ? '**Meta de lucro** = margem líquida (lucro líquido ÷ faturamento) desejada para o ano.\n\nRealizado no ano: ' + brl(G.lucro_realizado) + ' ÷ ' + brl(F.realizado) + ' = ' + _resFmtPct(G.realizado_pct) + ' (meta ' + _resFmtPct(G.meta_pct) + ').\nLucro da meta = meta de faturamento × meta de margem = ' + brl(F.meta) + ' × ' + _resFmtPct(G.meta_pct) + ' = ' + brl(G.lucro_meta) + '.\n\nSemáforo: verde ≥ meta · amarelo até 5 p.p. abaixo · vermelho mais que isso.' + fonteM : '';
+  const T3 = G ? '**Meta de lucro** = margem de lucro (resultado operacional ÷ faturamento, apuração em 4 camadas) desejada para o ano.\n\nRealizado no ano: ' + brl(G.lucro_realizado) + ' ÷ ' + brl(F.realizado) + ' = ' + _resFmtPct(G.realizado_pct) + ' (meta ' + _resFmtPct(G.meta_pct) + ').\nLucro da meta = meta de faturamento × meta de margem = ' + brl(F.meta) + ' × ' + _resFmtPct(G.meta_pct) + ' = ' + brl(G.lucro_meta) + '.\n\nSemáforo: verde ≥ meta · amarelo até 5 p.p. abaixo · vermelho mais que isso.' + fonteM : '';
   const T4 = C && !C.indisponivel ? '**Pendente no CRM** = negócios ABERTOS no HubSpot (etapas entre 0% e 100% de probabilidade) com fechamento previsto em ' + M.ano + ' ou sem data.\n\nAberto: soma dos valores = ' + brl(C.total_aberto) + ' (' + C.qtd + ' negócios).\nPonderado: soma de valor × probabilidade da etapa = ' + brl(C.total_ponderado) + '.\nCobertura = ponderado ÷ falta faturar = ' + brl(C.total_ponderado) + ' ÷ ' + brl(F.falta) + ' = ' + _resFmtPct(C.cobre_pct_ponderado) + '.\n\nClique no cartão para ver a lista.' : 'Negócios abertos no HubSpot com fechamento no ano.';
   cards.push(_resCartao('Meta de faturamento ' + M.ano, brl(F.meta),
     fut ? 'o ano ainda não começou' : `realizado <b>${brl(F.realizado)}</b> (${_resFmtPct(F.pct_atingido)}) · esperado até hoje ${brl(F.esperado_ate_hoje)} (${_resFmtPct(F.fracao_meta ?? M.fracao_ano)} ${F.fracao_pela_meta_mensal ? 'da meta mês a mês' : 'do ano'})`, 'var(--blue)', T1));
   cards.push(_resCartao(luz(F.semaforo) + ' Falta faturar', brl(F.falta),
-    fut ? (F.por_mes_necessario ? '≈ ' + brl(F.por_mes_necessario) + '/mês' : '') : (F.semaforo === 'verde' ? 'no ritmo ou acima da meta' : F.semaforo === 'amarelo' ? 'um pouco abaixo do ritmo' : 'abaixo do ritmo da meta') + (F.ritmo_pct != null ? ` · ritmo ${_resFmtPct(F.ritmo_pct)}` : '') + (F.por_mes_necessario ? ` · precisa de <b>${brl(F.por_mes_necessario)}/mês</b> nos ${F.meses_restantes} mes(es) restantes` : '') + (F.projecao_fechamento ? ` · no ritmo atual fecha o ano em ${brl(F.projecao_fechamento)}` : ''),
+    fut ? (F.por_mes_necessario ? '≈ ' + brl(F.por_mes_necessario) + '/mês' : '') : (F.realizado == null || !F.semaforo || F.semaforo === 'cinza' ? 'sem realizado do QuickBooks agora' : F.semaforo === 'verde' ? 'no ritmo ou acima da meta' : F.semaforo === 'amarelo' ? 'um pouco abaixo do ritmo' : 'abaixo do ritmo da meta') + (F.ritmo_pct != null ? ` · ritmo ${_resFmtPct(F.ritmo_pct)}` : '') + (F.por_mes_necessario ? ` · precisa de <b>${brl(F.por_mes_necessario)}/mês</b> nos ${F.meses_restantes} mes(es) restantes` : '') + (F.projecao_fechamento ? ` · no ritmo atual fecha o ano em ${brl(F.projecao_fechamento)}` : ''),
     cor(F.semaforo), T2));
   if (G) cards.push(_resCartao(luz(G.semaforo) + ' Meta de lucro ' + M.ano, _resFmtPct(G.meta_pct) + ' de margem',
-    `realizado <b style="color:${cor(G.semaforo)};">${_resFmtPct(G.realizado_pct)}</b>${G.diferenca_pp != null ? ` (${G.diferenca_pp >= 0 ? '+' : ''}${String(G.diferenca_pp).replace('.', ',')} p.p.)` : ''} · lucro ${brl(G.lucro_realizado)} de ${brl(G.lucro_meta)} na meta`, cor(G.semaforo), T3));
+    `realizado <b style="color:${cor(G.semaforo)};">${_resFmtPct(G.realizado_pct)}</b>${G.diferenca_pp != null ? ` (${G.diferenca_pp >= 0 ? '+' : ''}${String(G.diferenca_pp).replace('.', ',')} p.p.)` : ''} · lucro ${brl(G.lucro_realizado)}${G.lucro_meta && (F.fracao_meta ?? M.fracao_ano) != null && (F.fracao_meta ?? M.fracao_ano) < 100 ? ` · esperado até hoje ${brl(G.lucro_meta * (F.fracao_meta ?? M.fracao_ano) / 100)}` : ''} (meta do ano ${brl(G.lucro_meta)})`, cor(G.semaforo), T3)); // v3.297: compara com o proporcional do ano
   if (C && !C.indisponivel) {
     const cob = C.cobre_pct_ponderado, cc = cob == null ? 'var(--t3)' : cob >= 100 ? 'var(--green)' : cob >= 60 ? 'var(--gold)' : 'var(--red)';
     cards.push('<div class="res-card" style="--c:' + cc + ';cursor:pointer;" onclick="metasCrmAbrir()" title="Ver as propostas abertas no CRM"><div class="rl">CRM · pendente para a meta' + _tip(T4) + '</div><div class="rv" style="color:' + cc + ';">' + brl(C.total_ponderado) + '</div>'
@@ -35473,7 +35477,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.296] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.297] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35489,7 +35493,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.296';
+window.__ATX_BUILD_ID__ = 'ATX-v3.297';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

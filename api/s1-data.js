@@ -371,10 +371,23 @@ async function analisarFinanceiro() {
     console.log('[S1-Data] QuickBooks indisponível:', e.message);
   }
 
+  // v3.297: lucro/margem OFICIAIS do sistema (apuração em 4 camadas) e as metas da empresa — antes a IA calculava a margem
+  // pelo "Net Income" bruto do QuickBooks (número diferente do Dashboard/Metas) e não sabia as metas
+  let oficiais = null;
+  try { const fin = async (action, params) => { const mod = await import('./financeiro.js'); let out = null;
+      const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(o) { out = o; return this; }, send(b) { try { out = JSON.parse(b); } catch (_) { out = null; } return this; }, setHeader() {}, end() { return this; } };
+      await mod.default({ method: 'POST', body: { action, params }, query: {}, headers: {} }, res); if (!out?.success) throw new Error(out?.error || action); return out; };
+    const ano = parseInt(new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }));
+    const [rk, me] = await Promise.allSettled([fin('resultado_kpis', { ano }), fin('metas_empresa_status', { ano, com_crm: false })]);
+    const A = rk.status === 'fulfilled' ? rk.value.resultado?.ano_res : null, C = A?.camadas;
+    oficiais = { ano, faturamento: A?.faturamento ?? null, lucro_resultado_operacional: A?.lucro_liquido ?? null, margem_pct: A?.margem_liquida_pct ?? null,
+      camadas: C ? { impostos: C.impostos, receita_liquida: C.receita_liquida, margem_bruta_pct: C.margem_bruta_pct, margem_contribuicao_pct: C.margem_contribuicao_pct, despesas_corporativas: C.despesas_corporativas, retiradas: C.retiradas, resultado_dono: C.resultado_dono } : null,
+      metas: me.status === 'fulfilled' ? { meta_faturamento: me.value.metas?.meta?.faturamento ?? null, meta_margem_pct: me.value.metas?.meta?.margem_pct ?? null, pct_atingido: me.value.metas?.faturamento?.pct_atingido ?? null, projecao_fechamento: me.value.metas?.faturamento?.projecao_fechamento ?? null } : null };
+  } catch (e) { console.log('[S1-Data] números oficiais indisponíveis:', e.message); }
+
   // 2. Claude S1-04 analisa os dados financeiros reais
-  const promptDados = dadosQB
-    ? `Dados financeiros REAIS do QuickBooks:\n${JSON.stringify(dadosQB, null, 1)}`
-    : 'QuickBooks não configurado. Use os dados do contexto da Atlantyx.';
+  const promptDados = (oficiais ? `NÚMEROS OFICIAIS DO SISTEMA (prevalecem — lucro = resultado operacional antes das retiradas, margem sobre a receita bruta; NÃO recalcule a margem pelo "Net Income" do QuickBooks):\n${JSON.stringify(oficiais)}\n\n` : '')
+    + (dadosQB ? `Dados financeiros REAIS do QuickBooks (detalhe):\n${JSON.stringify(dadosQB, null, 1)}` : 'QuickBooks não respondeu agora — diga que os dados financeiros faltaram; não suponha números.');
 
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

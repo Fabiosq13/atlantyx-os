@@ -165,16 +165,21 @@ async function projecaoIA({ premissas: p, pedido } = {}) {
   const pj = projetar3(novo, base); // v3.294: premissas da IA normalizadas (texto como "25%" virava 0)
   return { premissas: pj.premissas, projecao: pj, comentario: String(j.comentario || '').substring(0, 3000), alavancas: (j.alavancas || []).slice(0, 6) };
 }
-async function projecaoParaMetas({ anos = [] } = {}) {
+async function projecaoParaMetas({ anos = [], substituir = [] } = {}) {
+  // v3.297: ano com meta cadastrada à mão ou definida pelo CEO (ex.: 2027 = R$ 6,5 mi / 35%) NÃO é sobrescrito sem confirmação
+  // (vem em "protegidos" e a tela pergunta); margem ausente não vira 0%; a distribuição mês a mês existente é mantida (proporcional)
   const salvo = await kv('plan:projecao3'); if (!salvo?.projecao) throw new Error('Salve a projeção antes');
-  const L = salvo.projecao.cenarios.base.filter(l => !anos.length || anos.includes(l.ano)), feitos = [];
-  let todos = {}; try { const _ml = await chamar('financeiro', { action: 'metas_empresa_ler', params: {} }); todos = _ml.metas_cadastro?.todos_anos || _ml.todos_anos || {}; /* v3.294: antes lia o lugar errado e apagava EBITDA/caixa mínimo */ } catch (_) {}
-  for (const l of L) { const ex = todos[String(l.ano)] && !todos[String(l.ano)].padrao ? todos[String(l.ano)] : {}; // mantém o que já estava cadastrado (EBITDA, caixa mínimo); a distribuição mensal é refeita
+  const L = salvo.projecao.cenarios.base.filter(l => !anos.length || anos.includes(l.ano)), feitos = [], protegidos = [];
+  let todos = {}; try { const _ml = await chamar('financeiro', { action: 'metas_empresa_ler', params: {} }); todos = _ml.metas_cadastro?.todos_anos || _ml.todos_anos || {}; } catch (_) {}
+  for (const l of L) { const ex = todos[String(l.ano)] && !todos[String(l.ano)].padrao ? todos[String(l.ano)] : {};
+    const doUsuario = ex.faturamento && !/^Projeção 3 anos/.test(String(ex.fonte || ''));
+    if (doUsuario && !substituir.includes(l.ano)) { protegidos.push({ ano: l.ano, faturamento_atual: ex.faturamento, margem_atual: ex.margem_pct ?? null, fonte: ex.fonte || 'manual', faturamento_projecao: l.receita, margem_projecao: l.margem_pct }); continue; }
     const mot = { pessoas: l.por_motor.pessoas, projetos: l.por_motor.projetos, produtos: l.por_motor.produtos };
-    const r = await chamar('financeiro', { action: 'metas_empresa_salvar', params: { ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct ?? 0, recorrencia_pct: l.recorrencia_pct, motores: mot,
+    const mensal = Array.isArray(ex.mensal) && ex.mensal.length === 12 && ex.faturamento ? ex.mensal.map(v => v == null ? null : Math.round(v / ex.faturamento * l.receita)) : null;
+    const r = await chamar('financeiro', { action: 'metas_empresa_salvar', params: { ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct ?? ex.margem_pct ?? null, recorrencia_pct: l.recorrencia_pct, motores: mot, mensal,
       margem_ebitda_pct: ex.margem_ebitda_pct ?? null, caixa_minimo: ex.caixa_minimo ?? null, crescimento_pct: ex.crescimento_pct ?? null, fonte: 'Projeção 3 anos (Planejamento)' } });
     feitos.push({ ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct, ok: !!r }); }
-  return { feitos };
+  return { feitos, protegidos };
 }
 async function claude(system, messages, maxTokens = 1500) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');

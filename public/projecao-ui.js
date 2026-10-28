@@ -119,8 +119,12 @@
   }
   async function metas() {
     if (S.sujo) return nota('Salve a projeção antes de usar como metas', 'error');
-    const L = S.proj.cenarios.base; if (!confirm('Gravar o cenário BASE como metas da empresa?\n\n' + L.map(l => `${l.ano}: faturamento ${R(l.receita)} · margem ${P(l.margem_pct)}`).join('\n') + '\n\nAs metas desses anos em Metas da Empresa serão substituídas.')) return;
-    try { const d = await api('projecao_para_metas', { anos: L.map(l => l.ano) }); nota('Metas gravadas: ' + d.feitos.map(f => f.ano).join(', ')); abrir(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
+    const L = S.proj.cenarios.base; if (!confirm('Gravar o cenário BASE como metas da empresa?\n\n' + L.map(l => `${l.ano}: faturamento ${R(l.receita)} · margem ${P(l.margem_pct)}`).join('\n') + '\n\nAnos que já têm meta cadastrada (ex.: definida pelo CEO) serão perguntados um a um.')) return;
+    try { let d = await api('projecao_para_metas', { anos: L.map(l => l.ano) }); const feitos = [...(d.feitos || [])];
+      const pr = d.protegidos || []; // v3.297: metas cadastradas à mão / definidas pelo CEO só são trocadas com confirmação, ano a ano
+      const trocar = pr.filter(p => confirm(`${p.ano} já tem meta cadastrada (${p.fonte}): ${R(p.faturamento_atual)} · margem ${P(p.margem_atual)}.\n\nSubstituir pela projeção (${R(p.faturamento_projecao)} · margem ${P(p.margem_projecao)})?`)).map(p => p.ano);
+      if (trocar.length) { const d2 = await api('projecao_para_metas', { anos: trocar, substituir: trocar }); feitos.push(...(d2.feitos || [])); }
+      nota(feitos.length ? 'Metas gravadas: ' + feitos.map(f => f.ano).join(', ') + (pr.length > trocar.length ? ' · mantidas: ' + pr.filter(p => !trocar.includes(p.ano)).map(p => p.ano).join(', ') : '') : 'Nenhuma meta alterada'); abrir(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
   window.PJ = { abrir, mudou, cenario, salvar, ia, metas, usarDados };
 })();
