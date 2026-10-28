@@ -5582,12 +5582,13 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
     if (r.Rows?.Row) andar(r.Rows.Row, sec);
   });
   andar(rep?.Rows?.Row, '');
-  const todos = linhas.filter(l => l.data && !/^(beginning|saldo inicial)/i.test(l.tipo));
+  const todos = linhas.filter(l => /^\d{4}-\d{2}-\d{2}/.test(l.data) && !/^(beginning|saldo inicial)/i.test(l.tipo)); // v3.305: "Saldo inicial" vinha na coluna de data
   // v3.304: no regime de caixa, fatura ainda não recebida aparece no razão sem valor — sai da lista e vira um aviso
   const zeros = todos.filter(l => !l.valor), lanc = todos.filter(l => l.valor);
   lanc.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
   const aviso = zeros.length ? zeros.length + ' lançamento(s) sem valor no período ocultado(s)' + (_met(metodo) === 'Cash' && zeros.some(z => /fatura|invoice/i.test(z.tipo)) ? ' — no regime de CAIXA a fatura só entra quando é recebida; para ver as notas emitidas troque o regime para competência' : '') + ': ' + zeros.slice(0, 8).map(z => (z.tipo + ' ' + (z.doc || '') + ' ' + (z.nome || '')).trim()).join('; ') : null;
-  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500), aviso, sem_valor: zeros.slice(0, 50) };
+  const naoAplic = RX_NAO_APLICADO.test(conta) ? 'Esta conta é criada pelo QuickBooks no regime de caixa para PAGAMENTOS DE CONTAS que não foram ligados à conta a pagar (ou foram feitos antes de a conta ser lançada). A categoria real (folha/Payroll, aluguel, impostos…) fica escondida aqui. Para corrigir: no QuickBooks, abra cada "Pagamento de conta" desta lista e marque a conta (Bill) que ele paga — o valor passa para a categoria certa.' : null;
+  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500), aviso: [naoAplic, aviso].filter(Boolean).join(' · ') || null, sem_valor: zeros.slice(0, 50) };
 }
 // v3.124: regime escolhido na tela (competência = Accrual, padrão · caixa = Cash) — vale para todos os indicadores da DRE
 // v3.232: padrão da Atlantyx = REGIME DE CAIXA; competência só quando pedida explicitamente
@@ -5632,6 +5633,8 @@ function _plColunasMeses(rep, mIni, mFim, anoRef) {
 // Cada conta da DRE do QuickBooks cai numa camada pelo nome (ajustável em Financeiro → Configurar). Os profissionais
 // alocados em projetos (cadastro S8: custo/hora × horas × % de alocação) saem do custo fixo e viram custo direto do motor.
 // Os percentuais são sobre a RECEITA BRUTA (do motor ou da empresa).
+// v3.305: conta automática do QuickBooks (caixa) para pagamento de conta não ligado à conta a pagar
+const RX_NAO_APLICADO = /pagamento de contas? n[aã]o aplicad|unapplied cash bill payment|unapplied cash payment/i;
 const CAM_CLASSES = { imposto: 'Impostos sobre receita', direto: 'Custo direto', fixo: 'Custo fixo rateável', corporativo: 'Despesa corporativa (não rateável)', retirada: 'Retirada de sócio' };
 const CAM_RX = {
   retirada: /retirad|pr[oó][\s-]?labore|distribui[cç][aã]o (de )?(lucro|dividend)|dividendo|antecipa[cç][aã]o de lucro|lucros? distribu|s[oó]cios?\b/i,
@@ -5716,6 +5719,8 @@ function _camApurar(folhas, { idx = -1, meses = null, mesesAgenda = 0, ctx = _ca
     contas.push({ conta: f.nome, conta_id: f.id, grupo: f.grupo, classe: c.classe, sub: c.sub, manual: !!c.manual, motor, valor: round(v) });
   }
   const recTot = CAM_MOTORES.reduce((s, k) => s + M[k].receita, 0);
+  { const na = contas.filter(c => c.grupo !== 'Income' && RX_NAO_APLICADO.test(c.conta)).reduce((a, c) => a + (c.valor || 0), 0);
+    if (na > 1) avisos.push('R$ ' + Math.round(na).toLocaleString('pt-BR') + ' em "pagamentos de contas não aplicados": pagamentos (folha, aluguel, impostos…) feitos sem ligar à conta a pagar no QuickBooks — a categoria real fica escondida e a folha aparece menor. No QuickBooks, ligue cada pagamento à conta que ele paga.'); }
   // CAMADA 1 — impostos: os lançados no QuickBooks; sem lançamento no período, a alíquota efetiva configurada (estimativa)
   const aliqM = cfg.aliquota_motor || {}, aliqG = Number(cfg.aliquota_pct) || 0, temAliqM = CAM_MOTORES.some(k => Number(aliqM[k]) > 0);
   let impFonte = 'quickbooks', impTot = impQb;
