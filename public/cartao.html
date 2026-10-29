@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache">
+<meta property="og:title" content="Fabio Quintanilha · CEO · Atlantyx">
+<meta property="og:description" content="Cartão digital — dados, analytics e IA para grandes empresas. Fale comigo no WhatsApp ou agende uma conversa.">
+<meta property="og:image" content="https://atlantyx-os.vercel.app/og-atlantyx.jpg">
+<meta property="og:type" content="profile">
+<link rel="icon" href="/logo-atlantyx-branco.png">
 <title>Cartão — Atlantyx</title>
 <style>
   :root { --azul:#1A3A8F; --azul2:#0F2660; --ouro:#E0A422; }
@@ -11,6 +16,8 @@
   body { margin:0; min-height:100vh; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:linear-gradient(160deg,#0F2660,#1A3A8F 60%,#0b1a45); color:#fff; display:flex; align-items:center; justify-content:center; padding:24px 14px; }
   .card { width:100%; max-width:420px; background:#fff; color:#1c2333; border-radius:22px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.35); }
   .topo { background:var(--azul); padding:22px 22px 72px; text-align:center; position:relative; }
+  .acoes a:last-child:nth-child(odd) { grid-column:span 2; }
+  .topo .logo { height:34px; max-width:78%; object-fit:contain; display:block; margin:4px auto 0; } /* v3.315: logo oficial no lugar do texto */
   .topo .marca { font-size:12px; letter-spacing:3px; color:var(--ouro); font-weight:800; }
   .foto { width:118px; height:118px; border-radius:50%; border:5px solid #fff; object-fit:cover; background:#e6e9f2; margin:-59px auto 0; display:block; box-shadow:0 6px 18px rgba(0,0,0,.2); position:relative; z-index:2; }
   .foto.vazia { display:flex; align-items:center; justify-content:center; font-size:44px; color:var(--azul); font-weight:800; }
@@ -56,7 +63,7 @@
   const E = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ini = (c.nome || 'A').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase();
   document.getElementById('card').innerHTML = `
-    <div class="topo"><div class="marca">${(c.empresa||'ATLANTYX').toUpperCase()}</div></div>
+    <div class="topo"><img class="logo" src="/logo-atlantyx-branco.png" alt="${E(c.empresa||'Atlantyx')}"></div>
     ${c.foto_url ? `<img class="foto" src="${c.foto_url}" alt="${c.nome||''}">` : `<div class="foto vazia">${ini}</div>`}
     <div class="nome">${c.nome||''}</div>
     <div class="cargo">${[c.cargo, c.empresa].filter(Boolean).join(' · ')}</div>
