@@ -40,7 +40,14 @@
   const r = await fetch('/api/prospeccao?cartao=1&t=' + Date.now(), { cache: 'no-store' }); const d = await r.json(); const c = d.cartao || {};
   const wa = String(c.whatsapp || c.telefone || '').replace(/[^0-9]/g, '');
   const waNum = wa ? (wa.length <= 11 ? '55' + wa : wa) : '';
-  const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent('Olá ' + (c.nome||'').split(' ')[0] + ', vi seu cartão da Atlantyx.')}` : '';
+  // v3.313: QR e botão abrem a conversa já com a apresentação (fundador + Atlantyx) e os links de apresentação e agendamento
+  const W = c.whatsapp_msg || {};
+  const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(W.mensagem_visitante || ('Olá ' + (c.nome||'').split(' ')[0] + ', vi seu cartão da Atlantyx.'))}` : '';
+  const shareLink = W.mensagem_envio ? 'https://wa.me/?text=' + encodeURIComponent(W.mensagem_envio) : '';
+  // v3.313: QR curto (/cartao.html?wa=1) → redireciona direto para o WhatsApp com a mensagem (QR com a mensagem inteira ficava denso demais para a câmera)
+  if (new URLSearchParams(location.search).has('wa') && waLink) { location.replace(waLink); return; }
+  const qrAlvo = location.origin + '/cartao.html?wa=1';
+  const E = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ini = (c.nome || 'A').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase();
   document.getElementById('card').innerHTML = `
     <div class="topo"><div class="marca">${(c.empresa||'ATLANTYX').toUpperCase()}</div></div>
@@ -53,8 +60,11 @@
       ${c.email ? `<a class="mail" href="mailto:${c.email}">✉ E-mail</a>` : ''}
       ${c.telefone ? `<a class="tel" href="tel:+${String(c.telefone).replace(/[^0-9]/g,'')}">📞 Ligar</a>` : ''}
       <a class="vcf" href="/api/prospeccao?vcard=1">💾 Salvar contato</a>
+      ${W.apresentacao ? `<a class="tel" href="${E(W.apresentacao)}" target="_blank" rel="noopener">📎 Apresentação</a>` : ''}
+      ${W.agendamento ? `<a class="mail" href="${E(W.agendamento)}" target="_blank" rel="noopener">📅 Agendar conversa</a>` : ''}
     </div>
-    <div class="qr"><div id="qr"></div><div class="leg">${waLink ? 'Aponte a câmera para abrir o WhatsApp' : '<span style="color:#D64545;">Informe o telefone/WhatsApp na edição do cartão para o QR aparecer</span>'}</div></div>
+    ${shareLink ? `<div style="padding:4px 20px 0;"><a href="${E(shareLink)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:10px;border-radius:11px;border:1.5px solid #25D366;color:#128C4A;font-weight:700;font-size:13px;text-decoration:none;">📤 Enviar este cartão pelo WhatsApp</a></div>` : ''}
+    <div class="qr"><div id="qr"></div><div class="leg">${waLink ? 'Aponte a câmera: o WhatsApp abre com a apresentação e os links de apresentação e agendamento' : '<span style="color:#D64545;">Informe o telefone/WhatsApp na edição do cartão para o QR aparecer</span>'}</div></div>
     <div class="info">
       ${c.email ? `<div><span>✉</span><span>${c.email}</span></div>` : ''}
       ${c.telefone ? `<div><span>📞</span><span>+${String(c.telefone).replace(/[^0-9]/g,'')}</span></div>` : ''}
@@ -67,8 +77,8 @@
   // v2.62: QR com fallback — se a biblioteca do CDN não carregar, usa um gerador de imagem
   if (waLink) {
     const box = document.getElementById('qr');
-    if (window.QRCode) { try { new QRCode(box, { text: waLink, width: 168, height: 168, correctLevel: QRCode.CorrectLevel.M }); } catch (_) {} }
-    if (!box.querySelector('canvas,img')) box.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(waLink)}" width="180" height="180" alt="QR WhatsApp">`;
+    if (window.QRCode) { try { new QRCode(box, { text: qrAlvo, width: 180, height: 180, correctLevel: QRCode.CorrectLevel.M }); } catch (_) {} } // v3.313: mensagem longa → QR maior e correção L
+    if (!box.querySelector('canvas,img')) box.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=190x190&data=${encodeURIComponent(qrAlvo)}" width="190" height="190" alt="QR WhatsApp">`;
   }
   document.title = (c.nome || 'Cartão') + ' — ' + (c.empresa || 'Atlantyx');
 })().catch(e => { document.getElementById('card').innerHTML = '<div style="padding:30px;color:#D64545;">' + e.message + '</div>'; });

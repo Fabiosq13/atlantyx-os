@@ -428,7 +428,8 @@ async function feedReenviar({ id } = {}) {
 const CARTAO_PADRAO = { nome: 'Fabio Quintanilha', cargo: 'CEO', empresa: 'Atlantyx', tagline: 'Dados, analytics e IA para grandes empresas',
   email: '', telefone: '', whatsapp: '', linkedin: '', site: 'https://atlantyx.com.br',
   endereco_rj: 'AQUA · Av. Oscar Niemeyer, 2000 — Rio de Janeiro', endereco_sp: 'Regus · Av. Brigadeiro Faria Lima, 3729 — São Paulo',
-  foto_media_id: null, cor: '#1A3A8F', clientes: 'CPFL Energia · Enel · Caixa · Jelta' };
+  foto_media_id: null, cor: '#1A3A8F', clientes: 'CPFL Energia · Enel · Caixa · Jelta',
+  link_apresentacao: '', link_agendamento: '', texto_apresentacao: '' }; // v3.313: mensagem do WhatsApp do cartão
 async function cartaoGet() {
   const sql = await getSql();
   const r = await sql`SELECT valor FROM app_config WHERE chave = 'cartao_visita'`;
@@ -440,6 +441,22 @@ async function cartaoSet(payload) {
   await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES ('cartao_visita', ${JSON.stringify(novo)}, NOW())
     ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
   return novo;
+}
+// v3.313: mensagem que abre no WhatsApp a partir do cartão (QR e botão) — apresentação do fundador e da Atlantyx + links
+// de apresentação e de agendamento. Links vazios usam: apresentação da Prospecção (URL ou PDF enviado) e a agenda de reuniões.
+async function cartaoMensagem(c) {
+  let cfg = {}; try { cfg = await configGet(); } catch (_) {}
+  const B = baseUrl(), nome = String(c.nome || '').trim(), pn = nome.split(' ')[0] || '', emp = c.empresa || 'Atlantyx';
+  const apresentacao = String(c.link_apresentacao || cfg.apresentacao_url || (cfg.apresentacao_media_id ? B + '/m/' + cfg.apresentacao_media_id + '.pdf' : B + '/captura.html?utm_source=cartao&utm_medium=whatsapp')).trim();
+  const agendamento = String(c.link_agendamento || B + '/reuniao/cartao?f=cartao').trim();
+  const cartao_url = B + '/cartao.html';
+  const texto = String(c.texto_apresentacao || '').trim() || `Sou ${nome}${c.cargo ? ', ' + c.cargo : ''} da ${emp}. Há 17 anos a ${emp} ajuda grandes empresas a transformar dados em decisões, com engenharia de dados, analytics e inteligência artificial aplicada à operação. Atuamos em três frentes: alocação de especialistas, projetos sob medida e produtos próprios de IA.`;
+  const links = `\n\n📎 Apresentação da ${emp}: ${apresentacao}\n📅 Agende uma conversa comigo: ${agendamento}\n💳 Meu cartão digital: ${cartao_url}`;
+  return { apresentacao, agendamento, cartao_url, texto,
+    // quem lê o QR abre a conversa com o fundador já com a apresentação e os links no campo de mensagem
+    mensagem_visitante: `Olá ${pn}! Peguei seu cartão digital da ${emp}.\n\n— ${nome} · ${[c.cargo, emp].filter(Boolean).join(' · ')} —\n${texto}${links}`,
+    // o fundador envia o próprio cartão para alguém (escolhe o contato no WhatsApp)
+    mensagem_envio: `Olá! ${texto}${links}` };
 }
 // vCard para "salvar contato" no celular
 function vcard(c) {
@@ -461,6 +478,7 @@ async function handler(req, res) {
       const c = await cartaoGet();
       if (req.query.vcard) { res.setHeader('Content-Type', 'text/vcard; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${(c.nome||'contato').replace(/\s+/g,'_')}.vcf"`); return res.status(200).send(vcard(c)); }
       const pub = { ...c }; delete pub.foto_media_id; pub.foto_url = c.foto_media_id ? baseUrl() + '/api/media?id=' + c.foto_media_id : null;
+      pub.whatsapp_msg = await cartaoMensagem(c); // v3.313
       res.setHeader('Cache-Control', 'no-store');   // v2.62: sem cache — o cartão mostrava dados antigos por 5 min após salvar
       return res.status(200).json({ success: true, cartao: pub });
     } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
@@ -482,7 +500,7 @@ async function handler(req, res) {
     feed_hubspot_pendentes: () => feedHubspotPendentes(),
     testar_hubspot: () => testarHubSpot(),
     testar_email: () => testarSmtp(),
-    cartao_get: () => cartaoGet(),
+    cartao_get: async () => { const c = await cartaoGet(); return { ...c, whatsapp_msg: await cartaoMensagem(c) }; },
     cartao_set: () => cartaoSet(payload),
   };
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida: ' + Object.keys(acoes).join(', ') });
