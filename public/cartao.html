@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Cartão — Atlantyx</title>
 <style>
   :root { --azul:#1A3A8F; --azul2:#0F2660; --ouro:#E0A422; }
@@ -41,7 +42,12 @@
   const wa = String(c.whatsapp || c.telefone || '').replace(/[^0-9]/g, '');
   const waNum = wa ? (wa.length <= 11 ? '55' + wa : wa) : '';
   // v3.313: QR e botão abrem a conversa já com a apresentação (fundador + Atlantyx) e os links de apresentação e agendamento
-  const W = c.whatsapp_msg || {};
+  // v3.314: nunca cai na frase curta antiga — se o servidor não mandar a mensagem pronta, monta aqui a apresentação + links
+  const W = c.whatsapp_msg || (() => { const B = location.origin, pn = (c.nome || '').split(' ')[0], emp = c.empresa || 'Atlantyx';
+    const apresentacao = c.link_apresentacao || B + '/captura.html?utm_source=cartao&utm_medium=whatsapp', agendamento = c.link_agendamento || B + '/reuniao/cartao?f=cartao';
+    const texto = c.texto_apresentacao || `Sou ${c.nome || ''}${c.cargo ? ', ' + c.cargo : ''} da ${emp}. Há 17 anos a ${emp} ajuda grandes empresas a transformar dados em decisões, com engenharia de dados, analytics e inteligência artificial aplicada à operação.`;
+    const links = `\n\n📎 Apresentação da ${emp}: ${apresentacao}\n📅 Agende uma conversa comigo: ${agendamento}\n💳 Meu cartão digital: ${B}/cartao.html`;
+    return { apresentacao, agendamento, mensagem_visitante: `Olá ${pn}! Peguei seu cartão digital da ${emp}.\n\n${texto}${links}`, mensagem_envio: `Olá! ${texto}${links}` }; })();
   const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(W.mensagem_visitante || ('Olá ' + (c.nome||'').split(' ')[0] + ', vi seu cartão da Atlantyx.'))}` : '';
   const shareLink = W.mensagem_envio ? 'https://wa.me/?text=' + encodeURIComponent(W.mensagem_envio) : '';
   // v3.313: QR curto (/cartao.html?wa=1) → redireciona direto para o WhatsApp com a mensagem (QR com a mensagem inteira ficava denso demais para a câmera)
