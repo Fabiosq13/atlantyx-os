@@ -85,7 +85,7 @@ function resumoCtxObj(ctx) { // v3.298: objeto (antes string cortada em 30 mil c
     projetos: ctx.projetos, ideias: ctx.ideias, esteira_demandas: ctx.esteira_demandas, esteira_entrega: ctx.esteira_entrega, empresa_ampla: ctx.amplo || null });
 }
 function _enxugar(o, lim) { let t = JSON.stringify(o); if (t.length <= lim) return o; const c = JSON.parse(t);
-  if (c.empresa_ampla) { const A = c.empresa_ampla; c.empresa_ampla = { ano_atual: A.ano_atual, historico: A.historico, metas_por_ano: A.metas_por_ano, motores_12m: A.motores_12m, carteira_contratada: A.carteira_contratada && { total_previsto_13m: A.carteira_contratada.total_previsto_13m, por_mes: (A.carteira_contratada.por_mes || []).slice(0, 6) }, despesas_recorrentes: A.despesas_recorrentes && { mensal_equivalente: A.despesas_recorrentes.mensal_equivalente }, pessoas: A.pessoas && { ativos: A.pessoas.ativos, custo_mensal: A.pessoas.custo_mensal }, projecao_3anos: A.projecao_3anos, erros: A.erros }; }
+  if (c.empresa_ampla) { const A = c.empresa_ampla; c.empresa_ampla = { ano_atual: A.ano_atual, historico: A.historico, metas_por_ano: A.metas_por_ano, motores_12m: A.motores_12m, imposto_sobre_receita_por_ano_pct: A.imposto_sobre_receita_por_ano_pct, aliquota_efetiva_12m_pct: A.aliquota_efetiva_12m_pct, carteira_contratada: A.carteira_contratada && { total_previsto_13m: A.carteira_contratada.total_previsto_13m, por_mes: (A.carteira_contratada.por_mes || []).slice(0, 6) }, despesas_recorrentes: A.despesas_recorrentes && { mensal_equivalente: A.despesas_recorrentes.mensal_equivalente }, pessoas: A.pessoas && { ativos: A.pessoas.ativos, custo_mensal: A.pessoas.custo_mensal }, projecao_3anos: A.projecao_3anos, erros: A.erros }; }
   for (const k of ['esteira_entrega', 'esteira_demandas', 'ideias', 'projetos']) { if (JSON.stringify(c).length <= lim) break; if (c[k]?.tabela) c[k] = { resumo: c[k].resumo, alertas: c[k].alertas }; }
   if (JSON.stringify(c).length > lim) delete c.empresa_ampla; if (c.financeiro?.serie_mensal && JSON.stringify(c).length > lim) c.financeiro.serie_mensal = c.financeiro.serie_mensal.slice(-6); return c; }
 function resumoCtx(ctx, lim = 30000) { return JSON.stringify(_enxugar(resumoCtxObj(ctx), lim)); }
@@ -110,6 +110,7 @@ async function contextoAmplo(forcar) {
   let metas = {}; try { if (ml.status !== 'fulfilled') throw ml.reason; const m = ml.value; metas = Object.fromEntries(Object.entries(m.metas_cadastro?.todos_anos || m.todos_anos || {}).filter(([a]) => +a >= Y - 1).map(([a, x]) => [a, { faturamento: x.faturamento, margem_pct: x.margem_pct, recorrencia_pct: x.recorrencia_pct, crescimento_pct: x.crescimento_pct, motores: x.motores, padrao: !!x.padrao }])); } catch (e) { erros.push('Metas: ' + e.message); }
   const AG = v(ag)?.agenda; const carteira = AG ? { total_previsto_13m: AG.total_ativo, por_mes: (AG.por_mes || []).map(x => ({ mes: x.mes, total: x.total, marcos: x.marco, termos: x.termo, sustentacao: x.sustentacao, avulsas: x.manual })) } : null; if (!AG && er(ag)) erros.push('Carteira: ' + er(ag));
   const _mo = v(mo)?.fin_v2, MOw = _mo?.motores?.motores || null; // v3.294: fin_v2 devolve { motores: { pessoas, projetos, produtos }, camadas, … } — antes lia o invólucro e os motores saíam sempre vazios
+  const aliqBase = _mo?.motores?.camadas?.aliquota_efetiva_pct ?? null; // v3.312: alíquota efetiva real dos últimos 12 meses (base das margens)
   const MO = MOw ? Object.fromEntries(Object.entries(MOw).map(([k, m]) => [k, { receita: m.receita, participacao_pct: m.participacao_pct, margem_bruta_pct: m.margem_bruta_pct, margem_contribuicao_pct: m.margem_contribuicao_pct }])) : null;
   if (!MO) erros.push('Motores: ' + (er(mo) || _mo?.erro || 'sem dados')); else if (_mo?.erros?.length) erros.push('Motores: ' + _mo.erros.join('; '));
   const mult = { mensal: 1, bimestral: 0.5, trimestral: 1 / 3, semestral: 1 / 6, anual: 1 / 12, semanal: 4.33, quinzenal: 2 };
@@ -124,7 +125,7 @@ async function contextoAmplo(forcar) {
   const proj = await kv('plan:projecao3');
   const out = { em: new Date().toISOString(), hoje, ano_atual: { ano: Y, meta: ME.faturamento?.meta ?? ME.meta?.faturamento ?? null, realizado: ME.faturamento?.realizado ?? ME.realizado?.faturamento ?? null, pct: ME.faturamento?.pct_atingido ?? null,
       projecao_fechamento: ME.faturamento?.projecao_fechamento ?? null, lucro: ME.realizado?.lucro_liquido ?? null, margem_pct: ME.realizado?.margem_pct ?? null, meta_margem_pct: ME.meta?.margem_pct ?? null },
-    historico, metas_por_ano: metas, carteira_contratada: carteira, motores_12m: MO, despesas_recorrentes: despesas, pessoas, propostas_12m: propostas, contratos,
+    historico, metas_por_ano: metas, carteira_contratada: carteira, motores_12m: MO, aliquota_efetiva_12m_pct: aliqBase, imposto_sobre_receita_por_ano_pct: await (async () => { try { return await (await import('./financeiro.js')).aliquotaPorAno(); } catch (_) { return null; } })(), // v3.312: 2027 = 25% (definido pelo fundador) despesas_recorrentes: despesas, pessoas, propostas_12m: propostas, contratos,
     projecao_3anos: proj?.projecao ? projecao3Texto(proj.projecao) : null, erros };
   if (erros.length) out.em = new Date(Date.now() - 29 * 60000).toISOString(); // v3.298: com erro, o cache vale só ~1 min (antes 30 min repetindo a falha)
   await kv('est:contexto_amplo', out); return out;
@@ -145,7 +146,7 @@ async function baseProjecao(forcar) {
   return { ano: Y, receita: Math.round(receita), mix_pct: mix || undefined, mc_pct: mc || undefined, despesas_fixas: fixas != null ? Math.round(fixas) : null, caixa: g?.financeiro?.caixa ?? null,
     pessoas: pes, pessoas_estrutura: 3, receita_por_pessoa_mes: rpp, recorrencia_pct: A.metas_por_ano?.[Y]?.recorrencia_pct ?? 20,
     fonte: { receita: A.ano_atual?.projecao_fechamento ? 'projeção de fechamento de ' + Y + ' (Metas da Empresa)' : A.ano_atual?.realizado ? 'realizado de ' + Y + ' anualizado' : tot ? 'receita dos últimos 12 meses' : 'sem dado de receita', mix: mix ? 'receita por motor nos últimos 12 meses (QuickBooks)' : 'padrão (motores sem classificação)', margem_liquida_pct: margemLiq },
-    historico: A.historico, metas_por_ano: A.metas_por_ano, erros: A.erros };
+    historico: A.historico, metas_por_ano: A.metas_por_ano, erros: A.erros, ...(await (async () => { try { const F = await import('./financeiro.js'); return { aliquota_ano: await F.aliquotaPorAno(), aliquota_base_pct: A.aliquota_efetiva_12m_pct ?? null }; } catch (_) { return {}; } })()) };
 }
 async function projecaoObter({ forcar } = {}) {
   const base = await baseProjecao(!!forcar), salvo = await kv('plan:projecao3');

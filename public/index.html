@@ -30737,6 +30737,7 @@ function _fv2ConfigHtml(D) {
   const AL = D.alocacao, AG = D.agenda_camadas;
   const camPanel = '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Apuração de margem — impostos e alocação</div><div class="fv2-pq">Usado no lucro e no % de lucro de todo o sistema (Dashboard, LIVE, TV, Metas, Diagnóstico).</div></div></div>'
     + '<div style="font-size:11px;line-height:1.9;">Alíquota efetiva sobre a receita (ISS + PIS + COFINS + IRPJ + CSLL), usada <b>só quando o QuickBooks não tiver imposto lançado no período</b>: geral ' + inA('geral', D.aliquota_pct) + '% · Alocação ' + inA('pessoas', am.pessoas) + '% · Projetos ' + inA('projetos', am.projetos) + '% · Produtos ' + inA('produtos', am.produtos) + '%'
+    + '<br><b>Alíquota por ano</b> (projeção de 3 anos, business plan, preço das propostas e estimativa do ano): <input class="fi" id="fv2AliqAno" value="' + Object.entries(D.aliquota_ano || {}).map(([a, x]) => a + '=' + String(x).replace(".", ",")).join('; ') + '" placeholder="2027=25" style="width:160px;margin:0;padding:3px 6px;font-size:11px;"> <span style="color:var(--t3);">ex.: 2027=25; 2028=25 — vale no lugar da alíquota geral no ano indicado</span>'
     + '<br>Nos últimos 12 meses o QuickBooks tem <b>' + fmtBRL(D.camadas_12m?.impostos_fonte === 'quickbooks' ? D.camadas_12m.impostos : 0) + '</b> de impostos sobre receita lançados (' + (D.camadas_12m?.impostos_fonte === 'quickbooks' ? 'alíquota efetiva real ' + _fv2Fmt(D.camadas_12m.aliquota_efetiva_pct, 'pct') : 'nenhum — configure a alíquota acima') + ').'
     + '<br>Profissionais alocados (cadastro S8): ' + (AL && AL.profissionais ? '<b>' + AL.profissionais + '</b> · custo mensal alocado: Alocação ' + fmtBRL(AL.pessoas) + ' · Projetos ' + fmtBRL(AL.projetos) + ' · Produtos ' + fmtBRL(AL.produtos) + ' (sai do custo fixo e vira custo direto do motor)' : '<span style="color:var(--gold);">nenhuma alocação cadastrada — cadastre em Pessoas → Funcionários (custo/hora e % de alocação por projeto)</span>')
     + (AG && (AG.retirada_mensal || AG.parcelamento_mensal) ? '<br>Agenda de pagamentos: retiradas ' + fmtBRL(AG.retirada_mensal) + '/mês · parcelamentos ' + fmtBRL(AG.parcelamento_mensal) + '/mês (usados só quando não aparecem na DRE)' : '') + '</div>'
@@ -30757,7 +30758,8 @@ async function fv2CfgSalvar() {
   document.querySelectorAll('.fv2-cam').forEach(s => { if (s.value !== 'auto') camadas[s.dataset.conta] = s.value; });
   document.querySelectorAll('.fv2-aliq').forEach(i => { const v = String(i.value).trim().replace(',', '.'); if (i.dataset.k === 'geral') aliquota_pct = v; else aliquota_motor[i.dataset.k] = v; });
   document.querySelectorAll('.fv2-limv').forEach(i => { const v = parseFloat(String(i.value).replace(',', '.')); if (!isFinite(v)) return; if (i.dataset.c) { limites[i.dataset.k] = limites[i.dataset.k] || {}; limites[i.dataset.k][i.dataset.c] = v; } else limites[i.dataset.k] = v; });
-  try { await finApi('fin_v2_cfg_salvar', { motores, produtos, limites, camadas, aliquota_pct, aliquota_motor }); toast('Configuração salva — indicadores recalculados', 'success'); _fv2Dados = {}; fv2Carregar(true); }
+  const aliquota_ano = document.getElementById('fv2AliqAno') ? document.getElementById('fv2AliqAno').value.replace(/(\d),(\d)/g, '$1.$2') : undefined; // v3.312
+  try { await finApi('fin_v2_cfg_salvar', { motores, produtos, limites, camadas, aliquota_pct, aliquota_motor, aliquota_ano }); toast('Configuração salva — indicadores recalculados', 'success'); _fv2Dados = {}; fv2Carregar(true); }
   catch (e) { toast('Erro ao salvar: ' + e.message, 'error'); }
 }
 // ── exportar ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -35598,7 +35600,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.311] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.312] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35614,7 +35616,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.311';
+window.__ATX_BUILD_ID__ = 'ATX-v3.312';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

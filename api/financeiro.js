@@ -5735,7 +5735,7 @@ function dreMensalSerie(rep, anoRef) {
   const FL = _fv2Folhas(rep).folhas, hj = _hojeBR(); // v3.291: lucro de cada mês pela apuração em 4 camadas
   idx.forEach((m, i) => { if (!m) return; const fat = v('Income', i);
     const mes = m === hj.substring(0, 7) ? Math.round(parseInt(hj.substring(8)) / new Date(Date.UTC(parseInt(hj), parseInt(hj.substring(5, 7)), 0)).getUTCDate() * 100) / 100 : 1;
-    const cam = FL.length ? _camApurar(FL, { idx: i - 1, meses: mes, mesesAgenda: m === hj.substring(0, 7) ? mes : 0 }) : null;
+    const cam = FL.length ? _camApurar(FL, { idx: i - 1, meses: mes, mesesAgenda: m === hj.substring(0, 7) ? mes : 0, ano: String(m).substring(0, 4) }) : null;
     const luc = cam ? cam.resultado_operacional : (G.NetIncome ? v('NetIncome', i) : fat - (v('COGS', i) + v('Expenses', i) + v('OtherExpenses', i)) + v('OtherIncome', i));
     const gastos = fat + v('OtherIncome', i) - luc;
     out.push({ mes: m, faturamento: round(fat), gastos: round(gastos), lucro_liquido: round(luc), margem_liquida_pct: fat > 0 ? Math.round(luc / fat * 1000) / 10 : null }); });
@@ -5831,7 +5831,7 @@ function _camMesesAgenda(rep) {
   const dm = new Date(Date.UTC(parseInt(hj), parseInt(hj.substring(5, 7)), 0)).getUTCDate();
   return Math.round(((Date.parse(ate) - Date.parse(de)) / 864e5 + 1) / dm * 100) / 100;
 }
-function _camApurar(folhas, { idx = -1, meses = null, mesesAgenda = 0, ctx = _camCtx } = {}) {
+function _camApurar(folhas, { idx = -1, meses = null, mesesAgenda = 0, ctx = _camCtx, ano = null } = {}) {
   const cfg = ctx.cfg || {}, M = {}, contas = [], avisos = [];
   for (const k of CAM_MOTORES) M[k] = { receita: 0, impostos: 0, receita_liquida: 0, custo_direto: 0, custo_contas: 0, custo_compartilhado: 0, custo_alocados: 0, margem_bruta: 0, fixos_rateados: 0, margem_contribuicao: 0 };
   let impQb = 0, ir = 0, dirComp = 0, fixo = 0, folhaFixo = 0, retQb = 0, outrasRec = 0; const corp = { parcelamento: 0, financeiro: 0, extraordinario: 0, 'outras despesas': 0, manual: 0 };
@@ -5851,7 +5851,8 @@ function _camApurar(folhas, { idx = -1, meses = null, mesesAgenda = 0, ctx = _ca
   { const na = contas.filter(c => c.grupo !== 'Income' && RX_NAO_APLICADO.test(c.conta)).reduce((a, c) => a + (c.valor || 0), 0);
     if (na > 1) avisos.push('R$ ' + Math.round(na).toLocaleString('pt-BR') + ' em "pagamentos de contas não aplicados": pagamentos (folha, aluguel, impostos…) feitos sem ligar à conta a pagar no QuickBooks — a categoria real fica escondida e a folha aparece menor. No QuickBooks, ligue cada pagamento à conta que ele paga.'); }
   // CAMADA 1 — impostos: os lançados no QuickBooks; sem lançamento no período, a alíquota efetiva configurada (estimativa)
-  const aliqM = cfg.aliquota_motor || {}, aliqG = Number(cfg.aliquota_pct) || 0, temAliqM = CAM_MOTORES.some(k => Number(aliqM[k]) > 0);
+  const aliqAno = ano != null ? cfg.aliquota_ano?.[String(ano)] : null; // v3.312: alíquota do ano (ex.: 2027 = 25%) vale para todos os motores
+  const aliqM = aliqAno != null ? {} : (cfg.aliquota_motor || {}), aliqG = aliqAno != null ? Number(aliqAno) : (Number(cfg.aliquota_pct) || 0), temAliqM = CAM_MOTORES.some(k => Number(aliqM[k]) > 0);
   let impFonte = 'quickbooks', impTot = impQb;
   if (impQb > 0) { const peso = k => M[k].receita * (temAliqM ? (Number(aliqM[k]) || aliqG || 0) : 1), pt = CAM_MOTORES.reduce((s, k) => s + peso(k), 0);
     for (const k of CAM_MOTORES) M[k].impostos = pt > 0 ? impQb * peso(k) / pt : (recTot ? impQb * M[k].receita / recTot : 0); }
@@ -5918,7 +5919,8 @@ function dreResumo(rep) {
   }
   // v3.291: lucro e margens pela APURAÇÃO EM 4 CAMADAS (impostos → custos diretos → fixos rateados → corporativo);
   // lucro = RESULTADO OPERACIONAL da empresa (antes das retiradas de sócio). O "Net Income" do QuickBooks fica como referência.
-  const cam = rows.length ? _camApurar(_fv2Folhas(rep).folhas, { meses: _camMeses(rep), mesesAgenda: _camMesesAgenda(rep) }) : null;
+  const _aR = [rep?.Header?.StartPeriod, rep?.Header?.EndPeriod].map(x => String(x || '').substring(0, 4));
+  const cam = rows.length ? _camApurar(_fv2Folhas(rep).folhas, { meses: _camMeses(rep), mesesAgenda: _camMesesAgenda(rep), ano: _aR[0] && _aR[0] === _aR[1] ? _aR[0] : null }) : null;
   const lucroQb = lucro; if (cam) lucro = cam.resultado_operacional;
   const lucroBruto = cam ? cam.margem_bruta : ('GrossProfit' in G ? G.GrossProfit : receita - custos);
   const operacional = cam ? cam.resultado_operacional : ('NetOperatingIncome' in G ? G.NetOperatingIncome : lucroBruto - despesas);
@@ -9910,19 +9912,27 @@ const FV2_RX = {
   pessoas: /aloca[cç]|outsourc|staff|body ?shop|terceiriz|m[aã]o de obra|horas? t[eé]cnic|banco de horas|squad|aloca/i,
   comercial: /marketing|comercial|vendas|publicidade|propaganda|an[uú]ncio|\bads\b|comiss[aã]o|eventos|feiras|crm|prospec/i,
 };
+// v3.312: alíquota efetiva sobre a receita POR ANO (projeções, business plan, preço de propostas e estimativa da camada 1).
+// Definida pelo fundador: 2027 = 25% (no lugar dos 16,33% do Lucro Presumido). Editável em Dashboard Financeiro → Configurar.
+const ALIQ_ANO_PADRAO = { '2027': 25 };
+const _aliqAnoNorm = o => { const out = {}; if (typeof o === 'string') o = Object.fromEntries(o.split(/[;,\n]+/).map(x => x.split(/[=:]/).map(y => y.trim())).filter(x => x.length === 2));
+  for (const [a, v] of Object.entries(o || {})) { const n = Number(String(v).replace('%', '').replace(',', '.')); if (/^20\d\d$/.test(String(a).trim()) && v !== '' && v != null && isFinite(n) && n >= 0 && n <= 60) out[String(a).trim()] = Math.round(n * 100) / 100; }
+  return out; };
+export async function aliquotaPorAno() { try { return (await _fv2Cfg()).aliquota_ano || {}; } catch (_) { return { ...ALIQ_ANO_PADRAO }; } }
 async function _fv2Cfg() {
   let v = {}; try { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = 'atx:fin_v2_cfg' LIMIT 1`; v = r[0]?.value; v = (typeof v === 'string' ? JSON.parse(v) : v) || {}; } catch (_) {}
   const lim = JSON.parse(JSON.stringify(FV2_LIMITES)); for (const [k, o] of Object.entries(v.limites || {})) if (lim[k] && typeof o === 'object') Object.assign(lim[k], o); else if (k in lim) lim[k] = o;
   const am = v.aliquota_motor || {};
-  return { limites: lim, motores: v.motores || {}, produtos: v.produtos || {}, camadas: v.camadas || {}, aliquota_pct: v.aliquota_pct ?? null,
+  return { limites: lim, motores: v.motores || {}, produtos: v.produtos || {}, camadas: v.camadas || {}, aliquota_pct: v.aliquota_pct ?? null, aliquota_ano: _aliqAnoNorm(v.aliquota_ano ?? ALIQ_ANO_PADRAO),
     aliquota_motor: Object.fromEntries(['pessoas', 'projetos', 'produtos'].map(k => [k, am[k] ?? null])), atualizado_em: v.atualizado_em || null };
 }
-async function finV2CfgSalvar({ limites, motores, produtos, camadas, aliquota_pct, aliquota_motor } = {}) {
+async function finV2CfgSalvar({ limites, motores, produtos, camadas, aliquota_pct, aliquota_motor, aliquota_ano } = {}) {
   const sql = await getSql(); const atual = await _fv2Cfg();
   const aliq = x => { if (x === '' || x == null) return null; const n = Number(String(x).replace(',', '.')); if (!isFinite(n) || n < 0 || n > 60) throw new Error('Alíquota efetiva inválida (use 0 a 60%)'); return Math.round(n * 100) / 100; };
   const cam = camadas && typeof camadas === 'object' ? Object.fromEntries(Object.entries(camadas).filter(([, c]) => CAM_CLASSES[c])) : atual.camadas;
   const novo = { limites: limites || {}, motores: motores || atual.motores, produtos: produtos || atual.produtos, camadas: cam,
     aliquota_pct: aliquota_pct !== undefined ? aliq(aliquota_pct) : atual.aliquota_pct,
+    aliquota_ano: aliquota_ano !== undefined ? _aliqAnoNorm(aliquota_ano) : atual.aliquota_ano, // v3.312
     aliquota_motor: aliquota_motor && typeof aliquota_motor === 'object' ? Object.fromEntries(['pessoas', 'projetos', 'produtos'].map(k => [k, aliq(aliquota_motor[k])])) : atual.aliquota_motor,
     atualizado_em: new Date().toISOString() };
   for (const [k, m] of Object.entries(novo.motores)) if (!['pessoas', 'projetos', 'produtos', 'compartilhado', 'auto'].includes(m)) delete novo.motores[k]; else if (m === 'auto') delete novo.motores[k];
@@ -10368,7 +10378,7 @@ async function _fv2Config({ P, met, cfg, L, token, base }) {
     camada_auto: c?.classe || null, camada_auto_sub: c?.sub || null, camada: cfg.camadas?.[f.nome] || null }; })
     .sort((a, b) => (a.grupo === 'Income' ? 0 : 1) - (b.grupo === 'Income' ? 0 : 1) || Math.abs(b.valor_12m) - Math.abs(a.valor_12m));
   const ctx = await _camPreparar(true).catch(() => _camCtx), cam12 = _camApurar(F.folhas, { meses: _camMeses(rep), ctx: { ...ctx, cfg } });
-  return { contas, motores_cfg: cfg.motores, produtos_cfg: cfg.produtos, limites_padrao: FV2_LIMITES, camadas_cfg: cfg.camadas, aliquota_pct: cfg.aliquota_pct, aliquota_motor: cfg.aliquota_motor,
+  return { contas, motores_cfg: cfg.motores, produtos_cfg: cfg.produtos, limites_padrao: FV2_LIMITES, camadas_cfg: cfg.camadas, aliquota_pct: cfg.aliquota_pct, aliquota_motor: cfg.aliquota_motor, aliquota_ano: cfg.aliquota_ano,
     camadas_nomes: CAM_CLASSES, camadas_12m: cam12, alocacao: ctx.alocacao, agenda_camadas: ctx.agenda,
     criterio_rateio: 'Custo fixo rateado pela receita líquida de cada motor; despesas corporativas e retiradas não rateadas.' };
 }

@@ -65,8 +65,13 @@ async function propConfig() {
     else if (trib.regime === 'presumido') impostoTrib = r2(3.65 + num(trib.aliq_iss, 5) + 0.32 * num(trib.aliq_irpj, 34)); // PIS/COFINS cumulativo + ISS + IRPJ/CSLL presumidos sobre 32%
     else if (trib.regime === 'real') impostoTrib = r2(9.25 + num(trib.aliq_iss, 5));
   }
+  // v3.312: alíquota por ano do Financeiro (2027 = 25%). Proposta feita a partir de outubro já fatura no ano seguinte → usa a do ano seguinte.
+  let aliqAno = null, anoRef = null;
+  try { const F = await import('./financeiro.js'); const mapa = await F.aliquotaPorAno(); const hj = new Date(Date.now() - 3 * 3600e3);
+    anoRef = String(hj.getUTCFullYear() + (hj.getUTCMonth() >= 9 ? 1 : 0)); if (mapa?.[anoRef] != null) aliqAno = Number(mapa[anoRef]); } catch (_) {}
+  if (aliqAno != null) impostoTrib = aliqAno;
   const params = { ...PARAMS_PADRAO, ...(impostoTrib != null ? { impostos_pct: impostoTrib } : {}), ...(salvo.params || {}) };
-  return { params, instrucoes: salvo.instrucoes || '', imposto_origem: salvo.params?.impostos_pct != null ? 'manual' : (impostoTrib != null ? 'tributos do financeiro (' + trib.regime + ')' : 'padrão') };
+  return { params, instrucoes: salvo.instrucoes || '', imposto_origem: salvo.params?.impostos_pct != null ? 'manual' + (aliqAno != null && Number(salvo.params.impostos_pct) !== aliqAno ? ' — atenção: a alíquota de ' + anoRef + ' no Financeiro é ' + String(aliqAno).replace('.', ',') + '%' : '') : (aliqAno != null ? 'alíquota de ' + anoRef + ' configurada no Financeiro (' + String(aliqAno).replace('.', ',') + '%)' : impostoTrib != null ? 'tributos do financeiro (' + trib.regime + ')' : 'padrão') };
 }
 async function rateCard() { return (await cfgGet('propostas_rate_card')) || []; }
 async function rateCardSugerir() {

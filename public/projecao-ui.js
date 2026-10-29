@@ -54,6 +54,7 @@
           ${linhaTab('Receita total', l => '<b>' + R(l.receita) + '</b>', C, B, x => R(x.faturamento), R(pr.receita_base))}
           ${Object.keys(MOT).map(k => linhaTab('&nbsp;&nbsp;' + MOT[k], l => R(l.por_motor[k]), C, B, () => '', R(pr.receita_base * pr.mix_pct[k] / 100))).join('')}
           ${linhaTab('Margem de contribuição', l => R(l.mc) + ' <span style="color:var(--t3);">' + P(l.mc_pct) + '</span>', C, B, () => '', '')}
+          ${C.some(l => l.imposto_ano_pct != null) ? linhaTab('Imposto sobre a receita no ano', l => l.imposto_ano_pct != null ? P(l.imposto_ano_pct) + (l.imposto_ajuste_pp ? ' <span style="color:var(--red);">' + String(l.imposto_ajuste_pp).replace('.', ',') + ' p.p. na margem</span>' : '') : '<span style="color:var(--t3);">atual</span>', C, B, () => '', '') : ''}
           ${linhaTab('Despesas fixas (estrutura)', l => R(l.despesas_fixas), C, B, () => '', R(pr.despesas_fixas_base))}
           ${linhaTab('Resultado', l => `<b style="color:${l.resultado < 0 ? 'var(--red)' : 'var(--green,#22d3a3)'};">${R(l.resultado)}</b> <span style="color:var(--t3);">${P(l.margem_pct)}</span>`, C, B, x => R(x.lucro) + ' <span style="color:var(--t3);">' + P(x.margem_pct) + '</span>', '')}
           ${linhaTab('Receita recorrente', l => R(l.recorrente) + ' <span style="color:var(--t3);">' + P(l.recorrencia_pct) + '</span>', C, B, () => '', '')}

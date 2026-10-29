@@ -22,7 +22,13 @@ import { salvarHistorico } from '../lib/historico-s1.js';
 //   atlantyx    { overrides? }                → plano dinâmico
 //   atlantyx_salvar_ajustes { overrides }     · atlantyx_snapshot { overrides? }
 
-import { calcularBP, cenariosBP, mesesLabels } from '../lib/bp-calc.js';
+import { calcularBP as _calcBP, cenariosBP as _cenBP, mesesLabels } from '../lib/bp-calc.js';
+// v3.312: alíquota sobre a receita por ano definida no Financeiro (2027 = 25%) vale para todo plano que não tenha a sua própria
+let _ALIQ_ANO = null;
+async function _carregarAliqAno() { try { const F = await import('./financeiro.js'); _ALIQ_ANO = await F.aliquotaPorAno(); } catch (_) { _ALIQ_ANO = null; } }
+const _comAliqAno = p => (p && p.deducoes_pct_ano === undefined && _ALIQ_ANO && Object.keys(_ALIQ_ANO).length) ? { ...p, deducoes_pct_ano: _ALIQ_ANO } : p;
+const calcularBP = (p, o) => _calcBP(_comAliqAno(p), o);
+const cenariosBP = (p, o) => _cenBP(_comAliqAno(p), o);
 import { aplicarOperacoes, impactoPorOperacao, checarCoerencia, sensibilidades } from '../lib/bp-ops.js';
 import { gerarExcel, lerPremissasExcel } from '../lib/bp-excel.js';
 
@@ -297,6 +303,7 @@ async function planoAtlantyx({ overrides } = {}) {
     titulo: 'Business Plan Atlantyx (dinâmico)', inicio, meses: N,
     taxa_desconto_anual: Number(ov.taxa_desconto_anual ?? 15),
     deducoes_pct: r2(Number(ov.deducoes_pct ?? dedCalc ?? 16.33)),
+    deducoes_pct_ano: ov.deducoes_pct_ano ?? camCtx?.cfg?.aliquota_ano ?? undefined, // v3.312: ex.: 2027 = 25%
     ir_csll_pct: Number(ov.ir_csll_pct ?? 0),
     prazo_recebimento_dias: Number(ov.prazo_recebimento_dias ?? 0),
     crescimento_perpetuidade_pct: Number(ov.crescimento_perpetuidade_pct ?? 3),
@@ -629,6 +636,7 @@ async function bpIaEstado({ id } = {}) {
 }
 
 async function handler(req, res) {
+  await _carregarAliqAno();
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -679,7 +687,7 @@ async function handler(req, res) {
         if (b.id) bp = await obterBP(b.id);
         else if (b.atlantyx) bp = await planoAtlantyx({ overrides: b.overrides });
         if (!bp?.premissas) throw new Error('Nada para exportar');
-        if (!bp.resultado) bp.resultado = { ...calcularBP(bp.premissas), cenarios: cenariosBP(bp.premissas) };
+        bp.resultado = { ...calcularBP(bp.premissas), cenarios: cenariosBP(bp.premissas) }; // v3.312: sempre recalcula (alíquota por ano pode ter mudado)
         return await gerarExcel(bp);
       },
       atlantyx: async () => ({ bp: await planoAtlantyx({ overrides: b.overrides }) }),
