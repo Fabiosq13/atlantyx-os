@@ -4664,6 +4664,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div style="display:grid;grid-template-columns:1fr 90px;gap:6px;"><input class="fi" id="patGeoLocal" placeholder="Endereço do local, nome do pavilhão ou link do Google Maps" style="font-size:11px;" oninput="window._patGeoOk=null;patPrev()"/>
               <select class="fi" id="patGeoRaio" style="font-size:11px;" onchange="patPrev()" title="Raio em volta do local"><option value="1">1 km</option><option value="2" selected>2 km</option><option value="3">3 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="25">25 km</option></select></div>
             <label style="display:flex;gap:6px;align-items:center;font-size:10.5px;margin-top:6px;cursor:pointer;"><input type="checkbox" id="patGeoTodos" onchange="patPrev()"> Todo o público no local (sem filtro de cargo) — recomendado em feira do seu setor: quem está lá já é o público, e o filtro de cargo deixaria o alcance muito pequeno</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:10.5px;flex-wrap:wrap;"><label for="patGeoOtim">Otimizar para:</label><select class="fi" id="patGeoOtim" style="font-size:11px;width:auto;margin:0;padding:3px 6px;"><option value="cliques">Cliques no link (padrão)</option><option value="alcance">Alcance — o máximo de pessoas do evento</option></select><span style="color:var(--t3);">conversão não funciona em campanha de poucos dias</span></div>
             <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="btn" style="font-size:10px;" id="patGeoBtn" onclick="patGeoConferir()">🔎 Conferir local</button><span id="patGeoRes" style="font-size:10.5px;color:var(--t2);"></span></div>
           </details>
           <div style="margin-bottom:8px;"><label class="fl" for="patTrilha">Trilha do plano estratégico</label><select class="fi" id="patTrilha" onchange="patTrilhaMudou()" title="Alavanca do plano vigente: dá o foco (público, dor, oferta e prova) e marca os leads com a trilha"><option value="">Sem trilha (tema livre)</option></select></div>
@@ -26136,7 +26137,7 @@ async function patDiagnostico() {
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const _pl = v('patPublico'), rede = v('patRede') || 'instagram', onde = rede === 'linkedin' ? 'LinkedIn' : 'Meta';
-  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, geo_otimizar: v('patGeoLocal') ? v('patGeoOtim') : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
   // v3.318: imagem de campanha paga SEMPRE no formato da arte de anúncio (manchete + ✓ benefícios + tela do sistema + Clique no Saiba mais)
   if (!corpo.imagem || corpo.imagem !== window._patArteUrl) { toast('Montando a imagem no formato de anúncio…', 'success'); await patArte(); corpo.imagem = (document.getElementById('patImg')?.value || '').trim();
     if (corpo.imagem !== window._patArteUrl) { alert('Não consegui montar a arte no formato de anúncio — nada foi criado. Tente "🖼 Arte no padrão" de novo.'); return; } }
@@ -35650,7 +35651,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.318] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.319] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35666,7 +35667,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.318';
+window.__ATX_BUILD_ID__ = 'ATX-v3.319';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

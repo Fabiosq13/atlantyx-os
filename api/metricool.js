@@ -411,7 +411,10 @@ async function patrocinadoCriar(p = {}, req) {
   if (String(p.rede || '') === 'linkedin' && String(p.geo_local || '').trim()) throw Object.assign(new Error('O LinkedIn não permite anúncio por raio em volta de um local (feira/evento). Use Instagram (Meta) para a campanha geolocalizada.'), { status: 400 }); // v3.316
   if (String(p.rede || '') === 'linkedin') return patrocinadoCriarLinkedin(p, base); // v3.239
   const geo = String(p.geo_local || '').trim() ? await geoLocalResolver({ local: p.geo_local, raio_km: p.geo_raio_km }) : null; // v3.316: feira/evento
-  const geoTodos = !!(geo && p.geo_todos); // no local do evento, opcionalmente sem o filtro de cargo (quem está lá já é o público)
+  const geoTodos = !!(geo && p.geo_todos);
+  // v3.319: campanha geolocalizada (evento de poucos dias, público pequeno) não otimiza por conversão — o Meta não tem dado
+  // para aprender em 1–3 dias. Cliques no link (padrão) ou alcance (o máximo de pessoas do evento).
+  const geoOtim = geo ? (p.geo_otimizar === 'alcance' ? 'alcance' : 'cliques') : null; // no local do evento, opcionalmente sem o filtro de cargo (quem está lá já é o público)
   // v3.239: público = LISTA de pessoas selecionadas no Apollo (público personalizado do Meta) em vez do filtro de cargo
   const lista = p.publico_lista ? await listaObter(_kvMc, p.publico_lista) : null;
   if (lista && !lista.meta?.audience_id && !p.so_kit) throw Object.assign(new Error('Envie a lista "' + lista.nome + '" ao Meta antes (aba Públicos do Apollo → Enviar ao Meta)'), { status: 400 });
@@ -437,13 +440,13 @@ async function patrocinadoCriar(p = {}, req) {
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
       : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
     ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}),
-    ...(geo ? { local: { endereco: geo.endereco, lat: geo.lat, lng: geo.lng, raio_km: geo.raio_km, mapa: geo.mapa, todo_publico: geoTodos } } : {}) };
+    ...(geo ? { local: { endereco: geo.endereco, lat: geo.lat, lng: geo.lng, raio_km: geo.raio_km, mapa: geo.mapa, todo_publico: geoTodos }, objetivo: geoOtim === 'alcance' ? 'Alcance (o máximo de pessoas no local)' : 'Tráfego (cliques no link)' } : {}) };
   if (geo) kit.publico = '📍 Raio de ' + String(geo.raio_km).replace('.', ',') + ' km em volta de ' + geo.endereco + ' (pessoas que estão, estiveram há pouco ou moram ali) · ' + (geoTodos ? 'todo o público no local, ' + idMin + ' a ' + idMax + ' anos (sem filtro de cargo)' : (lista ? 'só quem está na lista do Apollo' : 'só quem ocupa cargo de dono, sócio ou C-level') + ' · ' + idMin + ' a ' + idMax + ' anos');
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
   const pixel = String(process.env.META_PIXEL_ID || '').replace(/\D/g, '');
-  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: pixel ? 'OUTCOME_LEADS' : 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
+  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: geoOtim === 'alcance' ? 'OUTCOME_AWARENESS' : geoOtim ? 'OUTCOME_TRAFFIC' : pixel ? 'OUTCOME_LEADS' : 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
   const desfazer = async () => { try { await _meta(camp.id, 'DELETE'); } catch (_) {} };
   try {
     // v3.192: o Meta aposenta interesses ("Algumas opções de direcionamento detalhado foram combinadas") e devolve
@@ -475,8 +478,8 @@ async function patrocinadoCriar(p = {}, req) {
       try {
         adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + (lista ? ' · Lista Apollo' : ' · Instagram') + (geo ? ' · Local ' + geo.raio_km + 'km' : ''), campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
           // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
-          optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
-          bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
+          optimization_goal: geoOtim === 'alcance' ? 'REACH' : geoOtim ? 'LINK_CLICKS' : pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel && !geoOtim ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
+          bid_strategy: 'LOWEST_COST_WITHOUT_CAP', ...(geoOtim === 'alcance' ? {} : { destination_type: 'WEBSITE' }), status: 'PAUSED',
           start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300', targeting: _pos(_alvo()) });
       } catch (e) {
         const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
