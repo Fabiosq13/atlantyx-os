@@ -123,6 +123,15 @@
   footer .container { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 
   @media (max-width: 1100px) { .ofertas { grid-template-columns:repeat(3, 1fr); } }
+  /* v3.321: chamada para ação logo na abertura (no celular o formulário fica abaixo da dobra) + barra fixa até o formulário aparecer */
+  .cta-topo { display:none; margin:6px 0 22px; }
+  .cta-topo a.cta-btn { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:16px 18px; border-radius:12px; background:linear-gradient(90deg,#00C4CC,#00FCA8); color:#03121a; font-weight:800; font-size:16.5px; text-decoration:none; box-shadow:0 10px 30px rgba(0,252,168,.22); }
+  .cta-topo .cta-sec { display:block; text-align:center; margin-top:10px; font-size:13px; color:rgba(255,255,255,.75); }
+  .cta-topo .cta-sec a { color:#00FCA8; font-weight:700; text-decoration:none; }
+  .cta-fixa { display:none; position:fixed; left:0; right:0; bottom:0; z-index:50; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:rgba(3,8,12,.92); backdrop-filter:blur(8px); border-top:1px solid rgba(255,255,255,.08); transform:translateY(110%); transition:transform .25s; }
+  .cta-fixa.on { transform:none; }
+  .cta-fixa a { display:block; text-align:center; padding:14px; border-radius:11px; background:linear-gradient(90deg,#00C4CC,#00FCA8); color:#03121a; font-weight:800; font-size:15.5px; text-decoration:none; }
+  @media (max-width: 960px) { .cta-topo { display:block; } .cta-fixa { display:block; } }
   @media (max-width: 960px) {
     .hero { padding:96px 0 48px; }
     .hero .container { grid-template-columns:1fr; gap:30px; }
@@ -159,6 +168,8 @@
       <div class="selo"><i></i> Conversa gratuita · sem compromisso</div>
       <h1 id="titulo">Tecnologia e dados que <em>fazem a sua operação</em> render mais.</h1>
       <p class="sub" id="sub">Há 17 anos a Atlantyx entrega engenharia de dados, indicadores, software sob medida, produtos próprios e especialistas para grandes empresas. Em uma conversa gratuita, um especialista entende o seu cenário e mostra onde podemos gerar resultado.</p>
+      <div class="cta-topo"><a class="cta-btn" href="#cardForm" onclick="return irForm()">Quero uma conversa gratuita <span aria-hidden="true">→</span></a>
+        <span class="cta-sec" id="ctaWa" style="display:none;">ou <a href="#" target="_blank" rel="noopener" id="ctaWaLink">fale agora pelo WhatsApp</a></span></div>
       <ul class="pontos">
         <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Conversa com quem executa projetos — não é uma apresentação comercial.</li>
         <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Você sai com oportunidades priorizadas por impacto e esforço.</li>
@@ -309,6 +320,17 @@
       btn.disabled = false; btn.innerHTML = 'Quero conversar <span class="seta">→</span>';
     }
   }
+</script>
+<div class="cta-fixa" id="ctaFixa"><a href="#cardForm" onclick="return irForm()">Quero uma conversa gratuita →</a></div>
+<script>
+// v3.321: rola até o formulário e já põe o cursor no Nome; a barra fixa some quando o formulário está na tela
+function irForm() { const c = document.getElementById('cardForm'); if (!c) return true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { try { document.getElementById('nome')?.focus({ preventScroll: true }); } catch (_) {} }, 600); return false; }
+(() => { const f = document.getElementById('cardForm'), b = document.getElementById('ctaFixa'), topo = document.querySelector('.cta-topo'); if (!f || !b || !('IntersectionObserver' in window)) return;
+  let vForm = false, vTopo = true; const upd = () => b.classList.toggle('on', !vForm && !vTopo);
+  new IntersectionObserver(e => { vForm = e[0].isIntersecting; upd(); }, { threshold: 0.15 }).observe(f);
+  if (topo) new IntersectionObserver(e => { vTopo = e[0].isIntersecting; upd(); }).observe(topo); })();
+// WhatsApp comercial (vem do servidor) como alternativa ao formulário
+(function esperarWa(n) { try { if (typeof whatsComercial !== 'undefined' && whatsComercial) { const num = String(whatsComercial).replace(/\D/g, ''); if (num) { const l = document.getElementById('ctaWaLink'); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 20) setTimeout(() => esperarWa(n + 1), 300); })(0);
 </script>
 </body>
 </html>
