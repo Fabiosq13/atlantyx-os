@@ -26179,7 +26179,9 @@ async function patListar() {
     el.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Campanhas patrocinadas criadas pelo sistema</div>' + l.map(c => { const ps = _patStatus(c), at = ps.veicula; const r = c.resultado;
       return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--bd);border-radius:7px;margin-bottom:6px;font-size:11px;">'
         + '<div style="flex:1;min-width:220px;"><span class="tag" style="margin-right:5px;">' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram') + '</span>' + (c.publico_lista_nome ? '<span class="tag" style="margin-right:5px;" title="Público: lista do Apollo">🎯 ' + _patE(c.publico_lista_nome) + '</span>' : '') + '<b>' + _patE(c.nome) + '</b><div style="font-size:10px;color:var(--t2);">' + fmtBRLcompleto(c.orcamento_diario) + '/dia · ' + c.inicio.split('-').reverse().join('/') + ' a ' + c.fim.split('-').reverse().join('/') + ' · máx. ' + fmtBRLcompleto(c.total_maximo)
-        + (r ? ' · gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + Number(r.impressoes || 0).toLocaleString('pt-BR') + ' impressões · <b>' + Number(r.cliques_link || 0) + ' cliques</b>' + (r.cpc ? ' · CPC ' + fmtBRLcompleto(r.cpc) : '') : '') + '</div></div>'
+        + (r ? ' · gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + Number(r.impressoes || 0).toLocaleString('pt-BR') + ' impressões · <b>' + Number(r.cliques_link || 0) + ' cliques</b>' + (r.cpc ? ' · CPC ' + fmtBRLcompleto(r.cpc) : '') : '')
+        + (c.funil ? '<div style="margin-top:3px;">→ <b>' + c.funil.visitas + '</b> visita(s) na página · <b style="color:' + (c.funil.leads ? 'var(--green,#22d3a3)' : 'var(--t2)') + ';">' + c.funil.leads + ' lead(s)</b>' + (c.funil.leads && r?.gasto ? ' · custo por lead ' + fmtBRLcompleto(r.gasto / c.funil.leads) : '')
+          + (c.funil.pessoas?.length ? '<div style="font-size:10px;color:var(--t2);">' + c.funil.pessoas.map(x => _patE([x.nome, x.cargo, x.empresa].filter(Boolean).join(' · '))).join('<br>') + '</div>' : '') + '</div>' : '') + '</div></div>'
         + '<span class="tag ' + ps.cls + '"' + (c.estado_erro ? ' title="' + _patE(c.estado_erro) + '"' : '') + '>' + _patE(ps.rot) + '</span>'
         + (at ? '<button class="btn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'PAUSED\')">⏸ Pausar</button>' : '<button class="btn btn-gn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'ACTIVE\',' + Number(c.total_maximo || 0) + ')">▶ Ativar</button>')
         + '<button class="btn" style="font-size:10px;" onclick="patPeriodo(\'' + c.id + '\')" title="Alterar início, fim e R$/dia no Meta">📅 Período</button>' // v3.193
@@ -35658,7 +35660,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.321] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.322] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35674,7 +35676,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.321';
+window.__ATX_BUILD_ID__ = 'ATX-v3.322';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

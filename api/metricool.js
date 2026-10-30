@@ -882,6 +882,15 @@ async function patrocinadoListar() {
       if (st.stop_time && new Date(st.stop_time) < new Date() && e === 'ACTIVE') r.encerrada = true;
     } catch (e) { r.estado_meta = null; r.estado_erro = String(e.message || e).substring(0, 160); }
   })); }
+  // v3.322: FUNIL de cada campanha paga — cliques (Meta) → visitas na página de cadastro → leads (pela utm_campaign do link)
+  try { const sql = await getSql(); const slugs = lista.slice(0, 15).map(r => { try { return new URL(r.link).searchParams.get('utm_campaign') || null; } catch (_) { return null; } });
+    const ks = [...new Set(slugs.filter(Boolean))];
+    if (ks.length) {
+      const V = await sql`SELECT campanha, COUNT(*)::int n FROM captura_visitas WHERE campanha = ANY(${ks}) GROUP BY campanha`.catch(() => []);
+      const L = await sql`SELECT campanha, COUNT(*)::int n, MAX(criado_em) ultimo, json_agg(json_build_object('nome', nome, 'empresa', empresa, 'cargo', cargo, 'em', criado_em) ORDER BY criado_em DESC) FILTER (WHERE TRUE) pessoas FROM leads WHERE campanha = ANY(${ks}) GROUP BY campanha`.catch(() => []);
+      lista.slice(0, 15).forEach((r, i) => { const k = slugs[i]; if (!k) return; const v = V.find(x => x.campanha === k), l = L.find(x => x.campanha === k);
+        r.funil = { utm_campaign: k, visitas: v?.n || 0, leads: l?.n || 0, ultimo_lead: l?.ultimo || null, pessoas: (l?.pessoas || []).slice(0, 10) }; });
+    } } catch (e) { console.warn('[patrocinados] funil:', e.message); }
   return { campanhas: lista };
 }
 
