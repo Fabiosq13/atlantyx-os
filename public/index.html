@@ -4658,6 +4658,14 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div><label class="fl" for="patPublico">Público</label>
               <select class="fi" id="patPublico" onchange="patPrev()" title="ICP C-level (filtro de cargo da própria rede) ou uma lista de decisores escolhidos no Apollo"><option value="b2b">ICP C-level — donos, sócios, C-levels e diretores</option></select></div>
           </div>
+          <!-- v3.316: campanha geolocalizada (feira, evento, prédio de cliente) -->
+          <details id="patGeoBox" style="margin-bottom:8px;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;">📍 Campanha geolocalizada (feira, evento, região) — opcional</summary>
+            <div style="font-size:10px;color:var(--t3);margin:4px 0 6px;">Só no Instagram/Facebook (o LinkedIn não anuncia por raio). O anúncio aparece para quem está, esteve há pouco ou mora no raio do local. Use as datas da feira em Início e Fim.</div>
+            <div style="display:grid;grid-template-columns:1fr 90px;gap:6px;"><input class="fi" id="patGeoLocal" placeholder="Endereço do local, nome do pavilhão ou link do Google Maps" style="font-size:11px;" oninput="window._patGeoOk=null;patPrev()"/>
+              <select class="fi" id="patGeoRaio" style="font-size:11px;" onchange="patPrev()" title="Raio em volta do local"><option value="1">1 km</option><option value="2" selected>2 km</option><option value="3">3 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="25">25 km</option></select></div>
+            <label style="display:flex;gap:6px;align-items:center;font-size:10.5px;margin-top:6px;cursor:pointer;"><input type="checkbox" id="patGeoTodos" onchange="patPrev()"> Todo o público no local (sem filtro de cargo) — recomendado em feira do seu setor: quem está lá já é o público, e o filtro de cargo deixaria o alcance muito pequeno</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="btn" style="font-size:10px;" id="patGeoBtn" onclick="patGeoConferir()">🔎 Conferir local</button><span id="patGeoRes" style="font-size:10.5px;color:var(--t2);"></span></div>
+          </details>
           <div style="margin-bottom:8px;"><label class="fl" for="patTrilha">Trilha do plano estratégico</label><select class="fi" id="patTrilha" onchange="patTrilhaMudou()" title="Alavanca do plano vigente: dá o foco (público, dor, oferta e prova) e marca os leads com a trilha"><option value="">Sem trilha (tema livre)</option></select></div>
           <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
           <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Conversa gratuita com um especialista da Atlantyx: entendemos o seu cenário e mostramos onde tecnologia, dados, software sob medida e os nossos produtos geram resultado na operação.</textarea>
@@ -25948,6 +25956,16 @@ async function pubExcluir(id) {
   const l = (window._pubListas || []).find(x => x.id === id); if (!l || !confirm('Excluir a lista "' + l.nome + '" do sistema?\n\nOs públicos já enviados ao Meta/LinkedIn continuam lá (apague no Gerenciador, se quiser).')) return;
   try { await apApi('publico_excluir', { id }); window._pubListas = null; pubListas(); patPubOpcoes(); } catch (e) { alert(e.message); }
 }
+// v3.316: confere o local da campanha geolocalizada (endereço → coordenadas) sem criar nada
+async function patGeoConferir() {
+  const loc = (document.getElementById('patGeoLocal')?.value || '').trim(), out = document.getElementById('patGeoRes'), b = document.getElementById('patGeoBtn');
+  if (!loc) { if (out) out.textContent = 'Informe o local'; return; }
+  if (b) { b.disabled = true; b.textContent = 'Procurando…'; }
+  try { const d = await mcApi('geo_local_resolver', { local: loc, raio_km: document.getElementById('patGeoRaio')?.value });
+    window._patGeoOk = d; if (out) out.innerHTML = '✅ ' + _patE(d.endereco) + ' · raio ' + d.raio_km + ' km · <a href="' + _patE(d.mapa) + '" target="_blank" rel="noopener" style="color:var(--blue);">ver no mapa ↗</a>';
+  } catch (e) { window._patGeoOk = null; if (out) out.innerHTML = '<span style="color:var(--red);">⚠ ' + _patE(e.message) + '</span>'; }
+  finally { if (b) { b.disabled = false; b.textContent = '🔎 Conferir local'; } }
+}
 function patPrev() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const n = document.getElementById('patTxtN'); if (n) n.textContent = '(' + v('patTexto').length + ' caracteres — as 2 primeiras linhas aparecem antes do "mais")';
@@ -26118,8 +26136,9 @@ async function patDiagnostico() {
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const _pl = v('patPublico'), rede = v('patRede') || 'instagram', onde = rede === 'linkedin' ? 'LinkedIn' : 'Meta';
-  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
-  if (!soKit && !confirm('Criar no ' + (rede === 'linkedin' ? 'LinkedIn' : 'Meta (Instagram)') + ' a campanha "' + (corpo.nome || 'sem nome') + '"?\n\nEla é criada PAUSADA — nada é cobrado agora. Você revisa e clica em "Ativar" quando quiser.')) return;
+  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  if (corpo.geo_local && rede === 'linkedin') { alert('O LinkedIn não anuncia por raio em volta de um local. Para a campanha da feira, escolha Instagram (Meta) em Rede.'); return; } // v3.316
+  if (!soKit && !confirm('Criar no ' + (rede === 'linkedin' ? 'LinkedIn' : 'Meta (Instagram)') + ' a campanha "' + (corpo.nome || 'sem nome') + '"?' + (corpo.geo_local ? '\n\n📍 Só no raio de ' + corpo.geo_raio_km + ' km de: ' + (window._patGeoOk?.endereco || corpo.geo_local) + (corpo.geo_todos ? ' — todo o público no local' : ' — só donos/sócios/C-levels') : '') + '\n\nEla é criada PAUSADA — nada é cobrado agora. Você revisa e clica em "Ativar" quando quiser.')) return;
   const b = document.getElementById('patBtnCriar'); const _rotB = b ? b.textContent : ''; if (b && !soKit) { b.disabled = true; b.textContent = 'Criando no ' + onde + '…'; }
   try { const d = await mcApi('patrocinado_criar', corpo);
     if (d.modo === 'kit') { patMostrarKit(d.kit); }
@@ -35614,7 +35633,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.315] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.316] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35630,7 +35649,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.315';
+window.__ATX_BUILD_ID__ = 'ATX-v3.316';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

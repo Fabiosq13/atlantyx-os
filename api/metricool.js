@@ -380,10 +380,36 @@ function _linkPago(base, nome, rede = 'instagram', trilhaId = null) {
   const slug = (trilhaId ? 'alv-' + trilhaId + '_' : '') + String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 70) || 'patrocinado';
   return base + '/captura.html?utm_source=' + rede + '&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
 }
+// v3.316: CAMPANHA GEOLOCALIZADA (ex.: uma feira) — raio em volta de um ponto. Aceita "lat,lng", link do Google Maps
+// ou endereço/nome do local (geocodificado pelo OpenStreetMap). Só no Meta: o LinkedIn não tem segmentação por raio.
+async function _geoResolver(entrada) {
+  let s = String(entrada || '').trim(); if (!s) return null;
+  // link curto do Google Maps (maps.app.goo.gl / goo.gl/maps) → segue o redirecionamento para achar as coordenadas
+  if (/^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(s)) { try { let u = s; for (let i = 0; i < 4; i++) { const r = await fetch(u, { redirect: 'manual', signal: AbortSignal.timeout(8000) }); const l = r.headers.get('location'); if (!l) break; u = new URL(l, u).toString(); } s = u; } catch (_) {} }
+  const ok = (lat, lng, endereco) => { lat = Number(lat); lng = Number(lng); if (!(isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) return null; return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, endereco: endereco || null }; };
+  let m = s.match(/^\s*(-?\d{1,2}\.\d+)\s*[,; ]\s*(-?\d{1,3}\.\d+)\s*$/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || s.match(/[?&](?:q|ll|query|center)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)/i);
+  if (m) { const r = ok(m[1], m[2]); if (r) return { ...r, endereco: r.endereco || `${r.lat}, ${r.lng}`, fonte: 'coordenadas' }; }
+  let q = s; if (/^https?:\/\//i.test(s)) { try { const u = new URL(s); const pl = u.pathname.match(/\/place\/([^/]+)/); q = pl ? decodeURIComponent(pl[1].replace(/\+/g, ' ')) : (u.searchParams.get('q') || u.searchParams.get('query') || ''); } catch (_) { q = ''; }
+    if (!q) throw Object.assign(new Error('Não consegui ler o local desse link. Abra o local no Google Maps, toque e segure no ponto e cole as coordenadas (ex.: -22.9765, -43.3924) ou digite o endereço.'), { status: 400 }); }
+  let j = [];
+  try { const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&accept-language=pt-BR&q=' + encodeURIComponent(q), { headers: { 'User-Agent': 'AtlantyxOS/1.0 (anuncios geolocalizados)' }, signal: AbortSignal.timeout(10000) });
+    j = r.ok ? await r.json().catch(() => []) : []; }
+  catch (_) { throw Object.assign(new Error('O serviço de mapas não respondeu agora. Cole as coordenadas do Google Maps (toque e segure no local → copie os números, ex.: -22.9765, -43.3924).'), { status: 503 }); }
+  if (!j[0]) throw Object.assign(new Error('Não encontrei "' + q.substring(0, 80) + '". Tente o endereço completo (rua, número, cidade) ou cole as coordenadas do Google Maps.'), { status: 400 });
+  return { ...ok(j[0].lat, j[0].lon, j[0].display_name), fonte: 'endereço' };
+}
+async function geoLocalResolver({ local, raio_km } = {}) {
+  const g = await _geoResolver(local); if (!g) throw Object.assign(new Error('Informe o local'), { status: 400 });
+  const raio = Math.max(1, Math.min(80, Number(String(raio_km || 2).replace(',', '.')) || 2));
+  return { ...g, raio_km: raio, mapa: `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}` };
+}
 async function patrocinadoCriar(p = {}, req) {
   // v3.174: o link do anúncio nunca aponta para um endereço de deploy temporário da Vercel (…-projects-….vercel.app)
   const base = _baseDe(req);
+  if (String(p.rede || '') === 'linkedin' && String(p.geo_local || '').trim()) throw Object.assign(new Error('O LinkedIn não permite anúncio por raio em volta de um local (feira/evento). Use Instagram (Meta) para a campanha geolocalizada.'), { status: 400 }); // v3.316
   if (String(p.rede || '') === 'linkedin') return patrocinadoCriarLinkedin(p, base); // v3.239
+  const geo = String(p.geo_local || '').trim() ? await geoLocalResolver({ local: p.geo_local, raio_km: p.geo_raio_km }) : null; // v3.316: feira/evento
+  const geoTodos = !!(geo && p.geo_todos); // no local do evento, opcionalmente sem o filtro de cargo (quem está lá já é o público)
   // v3.239: público = LISTA de pessoas selecionadas no Apollo (público personalizado do Meta) em vez do filtro de cargo
   const lista = p.publico_lista ? await listaObter(_kvMc, p.publico_lista) : null;
   if (lista && !lista.meta?.audience_id && !p.so_kit) throw Object.assign(new Error('Envie a lista "' + lista.nome + '" ao Meta antes (aba Públicos do Apollo → Enviar ao Meta)'), { status: 400 });
@@ -408,7 +434,9 @@ async function patrocinadoCriar(p = {}, req) {
     orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
       : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
-    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}) };
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}),
+    ...(geo ? { local: { endereco: geo.endereco, lat: geo.lat, lng: geo.lng, raio_km: geo.raio_km, mapa: geo.mapa, todo_publico: geoTodos } } : {}) };
+  if (geo) kit.publico = '📍 Raio de ' + String(geo.raio_km).replace('.', ',') + ' km em volta de ' + geo.endereco + ' (pessoas que estão, estiveram há pouco ou moram ali) · ' + (geoTodos ? 'todo o público no local, ' + idMin + ' a ' + idMax + ' anos (sem filtro de cargo)' : (lista ? 'só quem está na lista do Apollo' : 'só quem ocupa cargo de dono, sócio ou C-level') + ' · ' + idMin + ' a ' + idMax + ' anos');
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
@@ -419,27 +447,30 @@ async function patrocinadoCriar(p = {}, req) {
     // v3.192: o Meta aposenta interesses ("Algumas opções de direcionamento detalhado foram combinadas") e devolve
     // o substituto no erro — troca pelo alternativo, grava no cache e tenta de novo (até 2 vezes)
     const pb = amplo || lista ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+    // v3.316: geolocalizada → o raio em volta do local substitui as cidades; 'recent' = quem está ou esteve ali há pouco
+    const _geoMeta = geo ? { custom_locations: [{ latitude: geo.lat, longitude: geo.lng, radius: geo.raio_km, distance_unit: 'kilometer' }], location_types: ['home', 'recent'] } : null;
     let dec = amplo || lista ? null : await _publicoDecisores().catch(() => null); // v3.214
     // v3.236: o filtro é o CARGO que a pessoa ocupa (work_positions). Sem cargo resolvido, o setor de atuação em gestão
     // (industries = área em que a pessoa trabalha). Interesse nunca — interesse alcança quem só se interessa pelo tema.
     const _camadaDec = () => pb?.cargos?.length ? [{ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) }]
       : (dec?.setores?.length ? [{ industries: dec.setores.map(({ id, name }) => ({ id, name })) }] : []);
     // v3.239: com lista do Apollo o público É a lista (já são decisores escolhidos) — Brasil, 25–65, Instagram + Facebook feed
-    const _alvo = () => lista ? { geo_locations: { countries: ['BR'] }, custom_audiences: [{ id: lista.meta.audience_id }], age_min: 25, age_max: 65,
+    const _alvo = () => geoTodos ? { geo_locations: _geoMeta, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } }
+      : lista ? { geo_locations: _geoMeta || { countries: ['BR'] }, custom_audiences: [{ id: lista.meta.audience_id }], age_min: 25, age_max: 65,
         publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } } : ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
-        geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
+        geo_locations: _geoMeta || (pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] }),
         ...(_camadaDec().length ? { flexible_spec: _camadaDec() } : {}),
         ...(dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}) }),
       // v3.214: só FEED e EXPLORAR — Stories e Reels geram curtida/seguidor de quem não é decisor
       age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'],
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
     // v3.236: nunca cria conjunto sem filtro de cargo/área — sem ele o Meta entrega para qualquer pessoa
-    if (!amplo && !lista && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
+    if (!amplo && !lista && !geoTodos && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
     let adset = null;
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
-      if (!amplo && !lista && !_camadaDec().length) throw err('O Meta recusou o filtro de cargo e o de área de atuação — nada foi criado (sem filtro o anúncio iria para qualquer pessoa).'); // v3.237: confere a cada tentativa
+      if (!amplo && !lista && !geoTodos && !_camadaDec().length) throw err('O Meta recusou o filtro de cargo e o de área de atuação — nada foi criado (sem filtro o anúncio iria para qualquer pessoa).'); // v3.237: confere a cada tentativa
       try {
-        adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + (lista ? ' · Lista Apollo' : ' · Instagram'), campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
+        adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + (lista ? ' · Lista Apollo' : ' · Instagram') + (geo ? ' · Local ' + geo.raio_km + 'km' : ''), campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
           // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
           optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
           bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
@@ -609,6 +640,8 @@ async function patrocinadoDiagnostico() {
 function _icpConforme(t = {}, pb, dec) {
   // v3.239: público por LISTA (Apollo/clientes) — a lista já são os decisores; filtro de cargo/idade só encolheria o público
   if ((t.custom_audiences || []).length) return { ok: true, motivos: [], lista: true };
+  // v3.316: campanha geolocalizada (feira/evento) com 'todo o público no local' — escolha do fundador, o corretor não mexe
+  if ((t.geo_locations?.custom_locations || []).length && !(t.flexible_spec || []).some(f => (f.work_positions || []).length || (f.industries || []).length)) return { ok: true, motivos: [], geolocalizada: true };
   const motivos = [];
   if (!(parseInt(t.age_min) >= META_IDADE_MIN)) motivos.push('idade mínima ' + (t.age_min || 18) + ' (ICP: ' + META_IDADE_MIN + '+)');
   if (t.targeting_automation?.advantage_audience !== 0) motivos.push('Advantage+ de público ligado (o Meta amplia para qualquer pessoa)');
@@ -638,7 +671,7 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     if (comDec && pb.cargos?.length) L.push({ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) });
     else if (dec?.setores?.length) L.push({ industries: dec.setores.map(({ id, name }) => ({ id, name })) });
     if (!L.length) throw new Error('sem filtro de cargo/área disponível no Meta — conjunto não alterado');
-    const geo = pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : (t.geo_locations || { countries: ['BR'] });
+    const geo = (t.geo_locations?.custom_locations || []).length ? t.geo_locations /* v3.316: mantém o raio da feira/evento */ : pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : (t.geo_locations || { countries: ['BR'] });
     const aMin = Math.max(META_IDADE_MIN, parseInt(t.age_min) || META_IDADE_MIN);
     const plat = Array.isArray(t.publisher_platforms) && t.publisher_platforms.length ? t.publisher_platforms : ['instagram'];
     const out = { ...t, geo_locations: geo, age_min: aMin, age_max: Math.min(META_IDADE_MAX, Math.max(aMin, parseInt(t.age_max) || META_IDADE_MAX)),
@@ -1790,6 +1823,7 @@ async function handler(req, res) {
     patrocinado_diagnostico: () => patrocinadoDiagnostico(), // v3.176
     patrocinado_copy:       () => patrocinadoCopy(payload),
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
+    geo_local_resolver:     () => geoLocalResolver(payload), // v3.316: confere o local da campanha geolocalizada (não cria nada)
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
