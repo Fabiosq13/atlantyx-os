@@ -4648,6 +4648,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <!-- v3.239: abas Campanha | Públicos do Apollo -->
       <div style="display:flex;gap:6px;margin-bottom:10px;border-bottom:1px solid var(--bd);" role="tablist">
         <button class="btn btn-p" id="patTabCamp" role="tab" aria-selected="true" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="patAba('camp')">📣 Campanha</button>
+        <button class="btn" id="patTabRes" role="tab" aria-selected="false" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="patAba('res')">📊 Resultados e leads</button>
         <button class="btn" id="patTabPub" role="tab" aria-selected="false" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="patAba('pub')">🎯 Públicos do Apollo</button>
       </div>
       <div id="patAbaCamp">
@@ -4704,8 +4705,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div id="patPrevia" style="background:#fff;color:#111;border-radius:10px;overflow:hidden;border:1px solid var(--bd);max-width:340px;font-family:-apple-system,Segoe UI,Arial,sans-serif;"></div>
         </div>
       </div>
-      <div id="patLista" style="margin-top:14px;"></div>
       </div>
+      <!-- v3.323: aba própria para os resultados (antes a lista ficava no fim do formulário, difícil de achar no celular) -->
+      <div id="patAbaRes" style="display:none;"><div id="patLista"></div></div>
       <!-- v3.239: PÚBLICOS DO APOLLO — decisores filtrados por área de atuação, cargo, porte… → lista → Meta / LinkedIn -->
       <div id="patAbaPub" style="display:none;">
         <div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:8px;">Monte uma lista de <b>decisores reais</b> no Apollo e direcione a campanha paga só para eles. A busca não consome crédito; buscar o <b>e-mail</b> (o que Meta e LinkedIn usam para achar a pessoa) consome 1 crédito do Apollo por pessoa, e quem já foi buscado não é pago de novo. Para o Meta e o LinkedIn vai só o <b>hash SHA-256</b> dos dados, nunca o e-mail aberto.</div>
@@ -25804,11 +25806,11 @@ async function patAbrir() {
 }
 // ═══ v3.239: LINKEDIN ADS + PÚBLICOS DO APOLLO ═══
 function patAba(a) {
-  const pub = a === 'pub';
-  document.getElementById('patAbaCamp').style.display = pub ? 'none' : ''; document.getElementById('patAbaPub').style.display = pub ? '' : 'none';
-  const tc = document.getElementById('patTabCamp'), tp = document.getElementById('patTabPub');
-  tc.className = 'btn' + (pub ? '' : ' btn-p'); tp.className = 'btn' + (pub ? ' btn-p' : ''); tc.setAttribute('aria-selected', String(!pub)); tp.setAttribute('aria-selected', String(pub));
-  if (pub) pubIniciar();
+  const ab = { camp: ['patAbaCamp', 'patTabCamp'], res: ['patAbaRes', 'patTabRes'], pub: ['patAbaPub', 'patTabPub'] }; if (!ab[a]) a = 'camp';
+  Object.entries(ab).forEach(([k, [painel, aba]]) => { const on = k === a, pn = document.getElementById(painel), t = document.getElementById(aba);
+    if (pn) pn.style.display = on ? '' : 'none'; if (t) { t.className = 'btn' + (on ? ' btn-p' : ''); t.setAttribute('aria-selected', String(on)); } });
+  if (a === 'pub') pubIniciar();
+  if (a === 'res') { const el = document.getElementById('patLista'); if (el && !el.innerHTML.trim()) el.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:10px 0;">Lendo as campanhas no Meta…</div>'; patListar(); }
 }
 function patStatusLinkedin() {
   const st = document.getElementById('patStatus'); if (!st || !_patSt) return;
@@ -26175,7 +26177,7 @@ function patMostrarKit(k) {
 async function patListar() {
   const el = document.getElementById('patLista'); if (!el) return;
   try { const d = await mcApi('patrocinado_listar'); const l = d.campanhas || [];
-    if (!l.length) { el.innerHTML = ''; return; }
+    if (!l.length) { el.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:10px 0;">Nenhuma campanha patrocinada criada pelo sistema ainda.</div>'; return; }
     el.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Campanhas patrocinadas criadas pelo sistema</div>' + l.map(c => { const ps = _patStatus(c), at = ps.veicula; const r = c.resultado;
       return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--bd);border-radius:7px;margin-bottom:6px;font-size:11px;">'
         + '<div style="flex:1;min-width:220px;"><span class="tag" style="margin-right:5px;">' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram') + '</span>' + (c.publico_lista_nome ? '<span class="tag" style="margin-right:5px;" title="Público: lista do Apollo">🎯 ' + _patE(c.publico_lista_nome) + '</span>' : '') + '<b>' + _patE(c.nome) + '</b><div style="font-size:10px;color:var(--t2);">' + fmtBRLcompleto(c.orcamento_diario) + '/dia · ' + c.inicio.split('-').reverse().join('/') + ' a ' + c.fim.split('-').reverse().join('/') + ' · máx. ' + fmtBRLcompleto(c.total_maximo)
@@ -35660,7 +35662,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.322] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.323] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35676,7 +35678,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.322';
+window.__ATX_BUILD_ID__ = 'ATX-v3.323';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
