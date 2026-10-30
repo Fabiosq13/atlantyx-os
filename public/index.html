@@ -25984,8 +25984,8 @@ function patPrev() {
   const _pubTxt = _lst ? '<b>Lista do Apollo "' + _patE(_lst.nome) + '"</b> (' + _lst.total + ' decisores, ' + (_lst.com_email || 0) + ' com e-mail' + ((_li ? _lst.linkedin : _lst.meta) ? '' : ' · <span style="color:var(--gold);">envie ao ' + (_li ? 'LinkedIn' : 'Meta') + ' antes de criar</span>') + ')' : null;
   const r = document.getElementById('patResumo');
   if (r && _li) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · LinkedIn (feed) · ' + (_pubTxt || '<b>Senioridade</b> Dono, Sócio, CXO, VP e Diretor em empresas com <b>201+ funcionários</b>, Brasil, sem expansão de público') + ' · botão <b>Saiba mais</b> → página de cadastro' : '<span style="color:var(--gold);">Informe início e fim.</span>';
-  else if (r && _pubTxt) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) e Facebook (Feed) · ' + _pubTxt + ' · botão <b>Saiba mais</b> → página de cadastro' : '<span style="color:var(--gold);">Informe início e fim.</span>';
-  else if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) · <b>Quem ocupa o cargo</b>: donos, sócios e C-levels pelo <b>cargo atual</b> do perfil (sem direcionamento por interesse) — capitais de negócio, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  else if (r && _pubTxt) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed) e Facebook (Feed) · ' + _pubTxt + ' · botão <b>Saiba mais</b> → página de cadastro' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  else if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed) · <b>Quem ocupa o cargo</b>: donos, sócios e C-levels pelo <b>cargo atual</b> do perfil (sem direcionamento por interesse) — capitais de negócio, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
 }
 async function patEscrever() {
   const b = document.getElementById('patBtnCopy'); if (b) { b.disabled = true; b.textContent = 'Escrevendo…'; }
@@ -35633,7 +35633,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.316] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.317] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35649,7 +35649,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.316';
+window.__ATX_BUILD_ID__ = 'ATX-v3.317';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

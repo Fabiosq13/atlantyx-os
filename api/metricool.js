@@ -382,6 +382,8 @@ function _linkPago(base, nome, rede = 'instagram', trilhaId = null) {
 }
 // v3.316: CAMPANHA GEOLOCALIZADA (ex.: uma feira) — raio em volta de um ponto. Aceita "lat,lng", link do Google Maps
 // ou endereço/nome do local (geocodificado pelo OpenStreetMap). Só no Meta: o LinkedIn não tem segmentação por raio.
+// v3.317: o Meta tornou OBSOLETO o posicionamento Explorar do Instagram (a API recusa o conjunto) — só o Feed
+const IG_POSICOES = ['stream'];
 async function _geoResolver(entrada) {
   let s = String(entrada || '').trim(); if (!s) return null;
   // link curto do Google Maps (maps.app.goo.gl / goo.gl/maps) → segue o redirecionamento para achar as coordenadas
@@ -430,11 +432,11 @@ async function patrocinadoCriar(p = {}, req) {
   // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
   let link = _linkPago(base, nome, 'instagram', p.trilha ? String(p.trilha).replace(/[^a-z0-9-]/g, '') : null);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
-  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed e Explorar', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
+  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
     orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
       : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
-    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}),
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}),
     ...(geo ? { local: { endereco: geo.endereco, lat: geo.lat, lng: geo.lng, raio_km: geo.raio_km, mapa: geo.mapa, todo_publico: geoTodos } } : {}) };
   if (geo) kit.publico = '📍 Raio de ' + String(geo.raio_km).replace('.', ',') + ' km em volta de ' + geo.endereco + ' (pessoas que estão, estiveram há pouco ou moram ali) · ' + (geoTodos ? 'todo o público no local, ' + idMin + ' a ' + idMax + ' anos (sem filtro de cargo)' : (lista ? 'só quem está na lista do Apollo' : 'só quem ocupa cargo de dono, sócio ou C-level') + ' · ' + idMin + ' a ' + idMax + ' anos');
   const c = _metaCfg();
@@ -455,18 +457,19 @@ async function patrocinadoCriar(p = {}, req) {
     const _camadaDec = () => pb?.cargos?.length ? [{ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) }]
       : (dec?.setores?.length ? [{ industries: dec.setores.map(({ id, name }) => ({ id, name })) }] : []);
     // v3.239: com lista do Apollo o público É a lista (já são decisores escolhidos) — Brasil, 25–65, Instagram + Facebook feed
-    const _alvo = () => geoTodos ? { geo_locations: _geoMeta, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } }
+    const _alvo = () => geoTodos ? { geo_locations: _geoMeta, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram', 'facebook'], instagram_positions: IG_POSICOES, facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } }
       : lista ? { geo_locations: _geoMeta || { countries: ['BR'] }, custom_audiences: [{ id: lista.meta.audience_id }], age_min: 25, age_max: 65,
-        publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } } : ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
+        publisher_platforms: ['instagram', 'facebook'], instagram_positions: IG_POSICOES, facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } } : ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
         geo_locations: _geoMeta || (pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] }),
         ...(_camadaDec().length ? { flexible_spec: _camadaDec() } : {}),
         ...(dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}) }),
       // v3.214: só FEED e EXPLORAR — Stories e Reels geram curtida/seguidor de quem não é decisor
-      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'],
+      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: IG_POSICOES,
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
     // v3.236: nunca cria conjunto sem filtro de cargo/área — sem ele o Meta entrega para qualquer pessoa
     if (!amplo && !lista && !geoTodos && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
-    let adset = null;
+    let adset = null, semPos = false; // v3.317: posicionamento recusado como obsoleto → deixa o Meta escolher dentro do Instagram
+    const _pos = t => { if (semPos) { delete t.instagram_positions; delete t.facebook_positions; } return t; };
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
       if (!amplo && !lista && !geoTodos && !_camadaDec().length) throw err('O Meta recusou o filtro de cargo e o de área de atuação — nada foi criado (sem filtro o anúncio iria para qualquer pessoa).'); // v3.237: confere a cada tentativa
       try {
@@ -474,10 +477,11 @@ async function patrocinadoCriar(p = {}, req) {
           // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
           optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
           bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
-          start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300', targeting: _alvo() });
+          start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300', targeting: _pos(_alvo()) });
       } catch (e) {
         const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
         let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
+        if (!semPos && tentativa < 2 && /obsolet|deprecat/i.test(String(e.message || '')) && /posicionamento|placement/i.test(String(e.message || ''))) { semPos = true; continue; } // v3.317
         // v3.236: o Meta recusou o filtro de cargo → tenta pelo setor de atuação (gestão)
         if (pb?.cargos?.length && /work_position|job title|cargo|position/i.test(String(e.message || '')) && tentativa < 2) { pb.cargos = []; continue; }
         // v3.214: o Meta recusou comportamento/setor/exclusão → tenta de novo sem a camada de decisor (e limpa o cache)
@@ -631,7 +635,7 @@ async function patrocinadoDiagnostico() {
 }
 // v3.214: CORRIGIR O PÚBLICO DAS CAMPANHAS JÁ CRIADAS — lê os conjuntos de anúncios direto da conta no Meta (não
 // depende do banco), mantém idade (mínimo 35) e aplica: capitais de negócio, interesse do tema E camada de decisor,
-// exclusões (emprego, concurso, estágio) e só Feed/Explorar. aplicar:false só lista. Status (ativa/pausada) não muda.
+// exclusões (emprego, concurso, estágio) e só Feed. aplicar:false só lista. Status (ativa/pausada) não muda.
 // v3.234: ICP C-LEVEL NAS CAMPANHAS NO AR — lê TODOS os conjuntos de anúncios da conta (com paginação; antes só 100) e
 // aplica o público de decisores MESCLANDO com o direcionamento atual: mantém públicos personalizados/semelhantes,
 // exclusões de público e as plataformas (antes trocava tudo e tirava o Facebook de conjunto que rodava nos dois).
@@ -679,7 +683,7 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     delete out.age_range; delete out.flexible_spec; delete out.exclusions; delete out.interests; delete out.behaviors; delete out.industries; delete out.work_positions;
     if (L.length) out.flexible_spec = L;
     if (comDec && dec?.excluir?.length) out.exclusions = { interests: dec.excluir.map(({ id, name }) => ({ id, name })) };
-    if (plat.includes('instagram')) out.instagram_positions = ['stream', 'explore']; // Stories/Reels = curtida de quem não decide
+    if (plat.includes('instagram')) out.instagram_positions = IG_POSICOES; // Stories/Reels = curtida de quem não decide
     return out; };
   const itens = []; const reg = (await _kvMc('mkt:meta:icp_aplicado').catch(() => null)) || {};
   for (const x of conj) {
