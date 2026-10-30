@@ -430,11 +430,11 @@ async function patrocinadoCriar(p = {}, req) {
   // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
   let link = _linkPago(base, nome, 'instagram', p.trilha ? String(p.trilha).replace(/[^a-z0-9-]/g, '') : null);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
-  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed e Explorar', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
+  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
     orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
       : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
-    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}),
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}),
     ...(geo ? { local: { endereco: geo.endereco, lat: geo.lat, lng: geo.lng, raio_km: geo.raio_km, mapa: geo.mapa, todo_publico: geoTodos } } : {}) };
   if (geo) kit.publico = '📍 Raio de ' + String(geo.raio_km).replace('.', ',') + ' km em volta de ' + geo.endereco + ' (pessoas que estão, estiveram há pouco ou moram ali) · ' + (geoTodos ? 'todo o público no local, ' + idMin + ' a ' + idMax + ' anos (sem filtro de cargo)' : (lista ? 'só quem está na lista do Apollo' : 'só quem ocupa cargo de dono, sócio ou C-level') + ' · ' + idMin + ' a ' + idMax + ' anos');
   const c = _metaCfg();
@@ -455,14 +455,14 @@ async function patrocinadoCriar(p = {}, req) {
     const _camadaDec = () => pb?.cargos?.length ? [{ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) }]
       : (dec?.setores?.length ? [{ industries: dec.setores.map(({ id, name }) => ({ id, name })) }] : []);
     // v3.239: com lista do Apollo o público É a lista (já são decisores escolhidos) — Brasil, 25–65, Instagram + Facebook feed
-    const _alvo = () => geoTodos ? { geo_locations: _geoMeta, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } }
+    const _alvo = () => geoTodos ? { geo_locations: _geoMeta, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } }
       : lista ? { geo_locations: _geoMeta || { countries: ['BR'] }, custom_audiences: [{ id: lista.meta.audience_id }], age_min: 25, age_max: 65,
-        publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } } : ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
+        publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } } : ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
         geo_locations: _geoMeta || (pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] }),
         ...(_camadaDec().length ? { flexible_spec: _camadaDec() } : {}),
         ...(dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}) }),
-      // v3.214: só FEED e EXPLORAR — Stories e Reels geram curtida/seguidor de quem não é decisor
-      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'],
+      // v3.214: só FEED (Explorar foi descontinuado pela Meta) — Stories e Reels geram curtida/seguidor de quem não é decisor
+      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream'],
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
     // v3.236: nunca cria conjunto sem filtro de cargo/área — sem ele o Meta entrega para qualquer pessoa
     if (!amplo && !lista && !geoTodos && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
@@ -679,7 +679,7 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     delete out.age_range; delete out.flexible_spec; delete out.exclusions; delete out.interests; delete out.behaviors; delete out.industries; delete out.work_positions;
     if (L.length) out.flexible_spec = L;
     if (comDec && dec?.excluir?.length) out.exclusions = { interests: dec.excluir.map(({ id, name }) => ({ id, name })) };
-    if (plat.includes('instagram')) out.instagram_positions = ['stream', 'explore']; // Stories/Reels = curtida de quem não decide
+    if (plat.includes('instagram')) out.instagram_positions = ['stream']; // Stories/Reels = curtida de quem não decide
     return out; };
   const itens = []; const reg = (await _kvMc('mkt:meta:icp_aplicado').catch(() => null)) || {};
   for (const x of conj) {
