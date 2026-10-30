@@ -2802,6 +2802,13 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </div>
     <div class="erro-api" id="despErro" style="display:none;"></div>
 
+    <!-- v3.324: ordem nova — ① pagos + leads no topo · ② orgânico · ③ detalhes recolhidos -->
+    <!-- v3.179: anúncios pagos (Meta / Instagram) criados pelo sistema — gasto, alcance, cliques e leads (HubSpot via UTM) -->
+    <div class="panel" style="margin-bottom:14px;" id="despPagosPanel">
+      <div class="ph"><div class="pt">① 📣 Anúncios pagos — o que o investimento trouxe</div><button class="btn" style="font-size:9px;padding:3px 8px;" onclick="despPagosCarregar()">↻ Atualizar</button></div>
+      <div class="pb" id="despPagos"><div style="font-size:11px;color:var(--t3);">Carregando…</div></div>
+    </div>
+    <div style="font-family:var(--M);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--t2);margin:4px 0 6px;">② Orgânico — publicações nas redes <span style="text-transform:none;letter-spacing:0;color:var(--t3);">· período escolhido acima · leads de todas as origens</span></div>
     <!-- KPIs topo -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Publicações</div><div style="font-size:22px;font-weight:700;" id="despPub">—</div><div style="font-size:9px;color:var(--t3);margin-top:2px;line-height:1.35;" id="despPubSub"></div></div>
@@ -2813,36 +2820,29 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </div>
 
     <!-- Landing Pages HubSpot (v1.5.5) -->
-    <!-- v3.179: anúncios pagos (Meta / Instagram) criados pelo sistema — gasto, alcance, cliques e leads (HubSpot via UTM) -->
-    <div class="panel" style="margin-bottom:14px;" id="despPagosPanel">
-      <div class="ph"><div class="pt">📣 Anúncios pagos — Meta / Instagram</div><button class="btn" style="font-size:9px;padding:3px 8px;" onclick="despPagosCarregar()">↻ Atualizar</button></div>
-      <div class="pb" id="despPagos"><div style="font-size:11px;color:var(--t3);">Carregando…</div></div>
-    </div>
     <div class="panel" style="margin-bottom:14px;display:none;" id="lpPanel">
       <div class="ph"><div class="pt">Landing Pages do HubSpot</div>
         <button class="btn" style="font-size:10px;" onclick="document.getElementById('lpPanel').style.display='none'">✕</button></div>
       <div class="pb" id="lpLista"><div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Carregando...</div></div>
     </div>
 
-    <!-- Funil -->
-    <div class="panel" style="margin-bottom:14px;">
-      <div class="ph"><div class="pt">Funil da Campanha — Publicação → Lead</div></div>
+    <!-- v3.324: detalhes recolhidos — abre quem quiser aprofundar -->
+    <div style="font-family:var(--M);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--t2);margin:4px 0 6px;">③ Detalhes <span style="text-transform:none;letter-spacing:0;color:var(--t3);">· toque para abrir</span></div>
+    <details class="panel" style="margin-bottom:10px;"><summary class="ph" style="cursor:pointer;"><div class="pt">Funil da campanha — publicação → lead</div></summary>
       <div class="pb" id="despFunil"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div>
-    </div>
+    </details>
 
     <!-- Comparativo por rede -->
-    <div class="panel" style="margin-bottom:14px;">
-      <div class="ph"><div class="pt">Comparativo por Rede</div></div>
+    <details class="panel" style="margin-bottom:10px;"><summary class="ph" style="cursor:pointer;"><div class="pt">Comparativo por rede</div></summary>
       <div class="pb" id="despRedes"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div>
-    </div>
+    </details>
 
     <!-- Publicações -->
-    <div class="panel">
-      <div class="ph"><div class="pt">Publicações da Campanha</div>
-        <button class="btn" style="font-size:10px;" onclick="abrirRegistroManual()">+ Registrar publicação manual</button>
-      </div>
+    <details class="panel"><summary class="ph" style="cursor:pointer;"><div class="pt">Publicações da campanha</div>
+        <button class="btn" style="font-size:10px;" onclick="event.preventDefault();abrirRegistroManual()">+ Registrar publicação manual</button>
+      </summary>
       <div class="pb" id="despPosts"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Nenhuma publicação ainda. Aprove uma peça no Kanban e clique em Publicar.</div></div>
-    </div>
+    </details>
 
     <!-- Modal registro manual de métricas -->
     <div id="despManualModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center;">
@@ -33661,19 +33661,19 @@ async function despPagosCarregar() {
   try {
     const d = await mcApi('patrocinado_listar'); const L = d.campanhas || [];
     if (!L.length) { el.innerHTML = '<div style="font-size:11px;color:var(--t3);">Nenhum anúncio pago criado pelo sistema ainda. Crie em <b>S2 → Autocampanha → Campanha patrocinada no Instagram</b>.</div>'; return; }
-    const leadsDe = r => { const m = String(r.link || '').match(/utm_campaign=([^&]+)/i); const k = m ? decodeURIComponent(m[1]).toLowerCase() : ''; const H = _leadsHubspot || {}; const kk = k && Object.keys(H).find(c => c.toLowerCase() === k); return kk ? (H[kk].total || 0) : 0; };
+    const leadsDe = r => { if (r.funil) return Math.max(r.funil.leads || 0, (() => { const m = String(r.link || '').match(/utm_campaign=([^&]+)/i); const k = m ? decodeURIComponent(m[1]).toLowerCase() : ''; const H = _leadsHubspot || {}; const kk = k && Object.keys(H).find(c => c.toLowerCase() === k); return kk ? (H[kk].total || 0) : 0; })()); const m = String(r.link || '').match(/utm_campaign=([^&]+)/i); const k = m ? decodeURIComponent(m[1]).toLowerCase() : ''; const H = _leadsHubspot || {}; const kk = k && Object.keys(H).find(c => c.toLowerCase() === k); return kk ? (H[kk].total || 0) : 0; };
     const est = r => { const e = String(r.estado_meta || r.estado || '').toUpperCase(); return e === 'ACTIVE' ? ['ATIVA', 'var(--green)'] : /PAUSED|CAMPAIGN_PAUSED|ADSET_PAUSED/.test(e) ? ['PAUSADA', 'var(--t3)'] : /REVIEW|PENDING/.test(e) ? ['EM ANÁLISE', 'var(--gold)'] : /DISAPPROVED|REJECT/.test(e) ? ['REJEITADA', 'var(--red)'] : [e || '—', 'var(--t3)']; };
-    let T = { g: 0, i: 0, c: 0, l: 0 };
-    const linhas = L.map(r => { const R = r.resultado || {}, ld = leadsDe(r), e = est(r); T.g += R.gasto || 0; T.i += R.impressoes || 0; T.c += R.cliques_link || 0; T.l += ld;
-      return `<tr style="border-top:1px solid var(--bd);"><td style="padding:6px;">${esc(r.nome)}<div style="font-size:9.5px;color:var(--t3);">${esc((r.inicio || '').split('-').reverse().join('/'))} a ${esc((r.fim || '').split('-').reverse().join('/'))} · ${brl(r.orcamento_diario)}/dia</div></td>
+    let T = { g: 0, i: 0, c: 0, l: 0, v: 0 };
+    const linhas = L.map(r => { const R = r.resultado || {}, ld = leadsDe(r), e = est(r); T.g += R.gasto || 0; T.i += R.impressoes || 0; T.c += R.cliques_link || 0; T.l += ld; T.v += r.funil?.visitas || 0;
+      return `<tr style="border-top:1px solid var(--bd);"><td style="padding:6px;">${esc(r.nome)}<div style="font-size:9.5px;color:var(--t3);">${esc((r.inicio || '').split('-').reverse().join('/'))} a ${esc((r.fim || '').split('-').reverse().join('/'))} · ${brl(r.orcamento_diario)}/dia${r.local ? ' · 📍 ' + esc(String(r.local.endereco || '').split(',')[0]) + ' (' + r.local.raio_km + ' km)' : ''}</div>${(r.funil?.pessoas || []).length ? '<div style="font-size:9.5px;color:var(--green,#22d3a3);">' + r.funil.pessoas.map(x => esc([x.nome, x.cargo, x.empresa].filter(Boolean).join(' · '))).join('<br>') + '</div>' : ''}</td>
         <td style="padding:6px;"><span style="font-size:9px;padding:2px 6px;border:1px solid ${e[1]};color:${e[1]};border-radius:3px;">${e[0]}</span></td>
         <td style="padding:6px;text-align:right;font-family:var(--M);">${brl(R.gasto)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.impressoes)}</td>
-        <td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.cliques_link)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${R.cpc != null ? brl(R.cpc) : '—'}</td>
+        <td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.cliques_link)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${R.cpc != null ? brl(R.cpc) : '—'}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${r.funil ? n(r.funil.visitas) : '—'}</td>
         <td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;">${ld}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${ld && R.gasto ? brl(R.gasto / ld) : '—'}</td></tr>`; }).join('');
     const kpi = (t, v) => `<div style="padding:8px 10px;border:1px solid var(--bd);border-radius:8px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">${t}</div><div style="font-size:16px;font-weight:700;margin-top:2px;">${v}</div></div>`;
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">${kpi('Investido', brl(T.g))}${kpi('Impressões', n(T.i))}${kpi('Cliques no link', n(T.c))}${kpi('CTR', T.i ? (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '—')}${kpi('Leads (HubSpot)', n(T.l))}${kpi('Custo por lead', T.l ? brl(T.g / T.l) : '—')}</div>
-      <div style="overflow-x:auto;"><table style="width:100%;min-width:720px;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="text-align:left;padding:6px;">Campanha</th><th style="text-align:left;padding:6px;">Status</th><th style="text-align:right;padding:6px;">Gasto</th><th style="text-align:right;padding:6px;">Impressões</th><th style="text-align:right;padding:6px;">Cliques</th><th style="text-align:right;padding:6px;">CPC</th><th style="text-align:right;padding:6px;">Leads</th><th style="text-align:right;padding:6px;">Custo/lead</th></tr>${linhas}</table></div>
-      <div style="font-size:10px;color:var(--t3);margin-top:6px;">Gasto, impressões e cliques: Meta (desde o início de cada campanha). Leads: contatos do HubSpot que chegaram pela página de captura com a UTM da campanha.</div>`;
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">${kpi('Investido', brl(T.g))}${kpi('Impressões', n(T.i))}${kpi('Cliques no link', n(T.c))}${kpi('CTR', T.i ? (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '—')}${kpi('Visitas na página', n(T.v))}${kpi('Leads', n(T.l))}${kpi('Custo por lead', T.l ? brl(T.g / T.l) : '—')}</div>
+      <div style="overflow-x:auto;"><table style="width:100%;min-width:720px;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="text-align:left;padding:6px;">Campanha</th><th style="text-align:left;padding:6px;">Status</th><th style="text-align:right;padding:6px;">Gasto</th><th style="text-align:right;padding:6px;">Impressões</th><th style="text-align:right;padding:6px;">Cliques</th><th style="text-align:right;padding:6px;">CPC</th><th style="text-align:right;padding:6px;">Visitas na página</th><th style="text-align:right;padding:6px;">Leads</th><th style="text-align:right;padding:6px;">Custo/lead</th></tr>${linhas}</table></div>
+      <div style="font-size:10px;color:var(--t3);margin-top:6px;">Gasto, impressões e cliques: Meta (desde o início de cada campanha). Visitas e leads: quem abriu e quem preencheu a página de cadastro vindo de cada campanha (pela UTM do link). Status, gasto e cliques são lidos do Meta a cada abertura.</div>`;
   } catch (e) { el.innerHTML = '<div style="font-size:11px;color:var(--gold);">⚠ Não consegui ler os anúncios no Meta: ' + esc(e.message) + '</div>'; }
 }
 async function carregarDesempenho(forcar) {
@@ -35662,7 +35662,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.323] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.324] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35678,7 +35678,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.323';
+window.__ATX_BUILD_ID__ = 'ATX-v3.324';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
