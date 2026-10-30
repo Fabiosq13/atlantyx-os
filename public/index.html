@@ -4674,10 +4674,10 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div><label class="fl" for="patTitulo">Título (até 40)</label><input class="fi" id="patTitulo" maxlength="40" oninput="patPrev()" placeholder="Título ao lado do botão Saiba mais"/></div>
             <div><label class="fl" for="patDesc">Descrição (até 30)</label><input class="fi" id="patDesc" maxlength="30" oninput="patPrev()" placeholder="Linha abaixo do título"/></div></div>
-          <label class="fl" for="patImgSel" style="margin-top:8px;">Imagem</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;"><select class="fsel" id="patImgSel" title="Reaproveitar a imagem de um post já gerado" style="flex:1;min-width:180px;font-size:11px;" onchange="if(this.value){document.getElementById('patImg').value=this.value;patPrev();}"><option value="">Usar imagem de um post já gerado…</option></select>
+          <label class="fl" for="patImgSel" style="margin-top:8px;">Imagem <small style="color:var(--t3);">— sempre no formato de anúncio (manchete, benefícios ✓, tela do sistema e "Clique no Saiba mais"); é montada sozinha ao criar</small></label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;"><select class="fsel" id="patImgSel" title="Reaproveitar a imagem de um post já gerado" style="display:none;flex:1;min-width:180px;font-size:11px;" onchange="if(this.value){document.getElementById('patImg').value=this.value;patPrev();}"><option value="">Usar imagem de um post já gerado…</option></select>
             <button class="btn btn-p" style="font-size:10px;" id="patBtnArte" onclick="patArte()" title="Arte no padrão de anúncio: manchete com destaques, lista de benefícios com ✓, tela do sistema e 'Clique no Saiba mais'">🖼 Arte no padrão</button>
-            <button class="btn" style="font-size:10px;" id="patBtnImg" onclick="patGerarImagem()">🎨 Gerar imagem (IA)</button></div>
+            <button class="btn" style="font-size:10px;display:none;" id="patBtnImg" onclick="patGerarImagem()">🎨 Gerar imagem (IA)</button></div>
           <div style="font-size:10px;color:var(--t3);margin-top:4px;">Tela do sistema na arte: <label style="cursor:pointer;color:var(--blue);text-decoration:underline;">enviar print<input type="file" accept="image/*" style="display:none;" onchange="patArteTela(this.files[0])"></label> <span id="patTelaInfo">(sem print = tela ilustrativa do Atlantyx OS)</span></div>
           <input class="fi" id="patImg" style="margin-top:6px;font-size:11px;" placeholder="https://… (endereço público da imagem quadrada)" oninput="patPrev()"/>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:8px;">
@@ -26085,7 +26085,7 @@ async function patArte() {
     const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
     window._patArteBlob = blob; const pv = URL.createObjectURL(blob); document.getElementById('patImg').value = pv; patPrev();
     const url = await _trSubir(blob, 'anuncio-' + Date.now() + '.jpg', 'patrocinado', 'jpg', 'image');
-    document.getElementById('patImg').value = url; patPrev(); toast('Arte montada e hospedada', 'success');
+    document.getElementById('patImg').value = url; window._patArteUrl = url; patPrev(); toast('Arte montada e hospedada', 'success');
   } catch (e) { toast('Arte não montada: ' + e.message, 'error'); }
   if (b) { b.disabled = false; b.textContent = '🖼 Arte no padrão'; }
 }
@@ -26137,6 +26137,9 @@ async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const _pl = v('patPublico'), rede = v('patRede') || 'instagram', onde = rede === 'linkedin' ? 'LinkedIn' : 'Meta';
   const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  // v3.318: imagem de campanha paga SEMPRE no formato da arte de anúncio (manchete + ✓ benefícios + tela do sistema + Clique no Saiba mais)
+  if (!corpo.imagem || corpo.imagem !== window._patArteUrl) { toast('Montando a imagem no formato de anúncio…', 'success'); await patArte(); corpo.imagem = (document.getElementById('patImg')?.value || '').trim();
+    if (corpo.imagem !== window._patArteUrl) { alert('Não consegui montar a arte no formato de anúncio — nada foi criado. Tente "🖼 Arte no padrão" de novo.'); return; } }
   if (corpo.geo_local && rede === 'linkedin') { alert('O LinkedIn não anuncia por raio em volta de um local. Para a campanha da feira, escolha Instagram (Meta) em Rede.'); return; } // v3.316
   if (!soKit && !confirm('Criar no ' + (rede === 'linkedin' ? 'LinkedIn' : 'Meta (Instagram)') + ' a campanha "' + (corpo.nome || 'sem nome') + '"?' + (corpo.geo_local ? '\n\n📍 Só no raio de ' + corpo.geo_raio_km + ' km de: ' + (window._patGeoOk?.endereco || corpo.geo_local) + (corpo.geo_todos ? ' — todo o público no local' : ' — só donos/sócios/C-levels') : '') + '\n\nEla é criada PAUSADA — nada é cobrado agora. Você revisa e clica em "Ativar" quando quiser.')) return;
   const b = document.getElementById('patBtnCriar'); const _rotB = b ? b.textContent : ''; if (b && !soKit) { b.disabled = true; b.textContent = 'Criando no ' + onde + '…'; }
@@ -26172,11 +26175,25 @@ async function patListar() {
         + '<span class="tag ' + ps.cls + '"' + (c.estado_erro ? ' title="' + _patE(c.estado_erro) + '"' : '') + '>' + _patE(ps.rot) + '</span>'
         + (at ? '<button class="btn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'PAUSED\')">⏸ Pausar</button>' : '<button class="btn btn-gn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'ACTIVE\',' + Number(c.total_maximo || 0) + ')">▶ Ativar</button>')
         + '<button class="btn" style="font-size:10px;" onclick="patPeriodo(\'' + c.id + '\')" title="Alterar início, fim e R$/dia no Meta">📅 Período</button>' // v3.193
+        + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10px;" onclick="patConferir(\'' + c.id + '\')" title="Confere no Meta se campanha, conjunto e anúncio existem, o status de cada um e abre a pré-visualização">🔎 Conferir no Meta</button>' : '') // v3.318
         + '<a class="btn" style="font-size:10px;text-decoration:none;" href="' + _patE(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a></div>'; }).join('');
     window._patLista = l;
     // v3.234: guardião do ICP C-level (confere as campanhas da conta a cada 6 h e corrige as que saírem do público)
     try { const g = (await mcApi('icp_guardiao')).guarda; if (g && g.em) el.insertAdjacentHTML('beforeend', '<div style="font-size:10px;color:var(--t3);margin-top:4px;">🎯 Guardião do ICP C-level: conferido em ' + new Date(g.em).toLocaleString('pt-BR') + (g.erro ? ' · <span style="color:var(--red);">' + _patE(g.erro) + '</span>' : ' · ' + (g.conjuntos || 0) + ' conjunto(s) · ' + ((g.corrigidos || []).length ? '<b>' + g.corrigidos.length + ' corrigido(s)</b>: ' + _patE(g.corrigidos.map(x => x.nome).join(', ')) : 'todos no ICP')) + '</div>'); } catch (_) {}
   } catch (e) { el.innerHTML = '<div style="font-size:10.5px;color:var(--red);">' + _patE(e.message) + '</div>'; }
+}
+// v3.318: conferir no Meta (só leitura) — status de campanha/conjunto/anúncio, reprovação e pré-visualização para o celular
+async function patConferir(id) {
+  let m = document.getElementById('patConfModal'); if (!m) { m = document.createElement('div'); m.id = 'patConfModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:12px;'; m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m); }
+  const box = h => '<div class="panel" style="width:640px;max-width:96vw;max-height:88vh;overflow:auto;margin:0;"><div class="ph"><div class="pt">🔎 Conferência no Meta</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'patConfModal\').remove()">✕</button></div><div class="pb" style="font-size:11.5px;line-height:1.6;">' + h + '</div></div>';
+  m.innerHTML = box('<div style="color:var(--t3);">Lendo no Meta…</div>');
+  try { const d = await mcApi('patrocinado_conferir', { id }); const E = _patE, cor = cod => /DELETED|DISAPPROVED|WITH_ISSUES/.test(cod || '') ? 'var(--red)' : cod === 'ACTIVE' ? 'var(--green,#22d3a3)' : 'var(--t2)';
+    const lin = (rot, x) => '<div style="border-left:3px solid ' + cor(x.cod) + ';padding:3px 8px;margin:4px 0;"><b>' + rot + '</b> ' + E(x.nome || x.id) + ' — <span style="color:' + cor(x.cod) + ';">' + E(x.status) + '</span></div>';
+    m.innerHTML = box(lin('Campanha', d.campanha) + (d.conjuntos || []).map(x => lin('Conjunto', x)).join('')
+      + (d.anuncios || []).map(a => lin('Anúncio', a) + (a.reprovacao ? '<div style="color:var(--red);font-size:10.5px;margin-left:12px;">Motivo do Meta: ' + E(a.reprovacao) + '</div>' : '') + (a.problemas?.length ? '<div style="color:var(--gold);font-size:10.5px;margin-left:12px;">' + a.problemas.map(E).join(' · ') + '</div>' : '')
+        + (a.previa ? '<div style="margin-left:12px;"><a href="' + E(a.previa) + '" target="_blank" rel="noopener" style="color:var(--blue);">👁 Ver pré-visualização (abre no celular)</a></div>' : '')).join('')
+      + ((d.avisos || []).length ? '<div style="margin-top:8px;color:var(--gold);">⚠ ' + d.avisos.map(E).join('<br>⚠ ') + '</div>' : '<div style="margin-top:8px;color:var(--green,#22d3a3);">✓ Campanha, conjunto e anúncio encontrados no Meta.</div>'));
+  } catch (e) { m.innerHTML = box('<div style="color:var(--red);">' + _patE(e.message) + '</div>'); }
 }
 // v3.193: alterar período / R$ por dia de uma campanha patrocinada já criada (muda no Meta)
 function patPeriodo(id) {
@@ -35633,7 +35650,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.317] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.318] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35649,7 +35666,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.317';
+window.__ATX_BUILD_ID__ = 'ATX-v3.318';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

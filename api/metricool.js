@@ -836,6 +836,27 @@ async function metaKpis() {
   else if (g90 > 0 && H.ganhos_90d != null) { out.cac = null; out.cac_base = 'sem cliente ganho com origem de mídia paga em 90 dias (gasto de R$ ' + g90.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' sem retorno atribuído)'; }
   return out;
 }
+// v3.318: CONFERIR NO META — campanha, conjuntos e anúncios existem? status, reprovação e link de pré-visualização que abre no celular
+async function patrocinadoConferir({ id } = {}) {
+  const cid = String(id || '').replace(/\D/g, ''); if (!cid) throw Object.assign(new Error('Informe a campanha'), { status: 400 });
+  const c = _metaCfg(); if (!c.token) throw new Error('Meta não configurado');
+  const ST = { ACTIVE: 'ativa', PAUSED: 'pausada', CAMPAIGN_PAUSED: 'pausada pela campanha', ADSET_PAUSED: 'pausada pelo conjunto', DELETED: 'EXCLUÍDA', ARCHIVED: 'arquivada', IN_PROCESS: 'em processamento', WITH_ISSUES: 'com problema', DISAPPROVED: 'REPROVADA pelo Meta', PENDING_REVIEW: 'em revisão do Meta', PREAPPROVED: 'pré-aprovada', PENDING_BILLING_INFO: 'falta forma de pagamento' };
+  const st = x => ST[x] || String(x || '—').toLowerCase();
+  const out = { campanha: null, conjuntos: [], anuncios: [], avisos: [] };
+  try { const k = await _meta(`${cid}?fields=id,name,effective_status`); out.campanha = { id: k.id, nome: k.name, status: st(k.effective_status), cod: k.effective_status }; }
+  catch (e) { out.campanha = { id: cid, nome: null, status: 'não encontrada (excluída ou de outra conta)', erro: e.message }; return out; }
+  try { out.conjuntos = ((await _meta(`${cid}/adsets?fields=id,name,effective_status&limit=50`)).data || []).map(a => ({ id: a.id, nome: a.name, status: st(a.effective_status), cod: a.effective_status })); } catch (e) { out.avisos.push('Conjuntos: ' + e.message); }
+  try { const ads = (await _meta(`${cid}/ads?fields=id,name,effective_status,adset_id,preview_shareable_link,ad_review_feedback,issues_info&limit=50`)).data || [];
+    out.anuncios = await Promise.all(ads.map(async a => { let previa = a.preview_shareable_link || null;
+      if (!previa) try { const pv = await _meta(`${a.id}/previews?ad_format=INSTAGRAM_STANDARD`); previa = String(pv.data?.[0]?.body || '').match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') || null; } catch (_) {}
+      const fb = a.ad_review_feedback?.global ? Object.entries(a.ad_review_feedback.global).map(([k, v]) => k + ': ' + v).join(' · ') : null;
+      return { id: a.id, nome: a.name, status: st(a.effective_status), cod: a.effective_status, conjunto_id: a.adset_id, conjunto_existe: out.conjuntos.some(s => String(s.id) === String(a.adset_id) && s.cod !== 'DELETED'),
+        previa, reprovacao: fb, problemas: (a.issues_info || []).map(i => i.error_summary || i.error_message).filter(Boolean) }; })); }
+  catch (e) { out.avisos.push('Anúncios: ' + e.message); }
+  if (!out.conjuntos.length) out.avisos.push('A campanha não tem conjunto de anúncios — é o que gera "Could not fetch adgroup" na pré-visualização. Exclua essa campanha e crie de novo pelo sistema.');
+  out.anuncios.filter(a => !a.conjunto_existe).forEach(a => out.avisos.push('O anúncio "' + a.nome + '" aponta para um conjunto que não existe mais (sobra de tentativa que falhou) — pode excluir.'));
+  return out;
+}
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
   // v3.233: status e resultado em consultas independentes (antes, falha nos insights deixava o status antigo — "ACTIVE"
@@ -1831,6 +1852,7 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
+    patrocinado_conferir:   () => patrocinadoConferir(payload), // v3.318: só lê no Meta
     // v3.239: LinkedIn Ads + públicos por lista (Apollo → Meta / LinkedIn)
     li_conectar:            () => liUrlConectar(_baseDe(req)),
     // v3.240: trilhas do plano estratégico vigente na campanha
