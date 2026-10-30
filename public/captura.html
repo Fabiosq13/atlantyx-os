@@ -36,6 +36,9 @@
   header .container { display:flex; align-items:center; justify-content:space-between; height:72px; }
   .marca { display:flex; align-items:center; gap:12px; color:#fff; text-decoration:none; font-weight:800; letter-spacing:4px; font-size:21px; }
   .marca svg { width:42px; height:42px; }
+  /* v3.320: logo oficial da Atlantyx (arquivo) no lugar do desenho */
+  .logo-img { display:block; width:auto; } .marca .logo-img { height:34px; } .card-marca .logo-img { height:22px; } .final-marca .logo-img { height:46px; } .rod-marca .logo-img { height:18px; }
+  .logo-escuro { filter:brightness(0); opacity:.88; }
   .marca .ponto { color:var(--verde); }
   .card-marca { display:flex; align-items:center; gap:8px; font-weight:800; letter-spacing:3px; font-size:13px; color:var(--preto); margin-bottom:14px; }
   .card-marca svg { width:24px; height:24px; }
@@ -134,7 +137,7 @@
     .linha2 { grid-template-columns:1fr; gap:0; }
     .ofertas { grid-template-columns:1fr; }
     .topo-info { display:none; }
-    .marca { font-size:17px; } .marca svg { width:34px; height:34px; }
+    .marca { font-size:17px; } .marca svg { width:34px; height:34px; } .marca .logo-img { height:27px; }
     .numeros { gap:18px; grid-template-columns:1fr; }
     h3.h { font-size:24px; }
     section.bloco { padding:56px 0; }
@@ -145,10 +148,7 @@
 <body>
 <header>
   <div class="container">
-    <a class="marca" href="#" aria-label="Atlantyx">
-      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg>
-      <span>ATLANTYX<span class="ponto">.</span></span>
-    </a>
+    <a class="marca" href="#" aria-label="Atlantyx"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" class="logo-img"></a>
     <span class="topo-info">Tecnologia · Dados · Software · Produtos</span>
   </div>
 </header>
@@ -172,7 +172,7 @@
     </div>
 
     <div class="card" id="cardForm">
-      <div class="card-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--petroleo)">.</span></span></div>
+      <div class="card-marca"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" class="logo-img logo-escuro"></div>
       <!-- v3.187: <form> com name/autocomplete padrão — o navegador do Instagram/Facebook e o Chrome oferecem
            "Preencher automaticamente com informações salvas" (nome, e-mail, telefone, empresa, cargo) -->
       <form id="form" method="post" action="#" autocomplete="on" novalidate onsubmit="event.preventDefault(); enviar();">
@@ -253,14 +253,14 @@
 
 <div class="final">
   <div class="container">
-    <div class="final-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--verde)">.</span></span></div>
+    <div class="final-marca"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" class="logo-img"></div>
     <h3>Vamos olhar o seu cenário?</h3>
     <p>Uma conversa com especialista, sem custo e sem compromisso.</p>
     <a href="#cardForm" onclick="setTimeout(()=>document.getElementById('nome').focus(),350)">Quero conversar <span style="color:var(--petroleo)">→</span></a>
   </div>
 </div>
 
-<footer><div class="container"><span class="rod-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg>ATLANTYX.</span><span>© Atlantyx — Rio de Janeiro · São Paulo</span><span>Dados tratados conforme a LGPD</span></div></footer>
+<footer><div class="container"><span class="rod-marca"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" class="logo-img"></span><span>© Atlantyx — Rio de Janeiro · São Paulo</span><span>Dados tratados conforme a LGPD</span></div></footer>
 
 <script>
   // Origem da visita — vem da UTM do post. É o que permite saber QUAL campanha gerou o lead.
