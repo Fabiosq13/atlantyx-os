@@ -33669,12 +33669,31 @@ async function despPagosCarregar() {
         <td style="padding:6px;"><span style="font-size:9px;padding:2px 6px;border:1px solid ${e[1]};color:${e[1]};border-radius:3px;">${e[0]}</span></td>
         <td style="padding:6px;text-align:right;font-family:var(--M);">${brl(R.gasto)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.impressoes)}</td>
         <td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.cliques_link)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${R.cpc != null ? brl(R.cpc) : '—'}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${r.funil ? n(r.funil.visitas) : '—'}</td>
-        <td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;">${ld}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${ld && R.gasto ? brl(R.gasto / ld) : '—'}</td></tr>`; }).join('');
-    const kpi = (t, v) => `<div style="padding:8px 10px;border:1px solid var(--bd);border-radius:8px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">${t}</div><div style="font-size:16px;font-weight:700;margin-top:2px;">${v}</div></div>`;
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">${kpi('Investido', brl(T.g))}${kpi('Impressões', n(T.i))}${kpi('Cliques no link', n(T.c))}${kpi('CTR', T.i ? (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '—')}${kpi('Visitas na página', n(T.v))}${kpi('Leads', n(T.l))}${kpi('Custo por lead', T.l ? brl(T.g / T.l) : '—')}</div>
+        <td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;">${ld ? `<a href="#" onclick="event.preventDefault();despLeadsDetalhe('${esc(r.id)}')" style="color:var(--green,#22d3a3);">${ld} ›</a>` : ld}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${ld && R.gasto ? brl(R.gasto / ld) : '—'}</td></tr>`; }).join('');
+    window._despPagosL = L; // v3.325: detalhe dos leads ao clicar no card
+    const kpi = (t, v, clique) => `<div style="padding:8px 10px;border:1px solid var(--bd);border-radius:8px;${clique ? 'cursor:pointer;border-color:var(--green,#22d3a3);' : ''}"${clique ? ` onclick="${clique}" title="Ver os leads" role="button" tabindex="0"` : ''}><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">${t}</div><div style="font-size:16px;font-weight:700;margin-top:2px;">${v}</div></div>`;
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">${kpi('Investido', brl(T.g))}${kpi('Impressões', n(T.i))}${kpi('Cliques no link', n(T.c))}${kpi('CTR', T.i ? (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '—')}${kpi('Visitas na página', n(T.v))}${kpi('Leads' + (T.l ? ' — ver ›' : ''), n(T.l), T.l ? 'despLeadsDetalhe()' : '')}${kpi('Custo por lead', T.l ? brl(T.g / T.l) : '—')}</div>
       <div style="overflow-x:auto;"><table style="width:100%;min-width:720px;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="text-align:left;padding:6px;">Campanha</th><th style="text-align:left;padding:6px;">Status</th><th style="text-align:right;padding:6px;">Gasto</th><th style="text-align:right;padding:6px;">Impressões</th><th style="text-align:right;padding:6px;">Cliques</th><th style="text-align:right;padding:6px;">CPC</th><th style="text-align:right;padding:6px;">Visitas na página</th><th style="text-align:right;padding:6px;">Leads</th><th style="text-align:right;padding:6px;">Custo/lead</th></tr>${linhas}</table></div>
       <div style="font-size:10px;color:var(--t3);margin-top:6px;">Gasto, impressões e cliques: Meta (desde o início de cada campanha). Visitas e leads: quem abriu e quem preencheu a página de cadastro vindo de cada campanha (pela UTM do link). Status, gasto e cliques são lidos do Meta a cada abertura.</div>`;
   } catch (e) { el.innerHTML = '<div style="font-size:11px;color:var(--gold);">⚠ Não consegui ler os anúncios no Meta: ' + esc(e.message) + '</div>'; }
+}
+// v3.325: detalhe dos leads das campanhas pagas (todas ou de uma campanha) — contato, cargo, empresa, score e ações
+function despLeadsDetalhe(campId) {
+  const L = (window._despPagosL || []).filter(r => !campId || String(r.id) === String(campId)), E = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const pessoas = L.flatMap(r => (r.funil?.pessoas || []).map(p => ({ ...p, campanha: r.nome, gasto: r.resultado?.gasto }))).sort((a, b) => String(b.em).localeCompare(String(a.em)));
+  const tot = L.reduce((a, r) => a + (r.funil?.leads || 0), 0), gasto = L.reduce((a, r) => a + (r.resultado?.gasto || 0), 0);
+  let m = document.getElementById('despLeadsModal'); if (!m) { m = document.createElement('div'); m.id = 'despLeadsModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m); }
+  const wa = t => { const d = String(t || '').replace(/\D/g, ''); return d ? 'https://wa.me/' + (d.length <= 11 ? '55' + d : d) : ''; };
+  const sc = s => { const x = String(s || '').toUpperCase(); return x ? '<span class="tag" style="margin-left:6px;color:' + (/^A/.test(x) ? 'var(--green,#22d3a3)' : /^B/.test(x) ? 'var(--blue)' : 'var(--t2)') + ';">' + E(x) + '</span>' : ''; };
+  m.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;margin:0;"><div class="ph"><div class="pt">👥 Leads das campanhas pagas' + (campId && L[0] ? ' — ' + E(L[0].nome) : '') + '</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'despLeadsModal\').remove()">✕</button></div><div class="pb">'
+    + '<div style="font-size:11px;color:var(--t2);margin-bottom:10px;"><b>' + tot + '</b> lead(s)' + (gasto ? ' · investido ' + fmtBRLcompleto(gasto) + (tot ? ' · custo por lead <b>' + fmtBRLcompleto(gasto / tot) + '</b>' : '') : '') + (tot > pessoas.length ? ' · mostrando os ' + pessoas.length + ' mais recentes' : '') + '</div>'
+    + (pessoas.length ? pessoas.map(p => '<div style="border:1px solid var(--bd);border-radius:8px;padding:9px 11px;margin-bottom:7px;font-size:11.5px;">'
+      + '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;"><b style="font-size:12.5px;">' + E(p.nome || '(sem nome)') + '</b>' + sc(p.score) + '<span style="flex:1;"></span><span style="font-size:10px;color:var(--t3);">' + (p.em ? new Date(p.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '') + '</span></div>'
+      + '<div style="color:var(--t2);">' + E([p.cargo, p.empresa].filter(Boolean).join(' · ') || '—') + '</div>'
+      + '<div style="font-size:10.5px;color:var(--t3);margin-top:2px;">Campanha: ' + E(p.campanha) + (p.status ? ' · situação: ' + E(p.status) : '') + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">' + (p.email ? '<a class="btn" style="font-size:10px;text-decoration:none;" href="mailto:' + E(p.email) + '">✉ ' + E(p.email) + '</a>' : '') + (wa(p.telefone) ? '<a class="btn" style="font-size:10px;text-decoration:none;color:#25D366;border-color:#25D366;" target="_blank" rel="noopener" href="' + wa(p.telefone) + '">💬 WhatsApp ' + E(p.telefone) + '</a>' : '') + '</div></div>').join('')
+      : '<div style="font-size:11px;color:var(--t3);padding:14px 0;">Nenhum lead ainda nessa campanha.</div>')
+    + '</div></div>';
 }
 async function carregarDesempenho(forcar) {
   forcar = forcar === true; // o setTimeout do nav() não passa argumento
@@ -35662,7 +35681,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.324] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.325] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35678,7 +35697,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.324';
+window.__ATX_BUILD_ID__ = 'ATX-v3.325';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
