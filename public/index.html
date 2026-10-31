@@ -30603,7 +30603,7 @@ function _fv2Card(k, D) {
     + (k.nota ? '\n\n⚠ ' + k.nota : '') + '\n\nFonte: ' + (k.fonte || 'QuickBooks') + ' · atualizado ' + new Date(D.atualizado_em).toLocaleString('pt-BR').substring(0, 17) + (D.conciliacao?.pct != null ? ' · conciliação do período ' + D.conciliacao.pct + '%' : '')
     + (k.drill ? '\n\nClique no cartão para ver o detalhe até o lançamento.' : '');
   const val = k.valor_txt || _fv2Fmt(k.valor, k.fmt);
-  return '<div class="fv2-card' + (k.drill ? ' fv2-click' : '') + '" data-kpi="' + k.id + '" style="--sc:' + (_FV2_SEM[k.semaforo] || _FV2_SEM.cinza)[2] + ';" tabindex="0">'
+  return '<div class="fv2-card fv2-click" data-kpi="' + k.id + '" style="--sc:' + (_FV2_SEM[k.semaforo] || _FV2_SEM.cinza)[2] + ';" tabindex="0">'
     + '<div class="fv2-card-top"><span class="fv2-ttl">' + _fv2Esc(k.titulo) + _tip(tip) + '</span>' + _fv2Pill(k.semaforo) + '</div>'
     + '<div class="fv2-val">' + val + '</div>' + (sub ? '<div class="fv2-sub">' + sub + '</div>' : '')
     + '<div class="fv2-row">' + '<div class="fv2-vars">' + _fv2Var(k) + '</div>' + _fv2Spark(k.tendencia, k.fmt) + '</div>'
@@ -30702,8 +30702,42 @@ function _fv2Render(aba, D, cache) {
   app.querySelectorAll('.fv2-click').forEach(c => { c.onclick = e => { if (e.target.closest('.tip-i, a, button')) return; _fv2Drill(c.dataset.kpi); }; c.onkeydown = e => { if (e.key === 'Enter') _fv2Drill(c.dataset.kpi); }; });
   requestAnimationFrame(() => _fv2Graficos(aba, D));
 }
-function _fv2Drill(id) {
-  const D = _fv2Dados[_fv2Aba], k = (D?.kpis || []).find(x => x.id === id); if (!k || !k.drill) return;
+// v3.328: UM clique detalha QUALQUER cartão. DRE e caixa abrem direto os lançamentos; os demais abrem o detalhe do indicador
+// (valor, como é calculado, meta, comparações, evolução mês a mês, componentes, fonte) com o atalho para a tela de origem.
+function _fv2Drill(id, forcarDet) {
+  const D = _fv2Dados[_fv2Aba], k = (D?.kpis || []).find(x => x.id === id); if (!k) return;
+  if (forcarDet || !k.drill || !['dre', 'caixa'].includes(k.drill.tipo)) return _fv2Detalhe(k, D);
+  return _fv2DrillIr(k, D);
+}
+function _fv2Detalhe(k, D) {
+  const E = _fv2Esc, F = v => _fv2Fmt(v, k.fmt), dt = x => String(x || '').split('-').reverse().join('/');
+  let m = document.getElementById('fv2DetModal'); if (!m) { m = document.createElement('div'); m.id = 'fv2DetModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m); }
+  const lin = (r, v) => v == null || v === '' ? '' : '<tr><td style="padding:4px 10px 4px 0;color:var(--t2);vertical-align:top;white-space:nowrap;">' + r + '</td><td style="padding:4px 0;">' + v + '</td></tr>';
+  const sem = { verde: '🟢 dentro da meta', amarelo: '🟡 atenção', vermelho: '🔴 fora da meta', cinza: '⚪ sem meta ou sem dado' }[k.semaforo] || '';
+  const T = (k.tendencia || []).filter(t => t && t.v != null);
+  const ext = k.extra ? Object.entries(k.extra).filter(([, v]) => v != null && typeof v !== 'object') : [];
+  const destino = k.drill ? ({ dre: '📄 Ver os lançamentos na DRE', caixa: '📄 Ver as faturas e contas', tela: '➜ Abrir a aba ' + E(k.drill.tela || ''), fluxo: '➜ Abrir o fluxo de caixa', nav: '➜ Abrir a tela de origem' })[k.drill.tipo] : null;
+  m.innerHTML = '<div class="panel" style="width:620px;max-width:96vw;margin:0;"><div class="ph"><div class="pt">📋 ' + E(k.titulo) + '</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'fv2DetModal\').remove()">✕</button></div><div class="pb" style="font-size:12px;">'
+    + '<div style="font-size:26px;font-weight:800;margin-bottom:2px;">' + (k.valor_txt || F(k.valor)) + '</div>'
+    + (k.valor2 != null || k.valor2_txt ? '<div style="color:var(--t2);margin-bottom:8px;">' + (k.valor2_txt ? E(k.valor2_txt) : (k.valor2_rot ? E(k.valor2_rot) + ': ' : '') + fmtBRL(k.valor2)) + '</div>' : '')
+    + '<table style="border-collapse:collapse;margin:6px 0 10px;">'
+    + lin('Período', D.periodo ? dt(D.periodo.de) + ' a ' + dt(D.periodo.ate_pedido || D.periodo.ate) : null)
+    + lin('Como é calculado', k.formula ? E(k.formula) : null)
+    + lin('Meta', k.meta ? E(k.meta.texto || F(k.meta.valor)) + (k.meta.esperado_ate_hoje ? ' · esperado até hoje ' + fmtBRL(k.meta.esperado_ate_hoje) : '') : null)
+    + lin('Situação', sem)
+    + lin('Período anterior', k.anterior && k.anterior.valor != null ? F(k.anterior.valor) + (k.anterior.var_pct != null ? ' (' + (k.anterior.var_pct > 0 ? '+' : '') + _fv2N(k.anterior.var_pct) + '%)' : k.anterior.var_pp != null ? ' (' + (k.anterior.var_pp > 0 ? '+' : '') + _fv2N(k.anterior.var_pp) + ' p.p.)' : '') + (D.periodo?.anterior ? ' · ' + dt(D.periodo.anterior.de) + ' a ' + dt(D.periodo.anterior.ate) : '') : null)
+    + lin('Mesmo período do ano anterior', k.yoy && k.yoy.valor != null ? F(k.yoy.valor) + (k.yoy.var_pct != null ? ' (' + (k.yoy.var_pct > 0 ? '+' : '') + _fv2N(k.yoy.var_pct) + '%)' : '') : null)
+    + lin('Fonte', E(k.fonte || 'QuickBooks') + ' · atualizado ' + new Date(D.atualizado_em).toLocaleString('pt-BR').substring(0, 17) + (D.conciliacao?.pct != null ? ' · conciliação ' + D.conciliacao.pct + '%' : ''))
+    + '</table>'
+    + (ext.length ? '<div style="font-weight:700;margin:8px 0 4px;">Componentes</div><table style="border-collapse:collapse;width:100%;">' + ext.map(([c, v]) => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px 0;color:var(--t2);">' + E(c.replace(/_/g, ' ')) + '</td><td style="padding:4px 0;text-align:right;font-family:var(--M);">' + (typeof v === 'number' ? (Math.abs(v) >= 1000 ? fmtBRL(v) : _fv2N(v)) : E(v)) + '</td></tr>').join('') + '</table>' : '')
+    + (T.length ? '<div style="font-weight:700;margin:10px 0 4px;">Evolução mês a mês</div><table style="border-collapse:collapse;width:100%;">' + T.map(t => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px 0;color:var(--t2);">' + E(_fv2MesTxt ? _fv2MesTxt(t.mes) : t.mes) + '</td><td style="padding:4px 0;text-align:right;font-family:var(--M);">' + F(t.v) + '</td></tr>').join('') + '</table>' : '')
+    + (k.nota ? '<div style="margin-top:10px;color:var(--gold);">⚠ ' + E(k.nota) + '</div>' : '')
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">' + (destino ? '<button class="btn btn-p" style="font-size:10.5px;" onclick="document.getElementById(\'fv2DetModal\').remove();_fv2DrillIr(_fv2Dados[_fv2Aba].kpis.find(x=>x.id===\'' + E(k.id) + '\'),_fv2Dados[_fv2Aba])">' + destino + '</button>' : '')
+    + '<button class="btn" style="font-size:10.5px;color:var(--blue);border-color:var(--blue);" onclick="document.getElementById(\'fv2DetModal\').remove();audIndicadores()">🔎 Conferir nas origens</button></div>'
+    + '</div></div>';
+}
+function _fv2DrillIr(k, D) {
+  if (!k || !k.drill) return;
   const per = { data_inicio: D.periodo.de, data_fim: D.periodo.ate_pedido || D.periodo.ate }, dr = k.drill;
   if (dr.tipo === 'dre') dreAbrir(per, dr.metodo || _finMetodo());
   else if (dr.tipo === 'caixa') cxDetalheAbrir(dr.sub || 'folego', per);
@@ -35681,7 +35715,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.327] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.328] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35697,7 +35731,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.327';
+window.__ATX_BUILD_ID__ = 'ATX-v3.328';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
