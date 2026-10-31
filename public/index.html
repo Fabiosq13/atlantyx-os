@@ -25997,6 +25997,11 @@ function patPrev() {
     + (v('patImg') ? '<img src="' + _patE(v('patImg')) + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#eee;" onerror="this.style.opacity=.2">' : '<div style="aspect-ratio:1/1;background:#e9edf1;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px;">imagem do anúncio</div>')
     + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f2f4f6;border-bottom:1px solid #e3e6ea;"><div style="font-size:12px;min-width:0;"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _patE(v('patTitulo') || 'Título do anúncio') + '</b><span style="color:#666;font-size:11px;">' + _patE(v('patDesc') || location.host) + '</span></div><span style="background:#0095f6;color:#fff;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;white-space:nowrap;">Saiba mais</span></div>'
     + '<div style="padding:9px 12px;font-size:12px;line-height:1.45;"><b>atlantyx</b> ' + _patE(v('patTexto') || 'Texto principal do anúncio…').replace(/\n/g, '<br>') + '</div>';
+  // v3.331: link da página de destino (botão "Saiba mais") abaixo da prévia — tocar na prévia abre a página
+  if (pv) { const dest = v('patLink') || (location.origin + '/captura.html?utm_source=' + (_li ? 'linkedin' : 'instagram') + '&utm_medium=pago');
+    pv.style.cursor = 'pointer'; pv.title = 'Abrir a página do botão Saiba mais'; pv.onclick = () => window.open(dest, '_blank', 'noopener');
+    const ln = document.getElementById('patPreviaLink') || (() => { const d = document.createElement('div'); d.id = 'patPreviaLink'; d.style.cssText = 'font-size:10.5px;margin-top:6px;max-width:340px;word-break:break-all;'; pv.after(d); return d; })();
+    ln.innerHTML = '🔗 Página do "Saiba mais": <a href="' + _patE(dest) + '" target="_blank" rel="noopener" style="color:var(--blue);">' + _patE(dest.replace(/^https?:\/\//, '')) + '</a>' + (v('patLink') ? '' : ' <span style="color:var(--t3);">(o sistema acrescenta o rastreio da campanha)</span>'); }
   const ini = v('patIni'), fim = v('patFim'), dia = parseFloat(v('patDiario').replace(',', '.')) || 0; const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
   const _pubTxt = _lst ? '<b>Lista do Apollo "' + _patE(_lst.nome) + '"</b> (' + _lst.total + ' decisores, ' + (_lst.com_email || 0) + ' com e-mail' + ((_li ? _lst.linkedin : _lst.meta) ? '' : ' · <span style="color:var(--gold);">envie ao ' + (_li ? 'LinkedIn' : 'Meta') + ' antes de criar</span>') + ')' : null;
   const r = document.getElementById('patResumo');
@@ -32336,6 +32341,7 @@ function dashMktAbrir(id) {
   const P = (f.pessoas || []).slice().sort((a, b) => (a.teste - b.teste) || String(b.em).localeCompare(String(a.em)));
   const wa = t => { const d = String(t || '').replace(/\D/g, ''); return d ? 'https://wa.me/' + (d.length <= 11 ? '55' + d : d) : ''; };
   m.innerHTML = '<div class="panel" style="width:780px;max-width:97vw;margin:0;"><div class="ph"><div class="pt">📣 ' + E(c.nome) + ' <span class="tag ' + st.cls + '" style="margin-left:6px;">' + E(st.rot) + '</span></div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'dmkModal\').remove()">✕</button></div><div class="pb" style="font-size:12px;">'
+    + (c.link ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;"><span style="font-size:11px;color:var(--t2);">🔗 Página do anúncio:</span><a href="' + E(c.link) + '" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);word-break:break-all;flex:1;min-width:180px;">' + E(String(c.link).replace(/^https?:\/\//, '').split('?')[0]) + '</a><a class="btn btn-p" style="font-size:10px;text-decoration:none;" href="' + E(c.link) + '" target="_blank" rel="noopener">Abrir página ↗</a><button class="btn" style="font-size:10px;" onclick="atxCopiar(\'' + E(c.link).replace(/'/g, '%27') + '\',\'Link copiado\')">Copiar link</button></div>' : '') // v3.331
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(r.gasto)) + k('Impressões', n(r.impressoes)) + k('Cliques', n(r.cliques_link)) + k('CTR', ctr) + k('Custo/clique', r.cpc != null ? fmtBRLcompleto(r.cpc) : '—') + k('Leads', n(f.leads)) + k('Custo/lead', f.leads && r.gasto ? fmtBRLcompleto(r.gasto / f.leads) : '—') + '</div>'
     + '<div style="font-weight:700;margin:4px 0 6px;">Funil</div>' + etapa('Cliques no anúncio', r.cliques_link || 0, base) + etapa('Visitas na página', f.visitas || 0, base) + etapa('Começaram o formulário', f.comecaram || 0, base) + etapa('Leads', f.leads || 0, base)
     + ((f.whatsapp || f.descartados || f.leads_teste) ? '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">' + [f.whatsapp ? n(f.whatsapp) + ' clique(s) no WhatsApp' : '', f.descartados ? n(f.descartados) + ' envio(s) barrado(s) como robô' : '', f.leads_teste ? f.leads_teste + ' lead(s) de teste fora da conta' : ''].filter(Boolean).join(' · ') + '</div>' : '')
@@ -35787,7 +35793,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.330] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.331] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35803,7 +35809,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.330';
+window.__ATX_BUILD_ID__ = 'ATX-v3.331';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
