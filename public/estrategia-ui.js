@@ -45,13 +45,21 @@
     box.innerHTML = `<div style="background:linear-gradient(135deg,rgba(0,196,204,.12),rgba(124,156,255,.06));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700;">🧠 Estratégia IA</div>
         <div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;"><b>ATLAS</b> é o estrategista-chefe: conversa com você por <b>chat ou voz</b> com os números vivos da empresa. <b>NORTE</b> é o mentor de propósito e metas: alinha as suas metas pessoais ao seu propósito e ao da Atlantyx. Na <b>Sala de Estratégia</b>, o ATLAS conduz um comitê de IAs (CFO, CRO, CTO, COO, Advogado do Diabo, Voz do Cliente e NORTE) e fecha num plano que você aprova e transforma em demandas, ideias ou pauta de reunião.</div></div>
-      <div class="seg" id="estAbas" style="margin-bottom:10px;">${[['atlas', '🧠 ATLAS · Estratégia'], ['norte', '🧭 NORTE · Propósito e metas'], ['sala', '🏛 Sala de Estratégia'], ['plano', '📜 Plano vigente e premissas']].map(([k, r]) => `<button data-a="${k}" class="${k === aba ? 'on' : ''}" onclick="EST.aba('${k}')">${r}</button>`).join('')}</div>
+      <div class="seg" id="estAbas" style="margin-bottom:10px;">${[['atlas', '🧠 ATLAS · Estratégia'], ['norte', '🧭 NORTE · Propósito e metas'], ['trilha', '🗺 Trilha guiada 2027–2031'], ['sala', '🏛 Sala de Estratégia'], ['plano', '📜 Plano vigente e premissas']].map(([k, r]) => `<button data-a="${k}" class="${k === aba ? 'on' : ''}" onclick="EST.aba('${k}')">${r}</button>`).join('')}</div>
       <div id="estCorpo"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando…</div></div>`;
     carregar();
   }
   async function carregar() { try { D = await api('inicio'); render(); } catch (e) { $('estCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">${esc(e.message)}</div>`; } }
   function trocar(k) { aba = k; document.querySelectorAll('#estAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === k)); calar(); render(); }
-  function render() { if (!D) return; if (aba === 'atlas' || aba === 'norte') renderChat(aba); else if (aba === 'sala') renderSalas(); else renderPlano(); }
+  function render() { if (!D) return; if (aba === 'atlas' || aba === 'norte') renderChat(aba); else if (aba === 'trilha') renderTrilha(); else if (aba === 'sala') renderSalas(); else renderPlano(); }
+  // v3.341: trilha guiada (11 perguntas, o que NÃO fazer, calendário de revisão, orçamento semestral) — módulo carregado sob demanda
+  function renderTrilha() {
+    const el = $('estCorpo'); if (window.ESTT) return ESTT.render(el);
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando a trilha guiada…</div>';
+    const s = document.createElement('script'); s.src = '/estrategia-trilha-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now());
+    s.onload = () => { if (aba === 'trilha' && window.ESTT) ESTT.render($('estCorpo')); }; s.onerror = () => { el.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /estrategia-trilha-ui.js</div>'; };
+    document.head.appendChild(s);
+  }
 
   // ── chat (ATLAS / NORTE) ──
   function renderChat(p) {

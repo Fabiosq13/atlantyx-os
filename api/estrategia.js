@@ -1,6 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
+import * as RT from '../lib/estrategia-roteiro.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
@@ -74,8 +75,10 @@ async function premissas() { return (await kv('est:premissas'))?.texto || PREMIS
 // v3.240: premissas + PLANO ESTRATÉGICO CADASTRADO (alavancas, metas, pesos) para os prompts — sem plano, só as premissas
 async function premissasCtx() {
   const prem = await premissas();
-  try { const v = await kv(K_VIGENTE); if (v?.plano) return prem + '\n\n' + planoResumoTexto(v.plano, v); } catch (_) {}
-  return prem;
+  let out = prem;
+  try { const v = await kv(K_VIGENTE); if (v?.plano) out += '\n\n' + planoResumoTexto(v.plano, v); } catch (_) {}
+  try { const [r, nf] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER)]); const a = RT.roteiroResumoTexto(r), b = RT.naoFazerResumoTexto(nf?.itens); if (a) out += '\n\n' + a; if (b) out += '\n\n' + b; } catch (_) {} // v3.341
+  return out;
 }
 async function planoVigente() { return await kv('est:plano'); }
 function resumoCtxObj(ctx) { // v3.298: objeto (antes string cortada em 30 mil caracteres → JSON quebrado)
@@ -166,8 +169,8 @@ async function projecaoSalvar({ premissas: p, ia }, usuario) {
 async function projecaoIA({ premissas: p, pedido } = {}) {
   const [A, prem, plano] = await Promise.all([contextoAmplo(false), premissasCtx(), planoVigente()]);
   const base = await baseProjecao(false), atual = projetar3(p || premissas3Padrao(base), base);
-  const sys = `Você é ATLAS, estrategista-chefe e CFO de IA da Atlantyx (dados, BI, engenharia de dados e IA; três motores: alocação de pessoas, projetos e produtos próprios). Monte premissas REALISTAS para a projeção de 3 anos, coerentes com o histórico, a carteira contratada, o funil, as metas e o plano estratégico. Justifique cada número com os dados. Responda SÓ JSON válido:
-{"premissas":{"mix_pct":{"pessoas":0,"projetos":0,"produtos":0},"conversao_caixa_pct":85,"anos":[{"crescimento_pct":{"pessoas":0,"projetos":0,"produtos":0},"mc_pct":{"pessoas":0,"projetos":0,"produtos":0},"despesas_fixas_cresc_pct":0,"recorrencia_pct":0},{…},{…}]},"comentario":"até 10 linhas: leitura do cenário, riscos e as 3 alavancas que mais mudam o resultado","alavancas":["..."]}`;
+  const sys = `Você é ATLAS, estrategista-chefe e CFO de IA da Atlantyx (dados, BI, engenharia de dados e IA; três motores: alocação de pessoas, projetos e produtos próprios). Monte premissas REALISTAS para a projeção de 5 anos (2027 é o primeiro degrau, até 2031; o array "anos" tem 5 itens), coerentes com o histórico, a carteira contratada, o funil, as metas e o plano estratégico. Justifique cada número com os dados. Responda SÓ JSON válido:
+{"premissas":{"mix_pct":{"pessoas":0,"projetos":0,"produtos":0},"conversao_caixa_pct":85,"anos":[{"crescimento_pct":{"pessoas":0,"projetos":0,"produtos":0},"mc_pct":{"pessoas":0,"projetos":0,"produtos":0},"despesas_fixas_cresc_pct":0,"recorrencia_pct":0},{…},{…},{…},{…}]},"comentario":"até 10 linhas: leitura do cenário, riscos e as 3 alavancas que mais mudam o resultado","alavancas":["..."]}`;
   const usr = `PEDIDO DO FUNDADOR: ${String(pedido || 'proponha o cenário base mais provável').substring(0, 1500)}\n\nPREMISSAS ESTRATÉGICAS: ${prem}\nPLANO VIGENTE: ${plano ? JSON.stringify(plano.sintese).substring(0, 2500) : '(nenhum)'}\nBASE CALCULADA DOS DADOS: ${JSON.stringify(base).substring(0, 5000)}\nPROJEÇÃO COM AS PREMISSAS ATUAIS: ${projecao3Texto(atual)}\nDADOS DA EMPRESA: ${JSON.stringify(A).substring(0, 16000)}`;
   const txt = await claude(sys, [{ role: 'user', content: usr }], 2200);
   let j; try { const t = txt.replace(/```json|```/g, ''); j = JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1)); } catch (_) { throw new Error('O ATLAS não devolveu premissas legíveis — tente de novo'); }
@@ -182,12 +185,12 @@ async function projecaoParaMetas({ anos = [], substituir = [] } = {}) {
   const L = salvo.projecao.cenarios.base.filter(l => !anos.length || anos.includes(l.ano)), feitos = [], protegidos = [];
   let todos = {}; try { const _ml = await chamar('financeiro', { action: 'metas_empresa_ler', params: {} }); todos = _ml.metas_cadastro?.todos_anos || _ml.todos_anos || {}; } catch (_) {}
   for (const l of L) { const ex = todos[String(l.ano)] && !todos[String(l.ano)].padrao ? todos[String(l.ano)] : {};
-    const doUsuario = ex.faturamento && !/^Projeção 3 anos/.test(String(ex.fonte || ''));
+    const doUsuario = ex.faturamento && !/^Projeção [35] anos/.test(String(ex.fonte || ''));
     if (doUsuario && !substituir.includes(l.ano)) { protegidos.push({ ano: l.ano, faturamento_atual: ex.faturamento, margem_atual: ex.margem_pct ?? null, fonte: ex.fonte || 'manual', faturamento_projecao: l.receita, margem_projecao: l.margem_pct }); continue; }
     const mot = { pessoas: l.por_motor.pessoas, projetos: l.por_motor.projetos, produtos: l.por_motor.produtos };
     const mensal = Array.isArray(ex.mensal) && ex.mensal.length === 12 && ex.faturamento ? ex.mensal.map(v => v == null ? null : Math.round(v / ex.faturamento * l.receita)) : null;
     const r = await chamar('financeiro', { action: 'metas_empresa_salvar', params: { ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct ?? ex.margem_pct ?? null, recorrencia_pct: l.recorrencia_pct, motores: mot, mensal,
-      margem_ebitda_pct: ex.margem_ebitda_pct ?? null, caixa_minimo: ex.caixa_minimo ?? null, crescimento_pct: ex.crescimento_pct ?? null, fonte: 'Projeção 3 anos (Planejamento)' } });
+      margem_ebitda_pct: ex.margem_ebitda_pct ?? null, caixa_minimo: ex.caixa_minimo ?? null, crescimento_pct: ex.crescimento_pct ?? null, fonte: 'Projeção 5 anos (Planejamento)' } });
     feitos.push({ ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct, ok: !!r }); }
   return { feitos, protegidos };
 }
@@ -254,6 +257,7 @@ const _hoje = () => new Date().toISOString();
 async function planoEstrObter() {
   const [vig, ras, vers, aj] = await Promise.all([kv(K_VIGENTE), kv(K_RASCUNHO), kv(K_VERSOES), kv(K_AJUSTES)]);
   const rascunho = ras?.plano ? ras : { plano: vig?.plano || planoInicial(), nao_salvo: true, base_versao: vig?.versao || null };
+  if (rascunho.plano?.visao && !rascunho.plano.visao.a5 && rascunho.plano.visao.a3) rascunho.plano.visao.a5 = rascunho.plano.visao.a3; // v3.341: visão 3 anos → 5 anos (2031)
   let realizado = null; try { realizado = await planoEstrRealizado(vig?.plano || rascunho.plano); } catch (e) { realizado = { erro: e.message }; }
   return { vigente: vig || null, rascunho, versoes: (vers || []).map(v => ({ versao: v.versao, aprovado_em: v.aprovado_em, aprovado_por: v.aprovado_por, comentario: v.comentario, nome: v.plano?.nome })),
     ajustes: (aj || []).slice(0, 30), sim_rascunho: planoSimular(rascunho.plano), sim_vigente: vig?.plano ? planoSimular(vig.plano) : null, realizado, status_opcoes: ALV_STATUS };
@@ -437,6 +441,78 @@ async function salaAcoes({ sessao_id, itens = [], rito_id }) {
   return { feitos };
 }
 
+// ── v3.341: TRILHA GUIADA DA ESTRATÉGIA (5 anos) — só o fundador (perfil administrador) lê e grava ──
+function soFundador(req) {
+  if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) throw Object.assign(new Error('A trilha guiada da estratégia é só do fundador (perfil administrador).'), { status: 403 });
+}
+async function roteiroObter() {
+  const [r, nf, ca] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER), kv('est:contexto_amplo')]);
+  const R = RT.roteiroNormalizar(r);
+  const numeros = ca ? { em: ca.em, ano_atual: ca.ano_atual, historico: ca.historico, motores_12m: ca.motores_12m, pessoas_ativas: ca.pessoas?.ativos ?? null, contratos: ca.contratos || null, erros: ca.erros || [] } : null;
+  return { roteiro: R, status: RT.roteiroStatus(R), perguntas: RT.PERGUNTAS, blocos: RT.BLOCOS, estados: RT.ESTADOS, escolhas_motor: RT.ESCOLHAS_MOTOR, motores: RT.MOTORES_R, regras_ouro: RT.REGRAS_OURO,
+    horizonte: RT.HORIZONTE, nao_fazer: RT.naoFazerNormalizar(nf?.itens), numeros };
+}
+async function roteiroSalvar(b, usuario) {
+  const R = RT.roteiroAplicar(await kv(RT.K_ROTEIRO), b, usuario);
+  await kv(RT.K_ROTEIRO, R); return { roteiro: R, status: RT.roteiroStatus(R) };
+}
+async function roteiroSugerir({ n, pedido }) {
+  const q = RT.PERGUNTAS.find(p => p.n === Number(n)); if (!q) throw Object.assign(new Error('Etapa inválida'), { status: 400 });
+  const [A, prem, r, nf] = await Promise.all([contextoAmplo(false).catch(() => null), premissasCtx(), kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER)]);
+  const R = RT.roteiroNormalizar(r), anteriores = RT.PERGUNTAS.filter(p => p.n < q.n && R.etapas[p.n].resposta.trim()).map(p => `${p.n}. ${p.titulo} [${R.etapas[p.n].estado}] ${R.etapas[p.n].resposta.substring(0, 900)}`).join('\n');
+  const sys = `Você é ATLAS, estrategista-chefe da Atlantyx (dados, BI, engenharia de dados e IA; três motores: alocação de pessoas, projetos e produtos próprios de IA). Você ajuda o fundador a responder UMA etapa do roteiro estratégico de 5 anos (${RT.HORIZONTE.inicio}–${RT.HORIZONTE.fim}).
+Regras: (1) Números da Atlantyx só os que estão nos DADOS DA EMPRESA — cite a origem ("financeiro, últimos 12 meses"). (2) NUNCA apresente número de mercado, tamanho de mercado, múltiplo ou dado de concorrente como fato: se mencionar algo externo, escreva "(não verificado — fonte: ...)" ou "a confirmar". (3) Não use nomes de clientes; fale em "clientes de energia", "banco", etc. (4) É um RASCUNHO: termine com 1 a 3 perguntas que só o fundador pode responder. (5) Respeite a lista do que NÃO fazer. (6) Português do Brasil, direto, no máximo ~25 linhas, em tópicos curtos.${q.motores ? ' (7) Para cada motor sugira defender, evoluir ou transformar, com o porquê.' : ''}`;
+  const usr = `ETAPA ${q.n} — ${q.titulo}\nO que cobrir: ${q.guia}\n${pedido ? 'PEDIDO DO FUNDADOR: ' + String(pedido).substring(0, 800) + '\n' : ''}\nRESPOSTA ATUAL DESTA ETAPA: ${R.etapas[q.n].resposta.substring(0, 2000) || '(vazia)'}\n\nETAPAS ANTERIORES:\n${anteriores || '(nenhuma respondida)'}\n\nPREMISSAS, PLANO E RENÚNCIAS:\n${prem.substring(0, 6000)}\n\nDADOS DA EMPRESA (vivos): ${A ? JSON.stringify({ ano_atual: A.ano_atual, historico: A.historico, motores_12m: A.motores_12m, metas_por_ano: A.metas_por_ano, carteira_contratada: A.carteira_contratada?.total_previsto_13m, pessoas: A.pessoas?.ativos, propostas_12m: A.propostas_12m, contratos: A.contratos, projecao: A.projecao_3anos, erros: A.erros }).substring(0, 9000) : '(indisponíveis agora)'}`;
+  const sugestao = await claude(sys, [{ role: 'user', content: usr }], 1500);
+  return { n: q.n, sugestao, aviso: 'Sugestão do ATLAS — revise, ajuste e só então valide. Nada foi salvo.' };
+}
+async function naoFazerSalvar({ item, remover }, usuario) {
+  const atual = RT.naoFazerNormalizar((await kv(RT.K_NAO_FAZER))?.itens);
+  let L = atual;
+  if (remover) L = atual.filter(x => x.id !== remover);
+  else if (item) { if (!String(item.texto || '').trim()) throw Object.assign(new Error('Escreva o que a Atlantyx NÃO vai fazer'), { status: 400 });
+    const ex = atual.find(x => x.id === item.id);
+    const novo = { ...(ex || {}), ...item, id: ex ? ex.id : 'nf_' + Date.now().toString(36), criado_por: ex?.criado_por || usuario || null, criado_em: ex?.criado_em || new Date().toISOString() };
+    L = ex ? atual.map(x => x.id === ex.id ? novo : x) : [novo, ...atual]; }
+  L = RT.naoFazerNormalizar(L); await kv(RT.K_NAO_FAZER, { itens: L, em: new Date().toISOString(), por: usuario || null });
+  return { nao_fazer: L };
+}
+async function naoFazerImportarPlano(usuario) { // traz os "não fazer" da síntese do plano vigente (Sala de Estratégia) — só os que ainda não estão na lista
+  const P = await planoVigente(), lista = (P?.sintese?.nao_fazer || []).map(x => String(x).trim()).filter(Boolean);
+  if (!lista.length) throw Object.assign(new Error('O plano vigente não tem itens de "o que NÃO fazer"'), { status: 400 });
+  const atual = RT.naoFazerNormalizar((await kv(RT.K_NAO_FAZER))?.itens), ja = new Set(atual.map(x => x.texto.toLowerCase()));
+  const novos = lista.filter(t => !ja.has(t.toLowerCase().substring(0, 300))).map((t, i) => ({ id: 'nf_' + Date.now().toString(36) + i, texto: t, motivo: '', origem: 'Plano vigente (Sala de Estratégia)', criado_por: usuario || null, criado_em: new Date().toISOString() }));
+  const L = RT.naoFazerNormalizar([...novos, ...atual]); await kv(RT.K_NAO_FAZER, { itens: L, em: new Date().toISOString(), por: usuario || null });
+  return { nao_fazer: L, importados: novos.length };
+}
+async function calendarioObter() { return { calendario: RT.calendarioGerar(await kv(RT.K_CALENDARIO)), checklist: RT.CHECKLIST_REVISAO, gatilhos_tipos: RT.GATILHOS, horizonte: RT.HORIZONTE }; }
+async function calendarioSalvar(b, usuario) { const E = RT.calendarioAplicar(await kv(RT.K_CALENDARIO), b, usuario); await kv(RT.K_CALENDARIO, E); return { calendario: RT.calendarioGerar(E) }; }
+// realizado do semestre (até hoje) pelos motores do financeiro (fin_v2) — receita e margem por motor; caixa atual do contexto
+async function orcamentoRealizado(sem) {
+  const { ini, fim } = RT.semestreDatas(sem), hoje = RT.hojeBR(); if (ini > hoje) return { futuro: true };
+  const ate = fim < hoje ? fim : hoje;
+  try { const r = await _t(chamar('financeiro', { action: 'fin_v2', params: { tela: 'executiva', data_inicio: ini, data_fim: ate } }), 50000), M = r?.fin_v2?.motores?.motores;
+    if (!M) return { erro: r?.fin_v2?.erro || 'motores sem dados', ate };
+    return { ate, receita: Object.fromEntries(Object.keys(RT.MOTORES_R).map(k => [k, Math.round(Number(M[k]?.receita) || 0)])), mc_pct: Object.fromEntries(Object.keys(RT.MOTORES_R).map(k => [k, M[k]?.margem_contribuicao_pct ?? M[k]?.margem_bruta_pct ?? null])), erros: r?.fin_v2?.erros || [] };
+  } catch (e) { return { erro: e.message, ate }; }
+}
+async function orcamentoObter({ semestre, com_realizado = true } = {}) {
+  const sem = RT.semestres().includes(semestre) ? semestre : RT.semestreAtual(), todos = (await kv(RT.K_ORCAMENTO)) || {}, salvo = todos[sem];
+  let sugerido = null; try { const pj = await projecaoObter({}); sugerido = RT.orcamentoSugerido(pj.projecao, sem); } catch (_) {}
+  let caixa = null; try { caixa = (await contexto(false))?.financeiro?.caixa ?? null; } catch (_) {}
+  return { semestre: sem, semestres: RT.semestres().map(s => ({ id: s, status: todos[s] ? RT.orcamentoNormalizar(todos[s]).status : null })), orcamento: salvo ? RT.orcamentoNormalizar(salvo) : null, sugerido,
+    realizado: com_realizado ? await orcamentoRealizado(sem) : null, caixa_atual: caixa, motores: RT.MOTORES_R };
+}
+async function orcamentoSalvar({ semestre, orcamento, acao }, usuario) {
+  if (!RT.semestres().includes(semestre)) throw Object.assign(new Error('Semestre inválido'), { status: 400 });
+  const todos = (await kv(RT.K_ORCAMENTO)) || {}, ex = todos[semestre] ? RT.orcamentoNormalizar(todos[semestre]) : null, agora = new Date().toISOString();
+  const o = RT.orcamentoNormalizar({ ...(ex || {}), ...(orcamento || {}), status: ex?.status || 'rascunho', aprovado_em: ex?.aprovado_em, aprovado_por: ex?.aprovado_por, revisado_em: ex?.revisado_em, revisado_por: ex?.revisado_por });
+  if (acao === 'aprovar') { o.status = 'aprovado'; o.aprovado_em = agora; o.aprovado_por = usuario || null; }
+  if (acao === 'revisar') { if (!ex || ex.status === 'rascunho') throw Object.assign(new Error('Aprove o orçamento antes de registrar a revisão'), { status: 400 }); o.status = 'revisado'; o.revisado_em = agora; o.revisado_por = usuario || null; }
+  o.atualizado_em = agora; todos[semestre] = o; await kv(RT.K_ORCAMENTO, todos);
+  return orcamentoObter({ semestre, com_realizado: false });
+}
+
 async function handler(req, res) {
   // v3.240: cron mensal — a ATLAS sugere o ajuste fino do plano vigente (fica pendente, nada muda sem o fundador)
   if (req.method === 'GET' && req.query?.cron === 'ajuste_plano') {
@@ -469,10 +545,17 @@ async function handler(req, res) {
       plano_estr_salvar: () => planoEstrSalvar(b, usuario), plano_estr_aprovar: () => planoEstrAprovar(b, usuario),
       plano_estr_restaurar: () => planoEstrRestaurar(b), plano_estr_inicial: async () => ({ plano: planoInicial() }),
       plano_estr_sugerir: () => planoEstrSugerir(), plano_estr_ajuste_decidir: () => planoEstrAjusteDecidir(b, usuario),
+      // v3.341: trilha guiada (5 anos) — só o fundador; nao_fazer_checar é aberto a quem usa a Esteira (só devolve o aviso)
+      roteiro_obter: () => (soFundador(req), roteiroObter()), roteiro_salvar: () => (soFundador(req), roteiroSalvar(b, usuario)), roteiro_sugerir: () => (soFundador(req), roteiroSugerir(b)),
+      nao_fazer_listar: async () => (soFundador(req), { nao_fazer: RT.naoFazerNormalizar((await kv(RT.K_NAO_FAZER))?.itens) }), nao_fazer_salvar: () => (soFundador(req), naoFazerSalvar(b, usuario)),
+      nao_fazer_importar_plano: () => (soFundador(req), naoFazerImportarPlano(usuario)),
+      nao_fazer_checar: async () => ({ conflitos: RT.naoFazerChecar((await kv(RT.K_NAO_FAZER))?.itens, [b.titulo, b.texto].filter(Boolean).join(' \n ').substring(0, 6000)) }),
+      revisao_calendario: () => (soFundador(req), calendarioObter()), revisao_calendario_salvar: () => (soFundador(req), calendarioSalvar(b, usuario)),
+      orcamento_obter: () => (soFundador(req), orcamentoObter(b)), orcamento_salvar: () => (soFundador(req), orcamentoSalvar(b, usuario)),
       ritos: async () => { try { const r = await chamar('reunioes', { action: 'ritos' }); return { ritos: (r.ritos || []).filter(x => x.ativo).map(x => ({ id: x.id, nome: x.nome, proxima_br: x.proxima_br })) }; } catch (_) { return { ritos: [] }; } },
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
-  } catch (e) { console.error('[estrategia]', e.message); return res.status(e.status || 500).json({ success: false, error: e.message }); }
+  } catch (e) { console.error('[estrategia]', e.message); return res.status(e.status || 500).json({ success: false, error: e.message, ...(e.codigo ? { codigo: e.codigo, faltam: e.faltam || [] } : {}) }); }
 }
 export default comGuarda(handler, 'estrategia');

@@ -1,5 +1,5 @@
 // public/projecao-ui.js — v3.286 · PLANEJAMENTO › PROJEÇÃO 3 ANOS
-// Premissas por motor de negócio (alocação, projetos, produtos) → DRE projetada dos próximos 3 anos em 3 cenários.
+// Premissas por motor de negócio (alocação, projetos, produtos) → DRE projetada dos próximos 5 anos (2027–2031, v3.341) em 3 cenários.
 // Os números saem de lib/projecao-3anos.js no servidor; o ATLAS sugere premissas com os dados reais da empresa.
 (function () {
   const $ = id => document.getElementById(id);
@@ -34,13 +34,13 @@
     const lin = (rot, cel) => `<tr><td style="padding:4px 6px;font-size:11px;white-space:nowrap;">${rot}</td>${cel}</tr>`;
     const C = pj.cenarios[S.cen];
     const h = `<div class="cp-top" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-        <div style="flex:1;min-width:220px;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">📈 Projeção 3 anos</div>
+        <div style="flex:1;min-width:220px;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">📈 Projeção 5 anos · 2027–2031</div>
           <div style="font-size:10.5px;color:var(--t2);">Ano-base ${pr.ano_base} (${esc(B.fonte?.receita || '')}) → ${anos.join(', ')} · por motor de negócio · três cenários${d.salvo_em ? ' · salva em ' + new Date(d.salvo_em).toLocaleString('pt-BR').substring(0, 16) : ' · ainda não salva'}</div></div>
         <button class="btn btn-g" onclick="PJ.abrir(true)" title="Relê QuickBooks, HubSpot e cadastros">↻ Dados</button>
         <button class="btn btn-g" onclick="nav('s1bp', document.querySelector('.sbi[onclick*=&quot;s1bp&quot;]'))" title="Abrir o Business Plan (detalhamento financeiro por ideia e da Atlantyx)">📊 Business Plan</button>
         <button class="btn btn-or" id="pjBtnIA" onclick="PJ.ia()">🤖 ATLAS sugere premissas</button>
         <button class="btn btn-p" id="pjBtnSalvar" onclick="PJ.salvar()">💾 Salvar${S.sujo ? ' *' : ''}</button>
-        <button class="btn btn-gn" onclick="PJ.metas()" title="Grava o cenário base como metas de faturamento e margem dos 3 anos (Metas da Empresa)">🎯 Usar como metas</button></div>
+        <button class="btn btn-gn" onclick="PJ.metas()" title="Grava o cenário base como metas de faturamento e margem dos 5 anos (Metas da Empresa)">🎯 Usar como metas</button></div>
       ${(B.erros || []).length ? `<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;">⚠ Dados parciais: ${esc(B.erros.join(' · '))}</div>` : ''}
       ${(() => { const D = d.dif_base; if (!D) return ''; const dif = Object.entries(D).filter(([, x]) => x.dados != null && x.salvo != null && Math.abs(x.dados - x.salvo) > Math.max(1, Math.abs(x.salvo) * 0.02)); /* v3.294 */
         return dif.length ? `<div style="font-size:10.5px;color:var(--blue);margin-bottom:8px;">ℹ Os dados reais mudaram desde que a projeção foi salva: ${dif.map(([k, x]) => ({ receita_base: 'receita-base', despesas_fixas_base: 'despesas fixas', caixa_inicial: 'caixa' })[k] + ' ' + R(x.salvo) + ' → ' + R(x.dados)).join(' · ')}. <a href="#" onclick="event.preventDefault();PJ.usarDados()" style="color:var(--blue);">usar os dados atuais</a></div>` : ''; })()}

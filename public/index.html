@@ -762,7 +762,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div class="sbi s1" onclick="nav('s0estrategia',this)">&#129504; ATLAS · Estrategista IA <span class="nbx gn">voz</span></div>
       <div class="sbi s1" onclick="nav('s1metas',this)">&#127919; Visão e Metas <span class="nbx gn">metas · OKRs</span></div>
       <div class="sbi s1" onclick="nav('s1plano',this)">&#9654; Plano Estratégico <span class="nbx gn">90 dias</span></div>
-      <div class="sbi s1" onclick="nav('s1projecao',this)">&#128200; Projeção 3 anos <span class="nbx pu">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1projecao',this)">&#128200; Projeção 5 anos <span class="nbx pu">IA</span></div>
     </div>
     <div class="sg-hd sg-fundador" onclick="toggleGrupo('gIdeias')" data-g="gIdeias">
       <span class="sg-lbl">Ideias + Produtos</span><span class="sg-arr" id="arr-gIdeias">&#9660;</span>
@@ -11888,7 +11888,7 @@ function estrategiaAbrir(aba) {
   s.onerror = () => { const a = document.getElementById('estApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /estrategia-ui.js</div>'; };
   document.head.appendChild(s);
 }
-// v3.286: PLANEJAMENTO reorganizado — 4 entradas no menu (ATLAS, Visão e Metas, Plano Estratégico, Projeção 3 anos);
+// v3.286: PLANEJAMENTO reorganizado — 4 entradas no menu (ATLAS, Visão e Metas, Plano Estratégico, Projeção 5 anos);
 // as telas antigas viram ABAS dentro de cada entrada (mesmas telas e dados, sem duplicar números em lugares diferentes)
 const _PLAN_ABAS = {
   s1metas: [['s1metas', '🎯 Metas da Empresa'], ['s1okr', '◯ OKRs'], ['s1dash', '▣ Painel Estratégico'], ['s1dados', '📈 Dados Reais'], ['s1relatorio', '📋 Relatório Executivo']],
@@ -11910,7 +11910,7 @@ function _planAbas(p) {
     const r = orig(p, el);
     try { _planAbas(p); } catch (_) {}
     if (p === 's1projecao') setTimeout(projecaoAbrir, 50);
-    if (p === 's1projecao') { const t = document.getElementById('tbc'); if (t) t.textContent = '/ Planejamento · Projeção 3 anos'; }
+    if (p === 's1projecao') { const t = document.getElementById('tbc'); if (t) t.textContent = '/ Planejamento · Projeção 5 anos'; }
     return r;
   };
 })();
@@ -25723,7 +25723,7 @@ function peRender() {
     + '<div><label class="fl" for="peNome">Nome do plano</label><input class="fi" id="peNome" value="' + _peE(P.nome) + '" oninput="_pePlano.nome=this.value"></div>'
     + [['faturamento', 'Faturamento meta (R$)'], ['margem_pct', 'Margem líquida meta %'], ['recorrente_pct', 'Receita recorrente meta %'], ['crescimento_pct', 'Crescimento meta % a.a.']].map(([k, t]) => '<div><label class="fl" for="peM_' + k + '">' + t + '</label><input class="fi" id="peM_' + k + '" inputmode="decimal" value="' + _peE(M[k]) + '" oninput="_pePlano.metas.' + k + '=_numBR(this.value)||0;peSimular()"></div>').join('')
     + '</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px;">'
-    + [['d90', 'Visão 90 dias'], ['a1', 'Visão 1 ano'], ['a3', 'Visão 3 anos']].map(([k, t]) => '<div><label class="fl" for="peV_' + k + '">' + t + '</label><textarea class="fta" id="peV_' + k + '" style="min-height:52px;font-size:11px;" oninput="_pePlano.visao.' + k + '=this.value">' + _peE(V[k]) + '</textarea></div>').join('')
+    + [['d90', 'Visão 90 dias'], ['a1', 'Visão 1 ano'], ['a5', 'Visão 5 anos (2031)']].map(([k, t]) => '<div><label class="fl" for="peV_' + k + '">' + t + '</label><textarea class="fta" id="peV_' + k + '" style="min-height:52px;font-size:11px;" oninput="_pePlano.visao.' + k + '=this.value">' + _peE(V[k]) + '</textarea></div>').join('')
     + '<div><label class="fl" for="pePrio">Prioridades (uma por linha)</label><textarea class="fta" id="pePrio" style="min-height:52px;font-size:11px;" oninput="_pePlano.prioridades=this.value.split(\'\\n\').map(x=>x.trim()).filter(Boolean)">' + _peE((P.prioridades || []).join('\n')) + '</textarea></div></div></div></div>'
     + '<div class="panel" style="margin-bottom:10px;"><div class="ph"><div class="pt">Alavancas de negócio</div><button class="btn" style="font-size:10px;" onclick="peAdd()">+ Alavanca</button></div><div class="pb" style="padding-top:0;"><div style="font-size:10px;color:var(--t3);margin-bottom:6px;">Receita nova = parte da meta que vem de cliente/negócio novo (é o que o marketing precisa gerar). Peso = participação da trilha no calendário e na mídia. Status "Pausada" tira a trilha da campanha. ⋯ abre oferta, público, dor, prova e taxas do funil.</div>'
     + '<div style="overflow-x:auto;"><table id="peAlav" style="width:100%;border-collapse:collapse;"><thead><tr><th>Alavanca</th><th>Receita meta R$</th><th>Receita nova R$</th><th>Ticket anual R$</th><th>Margem %</th><th>Recorr.</th><th>Fech. %</th><th>Peso %</th><th>Realizado 90d</th><th>Receita realizada R$</th><th></th></tr></thead><tbody>' + linhas + '</tbody></table></div>'
@@ -30854,7 +30854,7 @@ function _fv2ConfigHtml(D) {
   const AL = D.alocacao, AG = D.agenda_camadas;
   const camPanel = '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Apuração de margem — impostos e alocação</div><div class="fv2-pq">Usado no lucro e no % de lucro de todo o sistema (Dashboard, LIVE, TV, Metas, Diagnóstico).</div></div></div>'
     + '<div style="font-size:11px;line-height:1.9;">Alíquota efetiva sobre a receita (ISS + PIS + COFINS + IRPJ + CSLL), usada <b>só quando o QuickBooks não tiver imposto lançado no período</b>: geral ' + inA('geral', D.aliquota_pct) + '% · Alocação ' + inA('pessoas', am.pessoas) + '% · Projetos ' + inA('projetos', am.projetos) + '% · Produtos ' + inA('produtos', am.produtos) + '%'
-    + '<br><b>Alíquota por ano</b> (projeção de 3 anos, business plan, preço das propostas e estimativa do ano): <input class="fi" id="fv2AliqAno" value="' + Object.entries(D.aliquota_ano || {}).map(([a, x]) => a + '=' + String(x).replace(".", ",")).join('; ') + '" placeholder="2027=25" style="width:160px;margin:0;padding:3px 6px;font-size:11px;"> <span style="color:var(--t3);">ex.: 2027=25; 2028=25 — vale no lugar da alíquota geral no ano indicado</span>'
+    + '<br><b>Alíquota por ano</b> (projeção de 5 anos, business plan, preço das propostas e estimativa do ano): <input class="fi" id="fv2AliqAno" value="' + Object.entries(D.aliquota_ano || {}).map(([a, x]) => a + '=' + String(x).replace(".", ",")).join('; ') + '" placeholder="2027=25" style="width:160px;margin:0;padding:3px 6px;font-size:11px;"> <span style="color:var(--t3);">ex.: 2027=25; 2028=25 — vale no lugar da alíquota geral no ano indicado</span>'
     + '<br>Nos últimos 12 meses o QuickBooks tem <b>' + fmtBRL(D.camadas_12m?.impostos_fonte === 'quickbooks' ? D.camadas_12m.impostos : 0) + '</b> de impostos sobre receita lançados (' + (D.camadas_12m?.impostos_fonte === 'quickbooks' ? 'alíquota efetiva real ' + _fv2Fmt(D.camadas_12m.aliquota_efetiva_pct, 'pct') : 'nenhum — configure a alíquota acima') + ').'
     + '<br>Profissionais alocados (cadastro S8): ' + (AL && AL.profissionais ? '<b>' + AL.profissionais + '</b> · custo mensal alocado: Alocação ' + fmtBRL(AL.pessoas) + ' · Projetos ' + fmtBRL(AL.projetos) + ' · Produtos ' + fmtBRL(AL.produtos) + ' (sai do custo fixo e vira custo direto do motor)' : '<span style="color:var(--gold);">nenhuma alocação cadastrada — cadastre em Pessoas → Funcionários (custo/hora e % de alocação por projeto)</span>')
     + (AG && (AG.retirada_mensal || AG.parcelamento_mensal) ? '<br>Agenda de pagamentos: retiradas ' + fmtBRL(AG.retirada_mensal) + '/mês · parcelamentos ' + fmtBRL(AG.parcelamento_mensal) + '/mês (usados só quando não aparecem na DRE)' : '') + '</div>'
@@ -35870,7 +35870,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.340] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.341] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35886,7 +35886,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.340';
+window.__ATX_BUILD_ID__ = 'ATX-v3.341';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
