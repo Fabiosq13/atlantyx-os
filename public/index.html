@@ -1024,6 +1024,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         <button class="fv2-aba" data-aba="pendencias" onclick="dashAba('pendencias')">&#9888;&#65039; Pendências de vendas e prospecção <span class="dash-badge" id="dashBadgePend"></span></button>
         <button class="fv2-aba" data-aba="projetos" onclick="dashAba('projetos')">&#128193; Projetos <span class="dash-badge" id="dashBadgeProj"></span></button>
         <button class="fv2-aba" data-aba="rfps" onclick="dashAba('rfps')">&#128209; RFPs e editais <span class="dash-badge" id="dashBadgeRfp"></span></button>
+        <button class="fv2-aba" data-aba="mkt" onclick="dashAba('mkt')">&#128227; Marketing digital <span class="dash-badge" id="dashBadgeMkt"></span></button>
       </div>
       <div id="dashAtualizadoEm" style="font-size:9.5px;color:var(--t3);text-align:right;margin:0 2px 16px;"></div>
     </div>
@@ -1213,6 +1214,19 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="nav('s2rfps',document.querySelector('.sbi[onclick*=&quot;s2rfps&quot;]'))">Monitor de RFPs &#8594;</button>
         </div></div>
       <div class="pb" id="drfCorpo"><div class="fv2-load">Abra esta aba para carregar os editais…</div></div>
+    </div>
+    </section>
+    <!-- v3.330: MARKETING DIGITAL — campanhas pagas ativas; um clique abre todos os dados e os leads da campanha -->
+    <section class="dash-aba" data-aba="mkt" style="display:none;">
+    <div class="panel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128227; Campanhas de marketing digital</div>
+        <span id="dmkMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+          <label style="font-size:10px;display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" id="dmkTodas" onchange="dashMktRender()"> mostrar encerradas e pausadas</label>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="dashMktCarregar(true)">&#8635;</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="nav('s2auto',document.querySelector('.sbi[onclick*=&quot;s2auto&quot;]'))">Criar campanha &#8594;</button>
+        </div></div>
+      <div class="pb" id="dmkCorpo"><div style="color:var(--t3);font-size:11px;padding:12px;">Carregando…</div></div>
     </div>
     </section>
   </div>
@@ -32282,6 +32296,63 @@ function dashRfpRender() {
           + (link && /^https?:/.test(link) ? '<a href="' + _dsE(link) + '" target="_blank" rel="noopener" style="font-size:10px;">abrir edital ↗</a>' : '') + '</div>'; }).join('')
       : '<div style="color:var(--t3);font-size:11px;">' + (d.aviso ? _dsE(d.aviso) : 'Nenhum edital aberto na última varredura.') + ' Rode uma varredura no Monitor de RFPs.</div>');
 }
+// ═══ v3.330: DASHBOARD → MARKETING DIGITAL — campanhas ativas e, com um clique, todos os dados e leads da campanha ═══
+let _dmk = { dados: null, em: 0, carregando: false };
+async function dashMktCarregar(forcar) {
+  const el = document.getElementById('dmkCorpo'); if (!el || _dmk.carregando) return;
+  if (!forcar && _dmk.dados && Date.now() - _dmk.em < 5 * 60000) return dashMktRender();
+  _dmk.carregando = true; if (!_dmk.dados) el.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:12px;">Lendo as campanhas no Meta e no LinkedIn…</div>';
+  try { const d = await mcApi('patrocinado_listar'); _dmk.dados = d.campanhas || []; _dmk.em = Date.now(); dashMktRender(); }
+  catch (e) { el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Não consegui ler as campanhas: ' + _patE(e.message) + '</div>'; }
+  finally { _dmk.carregando = false; }
+}
+function _dmkAtiva(c) { const st = _patStatus(c); return st.veicula && !c.encerrada; }
+function dashMktRender() {
+  const el = document.getElementById('dmkCorpo'); if (!el) return; const L = _dmk.dados || [];
+  const todas = document.getElementById('dmkTodas')?.checked, V = L.filter(c => todas || _dmkAtiva(c)), E = _patE, n = v => Number(v || 0).toLocaleString('pt-BR');
+  const nAt = L.filter(_dmkAtiva).length, b = document.getElementById('dashBadgeMkt'); if (b) b.textContent = nAt ? nAt : '';
+  const meta = document.getElementById('dmkMeta'); if (meta) meta.textContent = nAt + ' ativa(s) · ' + L.length + ' no total · atualizado ' + new Date(_dmk.em).toLocaleTimeString('pt-BR').slice(0, 5);
+  const T = V.reduce((a, c) => { const r = c.resultado || {}; a.g += r.gasto || 0; a.i += r.impressoes || 0; a.c += r.cliques_link || 0; a.v += c.funil?.visitas || 0; a.l += c.funil?.leads || 0; return a; }, { g: 0, i: 0, c: 0, v: 0, l: 0 });
+  const k = (t, v, s) => '<div style="padding:9px 11px;border:1px solid var(--bd);border-radius:9px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">' + t + '</div><div style="font-size:17px;font-weight:700;margin-top:2px;">' + v + '</div>' + (s ? '<div style="font-size:9.5px;color:var(--t3);">' + s + '</div>' : '') + '</div>';
+  el.innerHTML = (!V.length ? '<div style="font-size:11.5px;color:var(--t3);padding:10px 0;">' + (L.length ? 'Nenhuma campanha ativa agora. Marque "mostrar encerradas e pausadas" para ver as anteriores.' : 'Nenhuma campanha paga criada pelo sistema ainda.') + '</div>'
+    : '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(T.g)) + k('Impressões', n(T.i)) + k('Cliques', n(T.c), T.i ? 'CTR ' + (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '') + k('Visitas na página', n(T.v)) + k('Leads', n(T.l), T.l && T.g ? 'custo/lead ' + fmtBRLcompleto(T.g / T.l) : '') + '</div>'
+      + V.map(c => { const r = c.resultado || {}, f = c.funil || {}, st = _patStatus(c);
+        return '<div class="dmk-card" onclick="dashMktAbrir(\'' + E(c.id) + '\')" role="button" tabindex="0" onkeydown="if(event.key===\'Enter\')dashMktAbrir(\'' + E(c.id) + '\')" style="cursor:pointer;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center;">'
+          + '<div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">' + E(c.nome) + ' <span class="tag ' + st.cls + '" style="margin-left:4px;">' + E(st.rot) + '</span> <span class="tag">' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram') + '</span></div>'
+          + '<div style="font-size:10px;color:var(--t3);">' + E((c.inicio || '').split('-').reverse().join('/')) + ' a ' + E((c.fim || '').split('-').reverse().join('/')) + ' · ' + fmtBRLcompleto(c.orcamento_diario) + '/dia' + (c.local ? ' · 📍 ' + E(String(c.local.endereco || '').split(',')[0]) + ' (' + c.local.raio_km + ' km)' : '') + '</div>'
+          + '<div style="font-size:10.5px;color:var(--t2);margin-top:3px;">gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + n(r.impressoes) + ' impressões · ' + n(r.cliques_link) + ' cliques · ' + n(f.visitas) + ' visitas · <b style="color:' + (f.leads ? 'var(--green,#22d3a3)' : 'var(--t2)') + ';">' + n(f.leads) + ' lead(s)</b></div></div>'
+          + '<div style="font-size:18px;color:var(--t3);">›</div></div>'; }).join(''))
+    + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Toque numa campanha para ver todos os dados e os leads. Gasto, impressões e cliques vêm do Meta/LinkedIn; visitas e leads, da página de cadastro (pela UTM da campanha).</div>';
+}
+function dashMktAbrir(id) {
+  const c = (_dmk.dados || []).find(x => String(x.id) === String(id)); if (!c) return;
+  const E = _patE, n = v => Number(v || 0).toLocaleString('pt-BR'), r = c.resultado || {}, f = c.funil || {}, st = _patStatus(c), dt = x => String(x || '').split('-').reverse().join('/');
+  let m = document.getElementById('dmkModal'); if (!m) { m = document.createElement('div'); m.id = 'dmkModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;align-items:flex-start;justify-content:center;padding:20px 10px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); }; document.body.appendChild(m); }
+  const lin = (a, b) => b == null || b === '' ? '' : '<tr><td style="padding:3px 12px 3px 0;color:var(--t2);vertical-align:top;white-space:nowrap;">' + a + '</td><td style="padding:3px 0;">' + b + '</td></tr>';
+  const k = (t, v) => '<div style="padding:8px 10px;border:1px solid var(--bd);border-radius:8px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);">' + t + '</div><div style="font-size:15px;font-weight:700;">' + v + '</div></div>';
+  const ctr = r.impressoes ? (r.cliques_link / r.impressoes * 100).toFixed(2).replace('.', ',') + '%' : '—';
+  const etapa = (rot, v, base) => '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px;"><span style="width:150px;color:var(--t2);">' + rot + '</span><span style="flex:1;height:9px;background:var(--bg3,rgba(127,127,127,.15));border-radius:5px;overflow:hidden;"><i style="display:block;height:100%;width:' + (base ? Math.max(2, Math.min(100, v / base * 100)) : 0) + '%;background:var(--blue);"></i></span><b style="width:60px;text-align:right;font-family:var(--M);">' + n(v) + '</b></div>';
+  const base = r.cliques_link || f.visitas || 1;
+  const P = (f.pessoas || []).slice().sort((a, b) => (a.teste - b.teste) || String(b.em).localeCompare(String(a.em)));
+  const wa = t => { const d = String(t || '').replace(/\D/g, ''); return d ? 'https://wa.me/' + (d.length <= 11 ? '55' + d : d) : ''; };
+  m.innerHTML = '<div class="panel" style="width:780px;max-width:97vw;margin:0;"><div class="ph"><div class="pt">📣 ' + E(c.nome) + ' <span class="tag ' + st.cls + '" style="margin-left:6px;">' + E(st.rot) + '</span></div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'dmkModal\').remove()">✕</button></div><div class="pb" style="font-size:12px;">'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(r.gasto)) + k('Impressões', n(r.impressoes)) + k('Cliques', n(r.cliques_link)) + k('CTR', ctr) + k('Custo/clique', r.cpc != null ? fmtBRLcompleto(r.cpc) : '—') + k('Leads', n(f.leads)) + k('Custo/lead', f.leads && r.gasto ? fmtBRLcompleto(r.gasto / f.leads) : '—') + '</div>'
+    + '<div style="font-weight:700;margin:4px 0 6px;">Funil</div>' + etapa('Cliques no anúncio', r.cliques_link || 0, base) + etapa('Visitas na página', f.visitas || 0, base) + etapa('Começaram o formulário', f.comecaram || 0, base) + etapa('Leads', f.leads || 0, base)
+    + ((f.whatsapp || f.descartados || f.leads_teste) ? '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">' + [f.whatsapp ? n(f.whatsapp) + ' clique(s) no WhatsApp' : '', f.descartados ? n(f.descartados) + ' envio(s) barrado(s) como robô' : '', f.leads_teste ? f.leads_teste + ' lead(s) de teste fora da conta' : ''].filter(Boolean).join(' · ') + '</div>' : '')
+    + '<div style="font-weight:700;margin:14px 0 4px;">Configuração</div><table style="border-collapse:collapse;">'
+    + lin('Rede', c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram (Meta)') + lin('Período', dt(c.inicio) + ' a ' + dt(c.fim) + ' · ' + fmtBRLcompleto(c.orcamento_diario) + '/dia · máximo ' + fmtBRLcompleto(c.total_maximo))
+    + lin('Objetivo', E(c.objetivo || '')) + lin('Público', E(c.publico || '')) + lin('Local', c.local ? E(c.local.endereco) + ' · raio ' + c.local.raio_km + ' km' + (c.local.mapa ? ' · <a href="' + E(c.local.mapa) + '" target="_blank" rel="noopener" style="color:var(--blue);">mapa ↗</a>' : '') : '')
+    + lin('Anúncio', c.titulo ? '<b>' + E(c.titulo) + '</b>' + (c.descricao ? ' · ' + E(c.descricao) : '') : '') + lin('Página de destino', c.link ? '<a href="' + E(c.link) + '" target="_blank" rel="noopener" style="color:var(--blue);word-break:break-all;">' + E(c.link) + '</a>' : '')
+    + lin('Criada em', c.criado_em ? new Date(c.criado_em).toLocaleString('pt-BR').slice(0, 17) : '') + '</table>'
+    + (c.imagem ? '<div style="margin-top:8px;"><img src="' + E(c.imagem) + '" style="width:140px;border-radius:8px;border:1px solid var(--bd);" onerror="this.remove()"></div>' : '')
+    + '<div style="font-weight:700;margin:14px 0 6px;">Leads (' + n(f.leads) + (f.leads_teste ? ' + ' + f.leads_teste + ' de teste' : '') + ')</div>'
+    + (P.length ? P.map(p => '<div style="border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:6px;' + (p.teste ? 'opacity:.5;' : '') + '"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;"><b>' + E(p.nome || '(sem nome)') + '</b>' + (p.teste ? '<span class="tag">teste</span>' : '') + (p.score ? '<span class="tag">' + E(p.score) + '</span>' : '') + '<span style="flex:1;"></span><span style="font-size:10px;color:var(--t3);">' + (p.em ? new Date(p.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '') + '</span></div>'
+        + '<div style="color:var(--t2);font-size:11px;">' + E([p.cargo, p.empresa].filter(Boolean).join(' · ') || '—') + (p.status ? ' · situação: ' + E(p.status) : '') + '</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;">' + (p.email ? '<a class="btn" style="font-size:10px;text-decoration:none;" href="mailto:' + E(p.email) + '">✉ ' + E(p.email) + '</a>' : '') + (wa(p.telefone) ? '<a class="btn" style="font-size:10px;text-decoration:none;color:#25D366;border-color:#25D366;" target="_blank" rel="noopener" href="' + wa(p.telefone) + '">💬 ' + E(p.telefone) + '</a>' : '') + '</div></div>').join('')
+      : '<div style="font-size:11px;color:var(--t3);">Nenhum lead ainda.</div>')
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">' + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10.5px;" onclick="patConferir(\'' + E(c.id) + '\')">🔎 Conferir no Meta</button>' : '') + (c.gerenciador ? '<a class="btn" style="font-size:10.5px;text-decoration:none;" href="' + E(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a>' : '') + '<button class="btn" style="font-size:10.5px;" onclick="document.getElementById(\'dmkModal\').remove();nav(\'s2auto\',document.querySelector(\'.sbi[onclick*=&quot;s2auto&quot;]\'))">Pausar, ativar ou mudar período →</button></div>'
+    + '</div></div>';
+}
 function dashAba(a) {
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
   document.querySelectorAll('#page-dash .dash-aba').forEach(sct => sct.style.display = sct.dataset.aba === a ? '' : 'none');
@@ -32289,6 +32360,7 @@ function dashAba(a) {
   if (a === 'financeiro') pfCarregar(); // v3.244
   if (a === 'projetos') dashProjCarregar();
   if (a === 'rfps') dashRfpCarregar();
+  if (a === 'mkt') dashMktCarregar(); // v3.330
   if ((a === 'vendas' || a === 'pendencias') && !_fn.dados && !_fn.carregando) funilCarregar();
   else if (a === 'vendas' || a === 'pendencias') { funilRender(); pendRender(); }
 }
@@ -35715,7 +35787,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.329] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.330] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35731,7 +35803,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.329';
+window.__ATX_BUILD_ID__ = 'ATX-v3.330';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
