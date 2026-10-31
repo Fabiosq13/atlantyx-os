@@ -580,6 +580,43 @@ async function publicoPlataformasLer({ lista_id } = {}) {
 }
 // v3.193: ALTERAR PERÍODO (e, opcional, R$/dia) de uma campanha patrocinada já criada — muda o conjunto no Meta.
 // O Meta não deixa mudar o início depois que a veiculação começou: nesse caso só o fim e o orçamento mudam.
+// v3.335: ENVIAR AO CLAUDE — transforma a análise da campanha numa demanda da Esteira (o Claude implementa no sistema o que é
+// código: página de captura, oferta, formulário, textos e regras de criação dos anúncios). Ajuste de Meta (verba, público ativo)
+// segue pelos botões da tela. so_texto = só devolve o texto (para colar no chat do Claude).
+async function patrocinadoEnviarClaude({ id, metricas, so_texto } = {}) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
+  if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
+  const av = await _kvMc('mkt:avaliacao:' + reg.id).catch(() => null);
+  if (!av) throw Object.assign(new Error('Abra a campanha e espere a avaliação da IA terminar antes de enviar'), { status: 400 });
+  const M = metricas && typeof metricas === 'object' ? metricas : {}, A = av.ao_vivo || {};
+  const n = v => v == null ? '—' : Number(v).toLocaleString('pt-BR');
+  const texto = `Ajustar a campanha paga "${reg.nome}" para aumentar os leads, a partir da avaliação da IA de ${new Date(av.em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.
+
+DADOS DA CAMPANHA
+- Rede: ${reg.rede === 'linkedin' ? 'LinkedIn' : 'Instagram (Meta)'} · período ${reg.inicio} a ${reg.fim} · R$ ${reg.orcamento_diario}/dia · meta de leads: ${reg.meta_leads || 'não definida'}
+- Objetivo: ${reg.objetivo || '—'} · público: ${reg.publico || '—'}${reg.local ? ' · local: ' + reg.local.endereco + ' (' + reg.local.raio_km + ' km)' : ''}
+- Anúncio: "${reg.titulo || ''}" — ${String(reg.texto || '').replace(/\s+/g, ' ').slice(0, 300)}
+- Página de destino: ${reg.link || '—'}
+- Números (Meta, agora): gasto R$ ${n(A.gasto)} · impressões ${n(A.impressoes)} · alcance ${n(A.alcance)} · frequência ${A.frequencia ?? '—'} · CTR ${A.ctr_pct ?? '—'}% · cliques ${n(A.cliques_link)}
+- Funil da página: visitas ${n(M.visitas)} → começaram o formulário ${n(M.comecaram)} → leads ${n(M.leads)} · cliques no WhatsApp ${n(M.whatsapp)} · barrados como robô ${n(M.descartados)}
+
+AVALIAÇÃO DA IA
+- Diagnóstico: ${av.diagnostico}
+- Gargalo: ${av.gargalo || '—'} · fase: ${av.fase || '—'}
+${(av.sugestoes || []).map((x, i) => `${i + 1}. [${x.impacto || '-'}] ${x.titulo} — ${x.detalhe} (${x.tipo || '-'})`).join('\n')}
+- Verba: ${av.verba?.recomendar_aumento && av.verba?.sugerido ? 'aumentar para R$ ' + av.verba.sugerido + '/dia — ' : ''}${av.verba?.justificativa || '—'}
+
+O QUE FAZER
+- Implemente no Atlantyx OS os ajustes que são de sistema: página de captura (public/captura.html), oferta/isca, formulário, textos e regras de criação dos anúncios (api/metricool.js) e o que mais a análise apontar.
+- Ajustes que mudam a campanha no Meta (verba, público, posicionamento) NÃO são feitos por código: deixe-os listados no PR como "aplicar pela tela" (Dashboard › Marketing digital › campanha).
+- Não invente números; não exponha dados de leads; mantenha o padrão de campanhas criadas PAUSADAS.`;
+  if (so_texto) return { texto };
+  const m = await import('./agente-ideias.js'); let out = null;
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(o) { out = o; return this; }, send(b) { try { out = JSON.parse(b); } catch (_) { out = { raw: b }; } return this; }, setHeader() {}, end() { return this; } };
+  await m.default({ method: 'POST', body: { action: 'nova', dados: { titulo: ('Campanha "' + reg.nome + '": ajustes para aumentar leads').slice(0, 190), proposta: texto, problema: av.diagnostico, impacto: (av.sugestoes || []).some(x => x.impacto === 'alto') ? 4 : 3, esforco: 'P', risco: 'baixo', area: 'marketing', squad: 'marketing', trilha: 'T3' } }, query: {}, headers: {}, url: '/api/agente-ideias' }, res);
+  if (!out || out.success === false || !out.id) throw new Error(out?.error || 'A Esteira de Demandas não respondeu');
+  return { demanda_id: out.id, texto };
+}
 // v3.334: AVALIAÇÃO DA CAMPANHA PELA IA (ao abrir a campanha) — lê os números ao vivo do Meta (alcance, frequência, CPM, CTR)
 // e o funil da página e devolve diagnóstico + ajustes para aumentar leads, inclusive se vale aumentar a verba e quanto.
 // Só sugere: nada muda no Meta sem o clique do usuário. Cache de 30 min por campanha (forcar = refaz).
@@ -1911,6 +1948,7 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_meta:       () => patrocinadoMeta(payload), // v3.332
+    patrocinado_enviar_claude: () => patrocinadoEnviarClaude(payload), // v3.335: análise → demanda na Esteira (Claude implementa)
     patrocinado_avaliar:    () => patrocinadoAvaliar(payload), // v3.334: IA avalia a campanha e sugere ajustes (não muda nada no Meta)
     patrocinado_listar:     () => patrocinadoListar(),
     patrocinado_conferir:   () => patrocinadoConferir(payload), // v3.318: só lê no Meta

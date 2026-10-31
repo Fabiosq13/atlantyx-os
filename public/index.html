@@ -32358,6 +32358,17 @@ async function dashMktVerba(id) {
   try { const r = await mcApi('patrocinado_periodo', { id, orcamento_diario: v }); Object.assign(c, r.campanha || { orcamento_diario: v }); toast('Verba atualizada: ' + fmtBRLcompleto(v) + '/dia', 'success'); if (r.aviso) toast(r.aviso, 'success'); dashMktRender(); dashMktAbrir(id); }
   catch (e) { toast('Não mudou: ' + e.message, 'error'); alert('Não mudou a verba:\n\n' + e.message); }
 }
+// v3.335: manda a análise para o Claude — demanda na Esteira (ele implementa no sistema) ou texto pronto para colar no chat
+async function dashMktClaude(id, copiar) {
+  const c = (_dmk.dados || []).find(x => String(x.id) === String(id)); if (!c) return; const f = c.funil || {};
+  const metricas = { visitas: f.visitas, comecaram: f.comecaram, leads: f.leads, whatsapp: f.whatsapp, descartados: f.descartados };
+  if (!copiar && !confirm('Enviar a análise da campanha "' + c.nome + '" para o Claude?\n\nVira uma demanda na Esteira de Demandas. Você aprova lá e o Claude implementa no sistema os ajustes de página, oferta, formulário e textos. Mudanças de verba e público no Meta continuam pelos botões desta tela.')) return;
+  try { const r = await mcApi('patrocinado_enviar_claude', { id, metricas, so_texto: !!copiar });
+    if (copiar) { atxCopiar(r.texto, 'Análise copiada — cole no chat do Claude'); return; }
+    toast('Enviado ao Claude — demanda ' + r.demanda_id + ' na Esteira', 'success');
+    if (confirm('Demanda criada na Esteira de Demandas (' + r.demanda_id + ').\n\nAbrir a Esteira agora para aprovar?')) { document.getElementById('dmkModal')?.remove(); nav('s0demandas', document.querySelector('.sbi[onclick*="s0demandas"]')); }
+  } catch (e) { toast('Não enviou: ' + e.message, 'error'); alert('Não enviou:\n\n' + e.message); }
+}
 async function dashMktIA(id, forcar) {
   const c = (_dmk.dados || []).find(x => String(x.id) === String(id)), el = () => document.getElementById('dmkIA'); if (!c || !el()) return;
   if (forcar) el().innerHTML = '<b>🤖 Avaliação da IA</b> <span style="color:var(--t3);">refazendo…</span>';
@@ -32369,6 +32380,7 @@ async function dashMktIA(id, forcar) {
       + (a.sugestoes || []).map(s => '<div style="border-top:1px solid var(--bd);padding:5px 0;"><b>' + (ic[s.impacto] || '•') + ' ' + E(s.titulo) + '</b><div style="font-size:10.5px;color:var(--t2);">' + E(s.detalhe) + '</div></div>').join('')
       + (V.recomendar_aumento && V.sugerido ? '<div style="margin-top:6px;padding:6px 8px;background:rgba(34,211,163,.08);border-radius:6px;">💰 Sugere aumentar para <b>' + fmtBRLcompleto(V.sugerido) + '/dia</b>: ' + E(V.justificativa) + ' <button class="btn" style="font-size:10px;margin-left:4px;" onclick="(document.getElementById(\'dmkVerba\')||{}).value=\'' + String(V.sugerido.toFixed(2)).replace('.', ',') + '\';document.getElementById(\'dmkVerba\')?.focus()">Usar este valor</button></div>'
         : (V.justificativa ? '<div style="margin-top:6px;font-size:10.5px;color:var(--t2);">💰 Verba: ' + E(V.justificativa) + '</div>' : ''))
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"><button class="btn btn-p" style="font-size:10.5px;" onclick="dashMktClaude(\'' + E(id) + '\')">📤 Enviar ao Claude fazer os ajustes</button><button class="btn" style="font-size:10.5px;" onclick="dashMktClaude(\'' + E(id) + '\',true)">📋 Copiar para o chat</button></div>'
       + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Sugestões da IA com os números de agora — nada muda no Meta sem você clicar.</div>';
   } catch (e) { if (el()) el().innerHTML = '<b>🤖 Avaliação da IA</b> <span style="color:var(--gold);">não consegui avaliar agora: ' + _patE(e.message) + '</span> <button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick="dashMktIA(\'' + _patE(id) + '\',true)">tentar de novo</button>'; }
 }
@@ -35845,7 +35857,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.334] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.335] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35861,7 +35873,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.334';
+window.__ATX_BUILD_ID__ = 'ATX-v3.335';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
