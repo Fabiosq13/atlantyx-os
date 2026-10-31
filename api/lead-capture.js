@@ -6,6 +6,18 @@ import { classificarCargo, ICP_TEXTO } from '../lib/icp.js';
 // Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
 // v3.13: número real de WhatsApp comercial para a página de captura (antes era um número fictício)
 const _whatsComercial = () => String(process.env.WHATSAPP_COMERCIAL || process.env.FUNDADOR_WHATSAPP || '').replace(/\D/g, '') || null;
+// v3.339: sem WHATSAPP_COMERCIAL na Vercel, usa o WhatsApp do Cartão Digital (Vendas › Meu Cartão Digital) — antes o botão
+// "Prefiro pedir pelo WhatsApp" da página não aparecia. Cache de 10 min por instância.
+let _waCartao = { t: 0, n: null };
+async function _whatsComercialOuCartao() {
+  const env = _whatsComercial(); if (env) return env;
+  if (Date.now() - _waCartao.t < 600000) return _waCartao.n;
+  try { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL);
+    const r = (await sq`SELECT valor FROM app_config WHERE chave = 'cartao_visita'`)[0]; let v = r?.valor; if (typeof v === 'string') v = JSON.parse(v);
+    let n = String(v?.whatsapp || v?.telefone || '').replace(/\D/g, ''); if (n && n.length <= 11) n = '55' + n; _waCartao = { t: Date.now(), n: n || null };
+  } catch (_) { _waCartao = { t: Date.now(), n: null }; }
+  return _waCartao.n;
+}
 const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
 
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
@@ -94,7 +106,7 @@ async function handler(req, res) {
       const u = req.body.utm || {};
       await sql`INSERT INTO captura_visitas (origem, meio, campanha, conteudo, pagina) VALUES (${String(u.source || 'direto').substring(0, 60)}, ${String(u.medium || '').substring(0, 60)}, ${String(u.campaign || '').substring(0, 120)}, ${String(u.content || '').substring(0, 120)}, ${String(req.body.page || '').substring(0, 300)})`;
     } catch (e) { console.warn('[captura] visita:', e.message); }
-    return res.status(200).json({ success: true, whatsapp: _whatsComercial(), pixel: String(process.env.META_PIXEL_ID || '').replace(/\D/g, '') || null }); // v3.190: Pixel do Meta (opcional)
+    return res.status(200).json({ success: true, whatsapp: await _whatsComercialOuCartao(), pixel: String(process.env.META_PIXEL_ID || '').replace(/\D/g, '') || null }); // v3.190: Pixel do Meta (opcional)
   }
 
   try {
@@ -146,7 +158,7 @@ async function handler(req, res) {
       try { if (leadId) { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL); await sq`UPDATE leads SET status = 'qa_teste' WHERE id = ${leadId}`; } } catch (_) {}
       ['alerta', 'mensagem', 'hubspot', 'whatsapp', 'followup'].forEach(k => etapas[k] = 'pulado (teste QA)');
       return res.status(200).json({ success: true, qa_teste: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, utm: lead.utm, score: lead.score_label, etapas,
-        whatsapp: _whatsComercial(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim() });
+        whatsapp: await _whatsComercialOuCartao(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim() });
     }
 
     // v3.184: formulário do SITE — responde assim que o lead está gravado (antes esperava e-mail, IA, HubSpot e
@@ -156,7 +168,7 @@ async function handler(req, res) {
       // v3.237: não processa mais DEPOIS da resposta — a Vercel congela a função e o lead ficava travado em "processando"
       // (a chamada da página encontrava a trava e desistia). Agora quem processa é o 2º passo da página; se a pessoa fechar
       // a aba antes, a varredura de hora em hora (followup-cron) processa os leads que ficaram para trás.
-      return res.status(200).json({ success: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, whatsapp: _whatsComercial() });
+      return res.status(200).json({ success: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, whatsapp: await _whatsComercialOuCartao() });
     }
 
     // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
@@ -189,7 +201,7 @@ async function handler(req, res) {
     if (falhas.length) console.warn('[S2] etapas com falha:', falhas.map(([k, v]) => k + '=' + v).join(' | '));
 
     return res.status(200).json({
-      whatsapp: _whatsComercial(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim(),
+      whatsapp: await _whatsComercialOuCartao(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim(),
       success: true,
       lead: lead.name, company: lead.company, score: lead.score_label,
       origem: lead.origem, campanha: lead.campanha,
