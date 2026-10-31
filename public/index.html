@@ -4697,6 +4697,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div style="font-size:10px;color:var(--t3);margin-top:4px;">Tela do sistema na arte: <label style="cursor:pointer;color:var(--blue);text-decoration:underline;">enviar print<input type="file" accept="image/*" style="display:none;" onchange="patArteTela(this.files[0])"></label> <span id="patTelaInfo">(sem print = tela ilustrativa do Atlantyx OS)</span></div>
           <input class="fi" id="patImg" style="margin-top:6px;font-size:11px;" placeholder="https://… (endereço público da imagem quadrada)" oninput="patPrev()"/>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:8px;">
+            <div><label class="fl" for="patMetaLeads">Meta de leads</label><input class="fi" id="patMetaLeads" inputmode="numeric" placeholder="ex.: 10" title="Quantos leads esta campanha deve trazer no período — o farol compara com o realizado"/></div>
             <div><label class="fl" for="patDiario">R$ por dia</label><input class="fi" id="patDiario" inputmode="decimal" value="30" oninput="patPrev()" placeholder="ex.: 30" title="Orçamento diário do anúncio, em reais"/></div>
             <div><label class="fl" for="patIni">Início</label><input type="date" class="fi" id="patIni" oninput="patPrev()" title="Primeiro dia em que o anúncio roda"/></div>
             <div><label class="fl" for="patFim">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()" title="Último dia em que o anúncio roda"/></div>
@@ -11804,7 +11805,7 @@ function tvRender() {
         + '<div style="font-size:10.5px;color:var(--t3);margin-top:6px;">Criado em ' + new Date(c.criado_em).toLocaleString('pt-BR') + '. Gerar um novo link desliga o anterior na hora.</div>'
       : '<div style="font-size:12px;margin-bottom:8px;">Nenhum link ativo.</div><button class="btn btn-gn" onclick="tvAcao(\'gerar\')">📺 Gerar o link da TV</button>')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;font-size:12px;"><div><label class="fl">Trocar de slide a cada</label><select class="fsel" id="tvRot" style="width:auto;">' + [10, 15, 20, 25, 30, 45, 60, 90].map(s => '<option value="' + s + '"' + (+c.rotacao_s === s ? ' selected' : '') + '>' + s + ' segundos</option>').join('') + '</select></div>'
-    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Vendas (funil)</label>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Vendas (funil)</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSm"' + (c.slides.includes('marketing') ? ' checked' : '') + '/> Marketing digital (campanhas e farol de leads)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSq"' + (c.slides.includes('qualidade') ? ' checked' : '') + '/> Qualidade (termos e QuickBooks)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSp"' + (c.slides.includes('projetos') ? ' checked' : '') + '/> Projetos (lista com farol)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;" title="Desmarque se a TV fica em área com visitantes — mostra Projeto 1, 2, 3…"><input type="checkbox" id="tvSn"' + (c.nomes_projetos !== false ? ' checked' : '') + '/> mostrar nomes dos projetos</label>'
@@ -11820,7 +11821,7 @@ async function tvAcao(a) {
   try { const r = await tvApi(a); if (a === 'revogar') _tv = (await tvApi('config')).config; else _tv = r.config; tvRender(); toast(a === 'revogar' ? 'Link revogado' : 'Link da TV pronto', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 async function tvSalvar() {
-  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSq')?.checked && 'qualidade', document.getElementById('tvSp')?.checked && 'projetos'].filter(Boolean);
+  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSm')?.checked && 'marketing', document.getElementById('tvSq')?.checked && 'qualidade', document.getElementById('tvSp')?.checked && 'projetos'].filter(Boolean);
   try { _tv = (await tvApi('salvar', { rotacao_s: document.getElementById('tvRot').value, slides, nomes_projetos: !!document.getElementById('tvSn')?.checked })).config; tvRender(); toast('Salvo — a TV pega a mudança na próxima recarga (até 10 min) ou ao reabrir o link', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 // v3.152: abre cada número da TV até a origem — caixa (abertura + entradas − saídas), faturamento e % da meta
@@ -26165,7 +26166,7 @@ async function patDiagnostico() {
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const _pl = v('patPublico'), rede = v('patRede') || 'instagram', onde = rede === 'linkedin' ? 'LinkedIn' : 'Meta';
-  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, geo_otimizar: v('patGeoLocal') ? v('patGeoOtim') : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, geo_otimizar: v('patGeoLocal') ? v('patGeoOtim') : undefined, meta_leads: v('patMetaLeads') || undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
   // v3.318: imagem de campanha paga SEMPRE no formato da arte de anúncio (manchete + ✓ benefícios + tela do sistema + Clique no Saiba mais)
   if (!corpo.imagem || corpo.imagem !== window._patArteUrl) { toast('Montando a imagem no formato de anúncio…', 'success'); await patArte(); corpo.imagem = (document.getElementById('patImg')?.value || '').trim();
     if (corpo.imagem !== window._patArteUrl) { alert('Não consegui montar a arte no formato de anúncio — nada foi criado. Tente "🖼 Arte no padrão" de novo.'); return; } }
@@ -32301,6 +32302,22 @@ function dashRfpRender() {
           + (link && /^https?:/.test(link) ? '<a href="' + _dsE(link) + '" target="_blank" rel="noopener" style="font-size:10px;">abrir edital ↗</a>' : '') + '</div>'; }).join('')
       : '<div style="color:var(--t3);font-size:11px;">' + (d.aviso ? _dsE(d.aviso) : 'Nenhum edital aberto na última varredura.') + ' Rode uma varredura no Monitor de RFPs.</div>');
 }
+// v3.332: farol META × REALIZADO de leads por campanha — mesmo critério das metas da empresa (ritmo):
+// esperado até hoje = meta × fração decorrida da campanha; verde ≥ 100% do esperado (ou meta batida), amarelo ≥ 85%, vermelho abaixo
+function _mktFarol(c) {
+  const meta = Number(c.meta_leads) || 0, real = Number(c.funil?.leads) || 0; if (!meta) return { cor: null, meta: null, real, esperado: null, pct: null };
+  const d = s => new Date(String(s) + 'T12:00:00'), hj = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const tot = c.inicio && c.fim ? Math.max(1, (d(c.fim) - d(c.inicio)) / 864e5 + 1) : 1, dec = c.inicio ? Math.max(0, Math.min(tot, (hj - d(c.inicio)) / 864e5 + 1)) : tot;
+  const frac = c.encerrada || !_patStatus(c).veicula ? 1 : dec / tot, esp = Math.max(0.01, meta * frac);
+  const cor = real >= meta ? 'verde' : real / esp >= 1 ? 'verde' : real / esp >= 0.85 ? 'amarelo' : 'vermelho';
+  return { cor, meta, real, esperado: Math.round(meta * frac * 10) / 10, pct: Math.round(real / meta * 100), frac };
+}
+function _mktBola(f) { const c = { verde: '#22c55e', amarelo: '#f5a623', vermelho: '#ef4444' }[f] || '#8a93a8'; return '<span title="' + (f ? 'farol: ' + f : 'sem meta de leads') + '" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + c + ';box-shadow:0 0 6px ' + c + ';vertical-align:middle;"></span>'; }
+async function dashMktMeta(id) {
+  const c = (_dmk.dados || []).find(x => String(x.id) === String(id)); if (!c) return;
+  const v = prompt('Meta de leads da campanha "' + c.nome + '" (no período todo):', c.meta_leads || ''); if (v === null) return;
+  try { const r = await mcApi('patrocinado_meta', { id, meta_leads: v }); c.meta_leads = r.meta_leads; toast('Meta salva', 'success'); dashMktRender(); dashMktAbrir(id); } catch (e) { toast('Não salvou: ' + e.message, 'error'); }
+}
 // ═══ v3.330: DASHBOARD → MARKETING DIGITAL — campanhas ativas e, com um clique, todos os dados e leads da campanha ═══
 let _dmk = { dados: null, em: 0, carregando: false };
 async function dashMktCarregar(forcar) {
@@ -32320,13 +32337,13 @@ function dashMktRender() {
   const T = V.reduce((a, c) => { const r = c.resultado || {}; a.g += r.gasto || 0; a.i += r.impressoes || 0; a.c += r.cliques_link || 0; a.v += c.funil?.visitas || 0; a.l += c.funil?.leads || 0; return a; }, { g: 0, i: 0, c: 0, v: 0, l: 0 });
   const k = (t, v, s) => '<div style="padding:9px 11px;border:1px solid var(--bd);border-radius:9px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">' + t + '</div><div style="font-size:17px;font-weight:700;margin-top:2px;">' + v + '</div>' + (s ? '<div style="font-size:9.5px;color:var(--t3);">' + s + '</div>' : '') + '</div>';
   el.innerHTML = (!V.length ? '<div style="font-size:11.5px;color:var(--t3);padding:10px 0;">' + (L.length ? 'Nenhuma campanha ativa agora. Marque "mostrar encerradas e pausadas" para ver as anteriores.' : 'Nenhuma campanha paga criada pelo sistema ainda.') + '</div>'
-    : '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(T.g)) + k('Impressões', n(T.i)) + k('Cliques', n(T.c), T.i ? 'CTR ' + (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '') + k('Visitas na página', n(T.v)) + k('Leads', n(T.l), T.l && T.g ? 'custo/lead ' + fmtBRLcompleto(T.g / T.l) : '') + '</div>'
+    : '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(T.g)) + k('Impressões', n(T.i)) + k('Cliques', n(T.c), T.i ? 'CTR ' + (T.c / T.i * 100).toFixed(2).replace('.', ',') + '%' : '') + k('Visitas na página', n(T.v)) + k('Leads', n(T.l), (T.l && T.g ? 'custo/lead ' + fmtBRLcompleto(T.g / T.l) : '') + (() => { const mt = V.reduce((a, c) => a + (Number(c.meta_leads) || 0), 0); return mt ? ' · meta ' + mt : ''; })()) + '</div>'
       + V.map(c => { const r = c.resultado || {}, f = c.funil || {}, st = _patStatus(c);
         return '<div class="dmk-card" onclick="dashMktAbrir(\'' + E(c.id) + '\')" role="button" tabindex="0" onkeydown="if(event.key===\'Enter\')dashMktAbrir(\'' + E(c.id) + '\')" style="cursor:pointer;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center;">'
           + '<div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">' + E(c.nome) + ' <span class="tag ' + st.cls + '" style="margin-left:4px;">' + E(st.rot) + '</span> <span class="tag">' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram') + '</span></div>'
           + '<div style="font-size:10px;color:var(--t3);">' + E((c.inicio || '').split('-').reverse().join('/')) + ' a ' + E((c.fim || '').split('-').reverse().join('/')) + ' · ' + fmtBRLcompleto(c.orcamento_diario) + '/dia' + (c.local ? ' · 📍 ' + E(String(c.local.endereco || '').split(',')[0]) + ' (' + c.local.raio_km + ' km)' : '') + '</div>'
           + '<div style="font-size:10.5px;color:var(--t2);margin-top:3px;">gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + n(r.impressoes) + ' impressões · ' + n(r.cliques_link) + ' cliques · ' + n(f.visitas) + ' visitas · <b style="color:' + (f.leads ? 'var(--green,#22d3a3)' : 'var(--t2)') + ';">' + n(f.leads) + ' lead(s)</b></div></div>'
-          + '<div style="font-size:18px;color:var(--t3);">›</div></div>'; }).join(''))
+          + '<div style="text-align:right;white-space:nowrap;">' + (() => { const fl = _mktFarol(c); return _mktBola(fl.cor) + ' <b style="font-size:13px;">' + n(f.leads) + '</b><span style="font-size:10.5px;color:var(--t3);">' + (fl.meta ? ' / meta ' + fl.meta + ' (' + fl.pct + '%)' : ' · sem meta') + '</span>'; })() + ' <span style="font-size:18px;color:var(--t3);">›</span></div></div>'; }).join(''))
     + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Toque numa campanha para ver todos os dados e os leads. Gasto, impressões e cliques vêm do Meta/LinkedIn; visitas e leads, da página de cadastro (pela UTM da campanha).</div>';
 }
 function dashMktAbrir(id) {
@@ -32343,6 +32360,7 @@ function dashMktAbrir(id) {
   m.innerHTML = '<div class="panel" style="width:780px;max-width:97vw;margin:0;"><div class="ph"><div class="pt">📣 ' + E(c.nome) + ' <span class="tag ' + st.cls + '" style="margin-left:6px;">' + E(st.rot) + '</span></div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'dmkModal\').remove()">✕</button></div><div class="pb" style="font-size:12px;">'
     + (c.link ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;"><span style="font-size:11px;color:var(--t2);">🔗 Página do anúncio:</span><a href="' + E(c.link) + '" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);word-break:break-all;flex:1;min-width:180px;">' + E(String(c.link).replace(/^https?:\/\//, '').split('?')[0]) + '</a><a class="btn btn-p" style="font-size:10px;text-decoration:none;" href="' + E(c.link) + '" target="_blank" rel="noopener">Abrir página ↗</a><button class="btn" style="font-size:10px;" onclick="atxCopiar(\'' + E(c.link).replace(/'/g, '%27') + '\',\'Link copiado\')">Copiar link</button></div>' : '') // v3.331
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(r.gasto)) + k('Impressões', n(r.impressoes)) + k('Cliques', n(r.cliques_link)) + k('CTR', ctr) + k('Custo/clique', r.cpc != null ? fmtBRLcompleto(r.cpc) : '—') + k('Leads', n(f.leads)) + k('Custo/lead', f.leads && r.gasto ? fmtBRLcompleto(r.gasto / f.leads) : '—') + '</div>'
+    + (() => { const fl = _mktFarol(c); return '<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--bd);border-radius:8px;margin-bottom:12px;">' + _mktBola(fl.cor) + '<div style="flex:1;font-size:12px;">' + (fl.meta ? '<b>Leads: ' + n(fl.real) + ' de ' + fl.meta + ' (' + fl.pct + '% da meta)</b><div style="font-size:10.5px;color:var(--t3);">esperado até hoje: ' + String(fl.esperado).replace('.', ',') + ' · verde ≥ 100% do esperado, amarelo ≥ 85%, vermelho abaixo</div>' : '<b>Sem meta de leads</b><div style="font-size:10.5px;color:var(--t3);">defina a meta para acompanhar o farol</div>') + '</div><button class="btn" style="font-size:10px;" onclick="dashMktMeta(\'' + E(c.id) + '\')">🎯 ' + (fl.meta ? 'Mudar meta' : 'Definir meta') + '</button></div>'; })()
     + '<div style="font-weight:700;margin:4px 0 6px;">Funil</div>' + etapa('Cliques no anúncio', r.cliques_link || 0, base) + etapa('Visitas na página', f.visitas || 0, base) + etapa('Começaram o formulário', f.comecaram || 0, base) + etapa('Leads', f.leads || 0, base)
     + ((f.whatsapp || f.descartados || f.leads_teste) ? '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">' + [f.whatsapp ? n(f.whatsapp) + ' clique(s) no WhatsApp' : '', f.descartados ? n(f.descartados) + ' envio(s) barrado(s) como robô' : '', f.leads_teste ? f.leads_teste + ' lead(s) de teste fora da conta' : ''].filter(Boolean).join(' · ') + '</div>' : '')
     + '<div style="font-weight:700;margin:14px 0 4px;">Configuração</div><table style="border-collapse:collapse;">'
@@ -35793,7 +35811,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.331] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.333] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35809,7 +35827,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.331';
+window.__ATX_BUILD_ID__ = 'ATX-v3.333';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

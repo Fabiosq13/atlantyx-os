@@ -21,9 +21,9 @@ async function kv(k, v) {
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
 const CFG_PADRAO = { codigo: null, criado_em: null, rotacao_s: 25, slides: ['financeiro', 'comercial', 'qualidade'] };
-const SLIDES_OK = ['financeiro', 'comercial', 'qualidade', 'projetos'];
+const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos'];
 // v3.152: o slide Qualidade entra nas TVs já configuradas (uma vez; depois vale o que o usuário salvar)
-const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
+const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
 const codigoNovo = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const b = crypto.randomBytes(12); let s = ''; for (const x of b) s += a[x % a.length]; return s; };
 const base = () => { const b = process.env.MEDIA_PUBLIC_BASE || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app'; return (b.startsWith('http') ? b : 'https://' + b).replace(/\/$/, ''); };
 
@@ -82,12 +82,12 @@ function termosResumo(T, mes) {
 }
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
     chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'mes', ref: mes, pipeline: 'todos' } }, 58000),
-    chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config()]);
+    chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config(), chamar('metricool', { action: 'patrocinado_listar' }, 40000)]);
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -99,7 +99,25 @@ async function montarDados() {
   const realMes = num(Pm.faturamento), metaMes = num(M.faturamento), frMes = num(M.fracao_decorrida);
   const qual = qualidade(v(tq), erro(tq), v(hg), erro(hg), v(pm), erro(pm), MA);
   if (qual.termos && v(tq)) Object.assign(qual.termos, termosResumo(v(tq), mes));
-  return { qual, proj, gerado_em: new Date().toISOString(), mes_ref: mes,
+  // v3.332: MARKETING DIGITAL — campanhas pagas ativas (e encerradas nos últimos 7 dias) com farol de leads meta × realizado
+  const mkt = (() => { const L = v(mk)?.campanhas; if (!L) return { erro: erro(mk) || 'sem resposta das campanhas', campanhas: [] };
+    const d = x => new Date(String(x) + 'T12:00:00').getTime(), h = d(hoje), sete = h - 7 * 864e5;
+    const lista = L.map(c => { const e = String(c.estado_meta || '').toUpperCase(), fim = c.fim ? d(c.fim) : null, ini = c.inicio ? d(c.inicio) : null;
+      const acabou = c.encerrada || (fim != null && fim < h), analise = /REVIEW|PROCESS|PENDING/.test(e), ativa = e === 'ACTIVE' && !acabou;
+      const st = acabou ? 'encerrada' : ativa ? 'ativa' : analise ? 'em análise' : /DISAPPROVED/.test(e) ? 'reprovada' : 'pausada';
+      const tot = ini != null && fim != null ? Math.max(1, (fim - ini) / 864e5 + 1) : 1, dec = ini != null ? Math.max(0, Math.min(tot, (h - ini) / 864e5 + 1)) : tot;
+      const frac = acabou || st === 'pausada' ? 1 : dec / tot, meta = num(c.meta_leads), leads = num(c.funil?.leads) || 0, r = c.resultado || {};
+      return { nome: String(c.nome || '').substring(0, 60), rede: c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram', status: st, inicio: c.inicio, fim: c.fim, local: c.local ? String(c.local.endereco || '').split(',')[0].substring(0, 30) : null,
+        gasto: num(r.gasto) || 0, impressoes: num(r.impressoes) || 0, cliques: num(r.cliques_link) || 0, visitas: num(c.funil?.visitas) || 0, leads, meta, frac,
+        esperado: meta ? Math.round(meta * frac * 10) / 10 : null, pct: meta ? Math.round(leads / meta * 100) : null, farol: semMeta(leads, meta, frac), _fim: fim }; })
+      .filter(c => c.status === 'ativa' || c.status === 'em análise' || (c._fim != null && c._fim >= sete));
+    const rank = { vermelho: 0, amarelo: 1, verde: 2 }, ordSt = { ativa: 0, 'em análise': 1, pausada: 2, reprovada: 2, encerrada: 3 };
+    lista.sort((a, b) => (ordSt[a.status] - ordSt[b.status]) || ((rank[a.farol] ?? 3) - (rank[b.farol] ?? 3)) || b.gasto - a.gasto);
+    lista.forEach(c => delete c._fim);
+    const T = lista.reduce((a, c) => { a.gasto += c.gasto; a.impressoes += c.impressoes; a.cliques += c.cliques; a.leads += c.leads; if (c.meta) { a.meta += c.meta; a.esperado += c.esperado; } return a; }, { gasto: 0, impressoes: 0, cliques: 0, leads: 0, meta: 0, esperado: 0 });
+    T.farol = T.meta ? (T.leads >= T.meta ? 'verde' : T.leads / Math.max(0.01, T.esperado) >= 1 ? 'verde' : T.leads / Math.max(0.01, T.esperado) >= 0.85 ? 'amarelo' : 'vermelho') : null;
+    return { erro: null, campanhas: lista, total: T, ativas: lista.filter(c => c.status === 'ativa').length }; })();
+  return { qual, proj, mkt, gerado_em: new Date().toISOString(), mes_ref: mes,
     fin: { erro: [erro(pr), erro(kp), erro(me)].filter(Boolean).join(' · ') || null, regime: K.regime || null,
       mes: { faturamento: realMes, meta_faturamento: metaMes, pct: metaMes ? Math.round(realMes / metaMes * 1000) / 10 : null, esperado: metaMes && frMes != null ? Math.round(metaMes * frMes) : null, fracao_decorrida: frMes,
         semaforo: semMeta(realMes, metaMes, frMes), meta_fonte: M.fonte?.faturamento || null,
@@ -147,29 +165,30 @@ function pagina(cfg, cod) {
 <title>Atlantyx · Gestão à vista</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;background:#070B18;color:#EAF0FF;font-family:Montserrat,Calibri,Arial,sans-serif;overflow:hidden;cursor:none}
-#app{position:fixed;inset:0;display:flex;flex-direction:column;padding:2.2vh 2.6vw}
-.top{display:flex;align-items:center;gap:1.4vw;height:7vh}.logo{font-weight:800;letter-spacing:.35vw;font-size:2.4vh;display:flex;align-items:center}.logo img{height:4.4vh;width:auto;display:block}.logo b{color:#00C4CC}
-.tit{font-size:2.8vh;font-weight:700}.esp{flex:1}.rel{font-size:4.2vh;font-weight:700;font-variant-numeric:tabular-nums}.dt{font-size:1.8vh;color:#8E9BC0;text-align:right}
-.palco{flex:1;position:relative;margin-top:1.4vh}.slide{position:absolute;inset:0;display:none;flex-direction:column;gap:1.8vh}.slide.on{display:flex;animation:ent .6s ease}
-@keyframes ent{from{opacity:0;transform:translateY(1.2vh)}to{opacity:1;transform:none}}
-.grade{display:grid;gap:1.6vh 1.2vw}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
-.k{background:#0F1630;border:1px solid #1E2A52;border-radius:1.6vh;padding:2vh 1.4vw;min-width:0}.k .l{font-size:1.9vh;color:#8E9BC0;font-weight:600;text-transform:uppercase;letter-spacing:.08vw}
-.k .v{font-size:5.4vh;font-weight:800;margin-top:.6vh;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.k .s{font-size:1.9vh;color:#AAB6D8;margin-top:.5vh}
-.k.big .v{font-size:7vh}.k.md .v{font-size:4.4vh}.ok{color:#2EE6A6}.at{color:#FFB547}.cr{color:#FF5C7A}.az{color:#00C4CC}
-.bar{height:1.3vh;background:#1E2A52;border-radius:1vh;margin-top:1.2vh;position:relative;overflow:hidden}.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:1vh;background:#00C4CC}.bar u{position:absolute;top:-.4vh;bottom:-.4vh;width:.25vw;background:#EAF0FF;opacity:.8}
-.painel{background:#0F1630;border:1px solid #1E2A52;border-radius:1.6vh;padding:1.8vh 1.4vw;min-height:0;display:flex;flex-direction:column}.painel h3{font-size:2vh;color:#8E9BC0;text-transform:uppercase;letter-spacing:.08vw;font-weight:600;margin-bottom:1vh}
-.baixo{flex:1;display:grid;grid-template-columns:1.7fr 1fr;gap:1.2vw;min-height:0}
-.lin{display:flex;align-items:center;gap:1vw;font-size:2.3vh;padding:.8vh 0;border-bottom:1px solid #1A2447}.lin:last-child{border:0}.lin .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lin .q{font-weight:700;font-variant-numeric:tabular-nums}
-.bola{width:1.8vh;height:1.8vh;border-radius:50%;flex-shrink:0}
-.luz{display:flex;flex-direction:column;gap:.7vh;background:#070B18;border:1px solid #1E2A52;border-radius:2vh;padding:.9vh .6vw}.luz span{width:3.6vh;height:3.6vh;border-radius:50%;display:block}
-.q{gap:1.4vh}.qn{display:grid;grid-template-columns:1fr 1fr;gap:1vw}.qn .v{font-size:8vh;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.05}.qn .s{font-size:1.9vh;color:#AAB6D8}
-.pe{height:4vh;display:flex;align-items:center;gap:1vw;font-size:1.6vh;color:#6E7BA0}.dots{display:flex;gap:.6vw}.dots span{width:1.2vh;height:1.2vh;border-radius:50%;background:#26335F}.dots span.on{background:#00C4CC}
-.prog{position:fixed;left:0;bottom:0;height:.45vh;background:#00C4CC;width:0}
-.erro{font-size:1.8vh;color:#FFB547}
+/* v3.332: palco FIXO 1920×1080 escalado para caber inteiro em qualquer TV/monitor (antes vh/vw: em telas fora de 16:9 cortava) */
+#app{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale(var(--s,1));transform-origin:center;display:flex;flex-direction:column;padding:24px 50px;overflow:hidden}
+.top{display:flex;align-items:center;gap:26.9px;height:75.6px}.logo{font-weight:800;letter-spacing:6.7px;font-size:25.9px;display:flex;align-items:center}.logo img{height:47.5px;width:auto;display:block}.logo b{color:#00C4CC}
+.tit{font-size:30.2px;font-weight:700}.esp{flex:1}.rel{font-size:45.4px;font-weight:700;font-variant-numeric:tabular-nums}.dt{font-size:19.4px;color:#8E9BC0;text-align:right}
+.palco{flex:1;position:relative;margin-top:15.1px}.slide{position:absolute;inset:0;display:none;flex-direction:column;gap:19.4px}.slide.on{display:flex;animation:ent .6s ease}
+@keyframes ent{from{opacity:0;transform:translateY(13px)}to{opacity:1;transform:none}}
+.grade{display:grid;gap:17.3px 23px}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.k{background:#0F1630;border:1px solid #1E2A52;border-radius:17.3px;padding:21.6px 26.9px;min-width:0}.k .l{font-size:20.5px;color:#8E9BC0;font-weight:600;text-transform:uppercase;letter-spacing:1.5px}
+.k .v{font-size:58.3px;font-weight:800;margin-top:6.5px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.k .s{font-size:20.5px;color:#AAB6D8;margin-top:5.4px}
+.k.big .v{font-size:75.6px}.k.md .v{font-size:47.5px}.ok{color:#2EE6A6}.at{color:#FFB547}.cr{color:#FF5C7A}.az{color:#00C4CC}
+.bar{height:14px;background:#1E2A52;border-radius:10.8px;margin-top:13px;position:relative;overflow:hidden}.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:10.8px;background:#00C4CC}.bar u{position:absolute;top:-4.3px;bottom:-4.3px;width:4.8px;background:#EAF0FF;opacity:.8}
+.painel{background:#0F1630;border:1px solid #1E2A52;border-radius:17.3px;padding:19.4px 26.9px;min-height:0;display:flex;flex-direction:column}.painel h3{font-size:21.6px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;margin-bottom:10.8px}
+.baixo{flex:1;display:grid;grid-template-columns:1.7fr 1fr;gap:23px;min-height:0}
+.lin{display:flex;align-items:center;gap:19.2px;font-size:24.8px;padding:8.6px 0;border-bottom:1px solid #1A2447}.lin:last-child{border:0}.lin .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lin .q{font-weight:700;font-variant-numeric:tabular-nums}
+.bola{width:19.4px;height:19.4px;border-radius:50%;flex-shrink:0}
+.luz{display:flex;flex-direction:column;gap:7.6px;background:#070B18;border:1px solid #1E2A52;border-radius:21.6px;padding:9.7px 11.5px}.luz span{width:38.9px;height:38.9px;border-radius:50%;display:block}
+.q{gap:15.1px}.qn{display:grid;grid-template-columns:1fr 1fr;gap:19.2px}.qn .v{font-size:86.4px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.05}.qn .s{font-size:20.5px;color:#AAB6D8}
+.pe{height:43.2px;display:flex;align-items:center;gap:19.2px;font-size:17.3px;color:#6E7BA0}.dots{display:flex;gap:11.5px}.dots span{width:13px;height:13px;border-radius:50%;background:#26335F}.dots span.on{background:#00C4CC}
+.prog{position:fixed;left:0;bottom:0;height:4.9px;background:#00C4CC;width:0}
+.erro{font-size:19.4px;color:#FFB547}
 svg text{font-family:Montserrat,Calibri,Arial,sans-serif}
 </style></head><body><div id="app">
 <div class="top"><div class="logo"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" onerror="this.parentNode.innerHTML='ATLANT<b>Y</b>X'"></div><div class="tit" id="tit">Gestão à vista</div><div class="esp"></div><div><div class="rel" id="rel">--:--</div><div class="dt" id="dt"></div></div></div>
-<div class="palco" id="palco"><div class="slide on"><div style="margin:auto;font-size:3vh;color:#8E9BC0;">Carregando os números…</div></div></div>
+<div class="palco" id="palco"><div class="slide on"><div style="margin:auto;font-size:32.4px;color:#8E9BC0;">Carregando os números…</div></div></div>
 <div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div></div></div><div class="prog" id="prog"></div>
 <script>
 var COD=${JSON.stringify(cod)},ROT=${Math.max(8, Math.min(180, +cfg.rotacao_s || 25))},SLIDES=${JSON.stringify((cfg.slides || []).filter(s => SLIDES_OK.indexOf(s) >= 0))};
@@ -191,19 +210,19 @@ function grafico(m){ if(!m||!m.length)return '<div class="erro">Sem a série men
     s+='<rect x="'+(cx+bw*.14)+'" y="'+y(f)+'" width="'+(bw*.4)+'" height="'+Math.max(0,y0-y(f))+'" rx="4" fill="#00C4CC"/>';
     s+='<rect x="'+(cx+bw*.56)+'" y="'+(l>=0?y(l):y0)+'" width="'+(bw*.3)+'" height="'+Math.abs(y0-y(Math.abs(l)))+'" rx="4" fill="'+(l>=0?'#2EE6A6':'#FF5C7A')+'"/>';
     s+='<text x="'+(cx+bw/2)+'" y="'+(H-12)+'" text-anchor="middle" font-size="18" fill="#8E9BC0">'+(MES[mi]||x.mes)+'</text>'});
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;flex:1;min-height:0" preserveAspectRatio="none">'+s+'</svg><div style="font-size:1.7vh;color:#8E9BC0;margin-top:.6vh;"><span style="color:#00C4CC">■</span> faturamento &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
-function brlI(v){return nz(v)?'—':(v<0?'−':'')+'R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')}
-function luz(f){return '<div class="luz">'+['vermelho','amarelo','verde'].map(function(c){return '<span style="background:'+(f===c?cor(c):'#1A2447')+';'+(f===c?'box-shadow:0 0 2.4vh '+cor(c):'')+'"></span>'}).join('')+'</div>'}
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;flex:1;min-height:0" preserveAspectRatio="none">'+s+'</svg><div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px;"><span style="color:#00C4CC">■</span> faturamento &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
+function brlI(v){return nz(v)?'—':(v<0?'−':'')+'R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')}var brlI0=brlI;
+function luz(f){return '<div class="luz">'+['vermelho','amarelo','verde'].map(function(c){return '<span style="background:'+(f===c?cor(c):'#1A2447')+';'+(f===c?'box-shadow:0 0 25.9px '+cor(c):'')+'"></span>'}).join('')+'</div>'}
 function clsF(f){return f==='verde'?'ok':f==='amarelo'?'at':f==='vermelho'?'cr':''}
-function metaBox(tit,X,rotEsp){var f=X.semaforo,pc=X.pct;
-  return '<div class="painel" style="flex-direction:row;gap:1.6vw;align-items:center;padding:2vh 1.6vw">'+luz(f)
-   +'<div style="flex:1;min-width:0"><h3 style="margin-bottom:.6vh">'+tit+'</h3>'
-   +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1vw;align-items:end">'
-   +'<div><div class="s" style="font-size:1.9vh;color:#8E9BC0">META</div><div style="font-size:4.6vh;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap">'+brlI(X.meta_faturamento)+'</div></div>'
-   +'<div><div class="s" style="font-size:1.9vh;color:#8E9BC0">REALIZADO</div><div style="font-size:4.6vh;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap" class="'+clsF(f)+'">'+brlI(X.faturamento)+'</div></div>'
-   +'<div style="text-align:right"><div class="s" style="font-size:1.9vh;color:#8E9BC0">ATINGIDO</div><div style="font-size:6.4vh;font-weight:800;line-height:1" class="'+clsF(f)+'">'+pct(pc)+'</div></div></div>'
+function metaBox(tit,X,rotEsp){var f=X.semaforo,pc=X.pct,brlI=function(v){return nz(v)?'—':Math.abs(v)>=1e6?brl(v):brlI0(v)};
+  return '<div class="painel" style="flex-direction:row;gap:30.7px;align-items:center;padding:21.6px 30.7px">'+luz(f)
+   +'<div style="flex:1;min-width:0"><h3 style="margin-bottom:6.5px">'+tit+'</h3>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:19.2px;align-items:end">'
+   +'<div><div class="s" style="font-size:20.5px;color:#8E9BC0">META</div><div style="font-size:49.7px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap">'+brlI(X.meta_faturamento)+'</div></div>'
+   +'<div><div class="s" style="font-size:20.5px;color:#8E9BC0">REALIZADO</div><div style="font-size:49.7px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap" class="'+clsF(f)+'">'+brlI(X.faturamento)+'</div></div>'
+   +'<div style="text-align:right"><div class="s" style="font-size:20.5px;color:#8E9BC0">ATINGIDO</div><div style="font-size:69.1px;font-weight:800;line-height:1" class="'+clsF(f)+'">'+pct(pc)+'</div></div></div>'
    +barra(pc,nz(X.fracao_decorrida)?null:X.fracao_decorrida*100)
-   +'<div style="font-size:1.9vh;color:#AAB6D8;margin-top:.8vh">'+(nz(X.esperado)?'':'esperado até hoje '+brlI(X.esperado)+' ('+rotEsp+') · ')+(X.meta_faturamento?(nz(X.faturamento)?'<span class="at">sem realizado do QuickBooks agora</span>':X.faturamento>=X.meta_faturamento?'<span class="ok">meta batida</span>':'falta '+brlI(X.meta_faturamento-X.faturamento)):'<span class="at">meta não cadastrada (Planejamento → Metas da Empresa)</span>')+(nz(X.projecao)?'':' · no ritmo atual fecha em '+brlI(X.projecao))+'</div></div></div>'}
+   +'<div style="font-size:20.5px;color:#AAB6D8;margin-top:8.6px">'+(nz(X.esperado)?'':'esperado até hoje '+brlI(X.esperado)+' ('+rotEsp+') · ')+(X.meta_faturamento?(nz(X.faturamento)?'<span class="at">sem realizado do QuickBooks agora</span>':X.faturamento>=X.meta_faturamento?'<span class="ok">meta batida</span>':'falta '+brlI(X.meta_faturamento-X.faturamento)):'<span class="at">meta não cadastrada (Planejamento → Metas da Empresa)</span>')+(nz(X.projecao)?'':' · no ritmo atual fecha em '+brlI(X.projecao))+'</div></div></div>'}
 function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};var MESN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];var mi=parseInt(String(D.mes_ref||'').substring(5,7),10)-1;
   var mc=clsF(M.semaforo_margem);
   var h='<div class="grade" style="grid-template-columns:1fr 1fr">'+metaBox('Faturamento de '+(MESN[mi]||'mês'),M,'dias do mês')+metaBox('Faturamento de '+(A.ano||''),A,'meses do ano')+'</div>'
@@ -212,84 +231,102 @@ function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};var MESN=['janeiro','fev
    +k('A receber',brl(F.receber),'<span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d)))
    +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks')+'</div>'
    +'<div class="painel" style="flex:1;min-height:0"><h3>Evolução no ano</h3>'+grafico(F.mensal)+'</div>'
-   +'<div style="font-size:1.5vh;color:#6E7BA0">Realizado = faturamento da DRE do QuickBooks'+(F.regime?' (regime '+esc(F.regime)+')':'')+' · metas de Planejamento → Metas da Empresa · farol pelo ritmo: verde ≥ 100% do esperado até hoje, amarelo ≥ 85%, vermelho abaixo</div>'
+   +'<div style="font-size:16px;color:#6E7BA0">QuickBooks'+(F.regime?' ('+esc(F.regime)+')':'')+' · farol pelo ritmo: verde ≥ 100% do esperado, amarelo ≥ 85%</div>'
    +(F.erro?'<div class="erro">⚠ '+esc(F.erro)+'</div>':'');
   return h}
 // v3.280: o MESMO funil do Dashboard ao vivo (aba Vendas): pipeline aberto agora, em R$, todos os pipelines, mês atual
 function sCom(){var C=D.com||{},Fu=C.funil;
-  if(!Fu)return '<div class="erro" style="margin:auto;font-size:2.6vh">'+esc(C.indisponivel||C.erro||'Funil indisponível (HubSpot).')+'</div>';
+  if(!Fu)return '<div class="erro" style="margin:auto;font-size:28.1px">'+esc(C.indisponivel||C.erro||'Funil indisponível (HubSpot).')+'</div>';
   var R=Fu.resumo||{},A=R.aberto||{},E=Fu.etapas||[],L=Fu.leads;
   var pm=R.pct_meta,cm=nz(pm)?'':pm>=100?'ok':pm>=80?'at':'cr',cob=R.cobertura_pct,cc=nz(cob)?'':cob>=100?'ok':cob>=60?'at':'cr';
-  var h='<div class="grade" style="grid-template-columns:repeat('+(L?6:5)+',1fr)">'
-   +k('Pipeline aberto',brl(A.valor),(A.qtd||0)+' negócio(s)'+(A.sem_valor?' · <span class="at">'+A.sem_valor+' sem valor</span>':''),'md')
-   +k('Ponderado',brl(A.ponderado),'valor × probabilidade','md')
-   +k('Ganho em '+esc(Fu.rotulo||''),'<span class="'+cm+'">'+brl(R.ganho&&R.ganho.valor)+'</span>',((R.ganho&&R.ganho.qtd)||0)+' negócio(s)'+(nz(R.meta)?' · sem meta':' · <b class="'+cm+'">'+pm+'%</b> de '+brl(R.meta)),'md')
-   +k('Falta para a meta',nz(R.falta)?'—':'<span class="'+(R.falta?cc:'ok')+'">'+brl(R.falta)+'</span>',nz(cob)?(nz(R.meta)?'cadastre a meta':'meta batida'):'cobertura do ponderado <b class="'+cc+'">'+cob+'%</b>','md')
-   +k('Taxa de ganho',(nz(R.taxa_ganho_pct)?'—':R.taxa_ganho_pct+'%'),R.pipeline_necessario?'precisa de '+brl(R.pipeline_necessario)+' em pipeline':'','md')
-   +(L?k('Leads captados',L.total,L.ab+' score A/B · '+L.reunioes+' reunião(ões)','md'):'')+'</div>';
+  // v3.332: 4 cartões (antes 6): ponderado entra no pipeline, "falta" entra no ganho; leads foram para o slide de Marketing digital
+  var h='<div class="grade g4">'
+   +k('Pipeline aberto',brl(A.valor),(A.qtd||0)+' negócio(s) · ponderado '+brl(A.ponderado)+(A.sem_valor?' · <span class="at">'+A.sem_valor+' sem valor</span>':''),'md')
+   +k('Ganho em '+esc(Fu.rotulo||''),'<span class="'+cm+'">'+brl(R.ganho&&R.ganho.valor)+'</span>',nz(R.meta)?((R.ganho&&R.ganho.qtd)||0)+' negócio(s) · sem meta':'<b class="'+cm+'">'+pm+'%</b> de '+brl(R.meta)+(R.falta?' · falta '+brl(R.falta):' · meta batida'),'md')
+   +k('Cobertura da meta',nz(cob)?'—':'<span class="'+cc+'">'+cob+'%</span>','ponderado ÷ o que falta (≥ 100% = verde)','md')
+   +k('Taxa de ganho',(nz(R.taxa_ganho_pct)?'—':R.taxa_ganho_pct+'%'),R.pipeline_necessario?'precisa de '+brl(R.pipeline_necessario)+' em pipeline':'','md')+'</div>';
   var grad=[['#1f5fbf','#3d8bf0'],['#2569cc','#4a98f2'],['#2b7bd6','#4fb0ef'],['#1f9fb0','#3cc6c9'],['#18a57f','#36c99a'],['#14916b','#2fb989'],['#0f7d5b','#28a679']];
   var topo=E.length?(E[0].agora&&E[0].agora.valor)||0:0,n=E.length;
   var linhas=E.map(function(e,i){var g=e.ganho?['#0f8a52','#2fcf86']:grad[Math.min(i,grad.length-1)],ag=e.agora||{},val=ag.valor||0;
     var larg=function(x){return 100-62*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
     var pc=e.pct_valor,f=nz(pc)?null:pc>=100?'verde':pc>=80?'amarelo':'vermelho';
     var sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s)'+(ag.sem_valor?' · '+ag.sem_valor+' sem valor':''));
-    var dir=e.meta&&e.meta.valor!=null&&(e.ganho||e.meta.fonte==='cadastrada')?'<span class="bola" style="display:inline-block;vertical-align:middle;margin-right:.5vw;background:'+cor(f)+'"></span>meta '+brl(Fu.decorrido_pct<100?e.meta.valor_ate_hoje:e.meta.valor)+(Fu.decorrido_pct<100?' até hoje':'')+' · <b class="'+clsF(f)+'">'+(nz(pc)?'—':pc+'%')+'</b>'
+    var dir=e.meta&&e.meta.valor!=null&&(e.ganho||e.meta.fonte==='cadastrada')?'<span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9.6px;background:'+cor(f)+'"></span>meta '+brl(Fu.decorrido_pct<100?e.meta.valor_ate_hoje:e.meta.valor)+(Fu.decorrido_pct<100?' até hoje':'')+' · <b class="'+clsF(f)+'">'+(nz(pc)?'—':pc+'%')+'</b>'
       :(!e.ganho&&ag.ponderado?'<span style="color:#8E9BC0">ponderado <b style="color:#AAB6D8">'+brl(ag.ponderado)+'</b>'+(e.probabilidade!=null?' · '+Math.round(e.probabilidade*100)+'% de chance':'')+'</span>':'');
-    return '<div style="display:grid;grid-template-columns:18vw 1fr 22vw;gap:1.2vw;align-items:center;flex:1;min-height:0">'
-     +'<div style="font-size:2.3vh;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.nome)+(e.ganho?' ✓':'')+'<div style="font-size:1.7vh;color:#8E9BC0;font-weight:500">'+sub+'</div></div>'
-     +'<div style="height:100%;max-height:8vh;min-height:4vh;clip-path:polygon('+a+'% 0,'+(100-a)+'% 0,'+(100-bq)+'% 100%,'+bq+'% 100%);background:linear-gradient(180deg,'+g[1]+','+g[0]+');display:flex;flex-direction:column;align-items:center;justify-content:center">'
-     +'<div style="font-size:3vh;font-weight:800">'+brl(val)+'</div>'+(i>0&&topo>0?'<div style="font-size:1.5vh;opacity:.85">'+Math.round(val/topo*100)+'% do topo</div>':'<div style="font-size:1.5vh;opacity:.85">topo do funil</div>')+'</div>'
-     +'<div style="font-size:1.9vh">'+dir+'</div></div>'}).join('');
-  h+='<div class="painel" style="flex:1;min-height:0"><h3>Pipeline agora — negócios abertos em cada etapa (a faixa Ganho mostra os ganhos de '+esc(Fu.rotulo||'')+') · '+esc(Fu.pipeline||'')+'</h3><div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:.5vh">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
-   +'<div style="display:flex;gap:2vw;font-size:1.7vh;color:#8E9BC0;margin-top:.8vh">'+(Fu.perdidos?'<span>Perdidos em '+esc(Fu.rotulo||'')+': <b>'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')</span>':'')+(Fu.ticket?'<span>Ticket médio: <b>'+brl(Fu.ticket)+'</b></span>':'')+(Fu.lidos!=null?'<span>'+Fu.lidos+' negócio(s) lidos do HubSpot</span>':'')+'</div></div>'
+    return '<div style="display:grid;grid-template-columns:345.6px 1fr 422.4px;gap:23px;align-items:center;flex:1;min-height:0">'
+     +'<div style="font-size:24.8px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.nome)+(e.ganho?' ✓':'')+'<div style="font-size:18.4px;color:#8E9BC0;font-weight:500">'+sub+'</div></div>'
+     +'<div style="height:100%;max-height:86.4px;min-height:43.2px;clip-path:polygon('+a+'% 0,'+(100-a)+'% 0,'+(100-bq)+'% 100%,'+bq+'% 100%);background:linear-gradient(180deg,'+g[1]+','+g[0]+');display:flex;flex-direction:column;align-items:center;justify-content:center">'
+     +'<div style="font-size:32.4px;font-weight:800">'+brl(val)+'</div>'+(i>0&&topo>0?'<div style="font-size:16.2px;opacity:.85">'+Math.round(val/topo*100)+'% do topo</div>':'<div style="font-size:16.2px;opacity:.85">topo do funil</div>')+'</div>'
+     +'<div style="font-size:20.5px">'+dir+'</div></div>'}).join('');
+  h+='<div class="painel" style="flex:1;min-height:0"><h3>Pipeline agora — negócios abertos em cada etapa (a faixa Ganho mostra os ganhos de '+esc(Fu.rotulo||'')+') · '+esc(Fu.pipeline||'')+'</h3><div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:5.4px">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
+   +'<div style="display:flex;gap:38.4px;font-size:18.4px;color:#8E9BC0;margin-top:8.6px">'+(Fu.perdidos?'<span>Perdidos em '+esc(Fu.rotulo||'')+': <b>'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')</span>':'')+(Fu.ticket?'<span>Ticket médio: <b>'+brl(Fu.ticket)+'</b></span>':'')+(Fu.lidos!=null?'<span>'+Fu.lidos+' negócio(s) lidos do HubSpot</span>':'')+'</div></div>'
    +(C.erro?'<div class="erro">⚠ '+esc(C.erro)+'</div>':'');
   return h}
 function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{};
   function n(v){return v==null||v===''?'—':v}
-  function card(t,f,a,al,b,bl,lst,er){return '<div class="painel q"><div style="display:flex;align-items:center;gap:1.4vw"><h3 style="flex:1;margin:0">'+t+'</h3>'+luz(f)+'</div>'
+  function card(t,f,a,al,b,bl,lst,er){return '<div class="painel q"><div style="display:flex;align-items:center;gap:26.9px"><h3 style="flex:1;margin:0">'+t+'</h3>'+luz(f)+'</div>'
     +'<div class="qn"><div><div class="v ok">'+n(a)+'</div><div class="s">'+al+'</div></div><div><div class="v '+(b>0?(f==='vermelho'?'cr':'at'):'ok')+'">'+n(b)+'</div><div class="s">'+bl+'</div></div></div>'
     +'<div style="flex:1;min-height:0;overflow:hidden">'+lst+'</div>'+(er?'<div class="erro">⚠ '+esc(er)+'</div>':'')+'</div>'}
   function li(c,txt,q){return '<div class="lin"><span class="bola" style="background:'+c+'"></span><div class="n">'+esc(txt)+'</div><div class="q">'+q+'</div></div>'}
   var fl=function(x,t){return x?li('#00C4CC',t+' ('+x.qtd+')',brl(x.valor)):''};
   return '<div class="grade" style="grid-template-columns:1fr 1fr;flex:1;min-height:0">'
    +card('Termos de faturamento',T.farol,T.corretos,'termos em aberto corretos',T.errados,'termos com pendência',
-     ((T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join('')||(T.errados===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Todos os '+n(T.abertos)+' termos em aberto estão corretos.</div>':''))
-     +'<div style="font-size:1.7vh;color:#8E9BC0;margin:1.2vh 0 .4vh;text-transform:uppercase">Valores no Kanban de Faturamento</div>'+fl(T.faturados_mes,'Faturados no mês (NF emitida)')+fl(T.a_faturar,'A faturar (sem NF)')+fl(T.aguardando_pagamento,'NF emitida, aguardando pagamento'),T.erro)
-   +card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join('')||(B.com_erro===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Conciliação, categorias, duplicidades e contas pagas: tudo certo.</div>':''),B.erro)
+     ((T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join('')||(T.errados===0?'<div class="s ok" style="font-size:23.8px;margin-top:10.8px">Todos os '+n(T.abertos)+' termos em aberto estão corretos.</div>':'')),T.erro)
+   +card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join('')||(B.com_erro===0?'<div class="s ok" style="font-size:23.8px;margin-top:10.8px">Conciliação, categorias, duplicidades e contas pagas: tudo certo.</div>':''),B.erro)
    +'</div>'}
 function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
   var dt=function(s){return s?s.split('-').reverse().join('/'):'—'};
   var av=nz(R.avanco_medio)?'—':R.avanco_medio+'%';
   var pd=R.total?Math.round((R.verde||0)/R.total*100):null,fp=nz(pd)?null:pd>=80?'verde':pd>=60?'amarelo':'vermelho';
-  var bo=function(c){return '<span class="bola" style="display:inline-block;vertical-align:middle;width:3.6vh;height:3.6vh;margin-right:.8vw;background:'+cor(c)+';box-shadow:0 0 1.6vh '+cor(c)+'"></span>'};
-  var h='<div class="grade" style="grid-template-columns:repeat(6,1fr)">'+k('Projetos ativos',nz(R.total)?'—':R.total,J.fonte||'','big')
-   +'<div class="k big" style="display:flex;gap:1vw;align-items:center">'+luz(fp)+'<div style="min-width:0"><div class="l">% em dia</div><div class="v '+clsF(fp)+'" style="font-size:6vh">'+(nz(pd)?'—':pd+'%')+'</div><div class="s">verde ≥ 80% · amarelo ≥ 60%</div></div></div>'
-   +k('Em dia',bo('verde')+'<span class="ok">'+(nz(R.verde)?'—':R.verde)+'</span>','farol verde','big')
-   +k('Atenção',bo('amarelo')+'<span class="at">'+(nz(R.amarelo)?'—':R.amarelo)+'</span>','farol amarelo','big')
-   +k('Atrasados',bo('vermelho')+'<span class="cr">'+(nz(R.vermelho)?'—':R.vermelho)+'</span>',(R.vencidos?(R.vencidos===1?'1 passou':R.vencidos+' passaram')+' da conclusão':'nenhum vencido'),'big')
+  var bo=function(c){return '<span class="bola" style="display:inline-block;vertical-align:middle;width:38.9px;height:38.9px;margin-right:15.4px;background:'+cor(c)+';box-shadow:0 0 17.3px '+cor(c)+'"></span>'};
+  // v3.332: 4 blocos (antes 6) — o farol junta % em dia e as contagens verde/amarelo/vermelho num cartão só
+  var cnt=function(c,v,r){return '<div style="text-align:center">'+bo(c)+'<span class="'+clsF(c)+'" style="font-size:52px;font-weight:800;vertical-align:middle">'+(nz(v)?'—':v)+'</span><div class="s">'+r+'</div></div>'};
+  var h='<div class="grade" style="grid-template-columns:1fr 2fr 1fr">'+k('Projetos ativos',nz(R.total)?'—':R.total,J.fonte||'','big')
+   +'<div class="k big" style="display:flex;gap:26px;align-items:center">'+luz(fp)+'<div style="min-width:0;width:190px"><div class="l">% em dia</div><div class="v '+clsF(fp)+'" style="font-size:64.8px">'+(nz(pd)?'—':pd+'%')+'</div><div class="s">verde ≥ 80%</div></div>'
+   +'<div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">'+cnt('verde',R.verde,'em dia')+cnt('amarelo',R.amarelo,'atenção')+cnt('vermelho',R.vermelho,R.vencidos?(R.vencidos===1?'1 passou':R.vencidos+' passaram')+' da data':'atrasados')+'</div></div>'
    +k('Avanço médio',av,(nz(R.planejado_medio)?'':'planejado '+R.planejado_medio+'%')+(R.concluem_mes?' · '+R.concluem_mes+' concluem no mês':''),'big',nz(R.avanco_medio)?'':barra(R.avanco_medio,nz(R.planejado_medio)?null:R.planejado_medio))+'</div>';
-  var max=11, mostra=L.slice(0,max);
+  var max=7, mostra=L.slice(0,max); // v3.332: cabe na tela (os mais críticos primeiro)
   h+='<div class="painel" style="flex:1;min-height:0"><h3>Projetos · data de conclusão e farol</h3>'
-   +'<div class="lin" style="font-size:1.6vh;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">PROJETO</div><div style="width:13vw">GERENTE</div><div style="width:9vw;text-align:right">CONCLUSÃO</div><div style="width:14vw;text-align:center">AVANÇO (REAL × PLAN.)</div><div style="width:8vw;text-align:right">DESVIO</div></div>'
+   +'<div class="lin" style="font-size:17.3px;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">PROJETO</div><div style="width:249.6px">GERENTE</div><div style="width:172.8px;text-align:right">CONCLUSÃO</div><div style="width:268.8px;text-align:center">AVANÇO (REAL × PLAN.)</div><div style="width:153.6px;text-align:right">DESVIO</div></div>'
    +(mostra.map(function(p){var cor2=cor(p.farol);var d=nz(p.desvio)?'—':(p.desvio>0?'+':'')+p.desvio+'pp';
-     return '<div class="lin"><span class="bola" style="width:2.4vh;height:2.4vh;background:'+cor2+';box-shadow:0 0 1.2vh '+cor2+'"></span><div class="n">'+esc(p.nome)+(p.motivo&&(p.farol!=='verde'||/status report/.test(p.motivo))?' <span style="font-size:1.6vh;color:#8E9BC0;font-weight:500">· '+esc(p.motivo)+'</span>':'')+'</div>'
-      +'<div style="width:13vw;font-size:1.9vh;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.gerente||'')+'</div>'
-      +'<div style="width:9vw;text-align:right" class="q '+(p.dias_atraso>0?'cr':'')+'">'+dt(p.conclusao)+(p.dias_atraso>0?'<div style="font-size:1.5vh">'+p.dias_atraso+' dias atrás</div>':'')+'</div>'
-      +'<div style="width:14vw;padding:0 1vw">'+(nz(p.pct)?'<div style="text-align:center;color:#6E7BA0">—</div>':'<div style="display:flex;justify-content:space-between;font-size:1.7vh"><b>'+p.pct+'%</b><span style="color:#8E9BC0">'+(nz(p.planejado)?'':p.planejado+'%')+'</span></div>'+barra(p.pct,nz(p.planejado)?null:p.planejado))+'</div>'
-      +'<div style="width:8vw;text-align:right" class="q '+(nz(p.desvio)?'':p.desvio<-10?'cr':p.desvio<-5?'at':'ok')+'">'+d+'</div></div>'}).join('')||'<div class="erro">'+esc(J.erro||'Sem projetos ativos no módulo de projetos.')+'</div>')
-   +(L.length>max?'<div style="font-size:1.7vh;color:#8E9BC0;margin-top:.6vh">+ '+(L.length-max)+' projeto(s) — os mais críticos aparecem primeiro</div>':'')+'</div>';
+     return '<div class="lin"><span class="bola" style="width:25.9px;height:25.9px;background:'+cor2+';box-shadow:0 0 13px '+cor2+'"></span><div class="n">'+esc(p.nome)+(p.motivo&&(p.farol!=='verde'||/status report/.test(p.motivo))?' <span style="font-size:17.3px;color:#8E9BC0;font-weight:500">· '+esc(p.motivo)+'</span>':'')+'</div>'
+      +'<div style="width:249.6px;font-size:20.5px;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.gerente||'')+'</div>'
+      +'<div style="width:172.8px;text-align:right" class="q '+(p.dias_atraso>0?'cr':'')+'">'+dt(p.conclusao)+(p.dias_atraso>0?'<div style="font-size:16.2px">'+p.dias_atraso+' dias atrás</div>':'')+'</div>'
+      +'<div style="width:268.8px;padding:0 19.2px">'+(nz(p.pct)?'<div style="text-align:center;color:#6E7BA0">—</div>':'<div style="display:flex;justify-content:space-between;font-size:18.4px"><b>'+p.pct+'%</b><span style="color:#8E9BC0">'+(nz(p.planejado)?'':p.planejado+'%')+'</span></div>'+barra(p.pct,nz(p.planejado)?null:p.planejado))+'</div>'
+      +'<div style="width:153.6px;text-align:right" class="q '+(nz(p.desvio)?'':p.desvio<-10?'cr':p.desvio<-5?'at':'ok')+'">'+d+'</div></div>'}).join('')||'<div class="erro">'+esc(J.erro||'Sem projetos ativos no módulo de projetos.')+'</div>')
+   +(L.length>max?'<div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px">+ '+(L.length-max)+' projeto(s) — os mais críticos aparecem primeiro</div>':'')+'</div>';
   return h}
-var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,qualidade:sQual,projetos:sProj};
+// v3.332: MARKETING DIGITAL — resultado de cada campanha e farol de leads (meta × realizado, pelo ritmo da campanha)
+function sMkt(){var M=D.mkt||{},L=M.campanhas||[],T=M.total||{};
+  if(!L.length)return '<div class="erro" style="margin:auto;font-size:28px">'+esc(M.erro||'Nenhuma campanha paga ativa agora.')+'</div>';
+  var ctr=T.impressoes?(T.cliques/T.impressoes*100):null,n=function(v){return nz(v)?'—':Math.round(v).toLocaleString('pt-BR')};
+  var h='<div class="grade g4">'+k('Investido',brl(T.gasto),(M.ativas||0)+' campanha(s) ativa(s)','md')+k('Cliques no anúncio',n(T.cliques),nz(ctr)?'':'CTR '+pct(ctr)+' · '+n(T.impressoes)+' impressões','md')
+   +'<div class="k md" style="display:flex;gap:20px;align-items:center">'+luz(T.farol)+'<div style="min-width:0"><div class="l">Leads × meta</div><div class="v '+clsF(T.farol)+'">'+n(T.leads)+(T.meta?' <span style="font-size:30px;color:#8E9BC0">/ '+n(T.meta)+'</span>':'')+'</div><div class="s">'+(T.meta?'esperado até hoje '+String(Math.round(T.esperado*10)/10).replace('.',','):'cadastre a meta de leads das campanhas')+'</div></div></div>'
+   +k('Custo por lead',T.leads?brlI(T.gasto/T.leads):'—',T.leads?n(T.leads)+' lead(s) no período':'nenhum lead ainda','md')+'</div>';
+  var mx=8,ls=L.slice(0,mx);
+  h+='<div class="painel" style="flex:1;min-height:0"><h3>Campanhas · resultado e farol de leads (meta × realizado)</h3>'
+   +'<div class="lin" style="font-size:17px;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">CAMPANHA</div><div style="width:150px;text-align:right">INVESTIDO</div><div style="width:130px;text-align:right">CLIQUES</div><div style="width:440px;padding-left:30px">LEADS × META</div></div>'
+   +ls.map(function(c){var co=cor(c.farol),pm=nz(c.pct)?0:c.pct,esp=c.meta?Math.min(100,c.esperado/c.meta*100):null;
+     return '<div class="lin" style="flex:1;min-height:0"><span class="bola" style="width:30px;height:30px;background:'+co+';box-shadow:0 0 14px '+co+'"></span>'
+      +'<div class="n"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome)+'</div><div style="font-size:17px;color:#8E9BC0;font-weight:500">'+esc(c.rede)+' · '+esc(c.status)+(c.inicio?' · '+c.inicio.split('-').reverse().slice(0,2).join('/')+' a '+String(c.fim||'').split('-').reverse().slice(0,2).join('/'):'')+(c.local?' · 📍 '+esc(c.local):'')+'</div></div>'
+      +'<div style="width:150px;text-align:right" class="q">'+brl(c.gasto)+'</div><div style="width:130px;text-align:right" class="q">'+n(c.cliques)+'</div>'
+      +'<div style="width:440px;padding-left:30px">'+(c.meta?'<div style="display:flex;justify-content:space-between;font-size:22px"><b class="'+clsF(c.farol)+'">'+n(c.leads)+' de '+n(c.meta)+'</b><span class="'+clsF(c.farol)+'" style="font-weight:800">'+pm+'%</span></div>'+barra(pm,esp)
+        :'<div style="font-size:22px"><b>'+n(c.leads)+'</b> lead(s) <span style="color:#8E9BC0;font-size:17px">· sem meta cadastrada</span></div>')+'</div></div>'}).join('')
+   +(L.length>mx?'<div style="font-size:17px;color:#8E9BC0;margin-top:6px">+ '+(L.length-mx)+' campanha(s)</div>':'')+'</div>'
+   +'<div style="font-size:16px;color:#6E7BA0">Farol pelo ritmo da campanha: verde ≥ 100% dos leads esperados até hoje, amarelo ≥ 85%, vermelho abaixo · traço branco na barra = esperado até hoje</div>';
+  return h}
+var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing digital',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
   var g=new Date(D.gerado_em);$('atu').textContent='números de '+g.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(D.aviso_cache?' · '+D.aviso_cache:'')+' · atualiza a cada 10 min'}
 function ir(n){if(!D||!SLIDES.length)return;idx=(n+SLIDES.length)%SLIDES.length;var sl=document.querySelectorAll('.slide');for(var i=0;i<sl.length;i++)sl[i].className='slide'+(i===idx?' on':'');
   var d=document.querySelectorAll('#dots span');for(var j=0;j<d.length;j++)d[j].className=j===idx?'on':'';$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];t0=Date.now()}
-function carregar(){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&dados=1&_='+Date.now());x.onload=function(){try{var r=JSON.parse(x.responseText);if(!r.success)throw new Error(r.error||'erro');D=r.dados;render()}catch(e){if(!D)$('palco').innerHTML='<div class="slide on"><div style="margin:auto;font-size:2.6vh;color:#FFB547;text-align:center;">'+esc(e.message||'Sem conexão')+'<br><span style="font-size:2vh;color:#8E9BC0">nova tentativa em 1 minuto</span></div></div>';setTimeout(carregar,60000)}};x.onerror=function(){setTimeout(carregar,60000)};x.send()}
+function carregar(){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&dados=1&_='+Date.now());x.onload=function(){try{var r=JSON.parse(x.responseText);if(!r.success)throw new Error(r.error||'erro');D=r.dados;render()}catch(e){if(!D)$('palco').innerHTML='<div class="slide on"><div style="margin:auto;font-size:28.1px;color:#FFB547;text-align:center;">'+esc(e.message||'Sem conexão')+'<br><span style="font-size:21.6px;color:#8E9BC0">nova tentativa em 1 minuto</span></div></div>';setTimeout(carregar,60000)}};x.onerror=function(){setTimeout(carregar,60000)};x.send()}
 function relogio(){var a=new Date();$('rel').textContent=a.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});$('dt').textContent=a.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',timeZone:'America/Sao_Paulo'});
   if(D&&SLIDES.length>1){var f=(Date.now()-t0)/(ROT*1000);$('prog').style.width=Math.min(100,f*100)+'%';if(f>=1)ir(idx+1)}}
 document.addEventListener('keydown',function(e){if(e.keyCode===39||e.keyCode===40)ir(idx+1);if(e.keyCode===37||e.keyCode===38)ir(idx-1);if(e.keyCode===13&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen()});
 document.addEventListener('click',function(){if(document.documentElement.requestFullscreen&&!document.fullscreenElement)document.documentElement.requestFullscreen()});
+function ajusta(){document.documentElement.style.setProperty('--s',Math.min(innerWidth/1920,innerHeight/1080))}window.addEventListener('resize',ajusta);ajusta();
 t0=Date.now();carregar();setInterval(carregar,10*60000);setInterval(relogio,500);relogio();setTimeout(function(){location.reload()},6*3600000);
 </script></body></html>`;
 }
@@ -312,7 +349,7 @@ async function handler(req, res) {
       config: async () => { const c = await config(); return { config: { ...c, link: c.codigo ? base() + '/tv/' + c.codigo : null } }; },
       gerar: async () => { const c = await config(); const n = { ...c, codigo: codigoNovo(), criado_em: new Date().toISOString() }; await kv('tv:config', n); return { config: { ...n, link: base() + '/tv/' + n.codigo } }; },
       revogar: async () => { const c = await config(); await kv('tv:config', { ...c, codigo: null, criado_em: null }); return { ok: true }; },
-      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
+      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
         if (!Array.isArray(n.slides) || !n.slides.length) throw new Error('Escolha pelo menos um slide'); await kv('tv:config', n);
         /* v3.237: esconder nomes vale na hora (cache de 10 min) */ if (n.nomes_projetos !== c.nomes_projetos) { try { await kv('tv:dados', null); } catch (_) {} } return { config: { ...n, link: n.codigo ? base() + '/tv/' + n.codigo : null } }; },
       atualizar_dados: async () => ({ dados: await dados(true) }),
@@ -323,4 +360,4 @@ async function handler(req, res) {
   } catch (e) { console.error('[tv]', e.message); return res.status(500).json({ success: false, error: e.message }); }
 }
 export default comGuarda(handler, 'tv');
-export { dados as dadosGestao, qualidade as _qualidade };
+export { dados as dadosGestao, qualidade as _qualidade, pagina as _paginaTv };
