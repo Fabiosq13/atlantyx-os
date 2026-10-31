@@ -887,9 +887,14 @@ async function patrocinadoListar() {
     const ks = [...new Set(slugs.filter(Boolean))];
     if (ks.length) {
       const V = await sql`SELECT campanha, COUNT(*)::int n FROM captura_visitas WHERE campanha = ANY(${ks}) GROUP BY campanha`.catch(() => []);
+      const FK = {}; try { (await sql`SELECT key, value FROM kv_store WHERE key LIKE 'funil:%'`).forEach(x => { FK[String(x.key).slice(6)] = Number(String(x.value).replace(/"/g, '')) || 0; }); } catch (_) {}
       const L = await sql`SELECT campanha, COUNT(*)::int n, MAX(criado_em) ultimo, json_agg(json_build_object('id', id, 'nome', nome, 'empresa', empresa, 'cargo', cargo, 'email', email, 'telefone', telefone, 'score', score, 'status', status, 'origem', origem, 'em', criado_em) ORDER BY criado_em DESC) FILTER (WHERE TRUE) pessoas FROM leads WHERE campanha = ANY(${ks}) GROUP BY campanha`.catch(() => []);
       lista.slice(0, 15).forEach((r, i) => { const k = slugs[i]; if (!k) return; const v = V.find(x => x.campanha === k), l = L.find(x => x.campanha === k);
-        r.funil = { utm_campaign: k, visitas: v?.n || 0, leads: l?.n || 0, ultimo_lead: l?.ultimo || null, pessoas: (l?.pessoas || []).slice(0, 50) }; /* v3.325: dados de contato para o detalhe dos leads */ });
+        // v3.326: lead de TESTE (nome/empresa/cargo com "teste", e-mail da própria Atlantyx) não conta como conversão
+        const ehTeste = x => /\bteste?s?\d*\b|\btest\b/i.test([x.nome, x.empresa, x.cargo].join(' ')) || /@(atlanteam|atlantyx)\./i.test(String(x.email || ''));
+        const ps = (l?.pessoas || []).map(x => ({ ...x, teste: ehTeste(x) })), reais = ps.filter(x => !x.teste).length;
+        const et = e => Number(FK[k + ':' + e] || 0);
+        r.funil = { utm_campaign: k, visitas: v?.n || 0, comecaram: et('form_inicio'), cta: et('cta'), whatsapp: et('whatsapp'), descartados: et('descartado'), leads: reais, leads_teste: ps.length - reais, leads_total: l?.n || 0, ultimo_lead: l?.ultimo || null, pessoas: ps.slice(0, 50) }; /* v3.325: dados de contato para o detalhe dos leads */ });
     } } catch (e) { console.warn('[patrocinados] funil:', e.message); }
   return { campanhas: lista };
 }

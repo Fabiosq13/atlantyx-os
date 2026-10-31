@@ -213,7 +213,7 @@
               <option>Outro</option>
             </select></div>
         </div>
-        <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Site</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+        <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Deixe em branco</label><input id="website" name="hp_x7q" tabindex="-1" autocomplete="new-password" data-lpignore="true" data-form-type="other"></div>
         <button class="btn" id="btn" type="submit">Quero conversar <span class="seta">→</span></button>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
@@ -324,13 +324,15 @@
 <div class="cta-fixa" id="ctaFixa"><a href="#cardForm" onclick="return irForm()">Quero uma conversa gratuita →</a></div>
 <script>
 // v3.321: rola até o formulário e já põe o cursor no Nome; a barra fixa some quando o formulário está na tela
-function irForm() { const c = document.getElementById('cardForm'); if (!c) return true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { try { document.getElementById('nome')?.focus({ preventScroll: true }); } catch (_) {} }, 600); return false; }
+function _funil(etapa) { try { fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ evento: 'funil', etapa, utm }) }); } catch (_) {} }
+(() => { const f = document.getElementById('form'); if (!f) return; let foi = false; const ini = () => { if (foi) return; foi = true; _funil('form_inicio'); }; f.addEventListener('focusin', ini); f.addEventListener('input', ini); })();
+function irForm() { try { _funil('cta'); } catch (_) {} const c = document.getElementById('cardForm'); if (!c) return true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { try { document.getElementById('nome')?.focus({ preventScroll: true }); } catch (_) {} }, 600); return false; }
 (() => { const f = document.getElementById('cardForm'), b = document.getElementById('ctaFixa'), topo = document.querySelector('.cta-topo'); if (!f || !b || !('IntersectionObserver' in window)) return;
   let vForm = false, vTopo = true; const upd = () => b.classList.toggle('on', !vForm && !vTopo);
   new IntersectionObserver(e => { vForm = e[0].isIntersecting; upd(); }, { threshold: 0.15 }).observe(f);
   if (topo) new IntersectionObserver(e => { vTopo = e[0].isIntersecting; upd(); }).observe(topo); })();
 // WhatsApp comercial (vem do servidor) como alternativa ao formulário
-(function esperarWa(n) { try { if (typeof whatsComercial !== 'undefined' && whatsComercial) { const num = String(whatsComercial).replace(/\D/g, ''); if (num) { const l = document.getElementById('ctaWaLink'); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 20) setTimeout(() => esperarWa(n + 1), 300); })(0);
+(function esperarWa(n) { try { if (typeof whatsComercial !== 'undefined' && whatsComercial) { const num = String(whatsComercial).replace(/\D/g, ''); if (num) { const l = document.getElementById('ctaWaLink'); l.addEventListener('click', () => _funil('whatsapp')); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 20) setTimeout(() => esperarWa(n + 1), 300); })(0);
 </script>
 </body>
 </html>

@@ -33661,11 +33661,11 @@ async function despPagosCarregar() {
   try {
     const d = await mcApi('patrocinado_listar'); const L = d.campanhas || [];
     if (!L.length) { el.innerHTML = '<div style="font-size:11px;color:var(--t3);">Nenhum anúncio pago criado pelo sistema ainda. Crie em <b>S2 → Autocampanha → Campanha patrocinada no Instagram</b>.</div>'; return; }
-    const leadsDe = r => { if (r.funil) return Math.max(r.funil.leads || 0, (() => { const m = String(r.link || '').match(/utm_campaign=([^&]+)/i); const k = m ? decodeURIComponent(m[1]).toLowerCase() : ''; const H = _leadsHubspot || {}; const kk = k && Object.keys(H).find(c => c.toLowerCase() === k); return kk ? (H[kk].total || 0) : 0; })()); const m = String(r.link || '').match(/utm_campaign=([^&]+)/i); const k = m ? decodeURIComponent(m[1]).toLowerCase() : ''; const H = _leadsHubspot || {}; const kk = k && Object.keys(H).find(c => c.toLowerCase() === k); return kk ? (H[kk].total || 0) : 0; };
+    const leadsDe = r => { if (r.funil) return r.funil.leads || 0; /* v3.326: só leads reais (sem testes) */ const m = String(r.link || '').match(/utm_campaign=([^&]+)/i); const k = m ? decodeURIComponent(m[1]).toLowerCase() : ''; const H = _leadsHubspot || {}; const kk = k && Object.keys(H).find(c => c.toLowerCase() === k); return kk ? (H[kk].total || 0) : 0; };
     const est = r => { const e = String(r.estado_meta || r.estado || '').toUpperCase(); return e === 'ACTIVE' ? ['ATIVA', 'var(--green)'] : /PAUSED|CAMPAIGN_PAUSED|ADSET_PAUSED/.test(e) ? ['PAUSADA', 'var(--t3)'] : /REVIEW|PENDING/.test(e) ? ['EM ANÁLISE', 'var(--gold)'] : /DISAPPROVED|REJECT/.test(e) ? ['REJEITADA', 'var(--red)'] : [e || '—', 'var(--t3)']; };
     let T = { g: 0, i: 0, c: 0, l: 0, v: 0 };
     const linhas = L.map(r => { const R = r.resultado || {}, ld = leadsDe(r), e = est(r); T.g += R.gasto || 0; T.i += R.impressoes || 0; T.c += R.cliques_link || 0; T.l += ld; T.v += r.funil?.visitas || 0;
-      return `<tr style="border-top:1px solid var(--bd);"><td style="padding:6px;">${esc(r.nome)}<div style="font-size:9.5px;color:var(--t3);">${esc((r.inicio || '').split('-').reverse().join('/'))} a ${esc((r.fim || '').split('-').reverse().join('/'))} · ${brl(r.orcamento_diario)}/dia${r.local ? ' · 📍 ' + esc(String(r.local.endereco || '').split(',')[0]) + ' (' + r.local.raio_km + ' km)' : ''}</div>${(r.funil?.pessoas || []).length ? '<div style="font-size:9.5px;color:var(--green,#22d3a3);">' + r.funil.pessoas.map(x => esc([x.nome, x.cargo, x.empresa].filter(Boolean).join(' · '))).join('<br>') + '</div>' : ''}</td>
+      return `<tr style="border-top:1px solid var(--bd);"><td style="padding:6px;">${esc(r.nome)}<div style="font-size:9.5px;color:var(--t3);">${esc((r.inicio || '').split('-').reverse().join('/'))} a ${esc((r.fim || '').split('-').reverse().join('/'))} · ${brl(r.orcamento_diario)}/dia${r.local ? ' · 📍 ' + esc(String(r.local.endereco || '').split(',')[0]) + ' (' + r.local.raio_km + ' km)' : ''}</div>${r.funil ? '<div style="font-size:9.5px;color:var(--t2);">visitas ' + n(r.funil.visitas) + ' → começaram o formulário ' + n(r.funil.comecaram) + ' → leads ' + n(r.funil.leads) + (r.funil.whatsapp ? ' · WhatsApp ' + n(r.funil.whatsapp) : '') + (r.funil.descartados ? ' · <span style="color:var(--gold);">' + n(r.funil.descartados) + ' envio(s) barrado(s) como robô</span>' : '') + (r.funil.leads_teste ? ' · ' + r.funil.leads_teste + ' de teste (fora da conta)' : '') + '</div>' : ''}${(r.funil?.pessoas || []).filter(x => !x.teste).length ? '<div style="font-size:9.5px;color:var(--green,#22d3a3);">' + r.funil.pessoas.filter(x => !x.teste).map(x => esc([x.nome, x.cargo, x.empresa].filter(Boolean).join(' · '))).join('<br>') + '</div>' : ''}</td>
         <td style="padding:6px;"><span style="font-size:9px;padding:2px 6px;border:1px solid ${e[1]};color:${e[1]};border-radius:3px;">${e[0]}</span></td>
         <td style="padding:6px;text-align:right;font-family:var(--M);">${brl(R.gasto)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.impressoes)}</td>
         <td style="padding:6px;text-align:right;font-family:var(--M);">${n(R.cliques_link)}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${R.cpc != null ? brl(R.cpc) : '—'}</td><td style="padding:6px;text-align:right;font-family:var(--M);">${r.funil ? n(r.funil.visitas) : '—'}</td>
@@ -33688,7 +33688,7 @@ function despLeadsDetalhe(campId) {
   m.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;margin:0;"><div class="ph"><div class="pt">👥 Leads das campanhas pagas' + (campId && L[0] ? ' — ' + E(L[0].nome) : '') + '</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'despLeadsModal\').remove()">✕</button></div><div class="pb">'
     + '<div style="font-size:11px;color:var(--t2);margin-bottom:10px;"><b>' + tot + '</b> lead(s)' + (gasto ? ' · investido ' + fmtBRLcompleto(gasto) + (tot ? ' · custo por lead <b>' + fmtBRLcompleto(gasto / tot) + '</b>' : '') : '') + (tot > pessoas.length ? ' · mostrando os ' + pessoas.length + ' mais recentes' : '') + '</div>'
     + (pessoas.length ? pessoas.map(p => '<div style="border:1px solid var(--bd);border-radius:8px;padding:9px 11px;margin-bottom:7px;font-size:11.5px;">'
-      + '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;"><b style="font-size:12.5px;">' + E(p.nome || '(sem nome)') + '</b>' + sc(p.score) + '<span style="flex:1;"></span><span style="font-size:10px;color:var(--t3);">' + (p.em ? new Date(p.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '') + '</span></div>'
+      + '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;' + (p.teste ? 'opacity:.55;' : '') + '"><b style="font-size:12.5px;">' + E(p.nome || '(sem nome)') + '</b>' + (p.teste ? '<span class="tag" style="margin-left:6px;">teste — fora da conta</span>' : '') + sc(p.score) + '<span style="flex:1;"></span><span style="font-size:10px;color:var(--t3);">' + (p.em ? new Date(p.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '') + '</span></div>'
       + '<div style="color:var(--t2);">' + E([p.cargo, p.empresa].filter(Boolean).join(' · ') || '—') + '</div>'
       + '<div style="font-size:10.5px;color:var(--t3);margin-top:2px;">Campanha: ' + E(p.campanha) + (p.status ? ' · situação: ' + E(p.status) : '') + '</div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">' + (p.email ? '<a class="btn" style="font-size:10px;text-decoration:none;" href="mailto:' + E(p.email) + '">✉ ' + E(p.email) + '</a>' : '') + (wa(p.telefone) ? '<a class="btn" style="font-size:10px;text-decoration:none;color:#25D366;border-color:#25D366;" target="_blank" rel="noopener" href="' + wa(p.telefone) + '">💬 WhatsApp ' + E(p.telefone) + '</a>' : '') + '</div></div>').join('')
@@ -35681,7 +35681,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.325] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.326] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35697,7 +35697,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.325';
+window.__ATX_BUILD_ID__ = 'ATX-v3.326';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

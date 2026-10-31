@@ -24,6 +24,12 @@ function _smtpConfig(user, pass) {
 // Recebe lead do Meta Ads / LinkedIn → Claude gera mensagem → HubSpot → WhatsApp
 
 const MODEL = process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001'; // v3.191 (custo): mensagem curta de WhatsApp → modelo rápido e barato
+// v3.326: contador de etapa do funil da página de captura por campanha (kv_store, sem DDL)
+async function _funilConta(campanha, etapa) {
+  const c = String(campanha || '').toLowerCase().replace(/[^a-z0-9_.-]/g, '').substring(0, 100) || 'sem_campanha';
+  const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL);
+  await sq`INSERT INTO kv_store (key, value, updated_at) VALUES (${'funil:' + c + ':' + etapa}, '1'::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = to_jsonb(COALESCE((kv_store.value)::text::int, 0) + 1), updated_at = NOW()`;
+}
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -73,6 +79,13 @@ async function handler(req, res) {
 
   // v3.13: VISITA à página de captura (sem dados pessoais) — mede o passo clique → página → lead.
   // Antes só o lead era registrado; sem a visita não dá para saber se o clique chega na página.
+  // v3.326: ETAPAS do funil na página (sem dados pessoais): começou a preencher, clicou no WhatsApp, clicou na chamada.
+  // Contador por campanha no kv_store (sem DDL) — mostra ONDE as visitas param antes de virar lead.
+  if (req.body && req.body.evento === 'funil') {
+    const et = String(req.body.etapa || ''); if (!['form_inicio', 'whatsapp', 'cta'].includes(et)) return res.status(200).json({ success: false });
+    try { await _funilConta(req.body.utm?.campaign, et); } catch (_) {}
+    return res.status(200).json({ success: true });
+  }
   if (req.body && req.body.evento === 'visita') {
     try {
       const { neon } = await import('@neondatabase/serverless');
@@ -102,6 +115,7 @@ async function handler(req, res) {
     }
     if ((body.form_name === 'captura-publica' || !confiavel) && (String(body.website || '').trim() || (Number(body.t_preenchimento_ms) > 0 && Number(body.t_preenchimento_ms) < 3000))) {
       console.warn('[S2] envio descartado (robô):', String(body.email || '').substring(0, 60));
+      try { await _funilConta(body.utm?.campaign, 'descartado'); } catch (_) {} // v3.326: aparece no funil — se um humano cair aqui, dá para ver
       return res.status(200).json({ success: true, lead_id: null });
     }
     const lead = normalizeLead(body);
