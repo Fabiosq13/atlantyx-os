@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlantyx — Tecnologia, dados e produtos para a sua operação</title>
 <meta name="description" content="Há 17 anos a Atlantyx entrega tecnologia, dados, software e produtos próprios para grandes empresas. Fale com um especialista.">
@@ -324,8 +325,10 @@ function irForm() { try { _funil('cta'); } catch (_) {} const c = document.getEl
   new IntersectionObserver(e => { vForm = e[0].isIntersecting; upd(); }, { threshold: 0.15 }).observe(f);
   if (topo) new IntersectionObserver(e => { vTopo = e[0].isIntersecting; upd(); }).observe(topo); })();
 // WhatsApp comercial (vem do servidor) como alternativa ao formulário
+// v3.340: o número também vem do Cartão Digital (endpoint público) — o botão aparece mesmo sem o número no servidor
+try { fetch('/api/prospeccao?cartao=1&t=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(d => { const c = d && d.cartao || {}; let n = String(c.whatsapp || c.telefone || '').replace(/\D/g, ''); if (n && !whatsComercial) whatsComercial = n; }).catch(() => {}); } catch (_) {}
 (function esperarWa(n) { try { if (typeof whatsComercial !== 'undefined' && whatsComercial) { const num = String(whatsComercial).replace(/\D/g, ''); if (num) { const fw = document.getElementById('formWa'); if (fw) { fw.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Quero receber o Mapa de Oportunidades com IA da minha empresa.'); fw.style.display = 'block'; fw.addEventListener('click', () => _funil('whatsapp')); }
-        const l = document.getElementById('ctaWaLink'); l.addEventListener('click', () => _funil('whatsapp')); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 20) setTimeout(() => esperarWa(n + 1), 300); })(0);
+        const l = document.getElementById('ctaWaLink'); l.addEventListener('click', () => _funil('whatsapp')); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 40) setTimeout(() => esperarWa(n + 1), 300); })(0);
 </script>
 </body>
 </html>
