@@ -131,7 +131,16 @@
   .cta-fixa { display:none; position:fixed; left:0; right:0; bottom:0; z-index:50; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:rgba(3,8,12,.92); backdrop-filter:blur(8px); border-top:1px solid rgba(255,255,255,.08); transform:translateY(110%); transition:transform .25s; }
   .cta-fixa.on { transform:none; }
   .cta-fixa a { display:block; text-align:center; padding:14px; border-radius:11px; background:linear-gradient(90deg,#00C4CC,#00FCA8); color:#03121a; font-weight:800; font-size:15.5px; text-decoration:none; }
-  @media (max-width: 960px) { .cta-topo { display:block; } .cta-fixa { display:block; } }
+  /* v3.329: no celular o FORMULÁRIO fica logo abaixo do texto de abertura (no lugar do botão) — sem rolar */
+  @media (max-width: 960px) {
+    .hero .container { gap:0 !important; }
+    .hero .container > div:first-child { display:contents; }
+    .hero .selo { order:1; justify-self:start; } .hero h1 { order:2; } .hero .sub { order:3; }
+    #cardForm { order:4; margin:6px 0 28px; } .hero .pontos { order:5; } .hero .numeros { order:6; }
+    .cta-topo, .cta-fixa { display:none !important; }
+    .hero .sub#sub { display:none; } .hero .sub.sub-curta { display:block; order:3; }
+  }
+  .sub-curta { display:none; }
   @media (max-width: 960px) {
     .hero { padding:96px 0 48px; }
     .hero .container { grid-template-columns:1fr; gap:30px; }
@@ -167,6 +176,7 @@
     <div>
       <div class="selo"><i></i> Grátis · sem reunião · direto no seu WhatsApp</div>
       <h1 id="titulo">Descubra onde dados e IA podem <em>cortar custos e acelerar decisões</em> na sua empresa.</h1>
+      <p class="sub sub-curta">Receba grátis no seu WhatsApp o <b>Mapa de Oportunidades com IA</b> da sua empresa: 3 oportunidades concretas, sem reunião.</p>
       <p class="sub" id="sub">Receba no seu WhatsApp, em até 1 dia útil, o <b>Mapa de Oportunidades com IA</b> da sua empresa: 3 oportunidades concretas em dados, indicadores e automação, preparadas pelos especialistas da Atlantyx a partir do seu setor e do momento da sua empresa. Sem reunião e sem compromisso.</p>
       <div class="cta-topo"><a class="cta-btn" href="#cardForm" onclick="return irForm()">Quero meu mapa grátis <span aria-hidden="true">→</span></a>
         <span class="cta-sec" id="ctaWa" style="display:none;">ou <a href="#" target="_blank" rel="noopener" id="ctaWaLink">fale agora pelo WhatsApp</a></span></div>
@@ -258,7 +268,7 @@
   const utm = { source: q.get('utm_source') || 'direto', medium: q.get('utm_medium') || '', campaign: q.get('utm_campaign') || '', content: q.get('utm_content') || '' };
   // Título pode ser personalizado por campanha: ?t=Texto&s=Subtexto
   if (q.get('t')) document.getElementById('titulo').textContent = q.get('t');
-  if (q.get('s')) document.getElementById('sub').textContent = q.get('s');
+  if (q.get('s')) { document.getElementById('sub').textContent = q.get('s'); const sc = document.querySelector('.sub-curta'); if (sc) sc.textContent = q.get('s'); }
   // Registra a VISITA (sem dados pessoais) para medir clique → página → lead
   let whatsComercial = null, agendaServidor = null; const _t0 = Date.now(); // v3.190: tempo de preenchimento (anti-robô)
   // v3.190: Pixel do Meta (se configurado no servidor) — PageView e Lead, para o anúncio otimizar por cadastro real
