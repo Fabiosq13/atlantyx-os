@@ -32346,6 +32346,32 @@ function dashMktRender() {
           + '<div style="text-align:right;white-space:nowrap;">' + (() => { const fl = _mktFarol(c); return _mktBola(fl.cor) + ' <b style="font-size:13px;">' + n(f.leads) + '</b><span style="font-size:10.5px;color:var(--t3);">' + (fl.meta ? ' / meta ' + fl.meta + ' (' + fl.pct + '%)' : ' · sem meta') + '</span>'; })() + ' <span style="font-size:18px;color:var(--t3);">›</span></div></div>'; }).join(''))
     + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Toque numa campanha para ver todos os dados e os leads. Gasto, impressões e cliques vêm do Meta/LinkedIn; visitas e leads, da página de cadastro (pela UTM da campanha).</div>';
 }
+function dashMktVerbaPct(base, pct) { const el = document.getElementById('dmkVerba'); if (el) el.value = (Math.round(base * (1 + pct / 100) * 100) / 100).toFixed(2).replace('.', ','); }
+async function dashMktVerba(id) {
+  const c = (_dmk.dados || []).find(x => String(x.id) === String(id)); if (!c) return;
+  const v = Math.round(Number(String(document.getElementById('dmkVerba')?.value || '').replace(/\./g, '').replace(',', '.')) * 100) / 100;
+  if (!(v > 0)) { toast('Informe o novo valor por dia', 'error'); return; }
+  if (v === Number(c.orcamento_diario)) { toast('O valor é o mesmo de hoje', 'error'); return; }
+  const d = s => new Date(String(s) + 'T12:00:00'), hj = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const resta = c.fim ? Math.max(1, Math.round((d(c.fim) - hj) / 864e5) + 1) : 1, delta = (v - Number(c.orcamento_diario || 0)) * resta;
+  if (!confirm('Mudar a verba de "' + c.nome + '" no ' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Meta') + '?\n\n' + fmtBRLcompleto(c.orcamento_diario) + '/dia → ' + fmtBRLcompleto(v) + '/dia\nAté o fim (' + String(c.fim || '').split('-').reverse().join('/') + ', ~' + resta + ' dia(s)): ' + (delta >= 0 ? '+ ' : '− ') + fmtBRLcompleto(Math.abs(delta)) + ' no investimento máximo.\n\nA mudança vale na hora.')) return;
+  try { const r = await mcApi('patrocinado_periodo', { id, orcamento_diario: v }); Object.assign(c, r.campanha || { orcamento_diario: v }); toast('Verba atualizada: ' + fmtBRLcompleto(v) + '/dia', 'success'); if (r.aviso) toast(r.aviso, 'success'); dashMktRender(); dashMktAbrir(id); }
+  catch (e) { toast('Não mudou: ' + e.message, 'error'); alert('Não mudou a verba:\n\n' + e.message); }
+}
+async function dashMktIA(id, forcar) {
+  const c = (_dmk.dados || []).find(x => String(x.id) === String(id)), el = () => document.getElementById('dmkIA'); if (!c || !el()) return;
+  if (forcar) el().innerHTML = '<b>🤖 Avaliação da IA</b> <span style="color:var(--t3);">refazendo…</span>';
+  try { const f = c.funil || {}; const d = await mcApi('patrocinado_avaliar', { id, forcar: !!forcar, metricas: { visitas: f.visitas, comecaram: f.comecaram, leads: f.leads, whatsapp: f.whatsapp, descartados: f.descartados } }); const a = d.avaliacao || {};
+    if (!el()) return; const E = _patE, ic = { alto: '🔴', medio: '🟡', baixo: '⚪' }, V = a.verba || {};
+    el().innerHTML = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;"><b style="flex:1;">🤖 Avaliação da IA' + (a.gargalo ? ' · gargalo: ' + E(a.gargalo) : '') + '</b><span style="font-size:9.5px;color:var(--t3);">' + (a.em ? new Date(a.em).toLocaleTimeString('pt-BR').slice(0, 5) : '') + '</span><button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick="dashMktIA(\'' + E(id) + '\',true)">↻</button></div>'
+      + '<div style="margin-bottom:6px;">' + E(a.diagnostico || '') + '</div>'
+      + (a.ao_vivo && !a.ao_vivo.erro && a.ao_vivo.impressoes ? '<div style="font-size:10px;color:var(--t3);margin-bottom:6px;">Agora no Meta: alcance ' + Number(a.ao_vivo.alcance).toLocaleString('pt-BR') + ' pessoas · frequência ' + Number(a.ao_vivo.frequencia).toFixed(2).replace('.', ',') + ' · CPM ' + fmtBRLcompleto(a.ao_vivo.cpm) + ' · CTR ' + Number(a.ao_vivo.ctr_pct).toFixed(2).replace('.', ',') + '%</div>' : '')
+      + (a.sugestoes || []).map(s => '<div style="border-top:1px solid var(--bd);padding:5px 0;"><b>' + (ic[s.impacto] || '•') + ' ' + E(s.titulo) + '</b><div style="font-size:10.5px;color:var(--t2);">' + E(s.detalhe) + '</div></div>').join('')
+      + (V.recomendar_aumento && V.sugerido ? '<div style="margin-top:6px;padding:6px 8px;background:rgba(34,211,163,.08);border-radius:6px;">💰 Sugere aumentar para <b>' + fmtBRLcompleto(V.sugerido) + '/dia</b>: ' + E(V.justificativa) + ' <button class="btn" style="font-size:10px;margin-left:4px;" onclick="(document.getElementById(\'dmkVerba\')||{}).value=\'' + String(V.sugerido.toFixed(2)).replace('.', ',') + '\';document.getElementById(\'dmkVerba\')?.focus()">Usar este valor</button></div>'
+        : (V.justificativa ? '<div style="margin-top:6px;font-size:10.5px;color:var(--t2);">💰 Verba: ' + E(V.justificativa) + '</div>' : ''))
+      + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Sugestões da IA com os números de agora — nada muda no Meta sem você clicar.</div>';
+  } catch (e) { if (el()) el().innerHTML = '<b>🤖 Avaliação da IA</b> <span style="color:var(--gold);">não consegui avaliar agora: ' + _patE(e.message) + '</span> <button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick="dashMktIA(\'' + _patE(id) + '\',true)">tentar de novo</button>'; }
+}
 function dashMktAbrir(id) {
   const c = (_dmk.dados || []).find(x => String(x.id) === String(id)); if (!c) return;
   const E = _patE, n = v => Number(v || 0).toLocaleString('pt-BR'), r = c.resultado || {}, f = c.funil || {}, st = _patStatus(c), dt = x => String(x || '').split('-').reverse().join('/');
@@ -32361,6 +32387,13 @@ function dashMktAbrir(id) {
     + (c.link ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;"><span style="font-size:11px;color:var(--t2);">🔗 Página do anúncio:</span><a href="' + E(c.link) + '" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);word-break:break-all;flex:1;min-width:180px;">' + E(String(c.link).replace(/^https?:\/\//, '').split('?')[0]) + '</a><a class="btn btn-p" style="font-size:10px;text-decoration:none;" href="' + E(c.link) + '" target="_blank" rel="noopener">Abrir página ↗</a><button class="btn" style="font-size:10px;" onclick="atxCopiar(\'' + E(c.link).replace(/'/g, '%27') + '\',\'Link copiado\')">Copiar link</button></div>' : '') // v3.331
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin-bottom:12px;">' + k('Investido', fmtBRLcompleto(r.gasto)) + k('Impressões', n(r.impressoes)) + k('Cliques', n(r.cliques_link)) + k('CTR', ctr) + k('Custo/clique', r.cpc != null ? fmtBRLcompleto(r.cpc) : '—') + k('Leads', n(f.leads)) + k('Custo/lead', f.leads && r.gasto ? fmtBRLcompleto(r.gasto / f.leads) : '—') + '</div>'
     + (() => { const fl = _mktFarol(c); return '<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--bd);border-radius:8px;margin-bottom:12px;">' + _mktBola(fl.cor) + '<div style="flex:1;font-size:12px;">' + (fl.meta ? '<b>Leads: ' + n(fl.real) + ' de ' + fl.meta + ' (' + fl.pct + '% da meta)</b><div style="font-size:10.5px;color:var(--t3);">esperado até hoje: ' + String(fl.esperado).replace('.', ',') + ' · verde ≥ 100% do esperado, amarelo ≥ 85%, vermelho abaixo</div>' : '<b>Sem meta de leads</b><div style="font-size:10.5px;color:var(--t3);">defina a meta para acompanhar o farol</div>') + '</div><button class="btn" style="font-size:10px;" onclick="dashMktMeta(\'' + E(c.id) + '\')">🎯 ' + (fl.meta ? 'Mudar meta' : 'Definir meta') + '</button></div>'; })()
+    // v3.334: verba direto no Meta (só com clique e confirmação) + avaliação da IA ao abrir
+    + (st.veicula && !c.encerrada ? '<div style="padding:9px 11px;border:1px solid var(--bd);border-radius:8px;margin-bottom:12px;"><div style="font-weight:700;margin-bottom:6px;">💰 Verba da campanha</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;">Hoje: <b>' + fmtBRLcompleto(c.orcamento_diario) + '/dia</b> · novo valor R$ <input class="fi" id="dmkVerba" inputmode="decimal" value="' + String(c.orcamento_diario || '').replace('.', ',') + '" style="width:90px;margin:0;padding:4px 6px;">'
+      + '<button class="btn" style="font-size:10px;" onclick="dashMktVerbaPct(' + Number(c.orcamento_diario || 0) + ',20)">+20%</button><button class="btn" style="font-size:10px;" onclick="dashMktVerbaPct(' + Number(c.orcamento_diario || 0) + ',50)">+50%</button>'
+      + '<button class="btn btn-gn" style="font-size:10px;" onclick="dashMktVerba(\'' + E(c.id) + '\')">Aplicar no ' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Meta') + '</button></div>'
+      + '<div style="font-size:10px;color:var(--t3);margin-top:4px;">Muda o orçamento diário do conjunto de anúncios na hora. Aumentos de até 20–30% por vez não reiniciam o aprendizado do Meta.</div></div>' : '')
+    + '<div id="dmkIA" style="padding:9px 11px;border:1px solid var(--blue);border-radius:8px;margin-bottom:12px;font-size:11.5px;"><b>🤖 Avaliação da IA</b> <span style="color:var(--t3);">analisando os números de agora no ' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Meta') + '…</span></div>'
     + '<div style="font-weight:700;margin:4px 0 6px;">Funil</div>' + etapa('Cliques no anúncio', r.cliques_link || 0, base) + etapa('Visitas na página', f.visitas || 0, base) + etapa('Começaram o formulário', f.comecaram || 0, base) + etapa('Leads', f.leads || 0, base)
     + ((f.whatsapp || f.descartados || f.leads_teste) ? '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">' + [f.whatsapp ? n(f.whatsapp) + ' clique(s) no WhatsApp' : '', f.descartados ? n(f.descartados) + ' envio(s) barrado(s) como robô' : '', f.leads_teste ? f.leads_teste + ' lead(s) de teste fora da conta' : ''].filter(Boolean).join(' · ') + '</div>' : '')
     + '<div style="font-weight:700;margin:14px 0 4px;">Configuração</div><table style="border-collapse:collapse;">'
@@ -32376,6 +32409,7 @@ function dashMktAbrir(id) {
       : '<div style="font-size:11px;color:var(--t3);">Nenhum lead ainda.</div>')
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">' + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10.5px;" onclick="patConferir(\'' + E(c.id) + '\')">🔎 Conferir no Meta</button>' : '') + (c.gerenciador ? '<a class="btn" style="font-size:10.5px;text-decoration:none;" href="' + E(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a>' : '') + '<button class="btn" style="font-size:10.5px;" onclick="document.getElementById(\'dmkModal\').remove();nav(\'s2auto\',document.querySelector(\'.sbi[onclick*=&quot;s2auto&quot;]\'))">Pausar, ativar ou mudar período →</button></div>'
     + '</div></div>';
+  setTimeout(() => dashMktIA(id), 50); // v3.334: avaliação da IA ao abrir
 }
 function dashAba(a) {
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
@@ -35811,7 +35845,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.333] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.334] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35827,7 +35861,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.333';
+window.__ATX_BUILD_ID__ = 'ATX-v3.334';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

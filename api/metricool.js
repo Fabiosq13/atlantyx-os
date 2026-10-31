@@ -580,6 +580,40 @@ async function publicoPlataformasLer({ lista_id } = {}) {
 }
 // v3.193: ALTERAR PERÍODO (e, opcional, R$/dia) de uma campanha patrocinada já criada — muda o conjunto no Meta.
 // O Meta não deixa mudar o início depois que a veiculação começou: nesse caso só o fim e o orçamento mudam.
+// v3.334: AVALIAÇÃO DA CAMPANHA PELA IA (ao abrir a campanha) — lê os números ao vivo do Meta (alcance, frequência, CPM, CTR)
+// e o funil da página e devolve diagnóstico + ajustes para aumentar leads, inclusive se vale aumentar a verba e quanto.
+// Só sugere: nada muda no Meta sem o clique do usuário. Cache de 30 min por campanha (forcar = refaz).
+async function patrocinadoAvaliar({ id, forcar, metricas } = {}) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
+  if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
+  const ck = 'mkt:avaliacao:' + reg.id, cache = await _kvMc(ck).catch(() => null);
+  if (!forcar && cache?.em && Date.now() - Date.parse(cache.em) < 30 * 60000) return { avaliacao: cache, cache: true };
+  let ao_vivo = null;
+  if (reg.rede !== 'linkedin' && _metaCfg().token) try { const i = await _meta(`${reg.id}/insights?fields=spend,impressions,reach,frequency,cpm,ctr,inline_link_clicks,cost_per_inline_link_click&date_preset=maximum`); const x = (i.data || [])[0] || {};
+    ao_vivo = { gasto: +x.spend || 0, impressoes: +x.impressions || 0, alcance: +x.reach || 0, frequencia: +x.frequency || 0, cpm: +x.cpm || 0, ctr_pct: +x.ctr || 0, cliques_link: +x.inline_link_clicks || 0, custo_por_clique: +x.cost_per_inline_link_click || 0 }; } catch (e) { ao_vivo = { erro: String(e.message).slice(0, 160) }; }
+  const M = metricas && typeof metricas === 'object' ? metricas : {};
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const dados = { campanha: reg.nome, rede: reg.rede || 'instagram', objetivo: reg.objetivo || null, publico: reg.publico || null, local: reg.local ? { endereco: reg.local.endereco, raio_km: reg.local.raio_km, todo_publico: reg.local.todo_publico } : null,
+    periodo: { inicio: reg.inicio, fim: reg.fim, hoje }, orcamento_diario: reg.orcamento_diario, total_maximo: reg.total_maximo, meta_leads: reg.meta_leads || null,
+    anuncio: { titulo: reg.titulo, descricao: reg.descricao, texto: String(reg.texto || '').slice(0, 600) }, pagina_destino: reg.link,
+    ao_vivo_meta: ao_vivo, funil_pagina: { visitas: M.visitas ?? null, comecaram_formulario: M.comecaram ?? null, leads_reais: M.leads ?? null, cliques_whatsapp: M.whatsapp ?? null, barrados_robo: M.descartados ?? null } };
+  const sys = `Você é gestor de tráfego pago B2B sênior da Atlantyx (dados, BI e IA para médias e grandes empresas; público: donos, sócios e C-levels). Avalie a campanha AGORA com os números abaixo e diga o que fazer para AUMENTAR LEADS.
+REGRAS: use só os números fornecidos — nunca invente resultado; estimativas são marcadas como estimativa. Identifique o GARGALO do funil (alcance → clique → visita → começou o formulário → lead).
+Se houver pouco dado (menos de 24 h de veiculação ou menos de 1.000 impressões), diga que está em aprendizado e não recomende mudança grande.
+VERBA: só recomende aumentar se a campanha já converte (há leads e custo por lead razoável) ou se o gargalo é alcance/frequência baixa com bom CTR; se a página não converte (visitas sem leads), corrija a página/oferta antes de pôr mais dinheiro. Aumento máximo de 20% a 30% por vez (aumento maior reinicia o aprendizado do Meta).
+Responda SÓ com JSON: {"diagnostico":"até 3 frases","gargalo":"alcance|clique|pagina|formulario|publico|aprendizado|ok","fase":"aprendizado|rodando|encerrando",
+"sugestoes":[{"titulo":"ação curta","detalhe":"como fazer e por quê, 1-2 frases","tipo":"verba|publico|criativo|pagina|oferta|periodo|lance","impacto":"alto|medio|baixo"}],
+"verba":{"recomendar_aumento":true,"orcamento_diario_sugerido":0,"justificativa":"1 frase"}}`;
+  const txt = await _claudeAuto(sys, 'DADOS DA CAMPANHA:\n' + JSON.stringify(dados), 1300);
+  let j; try { j = JSON.parse(txt); } catch (_) { throw new Error('A IA não devolveu uma avaliação legível — tente de novo'); }
+  const v = j.verba || {}, atual = Number(reg.orcamento_diario) || 0, sug = Number(v.orcamento_diario_sugerido) || null;
+  const av = { em: new Date().toISOString(), diagnostico: String(j.diagnostico || '').slice(0, 700), gargalo: String(j.gargalo || '').slice(0, 20), fase: String(j.fase || '').slice(0, 20),
+    sugestoes: (Array.isArray(j.sugestoes) ? j.sugestoes : []).slice(0, 6).map(x => ({ titulo: String(x.titulo || '').slice(0, 120), detalhe: String(x.detalhe || '').slice(0, 400), tipo: String(x.tipo || '').slice(0, 20), impacto: String(x.impacto || '').slice(0, 10) })),
+    verba: { recomendar_aumento: !!v.recomendar_aumento && !!sug && sug > atual, atual, sugerido: sug && sug > atual ? Math.min(Math.round(sug * 100) / 100, Math.round(atual * 1.3 * 100) / 100) : null, justificativa: String(v.justificativa || '').slice(0, 300) },
+    ao_vivo: ao_vivo };
+  try { await _kvMc(ck, av); } catch (_) {}
+  return { avaliacao: av, cache: false };
+}
 // v3.332: META DE LEADS por campanha — o farol compara leads reais × meta pelo ritmo (dias decorridos da campanha)
 async function patrocinadoMeta({ id, meta_leads } = {}) {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
@@ -596,6 +630,7 @@ async function patrocinadoPeriodo({ id, inicio, fim, orcamento_diario } = {}) {
   const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   if (fi < hojeSP) throw err('A data de fim já passou');
   const diario = orcamento_diario != null && orcamento_diario !== '' ? Math.round(Number(String(orcamento_diario).replace(',', '.')) * 100) / 100 : Number(reg.orcamento_diario);
+  if (diario > 2000) throw err('Acima de R$ 2.000/dia — por segurança, altere direto no Gerenciador de Anúncios'); // v3.334
   if (!(diario >= (reg.rede === 'linkedin' ? 10 : 6))) throw err('Orçamento diário mínimo: ' + (reg.rede === 'linkedin' ? '10,00 no LinkedIn' : 'R$ 6,00'));
   const jaComecou = reg.inicio && reg.inicio <= hojeSP && (reg.estado === 'ACTIVE' || reg.estado_meta === 'ACTIVE' || reg.ativado_em);
   const corpo = { end_time: fi + 'T23:59:00-0300', daily_budget: Math.round(diario * 100) };
@@ -1876,6 +1911,7 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_meta:       () => patrocinadoMeta(payload), // v3.332
+    patrocinado_avaliar:    () => patrocinadoAvaliar(payload), // v3.334: IA avalia a campanha e sugere ajustes (não muda nada no Meta)
     patrocinado_listar:     () => patrocinadoListar(),
     patrocinado_conferir:   () => patrocinadoConferir(payload), // v3.318: só lê no Meta
     // v3.239: LinkedIn Ads + públicos por lista (Apollo → Meta / LinkedIn)
