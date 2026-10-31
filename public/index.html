@@ -989,6 +989,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       BUILD: <span id="buildCode" style="color:var(--blue);cursor:pointer;" onclick="verificarSaude()" title="Clique pra rodar healthcheck completo">ATX-carregando...</span>
     </div>
     <div class="sf" id="sfIA" style="cursor:pointer;" onclick="iaChave()" title="Chave geral da IA: liga ou desliga todo consumo de tokens do Atlantyx OS"><span class="dot"></span>IA · verificando…</div>
+    <div class="sf" style="cursor:pointer;" onclick="iaUso()" title="Uso da IA do Atlantyx OS: tokens e custo estimado do mês"><span class="dot on" style="background:var(--gold);"></span>📊 Uso da IA · tokens e custo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
     <div class="sf" style="cursor:pointer;" onclick="conectarQuickBooks()" title="Clique para conectar/reconectar o QuickBooks (OAuth)"><span class="dot off" id="dotQB"></span><span id="statQB">QuickBooks · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotMC"></span><span id="statMC">Metricool · Verificando</span></div>
@@ -32507,6 +32508,31 @@ async function iaChave() {
   try { const r = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_definir', ligada: ligar }) }); const d = await r.json(); if (!d.success) throw new Error(d.error);
     _iaLigada = d.ligada; iaEstadoMostrar(d); toast(d.ligada ? 'IA religada' : 'IA desligada — consumo de tokens parado', 'success'); } catch (e) { toast('Não mudou: ' + e.message, 'error'); }
 }
+// v3.347: USO DA IA — total de tokens e custo estimado do mês (log gravado pelo guarda a cada chamada)
+async function iaUso(mes) {
+  let m = document.getElementById('iaUsoModal'); if (!m) { m = document.createElement('div'); m.id = 'iaUsoModal'; m.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px;'; m.onclick = e => { if (e.target === m) m.remove(); }; document.body.appendChild(m); }
+  m.innerHTML = '<div style="background:var(--bg2,#14181f);border:1px solid var(--bd);border-radius:12px;padding:18px;max-width:760px;width:100%;color:var(--t1);">Carregando…</div>';
+  const E = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const N = v => Number(v || 0).toLocaleString('pt-BR'), K = v => { v = Number(v || 0); return v >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : v >= 1e3 ? (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : String(v); };
+  const U = v => 'US$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let d; try { const r = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_uso', mes: mes || '' }) }); d = await r.json(); if (!d.success) throw new Error(d.error || 'erro'); }
+  catch (e) { m.firstChild.innerHTML = '<div style="color:var(--red);">Não consegui carregar: ' + E(e.message) + '</div><button class="btn" style="margin-top:10px;" onclick="document.getElementById(\'iaUsoModal\').remove()">Fechar</button>'; return; }
+  const meses = (d.meses && d.meses.length ? d.meses : [d.mes]); if (!meses.includes(d.mes)) meses.unshift(d.mes);
+  const cel = (t, x) => '<td style="padding:5px 6px;border-top:1px solid var(--bd);' + (x || '') + '">' + t + '</td>';
+  const tab = (tit, cab, linhas) => '<div style="font-weight:700;margin:16px 0 6px;">' + tit + '</div><div style="overflow-x:auto;"><table style="border-collapse:collapse;width:100%;font-size:11.5px;"><tr style="color:var(--t3);text-align:right;">' + cab.map((c, i) => '<th style="padding:4px 6px;font-weight:600;' + (i ? '' : 'text-align:left;') + '">' + c + '</th>').join('') + '</tr>' + (linhas.join('') || '<tr><td style="padding:8px;color:var(--t3);" colspan="' + cab.length + '">Sem chamadas registradas.</td></tr>') + '</table></div>';
+  const custo = a => a.custo || a.parcial ? U(a.custo) + (a.parcial ? '*' : '') : '—';
+  const linha = (nome, a) => '<tr>' + cel(E(nome), 'word-break:break-word;') + cel(N(a.n), 'text-align:right;') + cel(K(a.in + a.cr + a.cw), 'text-align:right;') + cel(K(a.out), 'text-align:right;') + cel(custo(a), 'text-align:right;white-space:nowrap;') + '</tr>';
+  const card = (t, v, sub) => '<div style="flex:1 1 140px;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;"><div style="font-size:10.5px;color:var(--t3);">' + t + '</div><div style="font-size:19px;font-weight:700;margin-top:2px;">' + v + '</div>' + (sub ? '<div style="font-size:10.5px;color:var(--t3);margin-top:2px;">' + sub + '</div>' : '') + '</div>';
+  m.firstChild.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b style="font-size:15px;">📊 Uso da IA do Atlantyx OS</b><span style="flex:1;"></span>'
+    + '<select onchange="iaUso(this.value)" style="background:var(--bg3,#1b212b);color:var(--t1);border:1px solid var(--bd);border-radius:6px;padding:4px 6px;">' + meses.map(x => '<option value="' + x + '"' + (x === d.mes ? ' selected' : '') + '>' + x.slice(5) + '/' + x.slice(0, 4) + '</option>').join('') + '</select>'
+    + '<button class="btn" onclick="document.getElementById(\'iaUsoModal\').remove()">Fechar</button></div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">' + card('Custo estimado do mês', custo(d), d.previsao != null && d.chamadas ? 'previsão até o fim do mês: ' + U(d.previsao) : '') + card('Tokens', K(d.in + d.cr + d.cw + d.out), 'entrada ' + K(d.in + d.cr + d.cw) + ' · saída ' + K(d.out)) + card('Chamadas', N(d.chamadas), 'à IA, neste mês') + '</div>'
+    + (d.chamadas ? '' : '<div style="margin-top:12px;color:var(--gold);font-size:12px;">Nenhuma chamada registrada neste mês. O registro começa na v3.346 e só enche quando a IA está ligada.</div>')
+    + tab('Por modelo', ['Modelo', 'Chamadas', 'Entrada', 'Saída', 'Custo'], d.por_modelo.map(a => linha(a.modelo, a)))
+    + tab('Por tela / rotina (quem gastou)', ['Origem', 'Chamadas', 'Entrada', 'Saída', 'Custo'], d.por_origem.map(a => linha(a.origem, a)))
+    + tab('Por dia', ['Dia', 'Chamadas', 'Entrada', 'Saída', 'Custo'], d.por_dia.map(a => linha(a.dia.slice(8) + '/' + a.dia.slice(5, 7), a)))
+    + '<div style="font-size:10.5px;color:var(--t3);margin-top:14px;line-height:1.5;">Custo <b>estimado</b> pela tabela de preços da Anthropic (cache: gravação 1,25× e leitura 0,1× da entrada; preço do Opus 5.x assumido igual ao do Opus 4.5). * = há modelos sem preço cadastrado, o valor é parcial. Só conta o que passa pelo Atlantyx OS e responde sem streaming; o valor oficial é o do Console da Anthropic.</div>';
+}
 setTimeout(iaEstadoCarregar, 1500);
 function dashAba(a) {
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
@@ -35943,7 +35969,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.346] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.347] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35959,7 +35985,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.346';
+window.__ATX_BUILD_ID__ = 'ATX-v3.347';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

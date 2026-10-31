@@ -1,4 +1,4 @@
-import { comGuarda, iaEstado, iaDefinir } from '../lib/qa-guard.js';
+import { comGuarda, iaEstado, iaDefinir, iaUsoResumo } from '../lib/qa-guard.js';
 // api/health.js
 // Healthcheck do Atlantyx OS
 // - GET  /api/health                              → status básico (público, sem IA)
@@ -30,6 +30,10 @@ async function handler(req, res) {
     try {
       if (b.action === 'ia_estado') { const e = await iaEstado(true); return res.status(200).json({ success: true, ligada: e.ligada, desde: e.desde, por: e.por }); }
       // v3.346: diagnóstico só do administrador — últimos 4 caracteres da chave da Anthropic que o sistema usa (o Console mostra o mesmo trecho)
+      if (b.action === 'ia_uso') {
+        if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador vê o uso da IA' });
+        return res.status(200).json({ success: true, ...(await iaUsoResumo(b.mes)) });
+      }
       if (b.action === 'ia_chave_info') {
         if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador vê isso' });
         const k = String(process.env.ANTHROPIC_API_KEY || '');
