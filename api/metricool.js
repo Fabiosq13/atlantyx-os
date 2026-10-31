@@ -316,20 +316,22 @@ async function patrocinadoStatus(req) {
   try { out.linkedin = await liStatus(_baseDe(req)); } catch (e) { out.linkedin = { configurado: false, erro: e.message }; } // v3.239
   return out;
 }
+// v3.336: a oferta do anúncio pago é SEMPRE a da página de captura — o texto não pode prometer outra coisa (reunião/agenda)
+const OFERTA_LP = 'Mapa de Oportunidades com IA da sua empresa: grátis, sem reunião, entregue no WhatsApp em até 1 dia útil — 3 oportunidades concretas em dados, indicadores e automação, priorizadas por impacto e esforço, preparadas pelos especialistas da Atlantyx';
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '', trilha = '' } = {}) {
   const _tr = await _trilhaPorId(trilha).catch(() => null); // v3.240: trilha do plano estratégico dá foco (público, dor, oferta, prova)
   if (_tr) { tema = [tema, briefingTrilha(_tr)].filter(Boolean).join('\n'); if (!publico) publico = _tr.publico; }
-  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). ' + ICP_TEXTO + ' O texto deve QUALIFICAR quem clica (ex.: "Para CEOs, CFOs e diretores de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso e o público técnico. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
+  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). ' + ICP_TEXTO + ' O texto deve QUALIFICAR quem clica (ex.: "Para CEOs, CFOs e diretores de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso e o público técnico. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede o Mapa de Oportunidades com IA (grátis, sem reunião, recebe no WhatsApp) informando só nome, empresa e WhatsApp. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
   // v3.208: texto no padrão "pergunta-gancho → Simples: resposta → ✅ 3 benefícios → parágrafo de ganho → CTA" e
   // os campos da ARTE no padrão (manchete com palavras em destaque + lista de benefícios com ✓ + tela do sistema)
-  const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}
+  const usr = `OFERTA (a mesma da página de captura para onde o botão leva — o anúncio promete EXATAMENTE isto, nunca reunião, conversa ou agendamento): ${OFERTA_LP}\nTema/ângulo: ${String(tema || oferta || 'onde dados e IA cortam custos e aceleram decisões').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}
 Siga EXATAMENTE este padrão de anúncio (estrutura e ritmo, com conteúdo da Atlantyx — não copie marcas de terceiros):
 TEXTO PRINCIPAL, em blocos separados por UMA linha em branco:
 1) Pergunta-gancho que nomeia o público e a mudança (ex.: "Por que diretores financeiros de grandes empresas estão trocando planilhas por indicadores ao vivo?")
 2) "Simples: " + a resposta em 1 frase (o que a Atlantyx resolve)
 3) Três linhas, cada uma começando com "✅ " e no máximo 55 caracteres (dor eliminada: "Chega de…", "Fim de…", "Adeus a…")
 4) Um parágrafo de 1–2 frases com o ganho concreto para quem decide (tempo, custo, risco, controle) — termine com a palavra mais importante EM MAIÚSCULAS se fizer sentido
-5) Chamada final: "Clique em Saiba mais e agende uma conversa gratuita com um especialista."
+5) Chamada final: "Clique em Saiba mais e receba grátis no seu WhatsApp o Mapa de Oportunidades com IA da sua empresa — sem reunião."
 ARTE (imagem): manchete curta em MAIÚSCULAS no mesmo formato da pergunta-gancho (até 70 caracteres), marcando com **asteriscos duplos** os 2 ou 3 trechos em destaque (quem é o público, o verbo da mudança e a solução/Atlantyx); e 4 ou 5 benefícios curtíssimos (até 28 caracteres cada, sem verbo no início quando possível, ex.: "Indicadores ao vivo", "Fim das planilhas").
 Devolva JSON: {"texto":"texto principal completo no padrão acima, com quebras de linha \\n","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","manchete":"POR QUE **…** ESTÃO **…** PARA A **ATLANTYX?**","beneficios":["…","…","…","…"],"prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
   const j = JSON.parse(await _claudeAuto(sys, usr, 1100));

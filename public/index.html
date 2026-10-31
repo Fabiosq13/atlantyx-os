@@ -4684,7 +4684,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           </details>
           <div style="margin-bottom:8px;"><label class="fl" for="patTrilha">Trilha do plano estratégico</label><select class="fi" id="patTrilha" onchange="patTrilhaMudou()" title="Alavanca do plano vigente: dá o foco (público, dor, oferta e prova) e marca os leads com a trilha"><option value="">Sem trilha (tema livre)</option></select></div>
           <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
-          <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Conversa gratuita com um especialista da Atlantyx: entendemos o seu cenário e mostramos onde tecnologia, dados, software sob medida e os nossos produtos geram resultado na operação.</textarea>
+          <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Mapa de Oportunidades com IA, grátis e sem reunião, no WhatsApp em até 1 dia útil: 3 oportunidades concretas para a empresa cortar custos e acelerar decisões com dados e IA (mesma oferta da página de captura).</textarea>
           <button class="btn btn-p" style="font-size:10.5px;margin-top:6px;" id="patBtnCopy" onclick="patEscrever()">✨ Escrever texto, título e imagem com IA</button>
           <label class="fl" for="patTexto" style="margin-top:8px;">Texto principal <small style="color:var(--t3);" id="patTxtN"></small></label><textarea class="fta" id="patTexto" style="min-height:150px;font-size:11.5px;" maxlength="1200" oninput="patPrev()" placeholder="Texto que aparece acima da imagem no anúncio (ideal até 125 caracteres)"></textarea>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -35857,7 +35857,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.335] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.336] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35873,7 +35873,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.335';
+window.__ATX_BUILD_ID__ = 'ATX-v3.336';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
