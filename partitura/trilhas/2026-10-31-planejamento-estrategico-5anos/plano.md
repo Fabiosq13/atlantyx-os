@@ -36,3 +36,4 @@ ID: 2026-10-31-planejamento-estrategico-5anos · Trilha: T3 · Aprovado por: fun
 | 2026-10-31 | spec aprovada (entregas 1 e 2) | — | implementar fases 1 e 2 |
 | 2026-10-31 | fases 1 e 2 entregues (v3.341) | — | fundador valida; depois seguem as entregas 3 (sócios e quatro cadeiras) e 4 (concorrentes) |
 | 2026-10-31 | entrega 3 entregue (v3.342) | — | fundador cadastra os sócios e valida; próxima: entrega 4 (concorrentes e matriz) |
+- 2026-10-31 · feito (v3.349) · sem bloqueio · ciclo trimestral de discussão de planejamento e estratégia: pauta de 6 itens em cada check-in do calendário
