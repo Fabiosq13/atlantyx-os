@@ -1019,6 +1019,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
       <div class="fv2-abas" id="dashAbas" style="flex:1;margin-bottom:12px;">
         <button class="fv2-aba on" data-aba="geral" onclick="dashAba('geral')">&#128202; Visão geral</button>
+        <button class="fv2-aba" data-aba="todo" onclick="dashAba('todo')">&#9989; To-do <span class="dash-badge" id="dashBadgeTodo"></span></button>
         <button class="fv2-aba" data-aba="financeiro" onclick="dashAba('financeiro')">&#128176; Financeiro <span class="dash-badge" id="dashBadgeFin"></span></button>
         <button class="fv2-aba" data-aba="vendas" onclick="dashAba('vendas')">&#127919; Funil de vendas</button>
         <button class="fv2-aba" data-aba="pendencias" onclick="dashAba('pendencias')">&#9888;&#65039; Pendências de vendas e prospecção <span class="dash-badge" id="dashBadgePend"></span></button>
@@ -1217,6 +1218,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </div>
     </section>
     <!-- v3.330: MARKETING DIGITAL — campanhas pagas ativas; um clique abre todos os dados e os leads da campanha -->
+    <section class="dash-aba" data-aba="todo" style="display:none;"><div id="todoApp"><div style="padding:24px;color:var(--t3);font-size:11px;">Carregando o To-do…</div></div></section>
     <section class="dash-aba" data-aba="mkt" style="display:none;">
     <div class="panel" style="margin-bottom:13px;">
       <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128227; Campanhas de marketing digital</div>
@@ -32480,6 +32482,13 @@ function dashMktAbrir(id) {
     + '</div></div>';
   setTimeout(() => dashMktIA(id), 50); // v3.334: avaliação da IA ao abrir
 }
+// v3.344: To-do da empresa (GPs, CTO, comercial e fundador) — módulo carregado sob demanda
+function todoAbrir() {
+  if (window.TODO) return TODO.carregar();
+  const s = document.createElement('script'); s.src = '/todo-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); s.onload = () => window.TODO && TODO.carregar();
+  s.onerror = () => { const a = document.getElementById('todoApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /todo-ui.js</div>'; };
+  document.head.appendChild(s);
+}
 function dashAba(a) {
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
   document.querySelectorAll('#page-dash .dash-aba').forEach(sct => sct.style.display = sct.dataset.aba === a ? '' : 'none');
@@ -32488,6 +32497,7 @@ function dashAba(a) {
   if (a === 'projetos') dashProjCarregar();
   if (a === 'rfps') dashRfpCarregar();
   if (a === 'mkt') dashMktCarregar(); // v3.330
+  if (a === 'todo') todoAbrir(); // v3.344
   if ((a === 'vendas' || a === 'pendencias') && !_fn.dados && !_fn.carregando) funilCarregar();
   else if (a === 'vendas' || a === 'pendencias') { funilRender(); pendRender(); }
 }
@@ -35914,7 +35924,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.343] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.344] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35930,7 +35940,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.343';
+window.__ATX_BUILD_ID__ = 'ATX-v3.344';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
