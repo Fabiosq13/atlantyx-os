@@ -2,9 +2,10 @@ import { comGuarda } from '../lib/qa-guard.js';
 import { ICP_TEXTO, ICP_RESUMO, NEGATIVAS_BUSCA, classificarCargo, META_IDADE_MIN } from '../lib/icp.js';
 
 // v3.32: o CTA do Instagram vem da configuração da campanha (link curto, palavra no Direct, WhatsApp ou bio)
-const ctaIgDe = p => String((p && p.cta_instagram) || '').trim() || '🔗 Link na bio → agende uma conversa com a nossa equipe'; // v3.106: no Instagram, link só na bio
+const _alinCta = t => String(t || '').replace(/agende (?:uma|sua) conversa(?: gratuita)?(?: com (?:um especialista|a nossa equipe|a Atlantyx))?/gi, m => (/^A/.test(m) ? 'R' : 'r') + 'eceba grátis o Mapa de Oportunidades com IA da sua empresa'); // v3.337: oferta única
+const ctaIgDe = p => _alinCta(String((p && p.cta_instagram) || '').trim()) || '🔗 Link na bio → receba grátis o Mapa de Oportunidades com IA da sua empresa (sem reunião)'; // v3.106: no Instagram, link só na bio
 // v3.60: OFERTA padrão dos posts — post de opinião gera engajamento, não lead; o post precisa oferecer algo em troca do contato
-const OFERTA = p => String((p && p.oferta) || '').trim() || 'Conversa gratuita com um especialista da Atlantyx: entendemos o cenário do cliente (sistemas, dados, processos e indicadores) e mostramos onde tecnologia, dados, software sob medida e os produtos Atlantyx geram resultado na operação, com as oportunidades priorizadas por impacto e esforço — sem custo e sem compromisso';
+const OFERTA = p => { const o = String((p && p.oferta) || '').trim(); return o && !/conversa|reuni[aã]o|agend/i.test(o) ? o : 'Mapa de Oportunidades com IA da empresa, grátis e sem reunião, entregue no WhatsApp em até 1 dia útil: 3 oportunidades concretas em dados, indicadores e automação, priorizadas por impacto e esforço, preparadas pelos especialistas da Atlantyx'; }; // v3.337: mesma oferta da página de captura
 const ctaCurtoIg = p => String((p && p.cta_curto) || '').trim() || 'Link na bio';
 const regraCtaIg = p => `REGRA DO CTA NO INSTAGRAM: a legenda do Instagram não tem link clicável e NÃO se deve mandar a pessoa para a bio. Não escreva "link na bio". Termine o texto do Instagram com este CTA, exatamente: "${ctaIgDe(p)}". No LinkedIn e no Facebook o link vai clicável no próprio post.`;
 // api/s2-creative.js

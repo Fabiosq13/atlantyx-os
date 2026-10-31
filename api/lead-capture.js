@@ -55,7 +55,7 @@ async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     const ua = String(req.headers?.['user-agent'] || '');
     if (/bot|crawler|spider|preview|facebookexternalhit|linkedin|whatsapp|telegram|slack|discord|twitter|skype|metricool|embedly|vkshare|pinterest|google-structured|bitly|redditbot|applebot|curl|python|okhttp|http-client|java\//i.test(ua)) {
-      const titulo = 'Atlantyx — Tecnologia, dados e produtos para a sua operação', desc = 'Conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.';
+      const titulo = 'Atlantyx — Mapa de Oportunidades com IA grátis', desc = 'Receba no WhatsApp, sem reunião, 3 oportunidades de dados e IA para a sua empresa.'; // v3.337
       const img = base + '/og-atlantyx.jpg', esc = v => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.status(200).end(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)}</title><meta name="description" content="${esc(desc)}">`

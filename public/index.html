@@ -1223,6 +1223,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         <span id="dmkMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
         <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
           <label style="font-size:10px;display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" id="dmkTodas" onchange="dashMktRender()"> mostrar encerradas e pausadas</label>
+          <button class="btn" style="font-size:9px;padding:3px 9px;color:var(--gold);border-color:var(--gold);" onclick="dashMktAlinhar()" title="Troca 'agende uma conversa' pela oferta da página (Mapa de Oportunidades com IA) nas campanhas no ar e nos posts agendados">&#128257; Alinhar tudo à oferta da página</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="dashMktCarregar(true)">&#8635;</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="nav('s2auto',document.querySelector('.sbi[onclick*=&quot;s2auto&quot;]'))">Criar campanha &#8594;</button>
         </div></div>
@@ -4683,7 +4684,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="btn" style="font-size:10px;" id="patGeoBtn" onclick="patGeoConferir()">🔎 Conferir local</button><span id="patGeoRes" style="font-size:10.5px;color:var(--t2);"></span></div>
           </details>
           <div style="margin-bottom:8px;"><label class="fl" for="patTrilha">Trilha do plano estratégico</label><select class="fi" id="patTrilha" onchange="patTrilhaMudou()" title="Alavanca do plano vigente: dá o foco (público, dor, oferta e prova) e marca os leads com a trilha"><option value="">Sem trilha (tema livre)</option></select></div>
-          <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
+          <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Mapa de Oportunidades · Outubro"/>
           <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Mapa de Oportunidades com IA, grátis e sem reunião, no WhatsApp em até 1 dia útil: 3 oportunidades concretas para a empresa cortar custos e acelerar decisões com dados e IA (mesma oferta da página de captura).</textarea>
           <button class="btn btn-p" style="font-size:10.5px;margin-top:6px;" id="patBtnCopy" onclick="patEscrever()">✨ Escrever texto, título e imagem com IA</button>
           <label class="fl" for="patTexto" style="margin-top:8px;">Texto principal <small style="color:var(--t3);" id="patTxtN"></small></label><textarea class="fta" id="patTexto" style="min-height:150px;font-size:11.5px;" maxlength="1200" oninput="patPrev()" placeholder="Texto que aparece acima da imagem no anúncio (ideal até 125 caracteres)"></textarea>
@@ -7988,7 +7989,7 @@ function definirLinkReuniao() {
   toast('Link de reunião padrão: ' + linkReuniao(), 'success');
 }
 // v1.10.6: texto padrão que explica o link na bio (Instagram) — o link da bio leva ao SITE, onde a pessoa deixa o contato
-const TEXTO_LINK_BIO_PADRAO = '🔗 Link na bio → agende uma conversa com a nossa equipe.'; // v3.106: mesmo texto que o servidor usa nos agendados
+const TEXTO_LINK_BIO_PADRAO = '🔗 Link na bio → receba grátis o Mapa de Oportunidades com IA da sua empresa (sem reunião).'; // v3.106: mesmo texto que o servidor usa nos agendados
 const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 // v3.32: CHAMADA PARA AÇÃO DO INSTAGRAM sem depender da bio. O Instagram não deixa link clicável na legenda
 // do feed (regra da rede, vale para qualquer ferramenta). Em vez de "link na bio", a campanha usa:
@@ -7998,7 +7999,7 @@ const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 //   bio        → o comportamento antigo (link na bio)
 // LinkedIn e Facebook continuam com o link CLICÁVEL direto no post.
 // v3.60: OFERTA dos posts = diagnóstico gratuito (post de opinião gera curtida; oferta concreta gera lead)
-const CTA_OFERTA = '🎁 Agende uma conversa gratuita com a Atlantyx:'; // v3.106: oferta genérica (serviços e produtos), sem foco em IA
+const CTA_OFERTA = '🎁 Receba grátis o Mapa de Oportunidades com IA da sua empresa (sem reunião):'; // v3.337: oferta única da página de captura // v3.106: oferta genérica (serviços e produtos), sem foco em IA
 // v3.73: a IA às vezes escrevia no texto a chamada do INSTAGRAM (link curto /reuniao) e o sistema ainda
 // acrescentava a chamada com o link — no LinkedIn saía o link curto errado + a chamada repetida.
 // Agora: tira do texto qualquer chamada/link curto pronto e fecha UMA vez com o link certo de cada rede.
@@ -32359,6 +32360,18 @@ async function dashMktVerba(id) {
   catch (e) { toast('Não mudou: ' + e.message, 'error'); alert('Não mudou a verba:\n\n' + e.message); }
 }
 // v3.335: manda a análise para o Claude — demanda na Esteira (ele implementa no sistema) ou texto pronto para colar no chat
+// v3.337: alinha à oferta da página (Mapa de Oportunidades com IA) as campanhas no ar e os posts agendados — mostra antes, aplica no clique
+async function dashMktAlinhar() {
+  try { toast('Conferindo campanhas e posts agendados…', 'success'); const p = await mcApi('alinhar_oferta_tudo', { aplicar: false });
+    const C = (p.campanhas || []).filter(c => c.trocas), L = (p.campanhas || []).filter(c => c.linkedin), np = p.posts?.com_link_antigo || 0;
+    if (!C.length && !np) { alert('Tudo já está alinhado à oferta da página.' + (L.length ? '\n\nLinkedIn: ' + L.map(c => c.nome).join(', ') + ' — o texto não muda depois de criado.' : '')); return; }
+    if (!confirm('Alinhar à oferta da página (Mapa de Oportunidades com IA, grátis, sem reunião):\n\n' + (C.length ? '• ' + C.length + ' campanha(s) paga(s) no Meta: ' + C.map(c => c.nome).join(', ') + '\n   → criativo novo com o texto alinhado (mesma imagem e link). O Meta reanalisa o anúncio — pode ficar algumas horas "em análise".\n' : '') + (np ? '• ' + np + ' post(s) agendado(s) no Metricool → texto/CTA alinhado (recriados sem duplicar)\n' : '') + (L.length ? '• LinkedIn (' + L.map(c => c.nome).join(', ') + '): não muda depois de criado.\n' : '') + '\nAplicar agora?')) return;
+    const r = await mcApi('alinhar_oferta_tudo', { aplicar: true });
+    const ok = (r.campanhas || []).filter(c => c.em_analise).length, er = (r.campanhas || []).filter(c => c.erro);
+    alert('✅ Alinhado.\n\nCampanhas atualizadas no Meta: ' + ok + (er.length ? '\nNão atualizadas: ' + er.map(c => c.nome + ' — ' + c.erro).join('; ') : '') + '\nPosts agendados: ' + (r.posts?.trocados ?? 0) + (r.posts?.falhas?.length ? ' (' + r.posts.falhas.length + ' falha(s))' : '') + (r.posts?.erro ? '\nPosts: ' + r.posts.erro : ''));
+    dashMktCarregar(true);
+  } catch (e) { toast('Não alinhou: ' + e.message, 'error'); alert('Não alinhou:\n\n' + e.message); }
+}
 async function dashMktClaude(id, copiar) {
   const c = (_dmk.dados || []).find(x => String(x.id) === String(id)); if (!c) return; const f = c.funil || {};
   const metricas = { visitas: f.visitas, comecaram: f.comecaram, leads: f.leads, whatsapp: f.whatsapp, descartados: f.descartados };
@@ -35857,7 +35870,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.336] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.337] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35873,7 +35886,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.336';
+window.__ATX_BUILD_ID__ = 'ATX-v3.337';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

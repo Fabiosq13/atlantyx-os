@@ -582,6 +582,35 @@ async function publicoPlataformasLer({ lista_id } = {}) {
 }
 // v3.193: ALTERAR PERÍODO (e, opcional, R$/dia) de uma campanha patrocinada já criada — muda o conjunto no Meta.
 // O Meta não deixa mudar o início depois que a veiculação começou: nesse caso só o fim e o orçamento mudam.
+// v3.337: ALINHAR O TEXTO DE UMA CAMPANHA JÁ NO AR à oferta da página — cria um criativo novo (mesma imagem e link) com o texto
+// alinhado e troca no anúncio. O Meta manda o anúncio para nova análise (algumas horas). LinkedIn: não altera (só avisa).
+async function patrocinadoAlinharTexto({ id, aplicar = true } = {}) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
+  if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
+  const tx = alinharOfertaTexto(reg.texto), ti = /conversa|agend/i.test(reg.titulo || '') ? { texto: 'Mapa de Oportunidades grátis', n: 1 } : { texto: reg.titulo, n: 0 };
+  const de = /conversa|agend/i.test(reg.descricao || '') ? { texto: 'Grátis · sem reunião', n: 1 } : { texto: reg.descricao, n: 0 };
+  const trocas = tx.n + ti.n + de.n;
+  if (!trocas) return { id: reg.id, nome: reg.nome, ja_alinhada: true };
+  if (reg.rede === 'linkedin') return { id: reg.id, nome: reg.nome, linkedin: true, aviso: 'No LinkedIn o texto do anúncio não muda depois de criado — duplique a campanha com o texto novo.' };
+  if (!aplicar) return { id: reg.id, nome: reg.nome, trocas, texto_novo: tx.texto, titulo_novo: ti.texto };
+  const c = _metaCfg(); if (!(c.token && c.conta && c.pagina && c.ig)) throw new Error('Meta não configurado');
+  if (!reg.ad_id) throw new Error('Esta campanha não tem anúncio registrado no sistema');
+  let imgHash = null; try { const ri = await fetch(reg.imagem); if (ri.ok) { const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: Buffer.from(await ri.arrayBuffer()).toString('base64') }); imgHash = Object.values(up.images || {})[0]?.hash || null; } } catch (_) {}
+  const link_data = { link: reg.link, message: tx.texto, name: ti.texto, ...(de.texto ? { description: de.texto } : {}), ...(imgHash ? { image_hash: imgHash } : { picture: reg.imagem }), call_to_action: { type: 'LEARN_MORE', value: { link: reg.link } } };
+  const cr = await _meta(`act_${c.conta}/adcreatives`, 'POST', { name: reg.nome + ' · criativo (oferta alinhada)', object_story_spec: { page_id: c.pagina, instagram_user_id: c.ig, link_data } });
+  await _meta(reg.ad_id, 'POST', { creative: { creative_id: cr.id } });
+  Object.assign(reg, { texto: tx.texto, titulo: ti.texto, descricao: de.texto, creative_id: cr.id, texto_alinhado_em: new Date().toISOString() });
+  await _kvMc('mkt:patrocinados', lista);
+  return { id: reg.id, nome: reg.nome, trocas, creative_id: cr.id, em_analise: true };
+}
+async function alinharOfertaTudo({ aplicar = false } = {}, req) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const ativas = lista.filter(r => (!r.fim || r.fim >= hoje) && !['DELETED', 'ARCHIVED'].includes(String(r.estado_meta || '').toUpperCase()));
+  const campanhas = [];
+  for (const r of ativas) { try { campanhas.push(await patrocinadoAlinharTexto({ id: r.id, aplicar })); } catch (e) { campanhas.push({ id: r.id, nome: r.nome, erro: String(e.message).slice(0, 200) }); } }
+  let posts = null; try { posts = await trocarLinkAgendados({ aplicar }, req); } catch (e) { posts = { erro: String(e.message).slice(0, 200) }; }
+  return { aplicar, campanhas, posts };
+}
 // v3.335: ENVIAR AO CLAUDE — transforma a análise da campanha numa demanda da Esteira (o Claude implementa no sistema o que é
 // código: página de captura, oferta, formulário, textos e regras de criação dos anúncios). Ajuste de Meta (verba, público ativo)
 // segue pelos botões da tela. so_texto = só devolve o texto (para colar no chat do Claude).
@@ -985,7 +1014,22 @@ async function patrocinadoListar() {
 // link (página de captura, /agenda, /reuniao, agenda do HubSpot, qualquer URL) e a chamada da oferta, e fecha com
 // UMA chamada para a bio. Posts que também vão para LinkedIn/Facebook (mesmo texto) não são mexidos — lá o link
 // é clicável; eles são listados à parte. aplicar:false só lista.
-const TEXTO_BIO_IG = '🔗 Link na bio → agende uma conversa com a nossa equipe.';
+// v3.337: OFERTA ÚNICA — tudo que leva à página de captura promete o Mapa de Oportunidades com IA (grátis, sem reunião, no
+// WhatsApp). Troca as chamadas antigas de "agende uma conversa" em textos já escritos (posts agendados, anúncios no ar, CTA salvo).
+const CTA_MAPA_BIO = '🔗 Link na bio → receba grátis o Mapa de Oportunidades com IA da sua empresa (sem reunião).';
+const CTA_MAPA = '🎁 Receba grátis o Mapa de Oportunidades com IA da sua empresa (sem reunião):';
+function alinharOfertaTexto(txt) {
+  let n = 0; const t0 = String(txt || '');
+  const t = t0
+    .replace(/🔗\s*Link na bio\s*→\s*agende uma conversa com a nossa equipe\.?/gi, () => { n++; return CTA_MAPA_BIO; })
+    .replace(/🎁\s*Agende uma conversa gratuita com a Atlantyx:?/gi, () => { n++; return CTA_MAPA; })
+    .replace(/👉\s*Agende (?:uma|sua) conversa:?/gi, () => { n++; return '👉 Receba grátis seu Mapa de Oportunidades com IA:'; })
+    .replace(/Clique em Saiba mais e agende uma conversa gratuita com um especialista\.?/gi, () => { n++; return 'Clique em Saiba mais e receba grátis no seu WhatsApp o Mapa de Oportunidades com IA da sua empresa — sem reunião.'; })
+    .replace(/agende (?:uma|sua) conversa(?: gratuita)?(?: com (?:um especialista|a nossa equipe|a Atlantyx|um dos nossos especialistas))?/gi, m => { n++; return (/^A/.test(m) ? 'R' : 'r') + 'eceba grátis o Mapa de Oportunidades com IA da sua empresa'; })
+    .replace(/(?:uma )?conversa gratuita com (?:um )?especialista(?:s)?(?: da Atlantyx)?/gi, () => { n++; return 'o Mapa de Oportunidades com IA, grátis e sem reunião'; });
+  return { texto: t, n };
+}
+const TEXTO_BIO_IG = CTA_MAPA_BIO;
 function _igParaBio(txt) {
   const reUrl = /(https?:\/\/\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:app|com|cool|ly|io|br|net|org)\/\S*)/i;
   let n = 0;
@@ -1046,8 +1090,8 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
   const hostEsc = base.replace(/^https?:\/\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const reCurto = new RegExp('((?:https?:\\/\\/)?' + hostEsc + ')\\/reuniao(\\/[a-z0-9]{2,8})?', 'gi');
   const trocar = (txt, rede) => {
-    let n = 0;
-    let t = String(txt || '').replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
+    let n = 0; const _al = alinharOfertaTexto(txt); n += _al.n; // v3.337: oferta única (Mapa de Oportunidades)
+    let t = String(_al.texto).replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
     t = t.replace(reLongo, u => { if (u.length < 120) return u; n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
     if (rede === 'instagram') {
       t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
@@ -1080,7 +1124,7 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
       const redes = provs.map(x => String(x.network || '').toLowerCase()); const soIg = redes.length && redes.every(r => r === 'instagram');
       const redeUtm = redes.find(r => r !== 'instagram') || 'instagram';
       const link = soIg ? base.replace(/^https?:\/\//, '') + '/agenda' : base + '/captura.html?r=' + encodeURIComponent(reuniao) + '&utm_source=' + redeUtm + '&utm_medium=social&utm_campaign=agendado_sem_link';
-      const novoTxt = soIg ? _igParaBio(p.text).texto : String(p.text || '').replace(/\s+$/, '') + '\n\n🎁 Agende uma conversa gratuita com a Atlantyx:\n' + link; // v3.106: Instagram → link na bio
+      const novoTxt = soIg ? _igParaBio(p.text).texto : String(p.text || '').replace(/\s+$/, '') + '\n\n' + CTA_MAPA + '\n' + link; // v3.106: Instagram → link na bio
       itens.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate).substring(0, 16), redes, trocas: 1, texto: String(p.text || '').substring(0, 80), _p: p, _novo: novoTxt }); }
   }
   for (const p of (adicionar ? [] : lista)) {
@@ -1811,7 +1855,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.${trilha ? '\n' + briefi
         const utmIg = new URLSearchParams({ ...Object.fromEntries(utm), utm_source: 'instagram' });
         j.link_instagram = `${base}/captura.html?${utmIg.toString()}`;
         j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim()
-          + `\n\n${cta_instagram || ('👉 ' + (j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) : 'Agende uma conversa') + ': ' + String(j.link_instagram).replace(/^https?:\/\//, ''))}`; // v3.32: CTA configurado (sem "link na bio")
+          + `\n\n${cta_instagram || ('👉 ' + (j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) : 'Receba grátis seu Mapa de Oportunidades com IA') + ': ' + String(j.link_instagram).replace(/^https?:\/\//, ''))}`; // v3.32: CTA configurado (sem "link na bio")
         j.link_bio = `${base}/captura.html?utm_source=instagram&utm_medium=bio`;
       } else if (temFb && !temLi) {
         j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim() + `\n\n👉 ${j.link}`;
@@ -1950,6 +1994,8 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_meta:       () => patrocinadoMeta(payload), // v3.332
+    patrocinado_alinhar_texto: () => patrocinadoAlinharTexto(payload), // v3.337
+    alinhar_oferta_tudo:    () => alinharOfertaTudo(payload, req), // v3.337: campanhas no ar + posts agendados → oferta da página
     patrocinado_enviar_claude: () => patrocinadoEnviarClaude(payload), // v3.335: análise → demanda na Esteira (Claude implementa)
     patrocinado_avaliar:    () => patrocinadoAvaliar(payload), // v3.334: IA avalia a campanha e sugere ajustes (não muda nada no Meta)
     patrocinado_listar:     () => patrocinadoListar(),
