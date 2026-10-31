@@ -26082,9 +26082,8 @@ function _patTelaFake(ctx, x, y, w, h) {
   ctx.fillStyle = '#5b6670'; ctx.fillText('Funil de vendas', fx + fw * 0.08, gy + h * 0.06);
   [1, 0.78, 0.56, 0.36].forEach((f, i) => { const bw = fw * 0.8 * f; ctx.fillStyle = ['#2a78d6', '#3591e6', '#22b3a3', '#1baf7a'].at(i); ctx.fillRect(fx + (fw - bw) / 2, gy + gh * (0.18 + i * 0.19), bw, gh * 0.14); });
 }
-async function patArte() {
-  const b = document.getElementById('patBtnArte'); if (b) { b.disabled = true; b.textContent = 'Montando…'; }
-  try {
+// v3.343: o desenho da arte virou função própria — usada na criação e na troca de arte de uma campanha no ar
+async function _patArteDesenhar(man, ben) {
     try { await Promise.all(['300 60px Montserrat', '800 60px Montserrat', '400 30px Montserrat', '700 30px Montserrat', '600 30px Montserrat'].map(f => document.fonts.load(f))); } catch (_) {}
     if (!window._patLogoImg) await new Promise(r => { const im = new Image(); im.onload = () => { window._patLogoImg = im; r(); }; im.onerror = r; im.src = '/logo-atlantyx-branco.png'; setTimeout(r, 4000); }); // v3.320
     const W = 1080, H = 1080, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
@@ -26092,7 +26091,6 @@ async function patArte() {
     const g = ctx.createRadialGradient(W * 0.72, H * 0.42, 40, W * 0.6, H * 0.5, W * 0.95); g.addColorStop(0, '#0b8a9c'); g.addColorStop(0.45, '#05414d'); g.addColorStop(1, '#03080c');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     const gl = ctx.createRadialGradient(W * 0.85, H * 0.2, 10, W * 0.85, H * 0.2, 420); gl.addColorStop(0, 'rgba(0,252,168,.18)'); gl.addColorStop(1, 'rgba(0,252,168,0)'); ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
-    const { man, ben } = _patArteDados(); window._patArteUltima = true;
     _patLogo(ctx, 80, 74, 1.1);
     // manchete
     let tam = 62; ctx.textBaseline = 'alphabetic'; let fimMan;
@@ -26113,7 +26111,13 @@ async function patArte() {
     // faixa do rodapé
     ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 975, W, 105); ctx.fillStyle = 'rgba(0,196,204,.9)'; ctx.fillRect(0, 975, W, 3);
     ctx.fillStyle = '#ffffff'; ctx.font = '600 30px Montserrat, Arial, sans-serif'; ctx.textAlign = 'center'; if ('letterSpacing' in ctx) ctx.letterSpacing = '10px'; ctx.fillText('CLIQUE NO SAIBA MAIS', W / 2 + 5, 1040); if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'; ctx.textAlign = 'left';
-    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+    return await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+}
+async function patArte() {
+  const b = document.getElementById('patBtnArte'); if (b) { b.disabled = true; b.textContent = 'Montando…'; }
+  try {
+    const { man, ben } = _patArteDados(); window._patArteUltima = true;
+    const blob = await _patArteDesenhar(man, ben);
     window._patArteBlob = blob; const pv = URL.createObjectURL(blob); document.getElementById('patImg').value = pv; patPrev();
     const url = await _trSubir(blob, 'anuncio-' + Date.now() + '.jpg', 'patrocinado', 'jpg', 'image');
     document.getElementById('patImg').value = url; window._patArteUrl = url; patPrev(); toast('Arte montada e hospedada', 'success');
@@ -26167,7 +26171,7 @@ async function patDiagnostico() {
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const _pl = v('patPublico'), rede = v('patRede') || 'instagram', onde = rede === 'linkedin' ? 'LinkedIn' : 'Meta';
-  const corpo = { rede, trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, geo_otimizar: v('patGeoLocal') ? v('patGeoOtim') : undefined, meta_leads: v('patMetaLeads') || undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  const corpo = { rede, arte: (() => { try { const d = _patArteDados(); return { manchete: d.man, beneficios: d.ben }; } catch (_) { return undefined; } })(), trilha: v('patTrilha') || undefined, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, geo_local: v('patGeoLocal') || undefined, geo_raio_km: v('patGeoLocal') ? v('patGeoRaio') : undefined, geo_todos: v('patGeoLocal') ? !!document.getElementById('patGeoTodos')?.checked : undefined, geo_otimizar: v('patGeoLocal') ? v('patGeoOtim') : undefined, meta_leads: v('patMetaLeads') || undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
   // v3.318: imagem de campanha paga SEMPRE no formato da arte de anúncio (manchete + ✓ benefícios + tela do sistema + Clique no Saiba mais)
   if (!corpo.imagem || corpo.imagem !== window._patArteUrl) { toast('Montando a imagem no formato de anúncio…', 'success'); await patArte(); corpo.imagem = (document.getElementById('patImg')?.value || '').trim();
     if (corpo.imagem !== window._patArteUrl) { alert('Não consegui montar a arte no formato de anúncio — nada foi criado. Tente "🖼 Arte no padrão" de novo.'); return; } }
@@ -32361,6 +32365,46 @@ async function dashMktVerba(id) {
 }
 // v3.335: manda a análise para o Claude — demanda na Esteira (ele implementa no sistema) ou texto pronto para colar no chat
 // v3.337: alinha à oferta da página (Mapa de Oportunidades com IA) as campanhas no ar e os posts agendados — mostra antes, aplica no clique
+// v3.343: TROCAR A FRASE DA ARTE de uma campanha no ar — manchete = dor + urgência → oferta da página. A IA propõe 3 opções,
+// você escolhe/edita, vê a prévia; só no "Aplicar no Meta" a arte é hospedada e o criativo trocado (o Meta reanalisa o anúncio).
+let _dmArte = null;
+async function dashMktArte(id) {
+  let m = document.getElementById('dmArteModal'); if (!m) { m = document.createElement('div'); m.id = 'dmArteModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1001;align-items:flex-start;justify-content:center;overflow:auto;padding:20px 10px;'; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) m.remove(); }); }
+  m.innerHTML = '<div class="panel" style="width:900px;max-width:97vw;margin:0;"><div class="ph"><div class="pt">🖼 Frase da arte</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'dmArteModal\').remove()">✕</button></div><div class="pb" style="color:var(--t3);font-size:12px;">A IA está escrevendo 3 manchetes com a dor, a urgência e a oferta da página…</div></div>';
+  try { _dmArte = await mcApi('patrocinado_arte_sugerir', { id }); _dmArte.sel = 0; _dmArte.prev = null; dashMktArteRender(); dashMktArtePrev(); }
+  catch (e) { m.querySelector('.pb').innerHTML = '<span style="color:var(--red);">Não gerou: ' + _patE(e.message) + '</span>'; }
+}
+function dashMktArteRender() {
+  const A = _dmArte, E = _patE, o = A.opcoes[A.sel] || A.opcoes[0], m = document.getElementById('dmArteModal'); if (!m) return;
+  m.innerHTML = '<div class="panel" style="width:980px;max-width:97vw;margin:0;"><div class="ph"><div class="pt">🖼 Frase da arte · ' + E(A.nome) + '</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'dmArteModal\').remove()">✕</button></div><div class="pb">'
+    + '<div style="font-size:11px;color:var(--t2);margin-bottom:8px;">Fórmula: <b>a dor que o executivo sente agora + urgência → a oferta da página</b> (Mapa de Oportunidades com IA, grátis, sem reunião, no WhatsApp em 1 dia útil).' + (A.manchete_atual ? ' Frase atual: <i>' + E(A.manchete_atual.replace(/\*\*/g, '')) + '</i>' : '') + '</div>'
+    + '<div style="display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;" class="est-grid"><div>'
+    + A.opcoes.map((x, i) => '<label style="display:block;border:1px solid ' + (i === A.sel ? 'var(--blue)' : 'var(--bd)') + ';border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="dmArteOp" ' + (i === A.sel ? 'checked' : '') + ' onchange="_dmArte.sel=' + i + ';dashMktArteRender();dashMktArtePrev()"> <b style="font-size:11px;color:var(--gold);">' + E(x.angulo) + '</b><div style="font-size:12.5px;font-weight:700;margin-top:3px;">' + E(x.manchete).replace(/\*\*(.+?)\*\*/g, '<span style="color:#00FCA8;">$1</span>') + '</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px;">✓ ' + x.beneficios.map(E).join(' · ✓ ') + '</div>' + (x.por_que ? '<div style="font-size:10px;color:var(--t3);margin-top:2px;">' + E(x.por_que) + '</div>' : '') + '</label>').join('')
+    + '<label class="fl" for="dmArteMan" style="margin-top:6px;">Manchete (marque o destaque com **asteriscos**)</label><textarea class="fta" id="dmArteMan" style="min-height:52px;font-size:12px;" oninput="_dmArte.opcoes[_dmArte.sel].manchete=this.value">' + E(o.manchete) + '</textarea>'
+    + '<label class="fl" for="dmArteBen" style="margin-top:6px;">Benefícios (um por linha, até 28 caracteres)</label><textarea class="fta" id="dmArteBen" style="min-height:70px;font-size:12px;" oninput="_dmArte.opcoes[_dmArte.sel].beneficios=this.value.split(\'\\n\').map(x=>x.trim()).filter(Boolean).slice(0,5)">' + E(o.beneficios.join('\n')) + '</textarea>'
+    + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"><button class="btn" style="font-size:10.5px;" onclick="dashMktArtePrev()">↻ Atualizar prévia</button><button class="btn" style="font-size:10.5px;" onclick="dashMktArte(\'' + E(A.id) + '\')">✨ Outras 3 opções</button><span style="flex:1;"></span><button class="btn btn-gn" id="dmArteAplicar" onclick="dashMktArteAplicar()">✅ Aplicar no Meta</button></div>'
+    + '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Ao aplicar: a arte nova é hospedada e o anúncio recebe um criativo novo com o mesmo texto, link e botão. O Meta reanalisa o anúncio (normalmente minutos a algumas horas). A arte anterior fica guardada no registro da campanha.</div>'
+    + '</div><div><div style="font-size:10.5px;color:var(--t2);margin-bottom:4px;">Prévia (1080×1080)</div><img id="dmArtePrev" alt="prévia da arte" style="width:100%;border-radius:8px;border:1px solid var(--bd);background:#05141a;min-height:200px;">'
+    + (A.imagem_atual ? '<div style="font-size:10.5px;color:var(--t2);margin:8px 0 4px;">Arte atual</div><img src="' + E(A.imagem_atual) + '" alt="arte atual" style="width:50%;border-radius:6px;border:1px solid var(--bd);opacity:.8;">' : '') + '</div></div></div></div>';
+}
+const _dmArteMan = t => String(t || '').toUpperCase().replace(/\*\*\s*/g, '**').replace(/\s*\*\*(?=\s|$|[?!.,])/g, '**');
+async function dashMktArtePrev() {
+  const o = _dmArte?.opcoes[_dmArte.sel]; if (!o) return;
+  try { const blob = await _patArteDesenhar(_dmArteMan(o.manchete), o.beneficios.length ? o.beneficios : ['Grátis e sem reunião', 'No WhatsApp em 1 dia útil']); _dmArte.prev = blob; const im = document.getElementById('dmArtePrev'); if (im) im.src = URL.createObjectURL(blob); }
+  catch (e) { toast('Prévia não montada: ' + e.message, 'error'); }
+}
+async function dashMktArteAplicar() {
+  const A = _dmArte, o = A?.opcoes[A.sel]; if (!o) return;
+  if (!confirm('Trocar a arte da campanha "' + A.nome + '" no Meta?\n\nFrase nova: ' + o.manchete.replace(/\*\*/g, '') + '\n\nO anúncio recebe um criativo novo (mesmo texto, link e botão) e o Meta reanalisa.')) return;
+  const b = document.getElementById('dmArteAplicar'); if (b) { b.disabled = true; b.textContent = 'Aplicando…'; }
+  try {
+    await dashMktArtePrev(); if (!A.prev) throw new Error('arte não montada');
+    const url = await _trSubir(A.prev, 'anuncio-' + Date.now() + '.jpg', 'patrocinado', 'jpg', 'image');
+    await mcApi('patrocinado_trocar_imagem', { id: A.id, imagem: url, arte: { manchete: _dmArteMan(o.manchete), beneficios: o.beneficios } });
+    document.getElementById('dmArteModal')?.remove(); toast('Arte trocada no Meta — o anúncio está em análise', 'success');
+    try { dashMktCarregar(true); } catch (_) {}
+  } catch (e) { alert('Não troquei a arte:\n\n' + e.message); if (b) { b.disabled = false; b.textContent = '✅ Aplicar no Meta'; } }
+}
 async function dashMktAlinhar() {
   try { toast('Conferindo campanhas e posts agendados…', 'success'); const p = await mcApi('alinhar_oferta_tudo', { aplicar: false });
     const C = (p.campanhas || []).filter(c => c.trocas), L = (p.campanhas || []).filter(c => c.linkedin), np = p.posts?.com_link_antigo || 0;
@@ -32432,7 +32476,7 @@ function dashMktAbrir(id) {
         + '<div style="color:var(--t2);font-size:11px;">' + E([p.cargo, p.empresa].filter(Boolean).join(' · ') || '—') + (p.status ? ' · situação: ' + E(p.status) : '') + '</div>'
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;">' + (p.email ? '<a class="btn" style="font-size:10px;text-decoration:none;" href="mailto:' + E(p.email) + '">✉ ' + E(p.email) + '</a>' : '') + (wa(p.telefone) ? '<a class="btn" style="font-size:10px;text-decoration:none;color:#25D366;border-color:#25D366;" target="_blank" rel="noopener" href="' + wa(p.telefone) + '">💬 ' + E(p.telefone) + '</a>' : '') + '</div></div>').join('')
       : '<div style="font-size:11px;color:var(--t3);">Nenhum lead ainda.</div>')
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">' + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10.5px;" onclick="patConferir(\'' + E(c.id) + '\')">🔎 Conferir no Meta</button>' : '') + (c.gerenciador ? '<a class="btn" style="font-size:10.5px;text-decoration:none;" href="' + E(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a>' : '') + '<button class="btn" style="font-size:10.5px;" onclick="document.getElementById(\'dmkModal\').remove();nav(\'s2auto\',document.querySelector(\'.sbi[onclick*=&quot;s2auto&quot;]\'))">Pausar, ativar ou mudar período →</button></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">' + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10.5px;" onclick="patConferir(\'' + E(c.id) + '\')">🔎 Conferir no Meta</button><button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="dashMktArte(\'' + E(c.id) + '\')" title="A IA propõe manchetes com a dor, a urgência e a oferta da página; você escolhe e a arte é trocada no Meta">🖼 Trocar a frase da arte</button>' : '') + (c.gerenciador ? '<a class="btn" style="font-size:10.5px;text-decoration:none;" href="' + E(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a>' : '') + '<button class="btn" style="font-size:10.5px;" onclick="document.getElementById(\'dmkModal\').remove();nav(\'s2auto\',document.querySelector(\'.sbi[onclick*=&quot;s2auto&quot;]\'))">Pausar, ativar ou mudar período →</button></div>'
     + '</div></div>';
   setTimeout(() => dashMktIA(id), 50); // v3.334: avaliação da IA ao abrir
 }
@@ -35870,7 +35914,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.342] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.343] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35886,7 +35930,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.342';
+window.__ATX_BUILD_ID__ = 'ATX-v3.343';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

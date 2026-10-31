@@ -318,6 +318,15 @@ async function patrocinadoStatus(req) {
 }
 // v3.336: a oferta do anúncio pago é SEMPRE a da página de captura — o texto não pode prometer outra coisa (reunião/agenda)
 const OFERTA_LP = 'Mapa de Oportunidades com IA da sua empresa: grátis, sem reunião, entregue no WhatsApp em até 1 dia útil — 3 oportunidades concretas em dados, indicadores e automação, priorizadas por impacto e esforço, preparadas pelos especialistas da Atlantyx';
+// v3.343: MANCHETE DA ARTE = DOR + URGÊNCIA → SOLUÇÃO (a oferta da página). Antes era a pergunta-gancho ("Por que diretores…
+// estão trocando…?"), que fala de tendência e não da dor nem do que a pessoa ganha ao clicar.
+const ARTE_REGRA = () => { const hoje = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date()), ano = +new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric' }).format(new Date());
+  return `ARTE (imagem) — a manchete é a frase principal do anúncio e tem 2 partes, em MAIÚSCULAS, até 80 caracteres no total:
+ (1) a DOR com URGÊNCIA que o executivo sente AGORA, em linguagem de negócio (margem vazando, custo que sobe todo mês, decisão no escuro, fechamento atrasado, retrabalho, concorrente mais rápido, ${+new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', month: 'numeric' }) >= 9 ? `orçamento de ${ano + 1} montado sem números confiáveis, fechar ${ano} no prejuízo` : `metas de ${ano} em risco, trimestre perdido`}) — hoje é ${hoje}; urgência real, sem alarmismo nem prazo inventado;
+ (2) a SOLUÇÃO = a oferta da página, dita como ganho imediato (ex.: "3 OPORTUNIDADES GRÁTIS EM 1 DIA ÚTIL", "MAPA DE OPORTUNIDADES COM IA GRÁTIS").
+ Marque com **asteriscos duplos** 2 ou 3 trechos: a dor e a oferta. Sem termos técnicos, sem nomes de clientes, sem prometer reunião, sem números de resultado inventados (nada de "economize 30%").
+ Exemplos de forma (não copie): "SUA **MARGEM ESTÁ VAZANDO** E NINGUÉM MEDE? **3 OPORTUNIDADES GRÁTIS EM 1 DIA**" · "**${ano + 1} NO ESCURO?** RECEBA O **MAPA DE OPORTUNIDADES COM IA** GRÁTIS".
+ Benefícios (4, até 28 caracteres cada, sem verbo no início quando possível): 2 sobre a dor resolvida ou o ganho para quem decide (ex.: "Margem sob controle", "Decisão com número certo") e 2 sobre a oferta (ex.: "Grátis e sem reunião", "No WhatsApp em 1 dia útil", "3 oportunidades priorizadas").`; };
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '', trilha = '' } = {}) {
   const _tr = await _trilhaPorId(trilha).catch(() => null); // v3.240: trilha do plano estratégico dá foco (público, dor, oferta, prova)
   if (_tr) { tema = [tema, briefingTrilha(_tr)].filter(Boolean).join('\n'); if (!publico) publico = _tr.publico; }
@@ -333,8 +342,8 @@ TEXTO PRINCIPAL, em blocos separados por UMA linha em branco:
 3) Três linhas, cada uma começando com "✅ " e no máximo 55 caracteres (dor eliminada: "Chega de…", "Fim de…", "Adeus a…")
 4) Um parágrafo de 1–2 frases com o ganho concreto para quem decide (tempo, custo, risco, controle) — termine com a palavra mais importante EM MAIÚSCULAS se fizer sentido
 5) Chamada final: "Clique em Saiba mais e receba grátis no seu WhatsApp o Mapa de Oportunidades com IA da sua empresa — sem reunião."
-ARTE (imagem): manchete curta em MAIÚSCULAS no mesmo formato da pergunta-gancho (até 70 caracteres), marcando com **asteriscos duplos** os 2 ou 3 trechos em destaque (quem é o público, o verbo da mudança e a solução/Atlantyx); e 4 ou 5 benefícios curtíssimos (até 28 caracteres cada, sem verbo no início quando possível, ex.: "Indicadores ao vivo", "Fim das planilhas").
-Devolva JSON: {"texto":"texto principal completo no padrão acima, com quebras de linha \\n","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","manchete":"POR QUE **…** ESTÃO **…** PARA A **ATLANTYX?**","beneficios":["…","…","…","…"],"prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
+${ARTE_REGRA()}
+Devolva JSON: {"texto":"texto principal completo no padrão acima, com quebras de linha \\n","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","manchete":"**DOR COM URGÊNCIA**? **OFERTA**","beneficios":["…","…","…","…"],"prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
   const j = JSON.parse(await _claudeAuto(sys, usr, 1100));
   return { texto: String(j.texto || '').substring(0, 1200), titulo: String(j.titulo || '').substring(0, 60), descricao: String(j.descricao || '').substring(0, 60), prompt_imagem: j.prompt_imagem || '',
     arte: { manchete: String(j.manchete || j.titulo || '').substring(0, 120), beneficios: (Array.isArray(j.beneficios) ? j.beneficios : []).map(x => String(x).substring(0, 40)).filter(Boolean).slice(0, 5) } };
@@ -438,7 +447,7 @@ async function patrocinadoCriar(p = {}, req) {
   // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
   let link = _linkPago(base, nome, 'instagram', p.trilha ? String(p.trilha).replace(/[^a-z0-9-]/g, '') : null);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
-  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
+  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed', botao: 'Saiba mais', link, texto, titulo, descricao, imagem, ...(p.arte?.manchete ? { arte: { manchete: String(p.arte.manchete).substring(0, 120), beneficios: (p.arte.beneficios || []).map(x => String(x).substring(0, 40)).slice(0, 5) } } : {}), // v3.343
     meta_leads: Math.max(0, parseInt(p.meta_leads) || 0) || null, /* v3.332: meta de leads da campanha (farol meta × realizado) */ orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
       : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
@@ -603,6 +612,44 @@ async function patrocinadoAlinharTexto({ id, aplicar = true } = {}) {
   Object.assign(reg, { texto: tx.texto, titulo: ti.texto, descricao: de.texto, creative_id: cr.id, texto_alinhado_em: new Date().toISOString() });
   await _kvMc('mkt:patrocinados', lista);
   return { id: reg.id, nome: reg.nome, trocas, creative_id: cr.id, em_analise: true };
+}
+// v3.343: TROCAR A ARTE de uma campanha no ar — a IA propõe 3 manchetes (dor + urgência → oferta) com benefícios; o fundador
+// escolhe/edita, a tela monta a arte no padrão e só então o criativo é trocado no Meta (mesmo texto, link e botão; o Meta reanalisa).
+async function patrocinadoArteSugerir({ id } = {}) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
+  if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
+  const sys = 'Você é diretor de criação de anúncios pagos B2B da Atlantyx (dados, indicadores e IA para empresas médias e grandes). Escreve manchetes de arte que param o executivo no feed: nomeiam a dor que ele sente agora, dão urgência real e entregam a oferta da página como solução. ' + ICP_TEXTO + ' Responda só JSON válido.';
+  const usr = `OFERTA DA PÁGINA (o anúncio promete exatamente isto): ${OFERTA_LP}
+CAMPANHA: ${reg.nome}${reg.local ? ' · ' + reg.local : ''}${reg.publico ? ' · público: ' + JSON.stringify(reg.publico).substring(0, 300) : ''}
+TEXTO ATUAL DO ANÚNCIO: ${String(reg.texto || '').substring(0, 1200)}
+MANCHETE ATUAL DA ARTE: ${reg.arte?.manchete || '(não registrada)'}
+${ARTE_REGRA()}
+Proponha 3 opções com ângulos de dor DIFERENTES (ex.: margem/custo, decisão no escuro/orçamento do próximo ano, velocidade/concorrência).
+Devolva JSON: {"opcoes":[{"angulo":"2-4 palavras","manchete":"…","beneficios":["…","…","…","…"],"por_que":"1 frase"}]}`;
+  const j = JSON.parse(await _claudeAuto(sys, usr, 900));
+  const opcoes = (Array.isArray(j.opcoes) ? j.opcoes : []).slice(0, 3).map(o => ({ angulo: String(o.angulo || '').substring(0, 40), manchete: String(o.manchete || '').substring(0, 120),
+    beneficios: (Array.isArray(o.beneficios) ? o.beneficios : []).map(x => String(x).substring(0, 40)).filter(Boolean).slice(0, 5), por_que: String(o.por_que || '').substring(0, 200) })).filter(o => o.manchete);
+  if (!opcoes.length) throw new Error('A IA não devolveu manchetes — tente de novo');
+  return { id: reg.id, nome: reg.nome, rede: reg.rede || 'meta', imagem_atual: reg.imagem || null, manchete_atual: reg.arte?.manchete || null, opcoes };
+}
+async function patrocinadoTrocarImagem({ id, imagem, arte } = {}) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
+  if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
+  if (!/^https:\/\//.test(String(imagem || ''))) throw Object.assign(new Error('Imagem inválida (monte a arte antes)'), { status: 400 });
+  if (reg.rede === 'linkedin') throw Object.assign(new Error('No LinkedIn o criativo não muda depois de criado — duplique a campanha com a arte nova.'), { status: 400 });
+  const c = _metaCfg(); if (!(c.token && c.conta && c.pagina && c.ig)) throw new Error('Meta não configurado');
+  if (!reg.ad_id) throw new Error('Esta campanha não tem anúncio registrado no sistema');
+  const ri = await fetch(imagem); if (!ri.ok) throw new Error('Não consegui ler a arte nova (' + ri.status + ')');
+  const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: Buffer.from(await ri.arrayBuffer()).toString('base64') }); const imgHash = Object.values(up.images || {})[0]?.hash;
+  if (!imgHash) throw new Error('O Meta não aceitou a imagem');
+  const tx = alinharOfertaTexto(reg.texto).texto; // o texto continua alinhado à oferta da página
+  const link_data = { link: reg.link, message: tx, name: reg.titulo || 'Mapa de Oportunidades grátis', ...(reg.descricao ? { description: reg.descricao } : {}), image_hash: imgHash, call_to_action: { type: 'LEARN_MORE', value: { link: reg.link } } };
+  const cr = await _meta(`act_${c.conta}/adcreatives`, 'POST', { name: reg.nome + ' · criativo (arte nova ' + new Date().toISOString().slice(0, 10) + ')', object_story_spec: { page_id: c.pagina, instagram_user_id: c.ig, link_data } });
+  await _meta(reg.ad_id, 'POST', { creative: { creative_id: cr.id } });
+  reg.imagens_anteriores = [{ imagem: reg.imagem, manchete: reg.arte?.manchete || null, ate: new Date().toISOString() }, ...(reg.imagens_anteriores || [])].slice(0, 5);
+  Object.assign(reg, { imagem, texto: tx, creative_id: cr.id, arte: arte && arte.manchete ? { manchete: String(arte.manchete).substring(0, 120), beneficios: (arte.beneficios || []).map(x => String(x).substring(0, 40)).slice(0, 5) } : reg.arte, imagem_trocada_em: new Date().toISOString() });
+  await _kvMc('mkt:patrocinados', lista);
+  return { id: reg.id, nome: reg.nome, creative_id: cr.id, em_analise: true };
 }
 async function alinharOfertaTudo({ aplicar = false } = {}, req) {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -1996,6 +2043,7 @@ async function handler(req, res) {
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_meta:       () => patrocinadoMeta(payload), // v3.332
     patrocinado_alinhar_texto: () => patrocinadoAlinharTexto(payload), // v3.337
+    patrocinado_arte_sugerir: () => patrocinadoArteSugerir(payload), patrocinado_trocar_imagem: () => patrocinadoTrocarImagem(payload), // v3.343
     alinhar_oferta_tudo:    () => alinharOfertaTudo(payload, req), // v3.337: campanhas no ar + posts agendados → oferta da página
     patrocinado_enviar_claude: () => patrocinadoEnviarClaude(payload), // v3.335: análise → demanda na Esteira (Claude implementa)
     patrocinado_avaliar:    () => patrocinadoAvaliar(payload), // v3.334: IA avalia a campanha e sugere ajustes (não muda nada no Meta)
