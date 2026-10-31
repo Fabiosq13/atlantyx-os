@@ -267,10 +267,12 @@ export async function processarLeadGravado(leadId) {
   let lead = got[0].data; if (typeof lead === 'string') { try { lead = JSON.parse(lead); } catch (_) { lead = {}; } }
   const etapas = { banco: 'ok', mensagem: null, hubspot: null, whatsapp: null, followup: null, alerta: null };
   let mensagem = null, contactId = null, dealId = null;
+  // v3.327: isca "Mapa de Oportunidades com IA" — pesquisa a empresa e monta o mapa (3 oportunidades) para enviar no WhatsApp
+  const mapaP = lead.oferta === 'mapa_ia' ? gerarMapaOportunidades(lead).catch(e => { console.warn('[mapa]', e.message); return null; }) : Promise.resolve(null);
   // alerta, IA e HubSpot em paralelo (eram em sequência)
   const [al, msg, hs] = await Promise.allSettled([
-    alertarNovoLead(lead),
-    gerarMensagemClaude(lead),
+    (async () => alertarNovoLead(lead, await mapaP))(),
+    (async () => (await mapaP)?.texto || gerarMensagemClaude(lead))(), // com mapa, a 1ª mensagem É o mapa prometido
     (async () => { const { enviarContatoHubSpot } = await import('../lib/hubspot-sync.js');
       return enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
         { nota: `<b>Lead capturado</b><br>Origem: ${lead.origem || '?'} · campanha: ${lead.campanha || '—'}`, origem: 'Captura · ' + (lead.origem || 'formulário') }); })(),
@@ -285,6 +287,7 @@ export async function processarLeadGravado(leadId) {
   } else etapas.whatsapp = !podeB.ok ? 'pulado: ' + podeB.motivo : 'sem mensagem';
   try { if (mensagem && etapas.whatsapp === 'ok') { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem 1ª mensagem no WhatsApp'; }
   catch (e) { etapas.followup = 'falha: ' + e.message; }
+  try { const mp = await mapaP; etapas.mapa = lead.oferta === 'mapa_ia' ? (mp ? 'ok — ' + (etapas.whatsapp === 'ok' ? 'enviado no WhatsApp' : 'rascunho no e-mail de alerta (enviar à mão)') : 'falhou — preparar à mão') : undefined; } catch (_) {}
   try { await atualizarLeadLocal(leadId, { hubspot_contact: contactId, hubspot_deal: dealId, etapas }); } catch (_) {}
   return { lead_id: leadId, etapas, hubspot_contact: contactId, hubspot_deal: dealId };
 }
@@ -296,7 +299,21 @@ async function atualizarLeadLocal(id, campos) {
     etapas = ${JSON.stringify(campos.etapas || {})} WHERE id = ${id}`;
 }
 // v2.32: alerta por e-mail a cada lead, dizendo de qual campanha veio
-async function alertarNovoLead(lead) {
+// v3.327: MAPA DE OPORTUNIDADES COM IA — pesquisa a empresa (análise de pré-vendas da Prospecção) e monta 3 oportunidades
+// em texto de WhatsApp. Hipóteses soam como hipóteses (a análise não afirma o que não achou).
+async function gerarMapaOportunidades(lead) {
+  if (!lead.company) return null;
+  const { analisarEmpresa } = await import('./prospeccao.js');
+  const a = await analisarEmpresa({ empresa: lead.company, email: lead.email });
+  const ops = (a?.oportunidades || []).filter(o => o && (o.solucao || o.como_ajuda)).slice(0, 3);
+  if (!ops.length) return null;
+  const pn = String(lead.name || '').trim().split(/\s+/)[0] || '';
+  const texto = `Olá${pn ? ' ' + pn : ''}, aqui é da Atlantyx. Segue o seu *Mapa de Oportunidades com IA* para a ${a.empresa || lead.company}:\n\n`
+    + ops.map((o, i) => `*${i + 1}. ${String(o.solucao || '').trim()}*\n${o.dor ? 'Ponto de atenção: ' + String(o.dor).trim() + '\n' : ''}${o.como_ajuda ? 'Como ajuda: ' + String(o.como_ajuda).trim() : ''}`).join('\n\n')
+    + `\n\nSe uma delas fizer sentido, mostro em 20 minutos como começar pela de maior retorno. Quer que eu reserve um horário?`;
+  return { texto, empresa: a.empresa || lead.company, setor: a.setor || null, resumo: a.resumo || null, fontes: (a.fontes || []).slice(0, 4) };
+}
+async function alertarNovoLead(lead, mapa = null) {
   const nodemailer = (await import('nodemailer')).default;
   const user = process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER, pass = (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
   if (!user || !pass) throw new Error('EMAIL_IMAP_USER/EMAIL_SMTP_PASS não configurados');
@@ -319,6 +336,7 @@ async function alertarNovoLead(lead) {
       </table>
       <div style="margin-top:12px;padding:10px;background:#EAF7F1;border-left:3px solid #1FB287;font-size:13px;">
         <b>Origem:</b> ${_esc(lead.origem || '?')} · <b>Campanha:</b> ${_esc(lead.campanha || 'não identificada')}${u.medium ? ' · ' + _esc(u.medium) : ''}${u.content ? '<br><span style="color:#5a6478;font-size:12px;">post: ' + _esc(u.content) + '</span>' : ''}</div>
+      ${lead.oferta === 'mapa_ia' ? `<div style="margin-top:12px;padding:10px;background:#FFF8E6;border-left:3px solid #E0A422;font-size:13px;"><b>🗺 Pediu o Mapa de Oportunidades com IA</b> — prometido no WhatsApp em até 1 dia útil.${mapa ? `<br><br><b>Rascunho pronto (revise antes de enviar):</b><pre style="white-space:pre-wrap;font-family:Arial;font-size:12.5px;background:#fff;padding:8px;border:1px solid #eee;">${_esc(mapa.texto)}</pre>${lead.phone ? `<a href="https://wa.me/${String(lead.phone).replace(/\D/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1')}?text=${encodeURIComponent(mapa.texto)}" style="display:inline-block;background:#25D366;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;font-weight:bold;">Abrir no WhatsApp com o mapa</a>` : ''}${mapa.fontes?.length ? `<div style="font-size:11px;color:#8a93a8;margin-top:6px;">Fontes da pesquisa: ${mapa.fontes.map(_esc).join(' · ')}</div>` : ''}` : '<br>A pesquisa automática não encontrou dados suficientes — preparar o mapa à mão.'}</div>` : ''}
       <p style="font-size:12px;color:#8a93a8;margin-top:14px;">Atlantyx OS · alerta automático de captura</p></div>` });
 }
 
@@ -332,7 +350,8 @@ function normalizeLead(body) {
     porte:     String(body.porte || body.field_data?.find(f => f.name === 'company_size')?.values?.[0] || '').substring(0, 30) || null, // v3.234
     source:    body.source || body.ad_name || body.campaign_name || body.form_name || 'Campanha Digital',
     // v3.60: a oferta que trouxe o lead (diagnóstico gratuito) vai junto do desafio — aparece no nome do negócio no HubSpot
-    interesse: ([body.oferta === 'diagnostico_gratuito' ? 'Diagnóstico gratuito' : '', String(body.interesse || body.desafio || '')].filter(Boolean).join(' · ')).substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
+    oferta: ['mapa_ia', 'diagnostico_gratuito'].includes(body.oferta) ? body.oferta : null, // v3.327
+    interesse: ([body.oferta === 'mapa_ia' ? 'Mapa de Oportunidades com IA' : body.oferta === 'diagnostico_gratuito' ? 'Diagnóstico gratuito' : '', String(body.interesse || body.desafio || '')].filter(Boolean).join(' · ')).substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
     timestamp: new Date().toISOString(),
   };
   // v3.300: tudo vira texto com tamanho limitado (telefone numérico derrubava o lead; campos sem limite)

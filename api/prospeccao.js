@@ -119,7 +119,7 @@ const PORTFOLIO_ATLANTYX = `Soluções da Atlantyx (17 anos, B2B):
 - Alocação de especialistas (dados, IA, desenvolvimento) sob demanda.
 - Atlantyx OS: plataforma de agentes de IA para finanças, projetos, vendas e marketing.
 Casos reais: CPFL Energia (sustentação Big Data, data warehouse de parques eólicos, cadastro/tarifação), Enel, Caixa Capitalização, Grupo Jelta Veículos.`;
-async function analisarEmpresa(c) {
+export async function analisarEmpresa(c) { // v3.327: também usada no Mapa de Oportunidades da página de captura
   const key = process.env.ANTHROPIC_API_KEY;
   const dominio = c.email && !/gmail|hotmail|outlook|yahoo|icloud|uol|bol|terra|live\./i.test(c.email) ? c.email.split('@')[1] : null;
   const alvo = c.empresa || (dominio ? dominio.split('.')[0] : null);
