@@ -29,6 +29,12 @@ async function handler(req, res) {
     const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
     try {
       if (b.action === 'ia_estado') { const e = await iaEstado(true); return res.status(200).json({ success: true, ligada: e.ligada, desde: e.desde, por: e.por }); }
+      // v3.346: diagnóstico só do administrador — últimos 4 caracteres da chave da Anthropic que o sistema usa (o Console mostra o mesmo trecho)
+      if (b.action === 'ia_chave_info') {
+        if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador vê isso' });
+        const k = String(process.env.ANTHROPIC_API_KEY || '');
+        return res.status(200).json({ success: true, definida: !!k, tipo: k ? k.slice(0, 10) : '', fim: k.length >= 8 ? k.slice(-4) : '', modelo: process.env.CLAUDE_MODEL || '(padrão do código: Sonnet 4.6)' });
+      }
       if (b.action === 'ia_definir') {
         if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador liga ou desliga a IA' });
         const e = await iaDefinir(!!b.ligada, req.sessao?.login || req.usuario || null); return res.status(200).json({ success: true, ligada: e.ligada, desde: e.desde, por: e.por });

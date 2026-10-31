@@ -32502,7 +32502,8 @@ function iaEstadoMostrar(d) {
 async function iaChave() {
   if (_iaLigada === null) await iaEstadoCarregar();
   const ligar = !_iaLigada;
-  if (!confirm(ligar ? 'RELIGAR a IA do Atlantyx OS?\n\nAgentes, ATLAS, campanhas, propostas, QA e crons voltam a consumir tokens.' : 'DESLIGAR a IA do Atlantyx OS?\n\nNenhuma chamada a Claude, OpenAI, Gemini ou Ideogram sai do sistema (0 tokens). As telas que dependem de IA mostram "IA desligada".')) return;
+  let _k = ''; try { const r0 = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_chave_info' }) }); const d0 = await r0.json(); if (d0.success) _k = d0.definida ? '\n\nChave da Anthropic usada pelo sistema: ' + d0.tipo + '…' + d0.fim + '\nModelo configurado: ' + d0.modelo : '\n\nATENÇÃO: o sistema NÃO tem chave da Anthropic configurada.'; } catch (_) {}
+  if (!confirm((ligar ? 'RELIGAR a IA do Atlantyx OS?\n\nAgentes, ATLAS, campanhas, propostas, QA e crons voltam a consumir tokens.' : 'DESLIGAR a IA do Atlantyx OS?\n\nNenhuma chamada a Claude, OpenAI, Gemini ou Ideogram sai do sistema (0 tokens). As telas que dependem de IA mostram "IA desligada".') + _k)) return;
   try { const r = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_definir', ligada: ligar }) }); const d = await r.json(); if (!d.success) throw new Error(d.error);
     _iaLigada = d.ligada; iaEstadoMostrar(d); toast(d.ligada ? 'IA religada' : 'IA desligada — consumo de tokens parado', 'success'); } catch (e) { toast('Não mudou: ' + e.message, 'error'); }
 }
@@ -35942,7 +35943,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.345] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.346] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35958,7 +35959,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.345';
+window.__ATX_BUILD_ID__ = 'ATX-v3.346';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
