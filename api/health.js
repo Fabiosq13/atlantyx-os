@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, iaEstado, iaDefinir } from '../lib/qa-guard.js';
 // api/health.js
 // Healthcheck do Atlantyx OS
 // - GET  /api/health                              → status básico (público, sem IA)
@@ -21,9 +21,20 @@ const BUILD = {
 
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // v3.345: chave geral da IA (consumo de tokens) — ler é livre para quem está logado; ligar/desligar só o administrador
+  if (req.method === 'POST') {
+    const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
+    try {
+      if (b.action === 'ia_estado') { const e = await iaEstado(true); return res.status(200).json({ success: true, ligada: e.ligada, desde: e.desde, por: e.por }); }
+      if (b.action === 'ia_definir') {
+        if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador liga ou desliga a IA' });
+        const e = await iaDefinir(!!b.ligada, req.sessao?.login || req.usuario || null); return res.status(200).json({ success: true, ligada: e.ligada, desde: e.desde, por: e.por });
+      }
+    } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
   const isFull = req.query?.full === '1';
   const isCron = (req.headers?.authorization || '') === `Bearer ${process.env.CRON_SECRET}`;
 
