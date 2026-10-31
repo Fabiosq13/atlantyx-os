@@ -204,6 +204,8 @@
         <label for="telefone">WhatsApp</label><input id="telefone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="(21) 99999-9999">
         <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Deixe em branco</label><input id="website" name="hp_x7q" tabindex="-1" autocomplete="new-password" data-lpignore="true" data-form-type="other"></div>
         <button class="btn" id="btn" type="submit">Quero meu mapa grátis <span class="seta">→</span></button>
+        <!-- v3.338: alternativa para quem prefere conversar (público 35–60 anos) — o pedido chega direto no WhatsApp comercial -->
+        <a id="formWa" href="#" target="_blank" rel="noopener" style="display:none;margin-top:10px;text-align:center;padding:12px;border-radius:10px;border:1.5px solid #25D366;color:#128C4A;font-weight:700;font-size:14.5px;text-decoration:none;">💬 Prefiro pedir pelo WhatsApp</a>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
           <span>Ao clicar em "Quero meu mapa grátis", você concorda em receber comunicações da Atlantyx por e-mail, ligação, WhatsApp ou SMS sobre este contato e sobre soluções relacionadas. Seus dados são tratados conforme a LGPD. Veja nossa <a href="/privacidade.html" target="_blank" rel="noopener" style="color:#56626e;text-decoration:underline;">Política de Privacidade</a>.</span></div>
@@ -315,14 +317,15 @@
 <script>
 // v3.321: rola até o formulário e já põe o cursor no Nome; a barra fixa some quando o formulário está na tela
 function _funil(etapa) { try { fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ evento: 'funil', etapa, utm }) }); } catch (_) {} }
-(() => { const f = document.getElementById('form'); if (!f) return; let foi = false; const ini = () => { if (foi) return; foi = true; _funil('form_inicio'); }; f.addEventListener('focusin', ini); f.addEventListener('input', ini); })();
+(() => { const f = document.getElementById('form'); if (!f) return; let foi = false; const ini = e => { if (foi || (e && e.target && e.target.id === 'formWa')) return; foi = true; _funil('form_inicio'); }; /* v3.338: o botão do WhatsApp não conta como começar o formulário */ f.addEventListener('focusin', ini); f.addEventListener('input', ini); })();
 function irForm() { try { _funil('cta'); } catch (_) {} const c = document.getElementById('cardForm'); if (!c) return true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => { try { document.getElementById('nome')?.focus({ preventScroll: true }); } catch (_) {} }, 600); return false; }
 (() => { const f = document.getElementById('cardForm'), b = document.getElementById('ctaFixa'), topo = document.querySelector('.cta-topo'); if (!f || !b || !('IntersectionObserver' in window)) return;
   let vForm = false, vTopo = true; const upd = () => b.classList.toggle('on', !vForm && !vTopo);
   new IntersectionObserver(e => { vForm = e[0].isIntersecting; upd(); }, { threshold: 0.15 }).observe(f);
   if (topo) new IntersectionObserver(e => { vTopo = e[0].isIntersecting; upd(); }).observe(topo); })();
 // WhatsApp comercial (vem do servidor) como alternativa ao formulário
-(function esperarWa(n) { try { if (typeof whatsComercial !== 'undefined' && whatsComercial) { const num = String(whatsComercial).replace(/\D/g, ''); if (num) { const l = document.getElementById('ctaWaLink'); l.addEventListener('click', () => _funil('whatsapp')); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 20) setTimeout(() => esperarWa(n + 1), 300); })(0);
+(function esperarWa(n) { try { if (typeof whatsComercial !== 'undefined' && whatsComercial) { const num = String(whatsComercial).replace(/\D/g, ''); if (num) { const fw = document.getElementById('formWa'); if (fw) { fw.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Quero receber o Mapa de Oportunidades com IA da minha empresa.'); fw.style.display = 'block'; fw.addEventListener('click', () => _funil('whatsapp')); }
+        const l = document.getElementById('ctaWaLink'); l.addEventListener('click', () => _funil('whatsapp')); l.href = 'https://wa.me/' + (num.length <= 11 ? '55' + num : num) + '?text=' + encodeURIComponent('Olá! Vi a página da Atlantyx e quero conversar.'); document.getElementById('ctaWa').style.display = 'block'; } return; } } catch (_) {} if (n < 20) setTimeout(() => esperarWa(n + 1), 300); })(0);
 </script>
 </body>
 </html>

@@ -325,6 +325,7 @@ async function patrocinadoCopy({ tema = '', oferta = '', publico = '', trilha = 
   // v3.208: texto no padrão "pergunta-gancho → Simples: resposta → ✅ 3 benefícios → parágrafo de ganho → CTA" e
   // os campos da ARTE no padrão (manchete com palavras em destaque + lista de benefícios com ✓ + tela do sistema)
   const usr = `OFERTA (a mesma da página de captura para onde o botão leva — o anúncio promete EXATAMENTE isto, nunca reunião, conversa ou agendamento): ${OFERTA_LP}\nTema/ângulo: ${String(tema || oferta || 'onde dados e IA cortam custos e aceleram decisões').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}
+LINGUAGEM (v3.338, avaliação da campanha G4 2: cliques bons, página sem conversão): fale de RESULTADO DE NEGÓCIO que o executivo sente — custo operacional, prazo de fechamento, margem, risco, decisão mais rápida — e NÃO de tecnologia. Evite no gancho e nos benefícios termos técnicos como "engenharia de dados", "software sob medida", "tecnologia", "automação", "IA aplicada"; IA aparece só no nome da oferta (Mapa de Oportunidades com IA). Texto e oferta têm de prometer exatamente o que a página entrega.
 Siga EXATAMENTE este padrão de anúncio (estrutura e ritmo, com conteúdo da Atlantyx — não copie marcas de terceiros):
 TEXTO PRINCIPAL, em blocos separados por UMA linha em branco:
 1) Pergunta-gancho que nomeia o público e a mudança (ex.: "Por que diretores financeiros de grandes empresas estão trocando planilhas por indicadores ao vivo?")
