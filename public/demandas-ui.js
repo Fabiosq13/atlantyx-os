@@ -253,9 +253,20 @@
         <button class="btn btn-g" onclick="document.getElementById('demModal').remove()">✕</button></div>
       <div style="padding:6px 18px 14px;">
         ${qa ? '' : `<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--t2);margin-top:6px;"><span>Impacto <b style="color:var(--gold);">${estrelas(x.impacto || d.prioridade)}</b></span><span>Esforço <b>${esc(x.esforco || '?')}</b></span><span>Risco <b>${esc(x.risco || '?')}</b></span><span>Área <b>${esc(x.area || '-')}</b></span>${(x.telas_afetadas || []).length ? `<span>Telas: <b>${esc(x.telas_afetadas.join(', '))}</b></span>` : ''}</div>`}
-        ${qa ? '' : blocoPartitura(d)}
+        ${qa ? '' : blocoPartitura(d)}${qa ? '' : `<div id="demNaoFazer_${esc(d.id)}"></div>`}
         ${bloco('Problema', x.problema)}${bloco('Proposta', x.proposta)}${lista('Critérios de aceite', x.criterios_aceite)}${bloco('Como implementar (orientação técnica)', x.como_implementar)}${bloco('Métrica de sucesso', x.metrica_sucesso)}${achados}
       </div><div style="padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">${blocoDiff(d)}${acao}</div>`);
+    if (!qa) avisoNaoFazer(d);
+  }
+  // v3.341 · estratégia: aviso quando a demanda parece contrariar um "NÃO" da estratégia (lista em Estratégia IA › Trilha guiada). Só avisa; quem decide é o fundador.
+  async function avisoNaoFazer(d) {
+    const el = document.getElementById('demNaoFazer_' + d.id); if (!el) return; const x = d.dados || {};
+    try { const r = await fetch('/api/estrategia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'nao_fazer_checar', titulo: d.titulo, texto: [x.problema, x.proposta, x.como_implementar].filter(Boolean).join('\n') }) });
+      const j = await r.json().catch(() => ({})); if (!j.success || !(j.conflitos || []).length) return;
+      el.innerHTML = `<div style="margin-top:8px;border:1px solid var(--gold);background:rgba(250,178,25,.08);border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.5;"><b>⚠ Esta demanda parece contrariar ${j.conflitos.length > 1 ? 'decisões' : 'uma decisão'} da estratégia (o que NÃO fazer):</b>`
+        + j.conflitos.map(c => `<div style="margin-top:3px;">✖ ${esc(c.texto)}${c.motivo ? ` <span style="color:var(--t2);">— ${esc(c.motivo)}</span>` : ''} <span style="color:var(--t3);font-size:10px;">(termos: ${esc((c.termos || []).join(', '))})</span></div>`).join('')
+        + '<div style="margin-top:4px;color:var(--t2);font-size:10.5px;">É só um aviso: confira antes de aprovar. A lista fica em Estratégia IA › Trilha guiada › O que NÃO fazer.</div></div>';
+    } catch (_) {}
   }
   // v3.145 · B.P.M.: a Partitura da demanda — trilha (dona dos arquivos), ID e escopo; o que falta para aprovar
   function blocoPartitura(d) {
