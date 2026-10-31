@@ -483,6 +483,8 @@ async function patrocinadoCriar(p = {}, req) {
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
     // v3.236: nunca cria conjunto sem filtro de cargo/área — sem ele o Meta entrega para qualquer pessoa
     if (!amplo && !lista && !geoTodos && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
+    // v3.348 (avaliação da G4 2: 42 cliques, 0 começaram o formulário): campanha local de tráfego otimiza para VISITA À PÁGINA CARREGADA, não para clique no link (clique acidental no feed não conta). Se o Meta recusar, volta para clique.
+    let _lpv = !!geoOtim && geoOtim !== 'alcance';
     let adset = null, semPos = false; // v3.317: posicionamento recusado como obsoleto → deixa o Meta escolher dentro do Instagram
     const _pos = t => { if (semPos) { delete t.instagram_positions; delete t.facebook_positions; } return t; };
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
@@ -490,12 +492,13 @@ async function patrocinadoCriar(p = {}, req) {
       try {
         adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + (lista ? ' · Lista Apollo' : ' · Instagram') + (geo ? ' · Local ' + geo.raio_km + 'km' : ''), campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
           // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
-          optimization_goal: geoOtim === 'alcance' ? 'REACH' : geoOtim ? 'LINK_CLICKS' : pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel && !geoOtim ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
+          optimization_goal: geoOtim === 'alcance' ? 'REACH' : geoOtim ? (_lpv ? 'LANDING_PAGE_VIEWS' : 'LINK_CLICKS') : pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel && !geoOtim ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
           bid_strategy: 'LOWEST_COST_WITHOUT_CAP', ...(geoOtim === 'alcance' ? {} : { destination_type: 'WEBSITE' }), status: 'PAUSED',
           start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300', targeting: _pos(_alvo()) });
       } catch (e) {
         const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
         let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
+        if (_lpv && tentativa < 2 && /landing_page_views|optimization[_ ]goal|meta de otimiza/i.test(String(e.message || ''))) { _lpv = false; continue; } // v3.348
         if (!semPos && tentativa < 2 && /obsolet|deprecat/i.test(String(e.message || '')) && /posicionamento|placement/i.test(String(e.message || ''))) { semPos = true; continue; } // v3.317
         // v3.236: o Meta recusou o filtro de cargo → tenta pelo setor de atuação (gestão)
         if (pb?.cargos?.length && /work_position|job title|cargo|position/i.test(String(e.message || '')) && tentativa < 2) { pb.cargos = []; continue; }
