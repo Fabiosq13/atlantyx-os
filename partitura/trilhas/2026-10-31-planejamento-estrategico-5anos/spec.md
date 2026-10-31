@@ -1,5 +1,5 @@
 # Trilha: Planejamento Estratégico — horizonte de 5 anos e trilha guiada
-ID: 2026-10-31-planejamento-estrategico-5anos · Trilha permanente: T3 · Dono: Estratégia IA (S1) · Status: aprovada (entregas 1 e 2 — entregues em v3.341)
+ID: 2026-10-31-planejamento-estrategico-5anos · Trilha permanente: T3 · Dono: Estratégia IA (S1) · Status: aprovada (entregas 1 e 2 em v3.341; entrega 3 aprovada em 31/10/2026 e entregue em v3.342)
 Demanda: "Ajustes exclusivos no módulo de planejamento estratégico" (PDF do fundador, 31/10/2026) · Aprovada por: fundador em 31/10/2026
 Respostas do fundador: entregas 1 e 2 agora (as demais depois da validação) · acesso só do fundador · horizonte 2027–2031 com revisão anual no 4º trimestre e orçamento semestral (aprovação em dezembro, revisão em junho) · comissão de 10%/15% vale para clientes novos e pessoas novas (entra na entrega 6).
 
@@ -20,12 +20,20 @@ O fundador percorre as 11 perguntas em ordem, com rascunho e validação por eta
 - [x] (8.9) Premissas, Sala de Estratégia, NORTE, plano vigente, ajustes, projeção e ritos continuam funcionando.
 - [x] (8.10) `node scripts/validar.mjs --sem-navegador` e `node scripts/bpm-gates.mjs --local` passam.
 
+### Entrega 3 — alinhamento de sócios e papel do fundador (aprovada pelo fundador: "Pode fazer a entrega 3")
+- [x] Registro por sócio: o que quer em 3 a 5 anos, papel da empresa na vida dele, fase de vida (risco, dinheiro, equipe, resultado, dedicação, horizonte).
+- [x] Detector de divergência lado a lado; divergência forte sem acordo = "estratégia travada até alinhar"; acordo registrado destrava.
+- [x] (8.2) Metas (etapas 7 a 11) alertam ao começar e não validam sem os sócios alinhados.
+- [x] Mapa das quatro cadeiras (hoje × 12 meses, divisão do tempo) e a lista "tudo o que eu faço e não deveria fazer" com para quem delegar, prazo e status.
+- [x] (8.7) Exercício pessoal do NORTE (funeral, horizonte de vida): só salvo por clique, por login, nunca exibido a outro usuário; o NORTE só usa se o fundador marcar.
+- [x] Dados dos sócios não vão para os prompts gerais (só status e acordos); o detalhe só entra na sugestão da etapa 7 aberta pelo fundador.
+
 ## Escopo de arquivos (propriedade)
 Pode alterar: api/estrategia.js, lib/plano-estrategico.js, lib/projecao-3anos.js, public/estrategia-ui.js, public/projecao-ui.js; novos: lib/estrategia-roteiro.js, public/estrategia-trilha-ui.js
 Seção do public/index.html: tela de Estratégia / Plano Estratégico (rótulo "Visão 5 anos") e o rótulo "Projeção 5 anos"
 Só lê: partitura/contratos/**
-Armazenamento: kv_store (sem DDL) — est:roteiro, est:nao_fazer, est:revisao_calendario, est:orcamento_semestral
+Armazenamento: kv_store (sem DDL) — est:roteiro, est:nao_fazer, est:revisao_calendario, est:orcamento_semestral, est:socios, est:cadeiras, est:norte_pessoal:<login>
 Interseções previstas: T1 (aviso na Esteira de Demandas — public/demandas-ui.js), T4 (rótulo do menu "Projeção 3 anos" → "5 anos"), T5 (registrar as chaves novas e os arquivos novos em escopos.json)
 
 ## Fora do escopo
-Entregas 3 a 7 do PDF (sócios e quatro cadeiras, concorrentes, obstáculos e ações ligados, aba Execução, painel de receita e ontologia). Coleta externa de dados (T2). Nenhuma ação é executada sem o fundador.
+Entregas 4 a 7 do PDF (concorrentes, obstáculos e ações ligados, aba Execução, painel de receita e ontologia). Coleta externa de dados (T2). Nenhuma ação é executada sem o fundador.

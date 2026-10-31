@@ -67,9 +67,11 @@ async function contexto(forcar) {
   if (forcar) { try { await contextoAmplo(true); } catch (_) {} } // v3.298: "Atualizar os números" também relê histórico, metas, carteira e motores
   await kv('est:contexto', out); return out;
 }
-async function propositoPessoal() {
+async function propositoPessoal(usuario) {
   const [p, m] = await Promise.all([kv('proposito'), kv('metas')]);
-  return { proposito: p || null, metas_dashboard: m || null, plano_alinhamento: (await kv('norte:plano')) || null };
+  // v3.342: exercício pessoal (privado) só entra se o próprio fundador salvou E marcou "o NORTE pode usar"
+  let ex = null; try { const x = usuario ? await kv(RT.kPessoal(usuario)) : null; if (x?.usar_no_norte) ex = { o_que_quero_ouvir_no_meu_funeral: x.ouvir_no_funeral, horizonte_de_vida: x.horizonte_vida, o_que_importa: x.o_que_importa }; } catch (_) {}
+  return { proposito: p || null, metas_dashboard: m || null, plano_alinhamento: (await kv('norte:plano')) || null, ...(ex ? { exercicio_pessoal_privado: ex } : {}) };
 }
 async function premissas() { return (await kv('est:premissas'))?.texto || PREMISSAS_PADRAO; }
 // v3.240: premissas + PLANO ESTRATÉGICO CADASTRADO (alavancas, metas, pesos) para os prompts — sem plano, só as premissas
@@ -77,7 +79,8 @@ async function premissasCtx() {
   const prem = await premissas();
   let out = prem;
   try { const v = await kv(K_VIGENTE); if (v?.plano) out += '\n\n' + planoResumoTexto(v.plano, v); } catch (_) {}
-  try { const [r, nf] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER)]); const a = RT.roteiroResumoTexto(r), b = RT.naoFazerResumoTexto(nf?.itens); if (a) out += '\n\n' + a; if (b) out += '\n\n' + b; } catch (_) {} // v3.341
+  try { const [r, nf, so, ca] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER), kv(RT.K_SOCIOS), kv(RT.K_CADEIRAS)]);
+    for (const t of [RT.roteiroResumoTexto(r), RT.naoFazerResumoTexto(nf?.itens), RT.sociosResumoTexto(so || {}), RT.cadeirasResumoTexto(ca || {})]) if (t) out += '\n\n' + t; } catch (_) {} // v3.341 · v3.342: sócios e cadeiras
   return out;
 }
 async function planoVigente() { return await kv('est:plano'); }
@@ -205,7 +208,7 @@ const json = t => { const s = String(t || '').replace(/```json|```/g, ''); const
 const REGRAS = `Regras: português do Brasil; use os números do CONTEXTO quando existirem e diga quando um dado falta — nunca invente número, cliente ou fato; seja específico para a Atlantyx (nada de conselho genérico); prefira poucas escolhas claras com o porquê e o próximo passo.`;
 
 // ── chat com o ATLAS ──
-async function chat({ conversa_id, mensagem, voz, persona, contexto_extra, titulo_extra }) {
+async function chat({ conversa_id, mensagem, voz, persona, contexto_extra, titulo_extra, _usuario }) {
   const sql = await getSql(); const m = String(mensagem || '').trim(); if (!m) throw new Error('Escreva ou fale a sua pergunta');
   let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
   const quem = persona === 'norte' ? 'norte' : 'atlas';
@@ -230,7 +233,7 @@ Como você age: escuta antes de aconselhar; faz uma pergunta poderosa por vez qu
 Limites: você não é terapeuta nem médico — em temas de saúde ou emocionais, acolha e sugira um profissional. Não invente dados; use os do contexto. Português do Brasil, tom humano e direto.
 ${voz ? 'A resposta será LIDA EM VOZ ALTA: frases curtas, sem markdown, no máximo 110 palavras, termine com uma pergunta.' : 'Formato: markdown leve. Até 220 palavras, salvo se pedirem detalhe.'}
 
-PROPÓSITO E METAS PESSOAIS (cadastrados em S1 · Propósito e Metas Pessoais) + metas do painel + último plano de alinhamento: ${JSON.stringify(await propositoPessoal()).substring(0, 6000)}
+PROPÓSITO E METAS PESSOAIS (cadastrados em S1 · Propósito e Metas Pessoais) + metas do painel + último plano de alinhamento: ${JSON.stringify(await propositoPessoal(_usuario)).substring(0, 6000)}
 
 PREMISSAS E METAS DA EMPRESA: ${prem}
 PLANO ESTRATÉGICO VIGENTE: ${plano ? JSON.stringify(plano.sintese).substring(0, 2000) : '(nenhum)'}
@@ -241,8 +244,8 @@ RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { 
   return { conversa_id: conv.id, resposta, contexto_em: ctx.em, persona: quem };
 }
 // plano de alinhamento propósito × metas (NORTE)
-async function nortePlano() {
-  const [pp, prem, plano, ctx] = await Promise.all([propositoPessoal(), premissasCtx(), planoVigente(), contexto()]);
+async function nortePlano(usuario) {
+  const [pp, prem, plano, ctx] = await Promise.all([propositoPessoal(usuario), premissasCtx(), planoVigente(), contexto()]);
   if (!pp.proposito) throw new Error('Preencha primeiro "S1 · Propósito e Metas Pessoais" (propósito de vida, legado, metas) — o NORTE parte dele');
   const t = await claude(`Você é NORTE, mentor de propósito e metas do fundador da Atlantyx. Monte o PLANO DE ALINHAMENTO entre o propósito pessoal, as metas pessoais e as metas da empresa. Use só o que foi cadastrado; onde faltar, deixe a pergunta. Português do Brasil.
 Responda SOMENTE JSON: {"proposito_em_uma_frase":"...","como_a_atlantyx_serve_ao_proposito":"2-3 frases","metas_pessoais":[{"meta":"SMART com número e prazo","area":"vida|família|saúde|finanças|legado|social|desenvolvimento","liga_ao_proposito":"por quê"}],"metas_empresa_que_importam":[{"meta":"...","por_que_importa_pra_voce":"..."}],"tensoes":[{"entre":"meta pessoal × meta da empresa","troca_sugerida":"..."}],"rituais":[{"ritual":"...","frequencia":"semanal|mensal|trimestral"}],"proximos_30_dias":["..."],"perguntas_em_aberto":["..."]}`,
@@ -446,23 +449,24 @@ function soFundador(req) {
   if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) throw Object.assign(new Error('A trilha guiada da estratégia é só do fundador (perfil administrador).'), { status: 403 });
 }
 async function roteiroObter() {
-  const [r, nf, ca] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER), kv('est:contexto_amplo')]);
-  const R = RT.roteiroNormalizar(r);
+  const [r, nf, ca, so] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER), kv('est:contexto_amplo'), kv(RT.K_SOCIOS)]);
+  const R = RT.roteiroNormalizar(r), socios = RT.socStatus(so || {});
   const numeros = ca ? { em: ca.em, ano_atual: ca.ano_atual, historico: ca.historico, motores_12m: ca.motores_12m, pessoas_ativas: ca.pessoas?.ativos ?? null, contratos: ca.contratos || null, erros: ca.erros || [] } : null;
-  return { roteiro: R, status: RT.roteiroStatus(R), perguntas: RT.PERGUNTAS, blocos: RT.BLOCOS, estados: RT.ESTADOS, escolhas_motor: RT.ESCOLHAS_MOTOR, motores: RT.MOTORES_R, regras_ouro: RT.REGRAS_OURO,
+  return { roteiro: R, status: RT.roteiroStatus(R, { socios }), socios, perguntas: RT.PERGUNTAS, blocos: RT.BLOCOS, estados: RT.ESTADOS, escolhas_motor: RT.ESCOLHAS_MOTOR, motores: RT.MOTORES_R, regras_ouro: RT.REGRAS_OURO,
     horizonte: RT.HORIZONTE, nao_fazer: RT.naoFazerNormalizar(nf?.itens), numeros };
 }
 async function roteiroSalvar(b, usuario) {
-  const R = RT.roteiroAplicar(await kv(RT.K_ROTEIRO), b, usuario);
-  await kv(RT.K_ROTEIRO, R); return { roteiro: R, status: RT.roteiroStatus(R) };
+  const socios = RT.socStatus((await kv(RT.K_SOCIOS)) || {}), R = RT.roteiroAplicar(await kv(RT.K_ROTEIRO), b, usuario, { socios });
+  await kv(RT.K_ROTEIRO, R); return { roteiro: R, status: RT.roteiroStatus(R, { socios }), socios };
 }
 async function roteiroSugerir({ n, pedido }) {
   const q = RT.PERGUNTAS.find(p => p.n === Number(n)); if (!q) throw Object.assign(new Error('Etapa inválida'), { status: 400 });
-  const [A, prem, r, nf] = await Promise.all([contextoAmplo(false).catch(() => null), premissasCtx(), kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER)]);
+  const [A, prem, r] = await Promise.all([contextoAmplo(false).catch(() => null), premissasCtx(), kv(RT.K_ROTEIRO)]); // premissasCtx já traz renúncias, sócios e cadeiras
   const R = RT.roteiroNormalizar(r), anteriores = RT.PERGUNTAS.filter(p => p.n < q.n && R.etapas[p.n].resposta.trim()).map(p => `${p.n}. ${p.titulo} [${R.etapas[p.n].estado}] ${R.etapas[p.n].resposta.substring(0, 900)}`).join('\n');
   const sys = `Você é ATLAS, estrategista-chefe da Atlantyx (dados, BI, engenharia de dados e IA; três motores: alocação de pessoas, projetos e produtos próprios de IA). Você ajuda o fundador a responder UMA etapa do roteiro estratégico de 5 anos (${RT.HORIZONTE.inicio}–${RT.HORIZONTE.fim}).
 Regras: (1) Números da Atlantyx só os que estão nos DADOS DA EMPRESA — cite a origem ("financeiro, últimos 12 meses"). (2) NUNCA apresente número de mercado, tamanho de mercado, múltiplo ou dado de concorrente como fato: se mencionar algo externo, escreva "(não verificado — fonte: ...)" ou "a confirmar". (3) Não use nomes de clientes; fale em "clientes de energia", "banco", etc. (4) É um RASCUNHO: termine com 1 a 3 perguntas que só o fundador pode responder. (5) Respeite a lista do que NÃO fazer. (6) Português do Brasil, direto, no máximo ~25 linhas, em tópicos curtos.${q.motores ? ' (7) Para cada motor sugira defender, evoluir ou transformar, com o porquê.' : ''}`;
-  const usr = `ETAPA ${q.n} — ${q.titulo}\nO que cobrir: ${q.guia}\n${pedido ? 'PEDIDO DO FUNDADOR: ' + String(pedido).substring(0, 800) + '\n' : ''}\nRESPOSTA ATUAL DESTA ETAPA: ${R.etapas[q.n].resposta.substring(0, 2000) || '(vazia)'}\n\nETAPAS ANTERIORES:\n${anteriores || '(nenhuma respondida)'}\n\nPREMISSAS, PLANO E RENÚNCIAS:\n${prem.substring(0, 6000)}\n\nDADOS DA EMPRESA (vivos): ${A ? JSON.stringify({ ano_atual: A.ano_atual, historico: A.historico, motores_12m: A.motores_12m, metas_por_ano: A.metas_por_ano, carteira_contratada: A.carteira_contratada?.total_previsto_13m, pessoas: A.pessoas?.ativos, propostas_12m: A.propostas_12m, contratos: A.contratos, projecao: A.projecao_3anos, erros: A.erros }).substring(0, 9000) : '(indisponíveis agora)'}`;
+  const socDet = q.n === RT.ETAPA_SOCIOS ? RT.sociosResumoTexto((await kv(RT.K_SOCIOS)) || {}, { detalhe: true }) : '';
+  const usr = `ETAPA ${q.n} — ${q.titulo}\nO que cobrir: ${q.guia}\n${socDet ? socDet + '\n' : ''}${pedido ? 'PEDIDO DO FUNDADOR: ' + String(pedido).substring(0, 800) + '\n' : ''}\nRESPOSTA ATUAL DESTA ETAPA: ${R.etapas[q.n].resposta.substring(0, 2000) || '(vazia)'}\n\nETAPAS ANTERIORES:\n${anteriores || '(nenhuma respondida)'}\n\nPREMISSAS, PLANO E RENÚNCIAS:\n${prem.substring(0, 6000)}\n\nDADOS DA EMPRESA (vivos): ${A ? JSON.stringify({ ano_atual: A.ano_atual, historico: A.historico, motores_12m: A.motores_12m, metas_por_ano: A.metas_por_ano, carteira_contratada: A.carteira_contratada?.total_previsto_13m, pessoas: A.pessoas?.ativos, propostas_12m: A.propostas_12m, contratos: A.contratos, projecao: A.projecao_3anos, erros: A.erros }).substring(0, 9000) : '(indisponíveis agora)'}`;
   const sugestao = await claude(sys, [{ role: 'user', content: usr }], 1500);
   return { n: q.n, sugestao, aviso: 'Sugestão do ATLAS — revise, ajuste e só então valide. Nada foi salvo.' };
 }
@@ -513,6 +517,36 @@ async function orcamentoSalvar({ semestre, orcamento, acao }, usuario) {
   return orcamentoObter({ semestre, com_realizado: false });
 }
 
+// ── v3.342: ALINHAMENTO DE SÓCIOS, QUATRO CADEIRAS E EXERCÍCIO PESSOAL (privado, por login, só com "Salvar") ──
+async function sociosObter(usuario) {
+  const [so, ca, pe] = await Promise.all([kv(RT.K_SOCIOS), kv(RT.K_CADEIRAS), usuario ? kv(RT.kPessoal(usuario)) : null]);
+  const S = RT.sociosNormalizar(so || {}), C = RT.cadeirasNormalizar(ca || {});
+  return { socios: S, status: RT.socStatus(S), opcoes: RT.OPC_SOCIO, campos: RT.CAMPOS_SOCIO, cadeiras: C, cadeiras_def: RT.CADEIRAS, cadeiras_alertas: RT.cadeirasAlertas(C),
+    pessoal: pe ? RT.pessoalNormalizar(pe) : null, pessoal_disponivel: !!usuario };
+}
+async function sociosSalvar({ socios, ultima_conversa }, usuario) {
+  const ex = RT.sociosNormalizar((await kv(RT.K_SOCIOS)) || {});
+  const S = RT.sociosNormalizar({ ...ex, socios: Array.isArray(socios) ? socios : ex.socios, ultima_conversa: ultima_conversa !== undefined ? ultima_conversa : ex.ultima_conversa });
+  const ids = new Set(S.socios.map(x => x.id)); S.acordos = Object.fromEntries(Object.entries(S.acordos).filter(([k]) => { const [, a, b] = k.split(':'); return ids.has(a) && ids.has(b); }));
+  S.atualizado_em = new Date().toISOString(); await kv(RT.K_SOCIOS, { ...S, por: usuario || null });
+  return sociosObter(usuario);
+}
+async function sociosAcordo({ chave, texto, remover }, usuario) {
+  const S = RT.sociosNormalizar((await kv(RT.K_SOCIOS)) || {});
+  if (!RT.sociosDivergencias(S).some(d => d.chave === chave)) throw Object.assign(new Error('Divergência não encontrada (os sócios mudaram?)'), { status: 400 });
+  if (remover) delete S.acordos[chave];
+  else { if (String(texto || '').trim().length < 10) throw Object.assign(new Error('Escreva o acordo entre os sócios (pelo menos uma frase)'), { status: 400 }); S.acordos[chave] = { texto: String(texto).substring(0, 800), em: new Date().toISOString(), por: usuario || null }; }
+  await kv(RT.K_SOCIOS, { ...S, atualizado_em: new Date().toISOString() }); return sociosObter(usuario);
+}
+async function cadeirasSalvar({ cadeiras }, usuario) {
+  const C = RT.cadeirasNormalizar({ ...(cadeiras || {}), atualizado_em: new Date().toISOString() }); await kv(RT.K_CADEIRAS, C); return sociosObter(usuario);
+}
+async function pessoalSalvar({ pessoal, apagar }, usuario) {
+  if (!usuario) throw Object.assign(new Error('Exercício pessoal só com o fundador logado'), { status: 403 });
+  if (apagar) { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key=${RT.kPessoal(usuario)}`; return { pessoal: null }; }
+  const P = RT.pessoalNormalizar({ ...(pessoal || {}), salvo_em: new Date().toISOString() }); await kv(RT.kPessoal(usuario), P); return { pessoal: P };
+}
+
 async function handler(req, res) {
   // v3.240: cron mensal — a ATLAS sugere o ajuste fino do plano vigente (fica pendente, nada muda sem o fundador)
   if (req.method === 'GET' && req.query?.cron === 'ajuste_plano') {
@@ -533,10 +567,10 @@ async function handler(req, res) {
       projecao_obter: () => projecaoObter(b), projecao_calcular: async () => ({ projecao: projetar3(b.premissas || {}, await baseProjecao(false)) }),
       projecao_salvar: () => projecaoSalvar(b, usuario), projecao_ia: () => projecaoIA(b), projecao_para_metas: () => projecaoParaMetas(b),
       premissas_salvar: async () => { const t = String(b.texto || '').trim(); if (t.length < 30) throw new Error('Escreva as premissas (pelo menos algumas frases)'); await kv('est:premissas', { texto: t.substring(0, 6000), em: new Date().toISOString(), por: usuario }); return { ok: true }; },
-      chat: () => chat(b),
+      chat: () => chat({ ...b, _usuario: usuario }),
       conversa: async () => ({ conversa: (await sql`SELECT * FROM est_conversas WHERE id=${b.id}`)[0] || null }),
       conversa_excluir: async () => { await sql`DELETE FROM est_conversas WHERE id=${b.id}`; return { ok: true }; },
-      norte_plano: () => nortePlano(), norte_obter: async () => ({ plano: await kv('norte:plano'), tem_proposito: !!(await kv('proposito')) }),
+      norte_plano: () => nortePlano(usuario), norte_obter: async () => ({ plano: await kv('norte:plano'), tem_proposito: !!(await kv('proposito')) }),
       sala_abrir: () => salaAbrir(b), sala_rodada: () => salaRodada(b), sala_sintese: () => salaSintese(b), sala_aprovar: () => salaAprovar(b, usuario), sala_acoes: () => salaAcoes(b),
       sala_obter: async () => ({ sessao: (await sql`SELECT * FROM est_sessoes WHERE id=${b.id}`)[0] || null }),
       sala_excluir: async () => { await sql`DELETE FROM est_sessoes WHERE id=${b.id}`; return { ok: true }; },
@@ -551,6 +585,8 @@ async function handler(req, res) {
       nao_fazer_importar_plano: () => (soFundador(req), naoFazerImportarPlano(usuario)),
       nao_fazer_checar: async () => ({ conflitos: RT.naoFazerChecar((await kv(RT.K_NAO_FAZER))?.itens, [b.titulo, b.texto].filter(Boolean).join(' \n ').substring(0, 6000)) }),
       revisao_calendario: () => (soFundador(req), calendarioObter()), revisao_calendario_salvar: () => (soFundador(req), calendarioSalvar(b, usuario)),
+      socios_obter: () => (soFundador(req), sociosObter(usuario)), socios_salvar: () => (soFundador(req), sociosSalvar(b, usuario)), socios_acordo: () => (soFundador(req), sociosAcordo(b, usuario)), // v3.342
+      cadeiras_salvar: () => (soFundador(req), cadeirasSalvar(b, usuario)), pessoal_salvar: () => (soFundador(req), pessoalSalvar(b, usuario)),
       orcamento_obter: () => (soFundador(req), orcamentoObter(b)), orcamento_salvar: () => (soFundador(req), orcamentoSalvar(b, usuario)),
       ritos: async () => { try { const r = await chamar('reunioes', { action: 'ritos' }); return { ritos: (r.ritos || []).filter(x => x.ativo).map(x => ({ id: x.id, nome: x.nome, proxima_br: x.proxima_br })) }; } catch (_) { return { ritos: [] }; } },
     };

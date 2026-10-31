@@ -16,10 +16,18 @@ ID: 2026-10-31-planejamento-estrategico-5anos · Trilha: T3 · Aprovado por: fun
 - [x] 2.5 Respostas validadas e "nãos" entram no contexto do ATLAS e do comitê
 - [x] Validação da fase
 
+## Fase 3 — Sócios, quatro cadeiras e exercício pessoal (entrega 3)
+- [x] 3.1 Sócios lado a lado e detector de divergência com acordos (lib/estrategia-roteiro.js, api/estrategia.js: socios_obter, socios_salvar, socios_acordo)
+- [x] 3.2 Trava das metas (etapas 7–11) sem alinhamento de sócios
+- [x] 3.3 Quatro cadeiras e "faço e não deveria fazer" (cadeiras_salvar)
+- [x] 3.4 Exercício pessoal privado por login, integrado ao NORTE só com consentimento (pessoal_salvar)
+- [x] 3.5 Aba "👥 Sócios e o seu papel" (public/estrategia-trilha-ui.js)
+- [x] Validação da fase
+
 ## Interseções
 - T1 (Esteira de Demandas): mostrar o aviso "parece contrariar um NÃO da estratégia" no detalhe da demanda, chamando `estrategia` ação `nao_fazer_checar` — commit separado com BPM-Trilha: T1.
 - T4: rótulo do menu "Projeção 3 anos" → "Projeção 5 anos".
-- T5: registrar lib/estrategia-roteiro.js, public/estrategia-trilha-ui.js, lib/projecao-3anos.js e public/projecao-ui.js na T3 em escopos.json; chaves kv novas em contratos/banco.md (sem tabela nova).
+- T5: registrar as chaves est:socios, est:cadeiras e est:norte_pessoal:<login>; registrar lib/estrategia-roteiro.js, public/estrategia-trilha-ui.js, lib/projecao-3anos.js e public/projecao-ui.js na T3 em escopos.json; chaves kv novas em contratos/banco.md (sem tabela nova).
 - Pedido ao Afinador: nenhum (só kv_store).
 
 ## Registro da Batida
@@ -27,3 +35,4 @@ ID: 2026-10-31-planejamento-estrategico-5anos · Trilha: T3 · Aprovado por: fun
 |---|---|---|---|
 | 2026-10-31 | spec aprovada (entregas 1 e 2) | — | implementar fases 1 e 2 |
 | 2026-10-31 | fases 1 e 2 entregues (v3.341) | — | fundador valida; depois seguem as entregas 3 (sócios e quatro cadeiras) e 4 (concorrentes) |
+| 2026-10-31 | entrega 3 entregue (v3.342) | — | fundador cadastra os sócios e valida; próxima: entrega 4 (concorrentes e matriz) |

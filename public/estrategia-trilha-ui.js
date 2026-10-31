@@ -1,4 +1,4 @@
-// v3.341 — ESTRATÉGIA IA · TRILHA GUIADA 2027–2031 · trilha T3
+// v3.341 — ESTRATÉGIA IA · TRILHA GUIADA 2027–2031 · trilha T3 · v3.342: sócios lado a lado, quatro cadeiras e exercício pessoal privado
 // Roteiro de 11 perguntas (vazia → rascunho → validada; o ATLAS sugere, só o fundador valida), lista do que NÃO fazer,
 // calendário de revisão (anual no 4º tri, orçamento em dezembro/junho, check-ins trimestrais) e orçamento semestral.
 // Carregado sob demanda pela aba "🗺 Trilha guiada" de /estrategia-ui.js. Nada é executado sozinho.
@@ -36,11 +36,11 @@
           <button class="btn btn-g" style="font-size:10.5px;" onclick="ESTT.regras()">${regrasAbertas ? '▴' : '▾'} Regras de ouro do método</button></div>
         ${regrasAbertas ? `<ol style="margin:10px 0 0;padding-left:20px;font-size:11.5px;line-height:1.6;color:var(--t2);">${D.regras_ouro.map(r => `<li>${esc(r)}</li>`).join('')}</ol>` : ''}
       </div></div>
-      <div class="seg" id="esttAbas" style="margin-bottom:10px;">${[['roteiro', '① 11 perguntas'], ['nao', '✖ O que NÃO fazer (' + (D.nao_fazer || []).filter(x => x.ativo).length + ')'], ['calendario', '📅 Calendário de revisão'], ['orcamento', '💰 Orçamento semestral']].map(([k, t]) => `<button class="${k === sub ? 'on' : ''}" onclick="ESTT.sub('${k}')">${t}</button>`).join('')}</div>
+      <div class="seg" id="esttAbas" style="margin-bottom:10px;">${[['socios', '👥 Sócios e o seu papel'], ['roteiro', '① 11 perguntas'], ['nao', '✖ O que NÃO fazer (' + (D.nao_fazer || []).filter(x => x.ativo).length + ')'], ['calendario', '📅 Calendário de revisão'], ['orcamento', '💰 Orçamento semestral']].map(([k, t]) => `<button class="${k === sub ? 'on' : ''}" onclick="ESTT.sub('${k}')">${t}</button>`).join('')}</div>
       <div id="esttCorpo"></div>`;
     corpo();
   }
-  function corpo() { if (sub === 'roteiro') roteiro(); else if (sub === 'nao') naoFazer(); else if (sub === 'calendario') calendario(); else orcamento(); }
+  function corpo() { if (sub === 'socios') socios(); else if (sub === 'roteiro') roteiro(); else if (sub === 'nao') naoFazer(); else if (sub === 'calendario') calendario(); else orcamento(); }
 
   // ── ① roteiro de 11 perguntas ──
   function roteiro() {
@@ -60,7 +60,8 @@
           (num.erros || []).length ? `<span style="color:var(--gold);">⚠ ${esc(num.erros.slice(0, 2).join(' · '))}</span>` : ''].filter(Boolean).join('<br>') : 'Abra o ATLAS ou clique em "↻ Atualizar os números que a IA enxerga" (aba Plano vigente) para carregar os números.'}</div>` : '';
     const motores = q.motores ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin:8px 0;">${Object.entries(mot).map(([k, t]) => `<div><label class="fl" for="esttM_${k}">${esc(t)}</label><select class="fsel" id="esttM_${k}"><option value="">escolha…</option>${Object.entries(D.escolhas_motor).map(([v, r]) => `<option value="${v}" ${e.motores?.[k] === v ? 'selected' : ''}>${r}</option>`).join('')}</select></div>`).join('')}</div>` : '';
     const sg = sug[sel];
-    $('esttCorpo').innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:10px;" class="est-grid">
+    const so = D.socios, banner = so && so.status !== 'alinhado' ? `<div style="border:1px solid var(--gold);background:rgba(250,178,25,.07);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;">👥 <b>Sócios: ${esc(so.mensagem)}.</b> As metas (etapas 7 a 11) só se validam com os sócios alinhados. <a href="#" onclick="event.preventDefault();ESTT.sub('socios')">Ir para Sócios e o seu papel →</a></div>` : '';
+    $('esttCorpo').innerHTML = banner + `<div style="display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:10px;" class="est-grid">
       <div class="panel"><div class="pb" style="padding:8px;">${lista}</div></div>
       <div class="panel"><div class="pb">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-family:var(--M);font-size:10px;color:var(--t2);">${esc(D.blocos[q.bloco])} · etapa ${q.n} de ${Q.length}</span>${chip(D.estados[e.estado], COR[e.estado])}${e.fora_de_ordem ? chip('começada fora de ordem', 'var(--gold)') : ''}</div>
@@ -76,10 +77,10 @@
         <div style="font-size:10px;color:var(--t3);margin-top:4px;">${e.atualizado_em ? 'Atualizada ' + esc(quando(e.atualizado_em)) + (e.atualizado_por ? ' por ' + esc(e.atualizado_por) : '') : 'Ainda não salva.'}${e.validado_em ? ' · validada ' + esc(quando(e.validado_em)) + (e.validado_por ? ' por ' + esc(e.validado_por) : '') : ''}</div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-g" onclick="ESTT.salvar(${q.n})">💾 Salvar rascunho</button>
-          <button class="btn btn-p" onclick="ESTT.salvar(${q.n},'validada')" ${st.pode_validar ? '' : `disabled title="Valide antes as etapas ${st.faltam_validar.join(', ')}"`}>✅ Validar</button>
+          <button class="btn btn-p" onclick="ESTT.salvar(${q.n},'validada')" ${st.pode_validar ? '' : `disabled title="${esc(st.bloqueio)}"`}>✅ Validar</button>
           ${e.estado === 'validada' ? `<button class="btn btn-g" onclick="ESTT.salvar(${q.n},'rascunho')">↩ Voltar para rascunho</button>` : ''}
           <button class="btn btn-gn" id="esttBtSug" onclick="ESTT.sugerir(${q.n})">🧠 Sugestão do ATLAS</button>
-          ${!st.pode_validar ? `<span style="font-size:10.5px;color:var(--t3);">🔒 validar exige as etapas ${st.faltam_validar.join(', ')} validadas</span>` : ''}</div>
+          ${!st.pode_validar ? `<span style="font-size:10.5px;color:var(--t3);">🔒 ${esc(st.bloqueio)}</span>` : ''}${st.trava_socios ? ` <a href="#" style="font-size:10.5px;" onclick="event.preventDefault();ESTT.sub('socios')">alinhar sócios →</a>` : ''}</div>
         ${sg ? `<div style="margin-top:10px;border:1px solid rgba(124,156,255,.4);background:rgba(124,156,255,.06);border-radius:8px;padding:10px;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><b style="font-size:12px;">🧠 Sugestão do ATLAS</b><span style="font-size:10px;color:var(--t3);">${esc(sg.aviso || '')}</span></div>
           <div style="font-size:12px;line-height:1.6;white-space:pre-wrap;">${esc(sg.sugestao)}</div>
@@ -90,12 +91,13 @@
   const lerMotores = () => D.perguntas.find(x => x.n === sel)?.motores ? Object.fromEntries(Object.keys(D.motores).map(k => [k, $('esttM_' + k)?.value || ''])) : undefined;
   function sujo() { const e = D.roteiro.etapas[sel]; const r = $('esttResp'); return r && (r.value !== e.resposta || ($('esttResp2')?.value || '') !== e.responsavel); }
   function etapa(n) { if (sub === 'roteiro' && sujo() && !confirm('A resposta desta etapa tem mudanças não salvas. Sair sem salvar?')) return; sel = n; roteiro(); }
-  async function salvar(n, estado, forcar) {
-    const body = { n, resposta: $('esttResp').value, responsavel: $('esttResp2').value, data: $('esttData').value || null, motores: lerMotores(), estado, forcar: !!forcar };
+  async function salvar(n, estado, forcar, forcarSoc) {
+    const body = { n, resposta: $('esttResp').value, responsavel: $('esttResp2').value, data: $('esttData').value || null, motores: lerMotores(), estado, forcar: !!forcar, forcar_socios: !!forcarSoc };
     if (estado === 'validada' && !confirm(`Validar a resposta da etapa ${n}?\n\nResposta validada passa a orientar o ATLAS, o NORTE e o comitê.`)) return;
-    try { const r = await api('roteiro_salvar', body); D.roteiro = r.roteiro; D.status = r.status; nota(estado === 'validada' ? 'Etapa ' + n + ' validada' : 'Rascunho salvo'); desenhar(); }
+    try { const r = await api('roteiro_salvar', body); D.roteiro = r.roteiro; D.status = r.status; if (r.socios) D.socios = r.socios; nota(estado === 'validada' ? 'Etapa ' + n + ' validada' : 'Rascunho salvo'); desenhar(); }
     catch (e) {
-      if (e.codigo === 'ORDEM_INICIAR') { if (confirm(e.message + '\n\nOK = começar esta etapa mesmo assim (fica marcada "fora de ordem").')) return salvar(n, estado, true); return; }
+      if (e.codigo === 'ORDEM_INICIAR') { if (confirm(e.message + '\n\nOK = começar esta etapa mesmo assim (fica marcada "fora de ordem").')) return salvar(n, estado, true, forcarSoc); return; }
+      if (e.codigo === 'SOCIOS_INICIAR') { if (confirm(e.message + '\n\nOK = começar mesmo assim (a validação continua travada até alinhar os sócios).')) return salvar(n, estado, forcar, true); return; }
       nota(e.message, 'error');
     }
   }
@@ -208,8 +210,82 @@
     try { const r = await api('orcamento_salvar', { semestre: ORC.semestre, orcamento, acao }); const real = ORC.realizado; ORC = { ...r, realizado: real }; nota(acao === 'aprovar' ? 'Orçamento aprovado' : acao === 'revisar' ? 'Revisão registrada' : 'Orçamento salvo'); orcDesenhar(); } catch (e) { nota(e.message, 'error'); }
   }
 
+  // ── 👥 sócios, quatro cadeiras e exercício pessoal (v3.342) ──
+  let SO = null, socEd = null, cadEd = null, pesEd = null;
+  async function socios(recarregar) {
+    if (!SO || recarregar) { $('esttCorpo').innerHTML = '<div style="padding:20px;color:var(--t3);font-size:11px;">Carregando…</div>';
+      try { SO = await api('socios_obter'); socEd = JSON.parse(JSON.stringify(SO.socios.socios)); cadEd = JSON.parse(JSON.stringify(SO.cadeiras)); } catch (e) { $('esttCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;">${esc(e.message)}</div>`; return; } }
+    socDesenhar();
+  }
+  const STC = { alinhado: 'var(--green,#22d3a3)', travada: 'var(--red)', incompleto: 'var(--gold)', sem_socios: 'var(--t3)' };
+  function socDesenhar() {
+    const st = SO.status, O = SO.opcoes, Cp = SO.campos, sel = (i, k) => `<select class="fsel" style="font-size:11.5px;" onchange="ESTT.socCampo(${i},'${k}',this.value)"><option value="">—</option>${Object.entries(O[k]).map(([v, t]) => `<option value="${v}" ${socEd[i][k] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+    const linha = (rot, cel) => `<tr style="border-top:1px solid var(--bd);"><td style="padding:5px 4px;color:var(--t2);font-size:11px;min-width:150px;">${rot}</td>${socEd.map((s, i) => `<td style="padding:5px 4px;min-width:190px;vertical-align:top;">${cel(i)}</td>`).join('')}</tr>`;
+    const div = st.divergencias;
+    const C = cadEd, CD = SO.cadeiras_def, P = pesEd || SO.pessoal || {};
+    $('esttCorpo').innerHTML = `
+      <div style="border:1px solid ${STC[st.status]};border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b style="color:${STC[st.status]};">${st.status === 'travada' ? '⛔' : st.status === 'alinhado' ? '✔' : '●'} ${esc(st.mensagem)}</b><span style="color:var(--t2);font-size:11px;">A ordem do método começa pelos sócios: o que cada um quer da empresa muda o que a estratégia pode escolher. As metas (etapas 7 a 11) só se validam com os sócios alinhados.</span></div>
+      <div class="panel" style="margin-bottom:10px;"><div class="pb">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:13px;">Sócios lado a lado</b><span style="font-size:10.5px;color:var(--t3);">você registra pelo que cada sócio disse — só você vê esta tela</span><span style="flex:1;"></span>
+          <label style="font-size:11px;">Última conversa de sócios <input class="fi" type="date" id="socConv" style="width:auto;display:inline-block;" value="${esc(SO.socios.ultima_conversa || '')}"></label>
+          <button class="btn btn-g" style="font-size:10.5px;" onclick="ESTT.socAdd()">＋ Sócio</button><button class="btn btn-p" style="font-size:10.5px;" onclick="ESTT.socSalvar()">💾 Salvar sócios</button></div>
+        ${socEd.length ? `<div style="overflow-x:auto;margin-top:8px;"><table style="border-collapse:collapse;font-size:11.5px;width:100%;">
+          ${linha('Nome', i => `<div style="display:flex;gap:4px;"><input class="fi" value="${esc(socEd[i].nome)}" oninput="ESTT.socCampo(${i},'nome',this.value)" placeholder="nome do sócio"><button class="btn btn-g" style="font-size:10px;" title="remover" onclick="ESTT.socDel(${i})">🗑</button></div>`)}
+          ${linha(Cp.quer_3a5, i => `<textarea class="fta" style="min-height:64px;font-size:11.5px;" oninput="ESTT.socCampo(${i},'quer_3a5',this.value)">${esc(socEd[i].quer_3a5)}</textarea>`)}
+          ${['papel', 'fase', 'risco', 'dinheiro', 'equipe', 'resultado', 'dedicacao'].map(k => linha(Cp[k], i => sel(i, k) + (k === 'fase' ? `<input class="fi" style="font-size:11px;margin-top:3px;" placeholder="nota (opcional)" value="${esc(socEd[i].fase_nota)}" oninput="ESTT.socCampo(${i},'fase_nota',this.value)">` : ''))).join('')}
+          ${linha(Cp.horizonte_anos, i => `<input class="fi" inputmode="numeric" style="max-width:90px;" value="${socEd[i].horizonte_anos ?? ''}" oninput="ESTT.socCampo(${i},'horizonte_anos',this.value)">`)}
+        </table></div>` : '<div style="font-size:12px;color:var(--t3);margin-top:8px;">Nenhum sócio cadastrado. Comece por você.</div>'}
+        <div style="font-size:10px;color:var(--t3);margin-top:6px;">Divergências são recalculadas ao salvar.</div></div></div>
+      <div class="panel" style="margin-bottom:10px;"><div class="pb"><b style="font-size:13px;">Detector de divergência</b>
+        ${div.length ? div.map(d => `<div style="border-top:1px solid var(--bd);padding:7px 2px;font-size:11.5px;">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${chip(d.nivel === 'alta' ? 'forte' : 'atenção', d.nivel === 'alta' ? 'var(--red)' : 'var(--gold)')}<b>${esc(d.socios.join(' × '))}</b><span>${esc(d.texto)}</span>${d.resolvida ? chip('acordo registrado', 'var(--green,#22d3a3)') : ''}</div>
+          ${d.resolvida ? `<div style="margin-top:3px;color:var(--t2);">🤝 ${esc(d.acordo.texto)} <a href="#" style="font-size:10px;" onclick="event.preventDefault();ESTT.socAcordo('${d.chave}',true)">desfazer</a></div>`
+            : d.nivel === 'alta' ? `<div style="display:flex;gap:6px;margin-top:4px;"><input class="fi" id="ac_${d.chave.replace(/[^a-z0-9]/gi, '_')}" placeholder="O que os sócios combinaram para destravar (ex.: reinvestir 70% até 2028, depois rever)"><button class="btn btn-g" style="font-size:10.5px;white-space:nowrap;" onclick="ESTT.socAcordo('${d.chave}')">🤝 Registrar acordo</button></div>` : ''}</div>`).join('')
+          : `<div style="font-size:11.5px;color:var(--t3);margin-top:6px;">${socEd.length > 1 ? 'Nenhuma divergência entre os sócios cadastrados.' : 'Com dois ou mais sócios, as respostas são comparadas aqui.'}</div>`}</div></div>
+      <div class="panel" style="margin-bottom:10px;"><div class="pb"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:13px;">As quatro cadeiras do fundador</b><span style="font-size:10.5px;color:var(--t3);">qual você ocupa hoje, qual deveria ocupar em 12 meses e o que delega</span><span style="flex:1;"></span><button class="btn btn-p" style="font-size:10.5px;" onclick="ESTT.cadSalvar()">💾 Salvar cadeiras</button></div>
+        ${SO.cadeiras_alertas.map(a => `<div style="font-size:11px;color:var(--gold);margin-top:4px;">⚠ ${esc(a)}</div>`).join('')}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px;">${Object.entries(CD).map(([k, c]) => `<div style="border:1px solid ${C.hoje === k || C.deveria_12m === k ? 'var(--blue)' : 'var(--bd)'};border-radius:8px;padding:8px;">
+          <b style="font-size:12px;">${esc(c.nome)}</b><div style="font-size:10.5px;color:var(--t2);min-height:30px;">${esc(c.desc)}</div>
+          <label style="font-size:11px;display:flex;gap:4px;align-items:center;margin-top:4px;"><input type="radio" name="cadHoje" ${C.hoje === k ? 'checked' : ''} onchange="ESTT.cadCampo('hoje','${k}')"> estou aqui hoje</label>
+          <label style="font-size:11px;display:flex;gap:4px;align-items:center;"><input type="radio" name="cadMeta" ${C.deveria_12m === k ? 'checked' : ''} onchange="ESTT.cadCampo('deveria_12m','${k}')"> devo estar em 12 meses</label>
+          <div style="display:flex;gap:6px;margin-top:4px;font-size:10.5px;color:var(--t2);align-items:center;">tempo hoje <input class="fi" inputmode="numeric" style="width:52px;" value="${C.tempo_hoje[k] ?? ''}" oninput="ESTT.cadTempo('tempo_hoje','${k}',this.value)">% · meta <input class="fi" inputmode="numeric" style="width:52px;" value="${C.tempo_meta[k] ?? ''}" oninput="ESTT.cadTempo('tempo_meta','${k}',this.value)">%</div></div>`).join('')}</div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><b style="font-size:12px;">Tudo o que eu faço e não deveria fazer</b><button class="btn btn-g" style="font-size:10.5px;" onclick="ESTT.cadItem()">＋ Item</button></div>
+        ${C.itens.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;"><tr style="color:var(--t2);text-align:left;"><th style="padding:4px;">Atividade</th><th style="padding:4px;">Cadeira</th><th style="padding:4px;">Delegar para</th><th style="padding:4px;">Prazo</th><th style="padding:4px;">Status</th><th></th></tr>
+          ${C.itens.map((x, i) => `<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;"><input class="fi" value="${esc(x.texto)}" oninput="ESTT.cadItemCampo(${i},'texto',this.value)" placeholder="ex.: aprovar cada proposta comercial"></td>
+            <td style="padding:4px;"><select class="fsel" onchange="ESTT.cadItemCampo(${i},'cadeira',this.value)">${Object.entries(CD).map(([k, c]) => `<option value="${k}" ${x.cadeira === k ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></td>
+            <td style="padding:4px;"><input class="fi" value="${esc(x.para)}" oninput="ESTT.cadItemCampo(${i},'para',this.value)" placeholder="quem assume"></td><td style="padding:4px;"><input class="fi" type="date" value="${esc(x.prazo || '')}" onchange="ESTT.cadItemCampo(${i},'prazo',this.value)"></td>
+            <td style="padding:4px;"><select class="fsel" onchange="ESTT.cadItemCampo(${i},'status',this.value)">${[['pendente', 'Pendente'], ['andamento', 'Em andamento'], ['delegado', 'Delegado ✔']].map(([v, t]) => `<option value="${v}" ${x.status === v ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+            <td style="padding:4px;"><button class="btn btn-g" style="font-size:10px;" onclick="ESTT.cadItemDel(${i})">🗑</button></td></tr>`).join('')}</table></div>` : '<div style="font-size:11px;color:var(--t3);margin-top:4px;">Liste o que ocupa o seu tempo e deveria estar com outra pessoa.</div>'}
+        <label class="fl" for="cadObs" style="margin-top:8px;">Observações</label><textarea class="fta" id="cadObs" style="min-height:44px;font-size:11.5px;" oninput="ESTT.cadCampo('observacoes',this.value,true)">${esc(C.observacoes)}</textarea></div></div>
+      <div class="panel"><div class="pb"><details ${SO.pessoal || pesEd ? 'open' : ''}><summary style="cursor:pointer;font-size:13px;font-weight:700;">🔒 Exercício pessoal (opcional, privado) — integrado ao NORTE</summary>
+        <div style="font-size:11px;color:var(--t2);line-height:1.55;margin-top:6px;">Só é guardado se você clicar em <b>Salvar (privado)</b>, fica ligado ao seu login e nunca aparece para outro usuário. O NORTE só usa se você marcar a opção abaixo. ${SO.pessoal?.salvo_em ? 'Salvo em ' + esc(quando(SO.pessoal.salvo_em)) + '.' : 'Nada salvo.'}</div>
+        <label class="fl" for="pesFun" style="margin-top:8px;">O que eu quero ouvir no meu funeral</label><textarea class="fta" id="pesFun" style="min-height:70px;font-size:12px;" oninput="ESTT.pesCampo('ouvir_no_funeral',this.value)">${esc(P.ouvir_no_funeral || '')}</textarea>
+        <label class="fl" for="pesHor" style="margin-top:6px;">Horizonte de vida (ex.: quantos anos quero trabalhar com intensidade)</label><input class="fi" id="pesHor" value="${esc(P.horizonte_vida || '')}" oninput="ESTT.pesCampo('horizonte_vida',this.value)">
+        <label class="fl" for="pesImp" style="margin-top:6px;">O que importa de verdade para mim nos próximos anos</label><textarea class="fta" id="pesImp" style="min-height:50px;font-size:12px;" oninput="ESTT.pesCampo('o_que_importa',this.value)">${esc(P.o_que_importa || '')}</textarea>
+        <label style="font-size:11px;display:flex;gap:5px;align-items:center;margin-top:6px;cursor:pointer;"><input type="checkbox" id="pesNorte" ${P.usar_no_norte ? 'checked' : ''} onchange="ESTT.pesCampo('usar_no_norte',this.checked)"> o NORTE pode usar este exercício nas conversas e no plano de alinhamento</label>
+        <div style="display:flex;gap:6px;margin-top:8px;"><button class="btn btn-p" onclick="ESTT.pesSalvar()">💾 Salvar (privado)</button>${SO.pessoal ? '<button class="btn btn-g" style="color:var(--red);" onclick="ESTT.pesApagar()">🗑 Apagar o que foi salvo</button>' : ''}</div></details></div></div>`;
+  }
+  function socCampo(i, k, v) { socEd[i][k] = v; }
+  function socAdd() { socEd.push({ id: 's_' + Date.now().toString(36), nome: '', quer_3a5: '', fase_nota: '', horizonte_anos: null }); socDesenhar(); }
+  function socDel(i) { if (!confirm('Remover ' + (socEd[i].nome || 'este sócio') + '? (só vale depois de salvar)')) return; socEd.splice(i, 1); socDesenhar(); }
+  async function socSalvar() { try { SO = await api('socios_salvar', { socios: socEd, ultima_conversa: $('socConv')?.value || null }); socEd = JSON.parse(JSON.stringify(SO.socios.socios)); D.socios = SO.status; nota('Sócios salvos — ' + SO.status.mensagem); socDesenhar(); } catch (e) { nota(e.message, 'error'); } }
+  async function socAcordo(chave, remover) {
+    const texto = remover ? null : $('ac_' + chave.replace(/[^a-z0-9]/gi, '_'))?.value; if (remover && !confirm('Desfazer este acordo? A divergência volta a travar a estratégia.')) return;
+    try { SO = await api('socios_acordo', { chave, texto, remover: !!remover }); D.socios = SO.status; nota(remover ? 'Acordo desfeito' : 'Acordo registrado'); socDesenhar(); } catch (e) { nota(e.message, 'error'); }
+  }
+  function cadCampo(k, v, semRedesenho) { cadEd[k] = v; if (!semRedesenho) socDesenhar(); }
+  function cadTempo(k, c, v) { cadEd[k][c] = v === '' ? null : Number(v); }
+  function cadItem() { cadEd.itens.push({ id: 'i' + Date.now().toString(36), texto: '', cadeira: 'operador', para: '', prazo: null, status: 'pendente' }); socDesenhar(); }
+  function cadItemCampo(i, k, v) { cadEd.itens[i][k] = v; }
+  function cadItemDel(i) { cadEd.itens.splice(i, 1); socDesenhar(); }
+  async function cadSalvar() { try { SO = await api('cadeiras_salvar', { cadeiras: cadEd }); cadEd = JSON.parse(JSON.stringify(SO.cadeiras)); nota('Cadeiras salvas'); socDesenhar(); } catch (e) { nota(e.message, 'error'); } }
+  function pesCampo(k, v) { pesEd = pesEd || { ...(SO.pessoal || {}) }; pesEd[k] = v; }
+  async function pesSalvar() { pesEd = pesEd || { ...(SO.pessoal || {}) }; if (!['ouvir_no_funeral', 'horizonte_vida', 'o_que_importa'].some(k => String(pesEd[k] || '').trim())) return nota('Nada para salvar', 'error');
+    try { const r = await api('pessoal_salvar', { pessoal: pesEd }); SO.pessoal = r.pessoal; pesEd = null; nota('Salvo — privado, só você vê'); socDesenhar(); } catch (e) { nota(e.message, 'error'); } }
+  async function pesApagar() { if (!confirm('Apagar o exercício pessoal salvo? Não dá para desfazer.')) return; try { await api('pessoal_salvar', { apagar: true }); SO.pessoal = null; pesEd = null; nota('Apagado'); socDesenhar(); } catch (e) { nota(e.message, 'error'); } }
+
   window.ESTT = { render, regras: () => { regrasAbertas = !regrasAbertas; desenhar(); }, sub: k => { if (sub === 'roteiro' && k !== 'roteiro' && sujo() && !confirm('A resposta desta etapa tem mudanças não salvas. Sair sem salvar?')) return; sub = k; desenhar(); },
     etapa, salvar, sugerir, usarSug, descartarSug, nfSalvar, nfEditar, nfAtivo, nfRemover, nfImportar, nfTestar,
     calAno: a => { calAno = a; calendario(); }, calFeito, calCheck, calNotas, gatilho, gatilhoResolver,
-    orcSem: s => orcamento(s), orcSug: () => orcDesenhar(true), orcSalvar, _estado: () => ({ D, CAL, ORC }) };
+    orcSem: s => orcamento(s), orcSug: () => orcDesenhar(true), orcSalvar, socCampo, socAdd, socDel, socSalvar, socAcordo, cadCampo, cadTempo, cadItem, cadItemCampo, cadItemDel, cadSalvar, pesCampo, pesSalvar, pesApagar, _estado: () => ({ D, CAL, ORC, SO }) };
 })();
