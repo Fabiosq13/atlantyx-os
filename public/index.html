@@ -441,6 +441,28 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .res-card .rv{font-family:var(--H);font-size:20px;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .res-card .rs{font-size:10px;color:var(--t3);margin-top:3px;line-height:1.45;}
 .res-card .rs b{color:var(--t1);font-weight:600;}
+/* v3.353: cartões objetivos — Real · Previsto · Meta · % atingido · farol */
+.res-card.rc3{padding:14px 14px 12px;display:flex;flex-direction:column;gap:8px;border-left:none;border-top:3px solid var(--c);border-radius:12px;background:var(--bg4);box-shadow:0 1px 0 rgba(0,0,0,.04);transition:transform .12s,box-shadow .12s;}
+.res-card.rc3:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.14);}
+.rc3-top{display:flex;align-items:center;gap:7px;min-width:0;}
+.rc3-top .rl{flex:1;min-width:0;line-height:1.3;}
+.rc3-luz{width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent);flex:0 0 10px;}
+.rc3-tag{float:right;font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--c);white-space:nowrap;}
+.rc3-det summary{cursor:pointer;font-size:11px;color:var(--t2);padding:6px 2px;}
+.rc3-real{font-family:var(--H);font-size:24px;font-weight:700;letter-spacing:-.4px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;}
+.rc3-real small{display:block;font-family:var(--M);font-size:9px;font-weight:500;letter-spacing:.6px;text-transform:uppercase;color:var(--t3);margin-bottom:2px;}
+.rc3-bar{position:relative;height:6px;border-radius:6px;background:var(--bd);overflow:hidden;}
+.rc3-bar.vazio{opacity:.4;}
+.rc3-bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;}
+.rc3-bar>i.p{background:color-mix(in srgb,var(--c) 35%,transparent);}
+.rc3-bar>i.r{background:var(--c);}
+.rc3-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+.rc3-kpis>div{min-width:0;}
+.rc3-kpis small{display:block;font-family:var(--M);font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--t3);}
+.rc3-kpis b{display:block;font-family:var(--M);font-size:11.5px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rc3-kpis a{color:var(--blue);text-decoration:none;border-bottom:1px dashed currentColor;}
+.rc3-extra{font-size:9.5px;color:var(--t3);}
+.rc3-extra a{color:var(--blue);}
 /* v3.123: cartões de resultado com meta do período */
 .res-card.rc2{padding:12px 14px 11px;display:flex;flex-direction:column;gap:2px;background:linear-gradient(180deg,var(--bg4),var(--bg3));transition:transform .12s,box-shadow .12s;}
 .res-card.rc2:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.18);}
@@ -30370,6 +30392,32 @@ function _finMetodoSet(v) {
 }
 function _finRegimeSelHtml(extra) { return '<select class="fsel finRegimeSel" title="Regime da DRE: competência = pela data da nota/conta · caixa = pela data do recebimento/pagamento" aria-label="Regime" style="font-size:11px;width:auto;' + (extra || '') + '" onchange="_finMetodoSet(this.value)"><option value="Cash">Caixa</option><option value="Accrual">Competência</option></select>'; }
 document.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('.finRegimeSel').forEach(x => { x.value = _finMetodo(); }); });
+// v3.353: cartão objetivo — Real (grande) · Previsto · Meta · % de atingimento (real ÷ meta) · farol (previsto contra a meta;
+// sem previsto, real contra o esperado até hoje). Detalhes ficam no (i) e no clique (DRE).
+function _resCartaoV2(o) {
+  const f = v => v == null || isNaN(v) ? '—' : o.pct ? _resFmtPct(v) : fmtBRL(v);
+  const fc = v => { if (v == null || isNaN(v)) return '—'; if (o.pct) return _resFmtPct(v); const x = Math.abs(v), sg = v < 0 ? '-' : ''; return 'R$ ' + sg + (x >= 1e6 ? (x / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : x >= 1e4 ? Math.round(x / 1e3).toLocaleString('pt-BR') + 'k' : x.toLocaleString('pt-BR', { maximumFractionDigits: 0 })); };
+  const temMeta = o.meta != null && !(o.pct ? false : !o.meta);
+  const ating = temMeta && o.real != null && o.meta ? o.real / o.meta * 100 : null;
+  let luz = 'cinza';
+  if (temMeta && (o.prev != null || o.real != null)) {
+    const base = o.prev != null ? o.prev : o.real, esp = o.prev != null ? 1 : (o.frac != null ? o.frac : 1);
+    if (o.pct) { const d = base - o.meta; luz = d >= 0 ? 'verde' : d >= -5 ? 'amarelo' : 'vermelho'; }
+    else if (o.menor) { const r = base / o.meta; luz = r <= 1 ? 'verde' : r <= 1.1 ? 'amarelo' : 'vermelho'; }
+    else { const r = o.meta > 0 ? base / (o.meta * esp || 1) : 0; luz = base < 0 ? 'vermelho' : r >= 1 ? 'verde' : r >= 0.85 ? 'amarelo' : 'vermelho'; }
+  }
+  const COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' }[luz];
+  const TXT = { verde: 'no rumo', amarelo: 'atenção', vermelho: 'fora da meta', cinza: 'sem meta' }[luz];
+  const w = v => Math.max(0, Math.min(100, v || 0));
+  const bReal = temMeta && o.meta && o.real != null ? w(o.real / o.meta * 100) : 0, bPrev = temMeta && o.meta && o.prev != null ? w(o.prev / o.meta * 100) : 0;
+  const prevH = o.link && o.prev != null ? '<a href="#" onclick="event.preventDefault();event.stopPropagation();' + o.link + '">' + fc(o.prev) + '</a>' : fc(o.prev);
+  return '<div class="res-card rc3" style="--c:' + COR + ';">'
+    + '<div class="rc3-top"><span class="rc3-luz" title="' + TXT + '"></span><span class="rl">' + o.rot + _tip(o.tip) + '</span></div>'
+    + '<div class="rc3-real"><small>Real <span class="rc3-tag">● ' + TXT + '</span></small>' + f(o.real) + '</div>'
+    + (temMeta ? '<div class="rc3-bar"><i class="p" style="width:' + bPrev + '%"></i><i class="r" style="width:' + bReal + '%"></i></div>' : '<div class="rc3-bar vazio"></div>')
+    + '<div class="rc3-kpis"><div><small>Previsto</small><b>' + prevH + '</b></div><div><small>Meta</small><b>' + (temMeta ? fc(o.meta) : (o.meta === null ? '—' : '<a href="#" onclick="event.preventDefault();event.stopPropagation();metasEditar()">definir</a>')) + '</b></div><div><small>Atingido</small><b style="color:' + COR + ';">' + (ating == null ? '—' : _resFmtPct(ating)) + '</b></div></div>'
+    + (o.extra ? '<div class="rc3-extra">' + o.extra + '</div>' : '') + '</div>';
+}
 // v3.123: cartão com a meta do período ao lado — barra de atingimento, marcador do "esperado até hoje" no mês em curso e semáforo
 function _resCartaoMeta(rot, val, cor, tip, m, rodape) {
   const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
@@ -30503,7 +30551,7 @@ function camAbrir(qual) {
   m.onclick = ev => { if (ev.target === m) m.remove(); };
   document.body.appendChild(m);
 }
-function _resCardsHtml(R, modo) {
+function _resCardsHtml(R, modo, K) {
   const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
   if (!R) return '<div style="color:var(--t3);font-size:11px;padding:8px;">Sem dados de resultado.</div>';
   if (R.qb_configurado === false) return '<div style="color:var(--gold);font-size:11px;padding:8px;">QuickBooks não conectado — conecte para ver faturamento, lucro e margem.</div>';
@@ -30519,11 +30567,6 @@ function _resCardsHtml(R, modo) {
   const caixa = R.regime === 'caixa' ? (R.periodo_outro ? ' · emitido no período (competência) <b>' + brl(R.periodo_outro.faturamento) + '</b>' : '') : (R.periodo_caixa ? ' · recebido no período (caixa) <b>' + brl(R.periodo_caixa.receita_recebida) + '</b>' : '');
   // v3.114: sem nota emitida no mês (comum no começo do mês), mostra o último mês fechado como referência — antes ficava só "R$ 0,00"
   const subFat = futuro ? 'período ainda não começou' : (semFat ? '<span style="color:var(--gold);">nenhuma nota emitida ' + lblP + ' até hoje</span>' + (U ? ' · ' + nomeMes(U.mes) + ': <b>' + brl(U.faturamento) + '</b>' : '') : '') + (semFat ? '' : anoTxt + ': <b>' + brl(a.faturamento) + '</b>') + caixa + (semFat ? ' · ' + anoTxt + ': <b>' + brl(a.faturamento) + '</b>' : '');
-  // v3.351: o card de faturamento mostra SEMPRE as duas leituras do mês — faturado (emitido, competência) e recebido (pago, caixa) — e o % da meta de cada uma
-  const _fatMes = R.regime === 'caixa' ? R.periodo_outro?.faturamento : p.faturamento, _recMes = R.regime === 'caixa' ? p.faturamento : R.periodo_caixa?.receita_recebida;
-  const _metaFat = (R.metas_periodo || {}).faturamento, _pm = v => (v == null || !(_metaFat > 0)) ? '' : ' · <b>' + _resFmtPct(v / _metaFat * 100) + '</b> da meta';
-  const blocoMes = futuro ? '' : '<div style="margin:2px 0 6px;line-height:1.55;"><div>Faturado no ' + (lblP === 'do mês' ? 'mês' : 'período') + ' (emitido): <b style="color:var(--blue);">' + brl(_fatMes) + '</b>' + _pm(_fatMes) + '</div>'
-    + '<div>Recebido no ' + (lblP === 'do mês' ? 'mês' : 'período') + ' (pago): <b style="color:var(--green);">' + brl(_recMes) + '</b>' + _pm(_recMes) + '</div></div>';
   const semCpv = !(a.custos > 0) && !(p.custos > 0);
   // v3.117: tooltips — definição, fonte e a conta com os valores deste período
   const per = R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) : '', aj = p.ajustes_ebitda || {};
@@ -30546,15 +30589,26 @@ function _resCardsHtml(R, modo) {
   const MP = R.metas_periodo || {}, fr = MP.fracao_decorrida, rotM = MP.meses > 1 ? 'do período' : 'do mês';
   const mm = (meta, real, extra) => futuro ? null : (meta != null ? { meta, real, frac: fr, rot: rotM, ...extra } : { semMeta: true });
   const fm = k => MP.fonte?.[k] ? '\n\n**Meta ' + rotM + '**: ' + MP.fonte[k] + '.' : '\n\nSem meta: defina em **Metas do ano** (faturamento e % de lucro) ou cadastre um Budget no QuickBooks.';
+  // v3.353: cartões objetivos — Real · Previsto · Meta · % de atingimento · farol (pedido do fundador: despoluir)
+  // Previsto (só no mês corrente, com os KPIs de caixa): real + o que está programado até o fim do mês
+  //   faturamento: caixa = + faturas emitidas que vencem no mês · competência = + termos/marcos/sustentações a faturar no mês
+  //   gastos: + contas a pagar que vencem no mês (QuickBooks + Agenda) · EBITDA e lucro: real + (Δ faturamento − Δ gastos)
+  const kOk = K && !futuro && modo === 'live';
+  const dFat = kOk ? (R.regime === 'caixa' ? (K.contas_receber_mes || 0) : (K.receita_prevista_mes || 0)) : null, dGas = kOk ? (K.contas_pagar_mes || 0) : null;
+  const pv = (real, d) => real == null || d == null ? null : real + d;
+  const fatPrev = pv(p.faturamento, dFat), gasPrev = pv(p.gastos_totais, dGas), dRes = kOk ? dFat - dGas : null;
+  const lucPrev = pv(p.lucro_liquido, dRes), ebPrev = pv(p.ebitda, dRes), mgPrev = fatPrev > 0 && lucPrev != null ? lucPrev / fatPrev * 100 : null;
+  const mes = R.ano?.ate ? ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+String(R.ano.ate).substring(5, 7) - 1] : '';
+  const tipPrev = kOk ? '\n\n**Previsto** = real até hoje + o que está programado até o fim do mês: ' + (R.regime === 'caixa' ? 'faturas já emitidas que vencem no mês ' + brl(K.contas_receber_mes) : 'termos, marcos e sustentações a faturar no mês ' + brl(K.receita_prevista_mes)) + ' · contas a pagar do mês ' + brl(K.contas_pagar_mes) + ' (QuickBooks + Agenda; vencidas não entram).' : '';
+  const lkR = kOk ? "cxDetalheAbrir('receber',{})" : '', lkP = kOk ? "cxDetalheAbrir('pagar',{})" : '';
   const cards = [
-    _resCartaoMeta('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), semFat ? 'var(--gold)' : 'var(--blue)', T.fat + fm('faturamento'), mm(MP.faturamento, p.faturamento), blocoMes + subFat),
+    _resCartaoV2({ rot: 'Faturamento ' + lblP, tip: T.fat + tipPrev + fm('faturamento'), real: futuro ? null : p.faturamento, prev: fatPrev, meta: MP.faturamento, frac: fr, link: lkR }),
     semCpv
-      ? _resCartaoMeta('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), 'var(--red)', T.gastos + fm('gastos'), mm(MP.gastos, p.gastos_totais, { tipo: 'menor', frac: null, rot: 'orçada' }), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · impostos, custos e despesas (sem retiradas)')
-      : _resCartaoMeta('Margem bruta', futuro ? '—' : brl(p.lucro_bruto), corLuc(p.lucro_bruto), T.lb, null, 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct)),
-    // v3.126: margem EBITDA em destaque ao lado do valor e linha de meta comparando com a margem líquida meta
-    _resCartaoMeta('EBITDA', futuro ? '—' : brl(p.ebitda) + (p.margem_ebitda_pct != null ? ' <span style="font-size:13px;font-weight:600;opacity:.85;">' + _resFmtPct(p.margem_ebitda_pct) + '</span>' : ''), corLuc(p.ebitda), T.eb + fm('ebitda'), MP.ebitda != null ? mm(MP.ebitda, p.ebitda) : null, 'margem EBITDA <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> do faturamento · ' + anoTxt + ' <b>' + brl(a.ebitda) + '</b> (' + _resFmtPct(a.margem_ebitda_pct) + ')'),
-    _resCartaoMeta('Lucro ' + lblP, futuro ? '—' : brl(p.lucro_liquido), corLuc(p.lucro_liquido), T.ll + fm('lucro'), mm(MP.lucro, p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : '') + camLk),
-    _resCartaoMeta('Margem de lucro ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), T.mg + fm('margem'), semFat ? null : mm(MP.margem_pct ?? meta.pct, p.margem_liquida_pct, { fmt: 'pct' }), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>'),
+      ? _resCartaoV2({ rot: 'Gastos ' + lblP, tip: T.gastos + tipPrev + fm('gastos'), real: futuro ? null : p.gastos_totais, prev: gasPrev, meta: MP.gastos, menor: true, link: lkP })
+      : _resCartaoV2({ rot: 'Margem bruta', tip: T.lb, real: futuro ? null : p.lucro_bruto, prev: null, meta: null }),
+    _resCartaoV2({ rot: 'EBITDA', tip: T.eb + tipPrev + fm('ebitda'), real: futuro ? null : p.ebitda, prev: ebPrev, meta: MP.ebitda, frac: fr }),
+    _resCartaoV2({ rot: 'Lucro ' + lblP, tip: T.ll + tipPrev + fm('lucro'), real: futuro ? null : p.lucro_liquido, prev: lucPrev, meta: MP.lucro, frac: fr, extra: camLk }),
+    _resCartaoV2({ rot: 'Margem de lucro ' + lblP, tip: T.mg + tipPrev + fm('margem'), real: futuro || semFat ? null : p.margem_liquida_pct, prev: mgPrev, meta: MP.margem_pct ?? meta.pct, pct: true }),
   ];
   // v3.114: evolução mês a mês do ano (faturamento e lucro) — mostra de onde vem o acumulado
   const M = (R.mensal || []).filter(m => m.mes <= (R.ano?.ate || '9999').substring(0, 7));
@@ -30579,7 +30633,8 @@ function _resCardsHtml(R, modo) {
       + lin('Faturamento', 'fat') + lin('Gastos', 'gas') + lin('Lucro (resultado operacional)', 'luc') + lin('Margem de lucro', 'mg', true) + lin('EBITDA', 'eb') + lin('Resultado do dono (após retiradas)', 'dono')
       + '</table></div><div class="rs">Os cartões acima estão em <b>' + (cx ? 'caixa' : 'competência') + '</b> — troque o regime no seletor do dashboard para ver todos os indicadores no outro. · <a href="#" onclick="event.preventDefault();audIndicadores()" style="color:var(--blue);">🔎 conferir os indicadores nas origens</a></div></div>');
   }
-  return '<div class="rc-row">' + cards.slice(0, 5).join('') + '</div>' + cards.slice(5).join(''); // v3.123: os 5 indicadores ocupam a largura toda
+  const resto = cards.slice(5).join(''); // v3.353: no LIVE, os detalhes (dois regimes, mês a mês) ficam recolhidos
+  return '<div class="rc-row">' + cards.slice(0, 5).join('') + '</div>' + (modo === 'live' && resto ? '<details class="rc3-det" style="grid-column:1/-1;"><summary>Detalhes · caixa × competência e mês a mês</summary><div class="res-grid" style="margin-top:8px;">' + resto + '</div></details>' : resto); // v3.123: os 5 indicadores ocupam a largura toda
 }
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 // v3.127: DASHBOARD FINANCEIRO v2 — 6 telas da especificação (executiva, caixa e liquidez, pessoas, projetos,
@@ -33204,7 +33259,7 @@ async function carregarResultadoLive(forcar) {
   const seq = ++_liveResSeq, btn = document.getElementById('liveResBtn'), at = document.getElementById('liveResAt');
   if (btn) btn.disabled = true; if (at) at.textContent = '⏳ atualizando...';
   const pinta = (R, cache) => {
-    box.innerHTML = _resCardsHtml(R, 'live'); _dreCliqueCartoes(box, () => ({})); window._liveR = R; // v3.352
+    box.innerHTML = _resCardsHtml(R, 'live', _liveKpi && _liveKpi._met === _finMetodo() ? _liveKpi : null); _dreCliqueCartoes(box, () => ({})); window._liveR = R; // v3.352
     const nt = document.getElementById('liveResNota'); if (nt) nt.innerHTML = _resNota(R);
     if (at) { at.textContent = cache && cache.stale ? 'dados de ' + Math.round(cache.idade_s / 60) + ' min atrás — atualizando…' : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5); }
     // metas da empresa: realizado mensal/anual = faturamento do QuickBooks (antes era digitado à mão)
@@ -33237,24 +33292,8 @@ async function carregarResultadoLive(forcar) {
       saude: '**Saúde financeira** — semáforo com 3 notas (0 a 2 cada):\n• Fôlego: ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano: ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez: ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · abaixo vermelho.\n\nAgora: ' + ((k.semaforo_motivos || []).join(' · ') || '—') + fk,
     };
     setTimeout(() => { const cs = b2.querySelectorAll('.res-card'); [[0, () => cxDetalheAbrir('folego', {})], [1, () => cxDetalheAbrir('folego', {})]].forEach(([i, fn]) => { const c = cs[i]; if (!c) return; c.style.cursor = 'pointer'; c.title = 'Clique para ver linha a linha'; c.onclick = e => { if (!e.target.closest('.tip-i, a, button')) fn(); }; }); }, 0);
-    // v3.352: card "Faturamento do mês" — o que está PROGRAMADO para o resto do mês (termos/marcos/sustentações a faturar + faturas emitidas que vencem no mês) e a previsão contra a meta
-    try { const f = [...(document.getElementById('liveRes')?.querySelectorAll('.res-card') || [])].find(c => /^\s*Faturamento/i.test(c.textContent)); if (f) { f.querySelector('.rprog')?.remove();
-      const R0 = window._liveR || {}, p0 = R0.periodo_res || {}, fat0 = R0.regime === 'caixa' ? R0.periodo_outro?.faturamento : p0.faturamento, meta0 = (R0.metas_periodo || {}).faturamento, mf = k.mes_fim ? k.mes_fim.substring(8, 10) + '/' + k.mes_fim.substring(5, 7) : '';
-      const ln = document.createElement('div'); ln.className = 'rprog'; ln.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);font-size:11px;line-height:1.6;cursor:pointer;';
-      if (k.contas_receber_mes == null && k.receita_prevista_mes == null) ln.innerHTML = '<span style="color:var(--t3);">Programado até o fim do mês: indisponível agora</span>';
-      else { const af = k.receita_prevista_mes || 0, prevMes = (fat0 || 0) + af, qf = k.receita_prevista_mes_qtd || 0, qr = k.contas_receber_mes_qtd || 0;
-        ln.innerHTML = '<div><b style="color:var(--gold);">A faturar até ' + mf + ' (termos, marcos e sustentações): ' + brl(af) + '</b> <span style="color:var(--t3);">· ' + qf + ' ite' + (qf === 1 ? 'm' : 'ns') + ((k.receita_prevista_atrasada || 0) > 0 ? ' · inclui ' + brl(k.receita_prevista_atrasada) + ' atrasados' : '') + '</span></div>'
-          + '<div><b style="color:var(--blue);">A receber até ' + mf + ' (faturas já emitidas no QuickBooks): ' + brl(k.contas_receber_mes) + '</b> <span style="color:var(--t3);">· ' + qr + ' fatura' + (qr === 1 ? '' : 's') + ((k.contas_receber_vencido || 0) > 0 ? ' · + ' + brl(k.contas_receber_vencido) + ' vencidas' : '') + '</span></div>'
-          + '<div>Previsão de faturamento do mês: faturado ' + brl(fat0 || 0) + ' + a faturar ' + brl(af) + ' = <b>' + brl(prevMes) + '</b>' + (meta0 > 0 ? ' · <b>' + _resFmtPct(prevMes / meta0 * 100) + '</b> da meta' : '') + '</div>'; }
-      ln.title = 'A faturar = termos de faturamento, marcos e sustentações programados para o mês (Agenda de receitas), ainda sem nota. A receber = faturas (Invoice) em aberto no QuickBooks com vencimento até o fim do mês. O valor grande do card é só o que já foi emitido/recebido até hoje. Clique para ver a lista.';
-      ln.onclick = ev => { ev.stopPropagation(); try { cxDetalheAbrir('receber', {}); } catch (_) {} };
-      f.appendChild(ln); } } catch (_) {}
-    // v3.350: o card "Gastos do mês" só soma o que JÁ foi lançado/pago até hoje (DRE do QuickBooks). O que está programado para vencer no resto do mês (contas a pagar do QuickBooks + Agenda) aparece aqui, abaixo do card.
-    try { const g = [...(document.getElementById('liveRes')?.querySelectorAll('.res-card') || [])].find(c => /^\s*Gastos/i.test(c.textContent)); if (g) { g.querySelector('.aprog')?.remove(); const q = k.contas_pagar_mes_qtd || 0, mf = k.mes_fim ? k.mes_fim.substring(8, 10) + '/' + k.mes_fim.substring(5, 7) : '';
-      const ln = document.createElement('div'); ln.className = 'aprog'; ln.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);font-size:11px;line-height:1.5;cursor:pointer;';
-      ln.innerHTML = k.contas_pagar_mes == null ? '<span style="color:var(--t3);">A pagar até o fim do mês: indisponível agora</span>' : '<b style="color:var(--gold);">A pagar até ' + mf + ' (programado): ' + brl(k.contas_pagar_mes) + '</b> <span style="color:var(--t3);">· ' + q + ' conta' + (q === 1 ? '' : 's') + ' (QuickBooks + Agenda) · ainda não está no gasto acima' + ((k.contas_pagar_vencido || 0) > 0 ? ' · + ' + brl(k.contas_pagar_vencido) + ' vencidas' : '') + '</span>';
-      ln.title = 'Contas a pagar que vencem de hoje até o fim do mês: Bills em aberto no QuickBooks pelo vencimento + despesas só da Agenda. O gasto acima é o que já entrou na DRE (competência: pela data da conta; caixa: pelo pagamento) até hoje. Clique para ver a lista.'; ln.onclick = ev => { ev.stopPropagation(); try { cxDetalheAbrir('pagar', {}); } catch (_) { nav('financeiro'); } };
-      g.appendChild(ln); } } catch (_) {}
+    // v3.353: com os KPIs de caixa, os cartões ganham o PREVISTO do mês (real + programado até o fim do mês)
+    try { if (window._liveR) { box.innerHTML = _resCardsHtml(window._liveR, 'live', k); _dreCliqueCartoes(box, () => ({})); } } catch (_) {}
     b2.innerHTML = [
       _resCartao('Saldo em caixa', brl(k.saldo_caixa), k.contas_pagar_30d != null ? 'hoje · em 30 dias: a receber ' + brl((k.contas_receber_vencido || 0) + (k.contas_receber_30d || 0)) + ' · a pagar ' + brl((k.contas_pagar_vencido || 0) + (k.contas_pagar_30d || 0)) : 'hoje · a receber ' + brl(k.contas_receber) + ' · a pagar ' + brl(k.contas_pagar), k.saldo_caixa < 0 ? 'var(--red)' : 'var(--blue)', TK.caixa),
       (() => { const F = _folegoInfo(k); return _resCartao('Fôlego de caixa', F.val, F.sub, F.cor, F.tip + fk); })(),
@@ -35992,7 +36031,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.352] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.353] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36008,7 +36047,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.352';
+window.__ATX_BUILD_ID__ = 'ATX-v3.353';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
