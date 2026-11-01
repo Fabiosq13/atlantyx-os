@@ -3055,6 +3055,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       .forEach(x => { termoPorInv[String(x.qb_invoice_id)] = { termo_id: x.id, termo_numero: x.numero_termo, termo_projeto: x.projeto }; }); } } catch (_) {}
   const _qbBase = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
   const soma = (l, f) => round(l.filter(f || (() => true)).reduce((a, x) => a + (x.valor || 0), 0));
+  const fimMes = _fimDoMes(hoje); // v3.350: contas a pagar que vencem de hoje até o fim do mês
   // v3.164: despesas que só existem na Agenda (vencidas até 60 dias + próximos 30 dias) também são "a pagar" — regra única:
   // se a mesma despesa já está no QuickBooks, vale a Bill; se só está na Agenda, vale a Agenda
   let agendaPag = [];
@@ -3078,6 +3079,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     recebiveis_itens: fut.erro ? null : reais.map(r => { const qid = String(r.id || '').replace(/^inv_/, ''); return { id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida,
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
     a_pagar: fut.erro ? null : round(soma(fut.pagaveis || []) + soma(agendaPag)), a_pagar_vencido: fut.erro ? null : round(soma(fut.pagaveis || [], p => p.vencida) + soma(agendaPag, p => p.vencida)), a_pagar_30d: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30) + soma(agendaPag, p => !p.vencida)),
+    a_pagar_mes: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= fimMes) + soma(agendaPag, p => !p.vencida && p.data <= fimMes)), a_pagar_mes_qtd: fut.erro ? null : (fut.pagaveis || []).filter(p => !p.vencida && p.data <= fimMes).length + agendaPag.filter(p => !p.vencida && p.data <= fimMes).length, mes_fim: fimMes, // v3.350
     qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length + agendaPag.length,
     a_pagar_quickbooks: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_agenda: fut.erro ? null : soma(agendaPag), agenda_pagar_itens: fut.erro ? null : agendaPag, // v3.164
     bills_dedupe: fut.erro ? null : (fut.bills_dedupe || null), // v3.224
@@ -5318,6 +5320,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
         if (_b.saldo_hoje != null) kpis.saldo_caixa = _b.saldo_hoje;
         if (_b.a_receber != null) kpis.contas_receber = _b.a_receber; if (_b.a_pagar != null) kpis.contas_pagar = _b.a_pagar; // v3.113: falha não vira zero
         kpis.contas_receber_vencido = _b.a_receber_vencido; kpis.contas_pagar_vencido = _b.a_pagar_vencido;
+        kpis.contas_pagar_mes = _b.a_pagar_mes; kpis.contas_pagar_mes_qtd = _b.a_pagar_mes_qtd; kpis.mes_fim = _b.mes_fim; // v3.350: a pagar no mês (programado)
         kpis.contas_receber_30d = _b.a_receber_30d; kpis.contas_pagar_30d = _b.a_pagar_30d; // v3.120: o que vence nos próximos 30 dias
         kpis.receita_prevista_30d = _b.receita_prevista_30d ?? 0; // v3.292: marcos/termos/sustentações a receber em 30 dias
         kpis.fonte_caixa = _b.fonte;

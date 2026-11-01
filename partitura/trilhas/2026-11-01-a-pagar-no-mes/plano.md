@@ -1,0 +1,10 @@
+# Plano
+- [x] api/financeiro.js: a_pagar_mes, a_pagar_mes_qtd, mes_fim na base de caixa e nos KPIs (v3.350)
+- [x] index.html: linha sob o card Gastos do mês
+- [x] validar.mjs
+
+## Interseções
+- index.html (T4): só a linha sob o card.
+
+## Registro da Batida
+- 2026-11-01 · feito · sem bloqueio · próximo: conferir com as contas reais de novembro
