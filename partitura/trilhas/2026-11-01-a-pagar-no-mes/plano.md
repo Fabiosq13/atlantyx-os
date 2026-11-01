@@ -12,3 +12,4 @@
 - 2026-11-01 · feito (v3.352) · card Faturamento: a faturar no mês (termos/marcos/sustentações), a receber no mês (faturas QB) e previsão × meta
 - 2026-11-01 · feito (v3.353) · cartões do LIVE reformulados: Real · Previsto · Meta · % atingido · farol; detalhes recolhidos
 - 2026-11-01 · feito (v3.354) · Real, Previsto e Meta com o mesmo tamanho e fonte
+- 2026-11-01 · feito (v3.355) · cartões de vendas no Dashboard no padrão dos de resultado (leads, reuniões, propostas, pipeline, vendas fechadas, RFPs)
