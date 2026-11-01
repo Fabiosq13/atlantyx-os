@@ -456,6 +456,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .rc3-v small{font-family:var(--M);font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--t3);flex:0 0 auto;}
 .rc3-v b{font-family:var(--H);font-size:19px;font-weight:700;letter-spacing:-.3px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;min-width:0;}
 .rc3-v.real b{color:var(--c);}
+.rc3-v.acum{background:color-mix(in srgb,var(--blue) 6%,transparent);margin:0 -6px;padding:5px 6px;border-radius:6px;flex-direction:column;align-items:stretch;gap:1px;}
+.rc3-v.acum b{text-align:right;white-space:normal;overflow:visible;}
 .rc3-v a{color:inherit;text-decoration:none;border-bottom:1px dashed var(--blue);}
 .rc-row.rc-row6{grid-template-columns:repeat(6,minmax(0,1fr));}
 @media (max-width:1300px){.rc-row.rc-row6{grid-template-columns:repeat(3,minmax(0,1fr));}}
@@ -1068,7 +1070,12 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
     <section class="dash-aba" data-aba="geral">
     <!-- v3.355: cartões de vendas no padrão dos de resultado (Real · Meta · % · farol) -->
-    <div class="rc-row rc-row6" id="vendasCards" style="margin-bottom:12px;"><div style="grid-column:1/-1;color:var(--t3);font-size:11px;padding:8px;">Carregando o funil de vendas…</div></div>
+    <!-- v3.356: área "Vendas" com os cartões do funil -->
+    <div class="panel" id="vendasPanel" style="margin-bottom:13px;border-color:rgba(91,141,239,.35);">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128188; Vendas<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Vendas** — funil de vendas do HubSpot no período da aba Vendas (padrão: mês corrente, todos os pipelines). Em cada cartão: Real do período, Meta, % atingido, farol e o ACUMULADO: tudo parado naquela etapa do funil agora, de qualquer mês.">i</span></div>
+        <span id="vendasPer" style="font-size:10.5px;color:var(--t3);margin-left:auto;"></span><button class="btn btn-g" style="font-size:10px;padding:3px 10px;" onclick="dashAba('vendas')">Funil completo &#8594;</button></div>
+      <div class="pb"><div class="rc-row rc-row6" id="vendasCards"><div style="grid-column:1/-1;color:var(--t3);font-size:11px;padding:8px;">Carregando o funil de vendas…</div></div></div>
+    </div>
     <!-- KPIS OPERACIONAIS (v3.355: ocultos; os números continuam sendo calculados e alimentam outras telas) -->
     <div class="kg k5" style="margin-bottom:12px;display:none;">
       <div class="kpi or"><div class="kl">Leads Mapeados<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Leads mapeados** = contatos criados no HubSpot nos últimos 30 dias.">i</span></div><div class="kv" id="kLeads">—</div><div class="ks" id="kLeadsSub">HubSpot · 30 dias</div></div>
@@ -30433,6 +30440,7 @@ function _resCartaoV2(o) {
     + '<div class="rc3-top"><span class="rc3-luz" title="' + TXT + '"></span><span class="rl">' + o.rot + _tip(o.tip) + '</span></div>'
     + '<div class="rc3-st"><span class="rc3-tag">● ' + TXT + '</span><span class="rc3-at">' + (ating == null ? '—' : _resFmtPct(ating)) + ' <small>atingido</small></span></div>'
     + lin('Real', o.realTxt || f(o.real), 'real') + (o.semPrev ? '' : lin('Previsto', o.link && o.prev != null ? '<a href="#" onclick="event.preventDefault();event.stopPropagation();' + o.link + '">' + f(o.prev) + '</a>' : f(o.prev))) + lin('Meta', o.metaTxt || (temMeta ? f(o.meta) : (o.meta === null ? '—' : '<a href="#" onclick="event.preventDefault();event.stopPropagation();' + (o.definir || 'metasEditar()') + '">definir</a>')))
+    + (o.linhas || []).map(([r, v]) => lin(r, v, 'acum')).join('') // v3.356: acumulado no funil
     + (temMeta || o.barra != null ? '<div class="rc3-bar"><i class="p" style="width:' + bPrev + '%"></i><i class="r" style="width:' + (o.barra != null ? w(o.barra) : bReal) + '%"></i></div>' : '')
     + (o.extra ? '<div class="rc3-extra">' + o.extra + '</div>' : '') + '</div>';
 }
@@ -30447,9 +30455,11 @@ function vendasCardsRender() {
   const E = D.etapas || [], acha = re => E.find(L => re.test(String(L.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()));
   const n = v => v == null ? '—' : Number(v).toLocaleString('pt-BR'), brl = v => v == null ? '—' : fmtBRL(v);
   const per = D.periodo?.tipo === 'mes' ? 'do mês' : 'do período', defM = "dashAba('vendas');setTimeout(()=>{try{funilMetasEditar()}catch(_){}} ,900)";
-  const tipBase = '\n\nFonte: funil de vendas do HubSpot · ' + (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || '') + ' (troque na aba Vendas). Real = negócios que entraram na etapa no período. Meta = ✎ Metas por etapa (aba Vendas). Farol = real contra a meta proporcional ao período decorrido (' + (D.periodo?.decorrido_pct ?? '—') + '%).';
+  const tipBase = '\n\nFonte: funil de vendas do HubSpot · ' + (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || '') + ' (troque na aba Vendas). Real = negócios que entraram na etapa no período. Meta = ✎ Metas por etapa (aba Vendas). Farol = real contra a meta proporcional ao período decorrido (' + (D.periodo?.decorrido_pct ?? '—') + '%). Acumulado = tudo parado na etapa agora (negócios abertos), de qualquer mês.';
   const etapa = (rot, L, tip) => { if (!L) return _resCartaoV2({ rot, tip: tip + tipBase, real: null, semPrev: true, fmt: n, meta: null });
-    const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM }); };
+    const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM, linhas: [['Acumulado', acum(L)]] }); };
+  const acum = (L, comValor) => !L || !L.agora ? '—' : n(L.agora.qtd) + (comValor ? ' · ' + brl(L.agora.valor) : ''); // v3.356: negócios abertos na etapa agora
+  try { const pe = document.getElementById('vendasPer'); if (pe) pe.textContent = (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || ''); } catch (_) {}
   const lead = acha(/lead|prospec/), reu = acha(/reuni|qualif/), prop = acha(/propost/), gan = E.find(L => L.ganho), R = D.resumo || {};
   const cards = [
     etapa('Leads ' + per, lead, '**Leads** = negócios que entraram na etapa de prospecção/lead no período.' + (D.leads ? '\nCaptados pelo site no período: ' + D.leads.total + ' (score A/B: ' + D.leads.ab + ').' : '')),
@@ -30457,13 +30467,13 @@ function vendasCardsRender() {
     (() => { const L = prop; if (!L) return etapa('Propostas ' + per, null, '**Propostas**'); const mq = L.meta?.qtd, mv = L.meta?.valor;
       const at = mv ? L.real.valor / mv * 100 : mq ? L.real.qtd / mq * 100 : null;
       return _resCartaoV2({ rot: 'Propostas ' + per, tip: '**Propostas** = negócios que entraram na etapa de proposta no período: quantidade e valor. % atingido pelo valor (ou pela quantidade, se só ela tiver meta).' + tipBase,
-        real: L.real.qtd, realTxt: n(L.real.qtd) + ' · ' + brl(L.real.valor), meta: (mv || mq) || undefined, metaTxt: mv || mq ? (mq ? n(mq) : '—') + ' · ' + (mv ? brl(mv) : '—') : null, semPrev: true, luz: L.farol, ating: at, barra: at, definir: defM }); })(),
+        real: L.real.qtd, realTxt: n(L.real.qtd) + ' · ' + brl(L.real.valor), meta: (mv || mq) || undefined, metaTxt: mv || mq ? (mq ? n(mq) : '—') + ' · ' + (mv ? brl(mv) : '—') : null, semPrev: true, luz: L.farol, ating: at, barra: at, definir: defM, linhas: [['Acumulado', acum(L, true)]] }); })(),
     _resCartaoV2({ rot: 'Pipeline aberto', tip: '**Pipeline aberto** = valor dos negócios abertos agora (' + n(R.aberto?.qtd) + ' negócios; ponderado pela probabilidade ' + brl(R.aberto?.ponderado) + ').\n**Meta** = pipeline necessário para bater a meta de faturamento do período = o que falta ÷ taxa de ganho (' + (R.taxa_ganho_pct ?? '—') + '%).' + tipBase,
-      real: R.aberto?.valor ?? null, meta: R.pipeline_necessario || undefined, semPrev: true, luz: R.pipeline_necessario ? (R.aberto.valor >= R.pipeline_necessario ? 'verde' : R.aberto.valor >= R.pipeline_necessario * 0.8 ? 'amarelo' : 'vermelho') : (R.falta === 0 ? 'verde' : null), definir: 'metasEditar()' }),
+      real: R.aberto?.valor ?? null, meta: R.pipeline_necessario || undefined, semPrev: true, linhas: [['Ponderado', brl(R.aberto?.ponderado)]], luz: R.pipeline_necessario ? (R.aberto.valor >= R.pipeline_necessario ? 'verde' : R.aberto.valor >= R.pipeline_necessario * 0.8 ? 'amarelo' : 'vermelho') : (R.falta === 0 ? 'verde' : null), definir: 'metasEditar()' }),
     _resCartaoV2({ rot: 'Vendas fechadas ' + per, tip: '**Vendas fechadas** = negócios ganhos no período (' + n(R.ganho?.qtd) + '). Meta = meta de faturamento do período.' + tipBase,
-      real: R.ganho?.valor ?? null, meta: R.meta || undefined, semPrev: true, luz: gan?.farol, ating: R.pct_meta ?? null, definir: 'metasEditar()' }),
+      real: R.ganho?.valor ?? null, meta: R.meta || undefined, semPrev: true, linhas: [['Acumulado em negociação', (() => { const ng = acha(/negocia/); return ng ? acum(ng, true) : '—'; })()]], luz: gan?.farol, ating: R.pct_meta ?? null, definir: 'metasEditar()' }),
     (() => { const t = (document.getElementById('kRfp')?.textContent || '').trim(), v = /^\d+$/.test(t) ? Number(t) : null;
-      return _resCartaoV2({ rot: 'RFPs', tip: '**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect). Sem meta cadastrada.', real: v, fmt: n, meta: null, semPrev: true }); })(),
+      return _resCartaoV2({ rot: 'RFPs', tip: '**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect). Sem meta cadastrada.', real: v, fmt: n, meta: null, semPrev: true, linhas: [['Acumulado', '—']] }); })(),
   ];
   box.innerHTML = cards.join('');
   box.querySelectorAll('.res-card').forEach(c => { c.style.cursor = 'pointer'; c.onclick = ev => { if (ev.target.closest('.tip-i, a, button')) return; dashAba('vendas'); }; });
@@ -36082,7 +36092,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.355] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.356] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36098,7 +36108,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.355';
+window.__ATX_BUILD_ID__ = 'ATX-v3.356';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

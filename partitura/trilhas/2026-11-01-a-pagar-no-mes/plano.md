@@ -13,3 +13,4 @@
 - 2026-11-01 · feito (v3.353) · cartões do LIVE reformulados: Real · Previsto · Meta · % atingido · farol; detalhes recolhidos
 - 2026-11-01 · feito (v3.354) · Real, Previsto e Meta com o mesmo tamanho e fonte
 - 2026-11-01 · feito (v3.355) · cartões de vendas no Dashboard no padrão dos de resultado (leads, reuniões, propostas, pipeline, vendas fechadas, RFPs)
+- 2026-11-01 · feito (v3.356) · área Vendas no Dashboard e linha Acumulado (tudo parado na etapa, de qualquer mês) nos cartões
