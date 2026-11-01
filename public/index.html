@@ -508,7 +508,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 @media (max-width:700px){.fn-row{grid-template-columns:90px 1fr;}.fn-row .fn-num{grid-column:1/-1;}}
 /* v3.245: funil em formato de funil (segmentos trapezoidais, maior e espaçado) */
 .fn2{max-width:1020px;margin:14px auto 6px;padding:8px 0 4px;}
-.fn2-row,.fn2-conv{display:grid;grid-template-columns:210px 1fr 260px;column-gap:22px;align-items:center;}
+.fn2-row,.fn2-conv{display:grid;grid-template-columns:210px 1fr 320px;column-gap:22px;align-items:center;}
 .fn2-row{cursor:pointer;margin-bottom:9px;}
 .fn2-nome{font:700 13.5px Montserrat,sans-serif;text-align:right;color:var(--t1);line-height:1.25;}
 .fn2-sub{font:400 10.5px var(--M,monospace);color:var(--t3);margin-top:3px;}
@@ -524,6 +524,10 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .fn2-l{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--bd);padding:3px 0;}
 .fn2-l small{font:500 9px var(--M,monospace);color:var(--t3);text-transform:uppercase;letter-spacing:.5px;align-self:center;}
 .fn2-l b{font:700 14px Montserrat,sans-serif;color:var(--t1);white-space:nowrap;}
+.fn2-q{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;border-top:1px solid var(--bd);padding:4px 0;}
+.fn2-q small{display:block;font:500 8.5px var(--M,monospace);color:var(--t3);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fn2-q b{display:block;font:800 19px Montserrat,sans-serif;color:var(--t1);white-space:nowrap;}
+.fn2-q b small{display:inline;font-size:9.5px;}
 .fn2-conv{height:30px;}
 .fn2-conv>span{grid-column:2;justify-self:center;font:600 10.5px var(--M,monospace);color:var(--t2);background:var(--bg4);border:1px solid var(--bd);border-radius:14px;padding:3px 12px;}
 .fn2-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px;}
@@ -30462,7 +30466,7 @@ function vendasCardsRender() {
   const per = D.periodo?.tipo === 'mes' ? 'do mês' : 'do período', defM = "dashAba('vendas');setTimeout(()=>{try{funilMetasEditar()}catch(_){}} ,900)";
   const tipBase = '\n\nFonte: funil de vendas do HubSpot · ' + (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || '') + ' (troque na aba Vendas). Real = negócios que entraram na etapa no período. Meta = ✎ Metas por etapa (aba Vendas). Farol = real contra a meta proporcional ao período decorrido (' + (D.periodo?.decorrido_pct ?? '—') + '%). Acumulado = tudo parado na etapa agora (negócios abertos), de qualquer mês.';
   const etapa = (rot, L, tip) => { if (!L) return _resCartaoV2({ rot, tip: tip + tipBase, real: null, semPrev: true, fmt: n, meta: null });
-    const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM, linhas: [['Acumulado', acum(L)]] }); };
+    const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM, linhas: [...(L.ordem > 0 ? [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')]] : []), ['Acumulado', acum(L)]] }); };
   const acum = (L, comValor) => !L || !L.agora ? '—' : n(L.agora.qtd) + (comValor ? ' · ' + brl(L.agora.valor) : ''); // v3.356: negócios abertos na etapa agora
   try { const pe = document.getElementById('vendasPer'); if (pe) pe.textContent = (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || ''); } catch (_) {}
   const lead = acha(/lead|prospec/), reu = acha(/reuni|qualif/), prop = acha(/propost/), gan = E.find(L => L.ganho), R = D.resumo || {};
@@ -30470,13 +30474,13 @@ function vendasCardsRender() {
     etapa('Leads ' + per, lead, '**Leads** = negócios que entraram na etapa de prospecção/lead no período.' + (D.leads ? '\nCaptados pelo site no período: ' + D.leads.total + ' (score A/B: ' + D.leads.ab + ').' : '')),
     etapa('Reuniões ' + per, reu, '**Reuniões** = negócios que entraram na etapa de reunião/qualificação no período.' + (D.leads ? '\nReuniões marcadas pelo site: ' + D.leads.reunioes + '.' : '')),
     (() => { const L = prop; if (!L) return etapa('Propostas ' + per, null, '**Propostas**'); const mq = L.meta?.qtd, mv = L.meta?.valor;
-      const at = mv ? L.real.valor / mv * 100 : mq ? L.real.qtd / mq * 100 : null;
+      const at = mq ? L.real.qtd / mq * 100 : mv ? L.real.valor / mv * 100 : null; // v3.358: % pela quantidade
       return _resCartaoV2({ rot: 'Propostas ' + per, tip: '**Propostas** = negócios que entraram na etapa de proposta no período: quantidade e valor. % atingido pelo valor (ou pela quantidade, se só ela tiver meta).' + tipBase,
-        real: L.real.qtd, realTxt: n(L.real.qtd) + ' · ' + brl(L.real.valor), meta: (mv || mq) || undefined, metaTxt: mv || mq ? (mq ? n(mq) : '—') + ' · ' + (mv ? brl(mv) : '—') : null, semPrev: true, luz: L.farol, ating: at, barra: at, definir: defM, linhas: [['Acumulado', acum(L, true)]] }); })(),
+        real: L.real.qtd, realTxt: n(L.real.qtd) + ' · ' + brl(L.real.valor), meta: (mv || mq) || undefined, metaTxt: mv || mq ? (mq ? n(mq) : '—') + ' · ' + (mv ? brl(mv) : '—') : null, semPrev: true, luz: L.farol, ating: at, barra: at, definir: defM, linhas: [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')], ['Acumulado', acum(L, true)]] }); })(),
     _resCartaoV2({ rot: 'Pipeline aberto', tip: '**Pipeline aberto** = valor dos negócios abertos agora (' + n(R.aberto?.qtd) + ' negócios; ponderado pela probabilidade ' + brl(R.aberto?.ponderado) + ').\n**Meta** = pipeline necessário para bater a meta de faturamento do período = o que falta ÷ taxa de ganho (' + (R.taxa_ganho_pct ?? '—') + '%).' + tipBase,
       real: R.aberto?.valor ?? null, meta: R.pipeline_necessario || undefined, semPrev: true, linhas: [['Ponderado', brl(R.aberto?.ponderado)]], luz: R.pipeline_necessario ? (R.aberto.valor >= R.pipeline_necessario ? 'verde' : R.aberto.valor >= R.pipeline_necessario * 0.8 ? 'amarelo' : 'vermelho') : (R.falta === 0 ? 'verde' : null), definir: 'metasEditar()' }),
     _resCartaoV2({ rot: 'Vendas fechadas ' + per, tip: '**Vendas fechadas** = negócios ganhos no período (' + n(R.ganho?.qtd) + '). Meta = meta de faturamento do período.' + tipBase,
-      real: R.ganho?.valor ?? null, meta: R.meta || undefined, semPrev: true, linhas: [['Acumulado em negociação', (() => { const ng = acha(/negocia/); return ng ? acum(ng, true) : '—'; })()]], luz: gan?.farol, ating: R.pct_meta ?? null, definir: 'metasEditar()' }),
+      real: R.ganho?.valor ?? null, meta: R.meta || undefined, semPrev: true, linhas: [['Quantidade', gan ? n(gan.real.qtd) + ' / meta ' + (gan.meta?.qtd ? n(gan.meta.qtd) : '—') + (gan.conv_meta ? ' (' + _resFmtPct(gan.conv_meta) + ' de ' + String(gan.conv_base || '').split(' /')[0].toLowerCase() + ')' : '') : '—'], ['Acumulado em negociação', (() => { const ng = acha(/negocia/); return ng ? acum(ng, true) : '—'; })()]], luz: gan?.farol, ating: R.pct_meta ?? null, definir: 'metasEditar()' }),
     (() => { const t = (document.getElementById('kRfp')?.textContent || '').trim(), v = /^\d+$/.test(t) ? Number(t) : null;
       return _resCartaoV2({ rot: 'RFPs', tip: '**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect). Sem meta cadastrada.', real: v, fmt: n, meta: null, semPrev: true, linhas: [['Acumulado', '—']] }); })(),
   ];
@@ -32732,11 +32736,15 @@ function funilRender() {
       : (v ? e.real.qtd + ' entrada(s)' : _fnR(e.real.valor));
     // v3.357: faixa no padrão dos cartões — farol + % atingido, Real, Meta e Acumulado (tudo parado na etapa agora, de qualquer mês)
     const fr = e.farol || f, corF = _fnLuz[fr] || 'var(--t3)', txtF = { verde: 'no rumo', amarelo: 'atenção', vermelho: 'fora da meta' }[fr] || 'sem meta';
-    const rv = v ? e.real.valor : e.real.qtd, mvv = v ? e.meta?.valor : e.meta?.qtd, atg = mvv ? rv / mvv * 100 : null;
+    // v3.358: QUANTIDADE em destaque — Real × Meta em quantidade e a conversão da etapa (real × meta)
+    const rv = e.real.qtd, mvv = e.meta?.qtd, atg = mvv ? rv / mvv * 100 : (v && e.meta?.valor ? e.real.valor / e.meta.valor * 100 : null);
+    const nQ = x => x == null ? '—' : Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    const convL = i > 0 ? (e.conv_real == null ? '—' : _resFmtPct(e.conv_real)) + (e.conv_meta ? ' <small style="text-transform:none;">meta ' + _resFmtPct(e.conv_meta) + '</small>' : '') : null;
     const ac = e.ganho ? '—' : (e.agora ? Number(e.agora.qtd).toLocaleString('pt-BR') + ' · ' + _fnR(e.agora.valor) : '—');
     const lnF = (r, x) => '<div class="fn2-l"><small>' + r + '</small><b>' + x + '</b></div>';
     const dir = '<div class="fn2-st" style="color:' + corF + ';"><span class="fn-luz" style="background:' + corF + ';"></span>' + txtF + '<span style="margin-left:auto;">' + (atg == null ? '—' : _resFmtPct(atg)) + ' <small>atingido</small></span></div>'
-      + lnF('Real' + (ag ? ' no período' : ''), fmt(rv)) + lnF('Meta', mvv ? fmt(mvv) : '<a href="#" onclick="event.stopPropagation();funilMetasEditar();return false;" style="color:var(--blue);">definir</a>') + lnF(e.ganho ? 'Ganhos' : 'Acumulado', e.ganho ? fmt(rv) : ac);
+      + '<div class="fn2-q"><div><small>Real</small><b>' + nQ(rv) + '</b></div><div><small>Meta</small><b>' + (mvv ? nQ(mvv) : '<a href="#" onclick="event.stopPropagation();funilMetasEditar();return false;" style="color:var(--blue);font-size:12px;">definir</a>') + '</b></div><div><small>Conversão' + (e.conv_base ? ' de ' + _fnE(String(e.conv_base).split(' /')[0].toLowerCase()) : '') + '</small><b>' + (convL ?? '<span style="font-size:11px;color:var(--t3);">topo</span>') + '</b></div></div>'
+      + lnF('R$ real · meta', _fnR(e.real.valor) + ' · ' + (e.meta?.valor ? _fnR(e.meta.valor) : '—')) + lnF(e.ganho ? 'Ganhos' : 'Acumulado', e.ganho ? nQ(e.real.qtd) + ' · ' + _fnR(e.real.valor) : ac);
     const FG = { verde: ['#0f8a52', '#2fcf86'], amarelo: ['#b7791f', '#f6b84b'], vermelho: ['#b4233c', '#ef5a6f'] }, gg = FG[fr] || ['#3b4a6b', '#5d6f96']; // v3.357: cor da faixa = farol (sem meta = neutro)
     const doTopo = i > 0 && topo > 0 ? Math.round(n / topo * 100) + '% do topo' : (i === 0 ? 'topo do funil' : '');
     // formato de funil: cada faixa liga a largura de cima à de baixo (afunila sempre); o número de cada etapa vai dentro
@@ -32746,7 +32754,7 @@ function funilRender() {
     return '<div class="fn2-row" onclick="funilFaixa(\'' + _fnE(e.id) + '\')" title="Clique para ver os negócios e contatos">'
       + '<div class="fn2-nome">' + _fnE(e.nome) + (e.ganho ? ' ✓' : '') + '<div class="fn2-sub">' + sub + '</div>'
       + (D.pipeline?.id === 'todos' && e.etapas_hubspot?.length ? '<div class="fn2-hs" title="Etapas do HubSpot nesta faixa">' + _fnE(e.etapas_hubspot.slice(0, 4).join(' · ')) + (e.etapas_hubspot.length > 4 ? '…' : '') + '</div>' : '') + '</div>'
-      + '<div><div class="fn2-seg" style="' + clip + 'background:linear-gradient(180deg,' + gg[1] + ',' + gg[0] + ');"><div class="fn2-val">' + fmt(n) + '</div>' + (doTopo ? '<div class="fn2-pc">' + doTopo + '</div>' : '') + '</div></div>'
+      + '<div><div class="fn2-seg" style="' + clip + 'background:linear-gradient(180deg,' + gg[1] + ',' + gg[0] + ');"><div class="fn2-val">' + nQ(ag ? e.agora.qtd : e.real.qtd) + ' <span style="font-size:12px;font-weight:600;opacity:.9;">' + (ag ? 'abertos' : 'no período') + '</span></div><div class="fn2-pc">' + _fnR(ag ? e.agora.valor : e.real.valor) + (doTopo ? ' · ' + doTopo : '') + '</div></div></div>'
       + '<div class="fn2-dir">' + dir + conv + '</div></div>';
   }).join('') + '</div>';
   const mb = D.meta_base || {};
@@ -32817,16 +32825,16 @@ async function funilMetasEditar() {
   document.getElementById('fnModal')?.remove();
   const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;';
   m.innerHTML = '<div class="panel" style="max-width:640px;width:100%;"><div style="display:flex;align-items:center;"><b style="font-size:13px;">✎ Metas do funil — por mês</b><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div>'
-    + '<div style="font-size:10.5px;color:var(--t2);margin:6px 0 10px;">Meta MENSAL de cada etapa (o trimestre usa ×3 e o ano ×12). Em branco = a meta é derivada da meta de faturamento ÷ ticket médio ÷ probabilidade da etapa no HubSpot (valor sugerido em cinza).</div>'
-    + '<table style="width:100%;font-size:11px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Qtd / mês</th><th>R$ / mês</th></tr>'
+    + '<div style="font-size:10.5px;color:var(--t2);margin:6px 0 10px;">Meta MENSAL de cada etapa (o trimestre usa ×3 e o ano ×12). Informe a <b>quantidade</b> do topo (ex.: 100 leads) e, nas etapas seguintes, a <b>% de conversão</b> (ex.: reuniões 10% → 10; propostas 10% das reuniões → 1; venda 80% das propostas). Quantidade preenchida vale mais que a %.</div>'
+    + '<table style="width:100%;font-size:11px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Qtd / mês</th><th title="Meta = % da etapa anterior que tem meta (ex.: reuniões = 10% dos leads). Vale quando a Qtd / mês está em branco.">% conversão</th><th>R$ / mês</th></tr>'
     + D.etapas.map(e => { const c = et[e.id] || {}; const sq = e.meta.qtd != null ? (e.meta.qtd / mesesP).toFixed(1) : '', sv = e.meta.valor != null ? Math.round(e.meta.valor / mesesP) : '';
-      return '<tr><td style="padding:4px 0;">' + _fnE(e.nome) + '</td><td><input class="fi fnMq" data-id="' + _fnE(e.id) + '" type="number" min="0" step="0.5" style="width:90px;" value="' + (c.qtd_mes ?? '') + '" placeholder="' + sq + '"></td><td><input class="fi fnMv" data-id="' + _fnE(e.id) + '" type="number" min="0" step="1000" style="width:140px;" value="' + (c.valor_mes ?? '') + '" placeholder="' + sv + '"></td></tr>'; }).join('')
+      return '<tr><td style="padding:4px 0;">' + _fnE(e.nome) + '</td><td><input class="fi fnMq" data-id="' + _fnE(e.id) + '" type="number" min="0" step="0.5" style="width:90px;" value="' + (c.qtd_mes ?? '') + '" placeholder="' + sq + '"></td><td>' + (D.etapas.indexOf(e) > 0 ? '<input class="fi fnMc" data-id="' + _fnE(e.id) + '" type="number" min="0" max="100" step="0.5" style="width:70px;" value="' + (c.conv_pct ?? '') + '" placeholder="%">' : '<span style="color:var(--t3);">topo</span>') + '</td><td><input class="fi fnMv" data-id="' + _fnE(e.id) + '" type="number" min="0" step="1000" style="width:140px;" value="' + (c.valor_mes ?? '') + '" placeholder="' + sv + '"></td></tr>'; }).join('')
     + '</table><div style="margin-top:8px;font-size:11px;">Ticket médio (opcional): <input class="fi" id="fnTicket" type="number" min="0" step="1000" style="width:140px;" value="' + (cad?.ticket_medio ?? '') + '" placeholder="' + (D.meta_base?.ticket_medio || '') + '"></div>'
     + '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-gn" onclick="funilMetasSalvar()">Salvar metas</button></div></div>';
   document.body.appendChild(m);
 }
 async function funilMetasSalvar() {
-  const et = {}; document.querySelectorAll('.fnMq').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).qtd_mes = i.value; }); document.querySelectorAll('.fnMv').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).valor_mes = i.value; });
+  const et = {}; document.querySelectorAll('.fnMq').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).qtd_mes = i.value; }); document.querySelectorAll('.fnMv').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).valor_mes = i.value; }); document.querySelectorAll('.fnMc').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).conv_pct = i.value; }); // v3.358
   try { await finApi('funil_metas_salvar', { pipeline: _fn.dados.pipeline.id, etapas: et, ticket_medio: document.getElementById('fnTicket').value }); document.getElementById('fnModal')?.remove(); toast('Metas do funil salvas', 'success'); funilCarregar(true); } catch (e) { toast(e.message, 'error'); }
 }
 // ═══ v3.203 · QA · ANÁLISE DE CÓDIGO (estática: nada é executado; o código não é guardado) ═══
@@ -36101,7 +36109,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.357] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.358] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36117,7 +36125,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.357';
+window.__ATX_BUILD_ID__ = 'ATX-v3.358';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

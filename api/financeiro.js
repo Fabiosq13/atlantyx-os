@@ -8276,15 +8276,24 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
   }
   const gl = linhas.find(L => L.ganho); if (gl) { gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
   const prop = P.decorrido > 0 ? P.decorrido : 1;
+  // v3.358: meta por CONVERSÃO — etapa sem quantidade cadastrada e com "% de conversão" usa a meta da etapa anterior que tem meta
+  //   (ex.: leads 100 → reuniões 10% = 10 → propostas 10% das reuniões = 1 → venda 80% das propostas). conv_real = real ÷ real da mesma base.
+  let _baseMeta = null;
   for (const L of linhas) {
     const c = metasEt[L.id] || {};
-    const mq = Number(c.qtd_mes) > 0 ? Number(c.qtd_mes) * P.meses : null;
+    const convMeta = Number(c.conv_pct) > 0 ? Number(c.conv_pct) : null, base = _baseMeta;
+    let qMes = Number(c.qtd_mes) > 0 ? Number(c.qtd_mes) : null, qOrig = qMes != null ? 'cadastrada' : null;
+    if (qMes == null && convMeta != null && base && base.qMes != null) { qMes = Math.round(base.qMes * convMeta / 100 * 10) / 10; qOrig = 'conversão'; }
+    const bReal = base ? base.L : (L.ordem > 0 ? linhas[L.ordem - 1] : null);
+    L.conv_base = bReal ? bReal.nome : null; L.conv_real = bReal && bReal.real.qtd ? Math.round(L.real.qtd / bReal.real.qtd * 1000) / 10 : null; L.conv_meta = convMeta;
+    if (qMes != null) _baseMeta = { qMes, L };
+    const mq = qMes != null ? qMes * P.meses : null;
     let mv = Number(c.valor_mes) > 0 ? Number(c.valor_mes) * P.meses : null, fonte = mq != null || mv != null ? 'cadastrada' : null;
     if (L.ganho && mv == null && metaFat) { mv = metaFat; fonte = 'meta de faturamento'; }
     const mqH = mq != null ? mq * prop : null, mvH = mv != null ? mv * prop : null;
     const pq = mqH ? L.real.qtd / mqH * 100 : null, pv = mvH ? L.real.valor / mvH * 100 : null;
     const pior = [pq, pv].filter(x => x != null), pmin = pior.length ? Math.min(...pior) : null;
-    L.meta = { qtd: mq, valor: mv != null ? round(mv) : null, qtd_ate_hoje: mqH != null ? Math.round(mqH * 10) / 10 : null, valor_ate_hoje: mvH != null ? round(mvH) : null, fonte };
+    L.meta = { qtd: mq, valor: mv != null ? round(mv) : null, qtd_ate_hoje: mqH != null ? Math.round(mqH * 10) / 10 : null, valor_ate_hoje: mvH != null ? round(mvH) : null, fonte, qtd_origem: qOrig, conv_pct: convMeta };
     L.pct_qtd = pq != null ? Math.round(pq) : null; L.pct_valor = pv != null ? Math.round(pv) : null;
     L.farol = pmin == null ? 'sem_meta' : pmin >= 100 ? 'verde' : pmin >= 80 ? 'amarelo' : 'vermelho';
     L.real.valor = round(L.real.valor); L.agora.valor = round(L.agora.valor); L.agora.ponderado = round(L.agora.ponderado);
@@ -8346,7 +8355,7 @@ async function funilContatos({ ids = [] } = {}) {
 }
 async function funilMetasSalvar({ pipeline, etapas, ticket_medio } = {}) {
   if (!pipeline) throw new Error('pipeline obrigatório');
-  const limpo = {}; for (const [k, v] of Object.entries(etapas || {})) { const q = Number(v?.qtd_mes), val = Number(v?.valor_mes); if (q > 0 || val > 0) limpo[String(k)] = { qtd_mes: q > 0 ? q : null, valor_mes: val > 0 ? val : null }; }
+  const limpo = {}; for (const [k, v] of Object.entries(etapas || {})) { const q = Number(v?.qtd_mes), val = Number(v?.valor_mes), cv = Number(v?.conv_pct); if (q > 0 || val > 0 || cv > 0) limpo[String(k)] = { qtd_mes: q > 0 ? q : null, valor_mes: val > 0 ? val : null, conv_pct: cv > 0 ? Math.min(100, cv) : null }; } // v3.358: + % de conversão
   const reg = { pipeline: String(pipeline), etapas: limpo, ticket_medio: Number(ticket_medio) > 0 ? Number(ticket_medio) : null, atualizado_em: new Date().toISOString() };
   await _kvFinSet(_FUNIL_KV, reg); return { ok: true, metas: reg };
 }
