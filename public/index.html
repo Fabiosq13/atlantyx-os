@@ -33204,7 +33204,7 @@ async function carregarResultadoLive(forcar) {
   const seq = ++_liveResSeq, btn = document.getElementById('liveResBtn'), at = document.getElementById('liveResAt');
   if (btn) btn.disabled = true; if (at) at.textContent = '⏳ atualizando...';
   const pinta = (R, cache) => {
-    box.innerHTML = _resCardsHtml(R, 'live'); _dreCliqueCartoes(box, () => ({}));
+    box.innerHTML = _resCardsHtml(R, 'live'); _dreCliqueCartoes(box, () => ({})); window._liveR = R; // v3.352
     const nt = document.getElementById('liveResNota'); if (nt) nt.innerHTML = _resNota(R);
     if (at) { at.textContent = cache && cache.stale ? 'dados de ' + Math.round(cache.idade_s / 60) + ' min atrás — atualizando…' : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5); }
     // metas da empresa: realizado mensal/anual = faturamento do QuickBooks (antes era digitado à mão)
@@ -33237,6 +33237,18 @@ async function carregarResultadoLive(forcar) {
       saude: '**Saúde financeira** — semáforo com 3 notas (0 a 2 cada):\n• Fôlego: ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano: ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez: ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · abaixo vermelho.\n\nAgora: ' + ((k.semaforo_motivos || []).join(' · ') || '—') + fk,
     };
     setTimeout(() => { const cs = b2.querySelectorAll('.res-card'); [[0, () => cxDetalheAbrir('folego', {})], [1, () => cxDetalheAbrir('folego', {})]].forEach(([i, fn]) => { const c = cs[i]; if (!c) return; c.style.cursor = 'pointer'; c.title = 'Clique para ver linha a linha'; c.onclick = e => { if (!e.target.closest('.tip-i, a, button')) fn(); }; }); }, 0);
+    // v3.352: card "Faturamento do mês" — o que está PROGRAMADO para o resto do mês (termos/marcos/sustentações a faturar + faturas emitidas que vencem no mês) e a previsão contra a meta
+    try { const f = [...(document.getElementById('liveRes')?.querySelectorAll('.res-card') || [])].find(c => /^\s*Faturamento/i.test(c.textContent)); if (f) { f.querySelector('.rprog')?.remove();
+      const R0 = window._liveR || {}, p0 = R0.periodo_res || {}, fat0 = R0.regime === 'caixa' ? R0.periodo_outro?.faturamento : p0.faturamento, meta0 = (R0.metas_periodo || {}).faturamento, mf = k.mes_fim ? k.mes_fim.substring(8, 10) + '/' + k.mes_fim.substring(5, 7) : '';
+      const ln = document.createElement('div'); ln.className = 'rprog'; ln.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);font-size:11px;line-height:1.6;cursor:pointer;';
+      if (k.contas_receber_mes == null && k.receita_prevista_mes == null) ln.innerHTML = '<span style="color:var(--t3);">Programado até o fim do mês: indisponível agora</span>';
+      else { const af = k.receita_prevista_mes || 0, prevMes = (fat0 || 0) + af, qf = k.receita_prevista_mes_qtd || 0, qr = k.contas_receber_mes_qtd || 0;
+        ln.innerHTML = '<div><b style="color:var(--gold);">A faturar até ' + mf + ' (termos, marcos e sustentações): ' + brl(af) + '</b> <span style="color:var(--t3);">· ' + qf + ' ite' + (qf === 1 ? 'm' : 'ns') + ((k.receita_prevista_atrasada || 0) > 0 ? ' · inclui ' + brl(k.receita_prevista_atrasada) + ' atrasados' : '') + '</span></div>'
+          + '<div><b style="color:var(--blue);">A receber até ' + mf + ' (faturas já emitidas no QuickBooks): ' + brl(k.contas_receber_mes) + '</b> <span style="color:var(--t3);">· ' + qr + ' fatura' + (qr === 1 ? '' : 's') + ((k.contas_receber_vencido || 0) > 0 ? ' · + ' + brl(k.contas_receber_vencido) + ' vencidas' : '') + '</span></div>'
+          + '<div>Previsão de faturamento do mês: faturado ' + brl(fat0 || 0) + ' + a faturar ' + brl(af) + ' = <b>' + brl(prevMes) + '</b>' + (meta0 > 0 ? ' · <b>' + _resFmtPct(prevMes / meta0 * 100) + '</b> da meta' : '') + '</div>'; }
+      ln.title = 'A faturar = termos de faturamento, marcos e sustentações programados para o mês (Agenda de receitas), ainda sem nota. A receber = faturas (Invoice) em aberto no QuickBooks com vencimento até o fim do mês. O valor grande do card é só o que já foi emitido/recebido até hoje. Clique para ver a lista.';
+      ln.onclick = ev => { ev.stopPropagation(); try { cxDetalheAbrir('receber', {}); } catch (_) {} };
+      f.appendChild(ln); } } catch (_) {}
     // v3.350: o card "Gastos do mês" só soma o que JÁ foi lançado/pago até hoje (DRE do QuickBooks). O que está programado para vencer no resto do mês (contas a pagar do QuickBooks + Agenda) aparece aqui, abaixo do card.
     try { const g = [...(document.getElementById('liveRes')?.querySelectorAll('.res-card') || [])].find(c => /^\s*Gastos/i.test(c.textContent)); if (g) { g.querySelector('.aprog')?.remove(); const q = k.contas_pagar_mes_qtd || 0, mf = k.mes_fim ? k.mes_fim.substring(8, 10) + '/' + k.mes_fim.substring(5, 7) : '';
       const ln = document.createElement('div'); ln.className = 'aprog'; ln.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);font-size:11px;line-height:1.5;cursor:pointer;';
@@ -35980,7 +35992,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.351] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.352] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35996,7 +36008,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.351';
+window.__ATX_BUILD_ID__ = 'ATX-v3.352';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

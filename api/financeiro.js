@@ -3080,6 +3080,9 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
     a_pagar: fut.erro ? null : round(soma(fut.pagaveis || []) + soma(agendaPag)), a_pagar_vencido: fut.erro ? null : round(soma(fut.pagaveis || [], p => p.vencida) + soma(agendaPag, p => p.vencida)), a_pagar_30d: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30) + soma(agendaPag, p => !p.vencida)),
     a_pagar_mes: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= fimMes) + soma(agendaPag, p => !p.vencida && p.data <= fimMes)), a_pagar_mes_qtd: fut.erro ? null : (fut.pagaveis || []).filter(p => !p.vencida && p.data <= fimMes).length + agendaPag.filter(p => !p.vencida && p.data <= fimMes).length, mes_fim: fimMes, // v3.350
+    // v3.352: lado do RECEBER no mês — faturas já emitidas que vencem até o fim do mês + termos/marcos/sustentações programados para faturar no mês
+    a_receber_mes: fut.erro ? null : soma(reais, r => !r.vencida && r.data <= fimMes), a_receber_mes_qtd: fut.erro ? null : reais.filter(r => !r.vencida && r.data <= fimMes).length,
+    receita_prevista_mes: soma(prev, r => r.data >= hoje && r.data <= fimMes), receita_prevista_mes_qtd: prev.filter(r => r.data >= hoje && r.data <= fimMes).length, receita_prevista_atrasada: soma(prev, r => r.atrasada),
     qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length + agendaPag.length,
     a_pagar_quickbooks: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_agenda: fut.erro ? null : soma(agendaPag), agenda_pagar_itens: fut.erro ? null : agendaPag, // v3.164
     bills_dedupe: fut.erro ? null : (fut.bills_dedupe || null), // v3.224
@@ -5320,6 +5323,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
         if (_b.saldo_hoje != null) kpis.saldo_caixa = _b.saldo_hoje;
         if (_b.a_receber != null) kpis.contas_receber = _b.a_receber; if (_b.a_pagar != null) kpis.contas_pagar = _b.a_pagar; // v3.113: falha não vira zero
         kpis.contas_receber_vencido = _b.a_receber_vencido; kpis.contas_pagar_vencido = _b.a_pagar_vencido;
+        kpis.contas_receber_mes = _b.a_receber_mes; kpis.contas_receber_mes_qtd = _b.a_receber_mes_qtd; kpis.receita_prevista_mes = _b.receita_prevista_mes; kpis.receita_prevista_mes_qtd = _b.receita_prevista_mes_qtd; kpis.receita_prevista_atrasada = _b.receita_prevista_atrasada; // v3.352
         kpis.contas_pagar_mes = _b.a_pagar_mes; kpis.contas_pagar_mes_qtd = _b.a_pagar_mes_qtd; kpis.mes_fim = _b.mes_fim; // v3.350: a pagar no mês (programado)
         kpis.contas_receber_30d = _b.a_receber_30d; kpis.contas_pagar_30d = _b.a_pagar_30d; // v3.120: o que vence nos próximos 30 dias
         kpis.receita_prevista_30d = _b.receita_prevista_30d ?? 0; // v3.292: marcos/termos/sustentações a receber em 30 dias
