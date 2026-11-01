@@ -519,6 +519,11 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .fn2-val{font:800 21px Montserrat,sans-serif;letter-spacing:.2px;text-shadow:0 1px 3px rgba(0,0,0,.28);}
 .fn2-pc{font:600 10.5px var(--M,monospace);opacity:.92;margin-top:1px;}
 .fn2-dir{font-size:11.5px;line-height:1.55;color:var(--t2);}
+.fn2-st{display:flex;align-items:center;gap:4px;font:700 11px Montserrat,sans-serif;margin-bottom:4px;}
+.fn2-st small{font:500 9px var(--M,monospace);color:var(--t3);text-transform:uppercase;}
+.fn2-l{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--bd);padding:3px 0;}
+.fn2-l small{font:500 9px var(--M,monospace);color:var(--t3);text-transform:uppercase;letter-spacing:.5px;align-self:center;}
+.fn2-l b{font:700 14px Montserrat,sans-serif;color:var(--t1);white-space:nowrap;}
 .fn2-conv{height:30px;}
 .fn2-conv>span{grid-column:2;justify-self:center;font:600 10.5px var(--M,monospace);color:var(--t2);background:var(--bg4);border:1px solid var(--bd);border-radius:14px;padding:3px 12px;}
 .fn2-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px;}
@@ -32725,10 +32730,14 @@ function funilRender() {
     const n = num(e), pct = v ? e.pct_valor : e.pct_qtd, f = pct == null ? 'sem_meta' : pct >= 100 ? 'verde' : pct >= 80 ? 'amarelo' : 'vermelho', cor = _fnLuz[f];
     const sub = ag ? (e.ganho ? (v ? e.agora.qtd + ' ganho(s) no período' : _fnR(e.agora.valor) + ' ganho(s)') : (v ? e.agora.qtd + ' negócio(s)' + (e.agora.sem_valor ? ' · ' + e.agora.sem_valor + ' sem valor' : '') : _fnR(e.agora.valor)))
       : (v ? e.real.qtd + ' entrada(s)' : _fnR(e.real.valor));
-    const dir = e.ganho && e.meta?.valor != null ? '<span class="fn-luz" style="background:' + cor + ';"></span>meta ' + (D.periodo.decorrido_pct < 100 ? 'até hoje ' + fmt(v ? e.meta.valor_ate_hoje : e.meta.qtd_ate_hoje) : fmt(v ? e.meta.valor : e.meta.qtd)) + ' · <b style="color:' + cor + ';">' + (pct ?? '—') + '%</b>'
-      : (e.meta?.fonte === 'cadastrada' ? '<span class="fn-luz" style="background:' + cor + ';"></span>meta ' + fmt(v ? e.meta.valor_ate_hoje : e.meta.qtd_ate_hoje) + ' · <b style="color:' + cor + ';">' + (pct ?? '—') + '%</b>'
-      : (ag && !e.ganho && v && e.agora.ponderado ? '<span style="color:var(--t3);">ponderado <b style="color:var(--t2);">' + _fnR(e.agora.ponderado) + '</b>' + (e.probabilidade != null ? ' · ' + Math.round(e.probabilidade * 100) + '% de chance' : '') + '</span>' : ''));
-    const g = grad[Math.min(i, grad.length - 1)], gg = e.ganho ? ['#0f8a52', '#2fcf86'] : g;
+    // v3.357: faixa no padrão dos cartões — farol + % atingido, Real, Meta e Acumulado (tudo parado na etapa agora, de qualquer mês)
+    const fr = e.farol || f, corF = _fnLuz[fr] || 'var(--t3)', txtF = { verde: 'no rumo', amarelo: 'atenção', vermelho: 'fora da meta' }[fr] || 'sem meta';
+    const rv = v ? e.real.valor : e.real.qtd, mvv = v ? e.meta?.valor : e.meta?.qtd, atg = mvv ? rv / mvv * 100 : null;
+    const ac = e.ganho ? '—' : (e.agora ? Number(e.agora.qtd).toLocaleString('pt-BR') + ' · ' + _fnR(e.agora.valor) : '—');
+    const lnF = (r, x) => '<div class="fn2-l"><small>' + r + '</small><b>' + x + '</b></div>';
+    const dir = '<div class="fn2-st" style="color:' + corF + ';"><span class="fn-luz" style="background:' + corF + ';"></span>' + txtF + '<span style="margin-left:auto;">' + (atg == null ? '—' : _resFmtPct(atg)) + ' <small>atingido</small></span></div>'
+      + lnF('Real' + (ag ? ' no período' : ''), fmt(rv)) + lnF('Meta', mvv ? fmt(mvv) : '<a href="#" onclick="event.stopPropagation();funilMetasEditar();return false;" style="color:var(--blue);">definir</a>') + lnF(e.ganho ? 'Ganhos' : 'Acumulado', e.ganho ? fmt(rv) : ac);
+    const FG = { verde: ['#0f8a52', '#2fcf86'], amarelo: ['#b7791f', '#f6b84b'], vermelho: ['#b4233c', '#ef5a6f'] }, gg = FG[fr] || ['#3b4a6b', '#5d6f96']; // v3.357: cor da faixa = farol (sem meta = neutro)
     const doTopo = i > 0 && topo > 0 ? Math.round(n / topo * 100) + '% do topo' : (i === 0 ? 'topo do funil' : '');
     // formato de funil: cada faixa liga a largura de cima à de baixo (afunila sempre); o número de cada etapa vai dentro
     const larg = k => 100 - 62 * k / Math.max(1, E.length), a = (100 - larg(i)) / 2, bq = (100 - larg(i + 1)) / 2;
@@ -36092,7 +36101,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.356] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.357] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36108,7 +36117,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.356';
+window.__ATX_BUILD_ID__ = 'ATX-v3.357';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -82,12 +82,13 @@ function termosResumo(T, mes) {
 }
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
     chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'mes', ref: mes, pipeline: 'todos' } }, 58000),
-    chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config(), chamar('metricool', { action: 'patrocinado_listar' }, 40000)]);
+    chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config(), chamar('metricool', { action: 'patrocinado_listar' }, 40000),
+    chamar('financeiro', { action: 'kpis_saude', params: {} }, 45000)]); // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -118,6 +119,15 @@ async function montarDados() {
     T.farol = T.meta ? (T.leads >= T.meta ? 'verde' : T.leads / Math.max(0.01, T.esperado) >= 1 ? 'verde' : T.leads / Math.max(0.01, T.esperado) >= 0.85 ? 'amarelo' : 'vermelho') : null;
     return { erro: null, campanhas: lista, total: T, ativas: lista.filter(c => c.status === 'ativa').length }; })();
   return { qual, proj, mkt, gerado_em: new Date().toISOString(), mes_ref: mes,
+    // v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol (previsto = real + programado até o fim do mês)
+    res: (() => { const KS = v(ks)?.kpis || null, cx = K.regime === 'caixa';
+      const dF = KS ? num(cx ? KS.contas_receber_mes : KS.receita_prevista_mes) : null, dG = KS ? num(KS.contas_pagar_mes) : null, dR = dF != null && dG != null ? dF - dG : null;
+      const pv = (r, d) => r == null || d == null ? null : r + d;
+      const fP = pv(num(Pm.faturamento), dF), lP = pv(num(Pm.lucro_liquido), dR);
+      return { regime: K.regime || null, frac: frMes, tem_previsto: !!KS,
+        fat: { real: num(Pm.faturamento), prev: fP, meta: num(M.faturamento) }, gas: { real: num(Pm.gastos_totais), prev: pv(num(Pm.gastos_totais), dG), meta: num(M.gastos), menor: true },
+        eb: { real: num(Pm.ebitda), prev: pv(num(Pm.ebitda), dR), meta: num(M.ebitda) }, luc: { real: num(Pm.lucro_liquido), prev: lP, meta: num(M.lucro) },
+        mg: { real: num(Pm.margem_liquida_pct), prev: fP > 0 && lP != null ? Math.round(lP / fP * 1000) / 10 : null, meta: num(M.margem_pct ?? K.meta_margem?.pct), pct: true } }; })(),
     fin: { erro: [erro(pr), erro(kp), erro(me)].filter(Boolean).join(' · ') || null, regime: K.regime || null,
       mes: { faturamento: realMes, meta_faturamento: metaMes, pct: metaMes ? Math.round(realMes / metaMes * 1000) / 10 : null, esperado: metaMes && frMes != null ? Math.round(metaMes * frMes) : null, fracao_decorrida: frMes,
         semaforo: semMeta(realMes, metaMes, frMes), meta_fonte: M.fonte?.faturamento || null,
@@ -130,7 +140,7 @@ async function montarDados() {
     com: { erro: erro(fn), indisponivel: FN.indisponivel || null,
       funil: FN.etapas ? { rotulo: FN.periodo?.rotulo, decorrido_pct: FN.periodo?.decorrido_pct, pipeline: FN.pipeline?.nome || '', lidos: FN.total_negocios_lidos ?? null, resumo: FN.resumo || {}, leads: FN.leads || null, perdidos: FN.perdidos || null,
         ticket: FN.meta_base?.ticket_medio ?? null,
-        etapas: FN.etapas.map(L => ({ nome: L.nome, ganho: !!L.ganho, agora: L.agora, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
+        etapas: FN.etapas.map(L => ({ nome: L.nome, ganho: !!L.ganho, agora: L.agora, real: L.real, farol: L.farol, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, qtd: L.meta.qtd, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
   };
 }
 // v3.152: CONFERIR — abre cada número da TV até a origem (só no sistema, com login; a página da TV continua só com totais)
@@ -185,6 +195,16 @@ function pagina(cfg, cod) {
 .pe{height:43.2px;display:flex;align-items:center;gap:19.2px;font-size:17.3px;color:#6E7BA0}.dots{display:flex;gap:11.5px}.dots span{width:13px;height:13px;border-radius:50%;background:#26335F}.dots span.on{background:#00C4CC}
 .prog{position:fixed;left:0;bottom:0;height:4.9px;background:#00C4CC;width:0}
 .erro{font-size:19.4px;color:#FFB547}
+/* v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol */
+.cr3{background:#0F1630;border:1px solid #1E2A52;border-top:5px solid var(--c);border-radius:17.3px;padding:17px 22px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.cr3 .t{display:flex;align-items:center;gap:12px;font-size:19.4px;color:#8E9BC0;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;white-space:nowrap;overflow:hidden}
+.cr3 .t i{width:22px;height:22px;border-radius:50%;background:var(--c);box-shadow:0 0 16px var(--c);flex:0 0 22px}
+.cr3 .st{display:flex;justify-content:space-between;align-items:baseline;font-size:19px;font-weight:700;color:var(--c)}.cr3 .st b{font-size:30px}
+.cr3 .ln{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid #1E2A52;padding:5px 0}
+.cr3 .ln small{font-size:16.2px;color:#6E7BA0;text-transform:uppercase;letter-spacing:1px;flex:0 0 auto}
+.cr3 .ln b{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cr3 .ln.re b{color:var(--c)}.cr3 .ln.ac{background:#121C3C;border-radius:10px;padding:5px 10px;margin:0 -10px;flex-direction:column;align-items:stretch;gap:0}.cr3 .ln.ac b{text-align:right;white-space:normal;font-size:30px}
+.cr3 .bar{margin-top:6px}
 svg text{font-family:Montserrat,Calibri,Arial,sans-serif}
 </style></head><body><div id="app">
 <div class="top"><div class="logo"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" onerror="this.parentNode.innerHTML='ATLANT<b>Y</b>X'"></div><div class="tit" id="tit">Gestão à vista</div><div class="esp"></div><div><div class="rel" id="rel">--:--</div><div class="dt" id="dt"></div></div></div>
@@ -223,15 +243,33 @@ function metaBox(tit,X,rotEsp){var f=X.semaforo,pc=X.pct,brlI=function(v){return
    +'<div style="text-align:right"><div class="s" style="font-size:20.5px;color:#8E9BC0">ATINGIDO</div><div style="font-size:69.1px;font-weight:800;line-height:1" class="'+clsF(f)+'">'+pct(pc)+'</div></div></div>'
    +barra(pc,nz(X.fracao_decorrida)?null:X.fracao_decorrida*100)
    +'<div style="font-size:20.5px;color:#AAB6D8;margin-top:8.6px">'+(nz(X.esperado)?'':'esperado até hoje '+brlI(X.esperado)+' ('+rotEsp+') · ')+(X.meta_faturamento?(nz(X.faturamento)?'<span class="at">sem realizado do QuickBooks agora</span>':X.faturamento>=X.meta_faturamento?'<span class="ok">meta batida</span>':'falta '+brlI(X.meta_faturamento-X.faturamento)):'<span class="at">meta não cadastrada (Planejamento → Metas da Empresa)</span>')+(nz(X.projecao)?'':' · no ritmo atual fecha em '+brlI(X.projecao))+'</div></div></div>'}
+
+// v3.357: cartão objetivo (mesmo do Dashboard): farol + % atingido, Real, Previsto, Meta e linhas extras com a MESMA fonte
+function farolDe(o){if(o.luz)return o.luz==='sem_meta'?null:o.luz;if(nz(o.meta)||(!o.pct&&!o.meta))return null;var base=!nz(o.prev)?o.prev:o.real;if(nz(base))return null;var esp=!nz(o.prev)?1:(nz(o.frac)?1:o.frac);
+  if(o.pct){var d=base-o.meta;return d>=0?'verde':d>=-5?'amarelo':'vermelho'}if(o.menor){var r=base/o.meta;return r<=1?'verde':r<=1.1?'amarelo':'vermelho'}var q=base/(o.meta*esp||1);return base<0?'vermelho':q>=1?'verde':q>=0.85?'amarelo':'vermelho'}
+function cartao(o){var f=o.fmt||(o.pct?pct:brl),fr=farolDe(o),c=cor(fr),tx=fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora da meta':'sem meta';
+  var at=o.ating!==undefined?o.ating:(!nz(o.meta)&&o.meta&&!nz(o.real)?o.real/o.meta*100:null);
+  var ln=function(r,v,cl){return '<div class="ln '+(cl||'')+'"><small>'+r+'</small><b>'+v+'</b></div>'};
+  return '<div class="cr3" style="--c:'+c+'"><div class="t"><i></i>'+esc(o.rot)+'</div><div class="st"><span>● '+tx+'</span><span><b>'+(nz(at)?'—':pct(at))+'</b> atingido</span></div>'
+   +ln('Real',o.realTxt||f(o.real),'re')+(o.semPrev?'':ln('Previsto',f(o.prev)))+ln('Meta',o.metaTxt||(nz(o.meta)?'—':f(o.meta)))
+   +(o.linhas||[]).map(function(x){return ln(x[0],x[1],'ac')}).join('')
+   +(!nz(at)?barra(at):'')+'</div>'}
+function nI(v){return nz(v)?'—':Number(v).toLocaleString('pt-BR')}
 function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};var MESN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];var mi=parseInt(String(D.mes_ref||'').substring(5,7),10)-1;
   var mc=clsF(M.semaforo_margem);
-  var h='<div class="grade" style="grid-template-columns:1fr 1fr">'+metaBox('Faturamento de '+(MESN[mi]||'mês'),M,'dias do mês')+metaBox('Faturamento de '+(A.ano||''),A,'meses do ano')+'</div>'
-   +'<div class="grade g4">'+k('Lucro do mês','<span class="'+mc+'">'+brl(M.lucro)+'</span>','margem '+pct(M.margem_pct)+(nz(M.meta_margem_pct)?'':' · meta '+pct(M.meta_margem_pct)))
+  var Rs=F.res||{},fr0=Rs.frac,mn=(MESN[mi]||'mês');
+  var h='<div class="grade" style="grid-template-columns:repeat(5,1fr)">'
+   +cartao({rot:'Faturamento · '+mn,real:Rs.fat&&Rs.fat.real,prev:Rs.fat&&Rs.fat.prev,meta:Rs.fat&&Rs.fat.meta,frac:fr0})
+   +cartao({rot:'Gastos · '+mn,real:Rs.gas&&Rs.gas.real,prev:Rs.gas&&Rs.gas.prev,meta:Rs.gas&&Rs.gas.meta,menor:true})
+   +cartao({rot:'EBITDA · '+mn,real:Rs.eb&&Rs.eb.real,prev:Rs.eb&&Rs.eb.prev,meta:Rs.eb&&Rs.eb.meta,frac:fr0})
+   +cartao({rot:'Lucro · '+mn,real:Rs.luc&&Rs.luc.real,prev:Rs.luc&&Rs.luc.prev,meta:Rs.luc&&Rs.luc.meta,frac:fr0})
+   +cartao({rot:'Margem · '+mn,real:Rs.mg&&Rs.mg.real,prev:Rs.mg&&Rs.mg.prev,meta:Rs.mg&&Rs.mg.meta,pct:true})+'</div>'
+   +'<div class="grade g4">'+cartao({rot:'Faturamento de '+(A.ano||''),real:A.faturamento,prev:A.projecao,meta:A.meta_faturamento,frac:A.fracao_decorrida,luz:A.semaforo})
    +k('Caixa hoje',brl(F.caixa),'saldo bancário (QuickBooks)')
    +k('A receber',brl(F.receber),'<span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d)))
    +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks')+'</div>'
    +'<div class="painel" style="flex:1;min-height:0"><h3>Evolução no ano</h3>'+grafico(F.mensal)+'</div>'
-   +'<div style="font-size:16px;color:#6E7BA0">QuickBooks'+(F.regime?' ('+esc(F.regime)+')':'')+' · farol pelo ritmo: verde ≥ 100% do esperado, amarelo ≥ 85%</div>'
+   +'<div style="font-size:16px;color:#6E7BA0">QuickBooks'+(F.regime?' ('+esc(F.regime)+')':'')+' · Previsto = real + programado até o fim do mês (contas a pagar e '+(F.res&&F.res.regime==='caixa'?'faturas a receber':'termos a faturar')+') · farol: previsto contra a meta (ano: ritmo)</div>'
    +(F.erro?'<div class="erro">⚠ '+esc(F.erro)+'</div>':'');
   return h}
 // v3.280: o MESMO funil do Dashboard ao vivo (aba Vendas): pipeline aberto agora, em R$, todos os pipelines, mês atual
@@ -239,19 +277,28 @@ function sCom(){var C=D.com||{},Fu=C.funil;
   if(!Fu)return '<div class="erro" style="margin:auto;font-size:28.1px">'+esc(C.indisponivel||C.erro||'Funil indisponível (HubSpot).')+'</div>';
   var R=Fu.resumo||{},A=R.aberto||{},E=Fu.etapas||[],L=Fu.leads;
   var pm=R.pct_meta,cm=nz(pm)?'':pm>=100?'ok':pm>=80?'at':'cr',cob=R.cobertura_pct,cc=nz(cob)?'':cob>=100?'ok':cob>=60?'at':'cr';
-  // v3.332: 4 cartões (antes 6): ponderado entra no pipeline, "falta" entra no ganho; leads foram para o slide de Marketing digital
-  var h='<div class="grade g4">'
-   +k('Pipeline aberto',brl(A.valor),(A.qtd||0)+' negócio(s) · ponderado '+brl(A.ponderado)+(A.sem_valor?' · <span class="at">'+A.sem_valor+' sem valor</span>':''),'md')
-   +k('Ganho em '+esc(Fu.rotulo||''),'<span class="'+cm+'">'+brl(R.ganho&&R.ganho.valor)+'</span>',nz(R.meta)?((R.ganho&&R.ganho.qtd)||0)+' negócio(s) · sem meta':'<b class="'+cm+'">'+pm+'%</b> de '+brl(R.meta)+(R.falta?' · falta '+brl(R.falta):' · meta batida'),'md')
-   +k('Cobertura da meta',nz(cob)?'—':'<span class="'+cc+'">'+cob+'%</span>','ponderado ÷ o que falta (≥ 100% = verde)','md')
-   +k('Taxa de ganho',(nz(R.taxa_ganho_pct)?'—':R.taxa_ganho_pct+'%'),R.pipeline_necessario?'precisa de '+brl(R.pipeline_necessario)+' em pipeline':'','md')+'</div>';
+  // v3.357: cartões de vendas no padrão do Dashboard (Real · Meta · % atingido · farol · Acumulado = tudo parado na etapa, de qualquer mês)
+  var acha=function(re){for(var i=0;i<E.length;i++){var nm=String(E[i].nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();if(re.test(nm))return E[i]}return null};
+  var ac=function(e,v){return !e||!e.agora?'—':nI(e.agora.qtd)+(v?' · '+brl(e.agora.valor):'')};
+  var et=function(rot,e){if(!e)return cartao({rot:rot,real:null,fmt:nI,semPrev:true});var mq=e.meta&&e.meta.qtd;return cartao({rot:rot,real:e.real&&e.real.qtd,fmt:nI,meta:mq||null,semPrev:true,luz:e.farol,ating:mq?e.real.qtd/mq*100:null,linhas:[['Acumulado',ac(e)]]})};
+  var Lp=acha(/propost/),Ng=acha(/negocia/),Gn=null;for(var gi=0;gi<E.length;gi++)if(E[gi].ganho)Gn=E[gi];
+  var h='<div class="grade" style="grid-template-columns:repeat(5,1fr)">'
+   +et('Leads do mês',acha(/lead|prospec/))+et('Reuniões do mês',acha(/reuni|qualif/))
+   +(function(){if(!Lp)return cartao({rot:'Propostas do mês',real:null,semPrev:true});var mq=Lp.meta&&Lp.meta.qtd,mv=Lp.meta&&Lp.meta.valor,at=mv?Lp.real.valor/mv*100:mq?Lp.real.qtd/mq*100:null;
+     return cartao({rot:'Propostas do mês',real:Lp.real&&Lp.real.qtd,realTxt:nI(Lp.real&&Lp.real.qtd)+' · '+brl(Lp.real&&Lp.real.valor),meta:mv||mq||null,metaTxt:mv||mq?(mq?nI(mq):'—')+' · '+(mv?brl(mv):'—'):null,semPrev:true,luz:Lp.farol,ating:at,linhas:[['Acumulado',ac(Lp,true)]]})})()
+   +cartao({rot:'Pipeline aberto',real:A.valor,meta:R.pipeline_necessario||null,semPrev:true,luz:R.pipeline_necessario?(A.valor>=R.pipeline_necessario?'verde':A.valor>=R.pipeline_necessario*0.8?'amarelo':'vermelho'):null,linhas:[['Ponderado',brl(A.ponderado)]]})
+   +cartao({rot:'Vendas fechadas',real:R.ganho&&R.ganho.valor,meta:R.meta,semPrev:true,luz:Gn&&Gn.farol,ating:nz(R.pct_meta)?null:R.pct_meta,linhas:[['Acum. negociação',ac(Ng,true)]]})+'</div>';
   var grad=[['#1f5fbf','#3d8bf0'],['#2569cc','#4a98f2'],['#2b7bd6','#4fb0ef'],['#1f9fb0','#3cc6c9'],['#18a57f','#36c99a'],['#14916b','#2fb989'],['#0f7d5b','#28a679']];
   var topo=E.length?(E[0].agora&&E[0].agora.valor)||0:0,n=E.length;
-  var linhas=E.map(function(e,i){var g=e.ganho?['#0f8a52','#2fcf86']:grad[Math.min(i,grad.length-1)],ag=e.agora||{},val=ag.valor||0;
+  var FG={verde:['#0f8a52','#2fcf86'],amarelo:['#b7791f','#f6b84b'],vermelho:['#b4233c','#ef5a6f']};
+  var linhas=E.map(function(e,i){var g=FG[e.farol]||['#3b4a6b','#5d6f96'],ag=e.agora||{},val=ag.valor||0; /* v3.357: cor da faixa = farol */
     var larg=function(x){return 100-62*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
     var pc=e.pct_valor,f=nz(pc)?null:pc>=100?'verde':pc>=80?'amarelo':'vermelho';
     var sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s)'+(ag.sem_valor?' · '+ag.sem_valor+' sem valor':''));
-    var dir=e.meta&&e.meta.valor!=null&&(e.ganho||e.meta.fonte==='cadastrada')?'<span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9.6px;background:'+cor(f)+'"></span>meta '+brl(Fu.decorrido_pct<100?e.meta.valor_ate_hoje:e.meta.valor)+(Fu.decorrido_pct<100?' até hoje':'')+' · <b class="'+clsF(f)+'">'+(nz(pc)?'—':pc+'%')+'</b>'
+    var fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,mt=e.meta&&(e.meta.valor||e.meta.qtd),rl=e.meta&&e.meta.valor?(e.real&&e.real.valor):(e.real&&e.real.qtd),atg=mt&&!nz(rl)?rl/mt*100:null,fm=e.meta&&e.meta.valor?brl:nI;
+    var dir='<div style="display:flex;justify-content:space-between;font-weight:700;color:'+cor(fr)+'"><span><span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9.6px;background:'+cor(fr)+'"></span>'+(fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora da meta':'sem meta')+'</span><span>'+(nz(atg)?'—':pct(atg))+' atingido</span></div>'
+      +'<div style="font-size:18.4px;color:#AAB6D8;line-height:1.35;margin-top:2px">Real <b style="color:#EAF0FF">'+fm(rl)+'</b> · Meta <b style="color:#EAF0FF">'+(mt?fm(mt):'—')+'</b>'+(e.ganho?'':'<br>Acumulado <b style="color:#EAF0FF">'+nI(ag.qtd)+' · '+brl(ag.valor)+'</b>')+'</div>';
+    var dirAntigo=e.meta&&e.meta.valor!=null&&(e.ganho||e.meta.fonte==='cadastrada')?'<span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9.6px;background:'+cor(f)+'"></span>meta '+brl(Fu.decorrido_pct<100?e.meta.valor_ate_hoje:e.meta.valor)+(Fu.decorrido_pct<100?' até hoje':'')+' · <b class="'+clsF(f)+'">'+(nz(pc)?'—':pc+'%')+'</b>'
       :(!e.ganho&&ag.ponderado?'<span style="color:#8E9BC0">ponderado <b style="color:#AAB6D8">'+brl(ag.ponderado)+'</b>'+(e.probabilidade!=null?' · '+Math.round(e.probabilidade*100)+'% de chance':'')+'</span>':'');
     return '<div style="display:grid;grid-template-columns:345.6px 1fr 422.4px;gap:23px;align-items:center;flex:1;min-height:0">'
      +'<div style="font-size:24.8px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.nome)+(e.ganho?' ✓':'')+'<div style="font-size:18.4px;color:#8E9BC0;font-weight:500">'+sub+'</div></div>'
