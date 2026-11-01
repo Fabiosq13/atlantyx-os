@@ -30519,6 +30519,11 @@ function _resCardsHtml(R, modo) {
   const caixa = R.regime === 'caixa' ? (R.periodo_outro ? ' · emitido no período (competência) <b>' + brl(R.periodo_outro.faturamento) + '</b>' : '') : (R.periodo_caixa ? ' · recebido no período (caixa) <b>' + brl(R.periodo_caixa.receita_recebida) + '</b>' : '');
   // v3.114: sem nota emitida no mês (comum no começo do mês), mostra o último mês fechado como referência — antes ficava só "R$ 0,00"
   const subFat = futuro ? 'período ainda não começou' : (semFat ? '<span style="color:var(--gold);">nenhuma nota emitida ' + lblP + ' até hoje</span>' + (U ? ' · ' + nomeMes(U.mes) + ': <b>' + brl(U.faturamento) + '</b>' : '') : '') + (semFat ? '' : anoTxt + ': <b>' + brl(a.faturamento) + '</b>') + caixa + (semFat ? ' · ' + anoTxt + ': <b>' + brl(a.faturamento) + '</b>' : '');
+  // v3.351: o card de faturamento mostra SEMPRE as duas leituras do mês — faturado (emitido, competência) e recebido (pago, caixa) — e o % da meta de cada uma
+  const _fatMes = R.regime === 'caixa' ? R.periodo_outro?.faturamento : p.faturamento, _recMes = R.regime === 'caixa' ? p.faturamento : R.periodo_caixa?.receita_recebida;
+  const _metaFat = (R.metas_periodo || {}).faturamento, _pm = v => (v == null || !(_metaFat > 0)) ? '' : ' · <b>' + _resFmtPct(v / _metaFat * 100) + '</b> da meta';
+  const blocoMes = futuro ? '' : '<div style="margin:2px 0 6px;line-height:1.55;"><div>Faturado no ' + (lblP === 'do mês' ? 'mês' : 'período') + ' (emitido): <b style="color:var(--blue);">' + brl(_fatMes) + '</b>' + _pm(_fatMes) + '</div>'
+    + '<div>Recebido no ' + (lblP === 'do mês' ? 'mês' : 'período') + ' (pago): <b style="color:var(--green);">' + brl(_recMes) + '</b>' + _pm(_recMes) + '</div></div>';
   const semCpv = !(a.custos > 0) && !(p.custos > 0);
   // v3.117: tooltips — definição, fonte e a conta com os valores deste período
   const per = R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) : '', aj = p.ajustes_ebitda || {};
@@ -30542,7 +30547,7 @@ function _resCardsHtml(R, modo) {
   const mm = (meta, real, extra) => futuro ? null : (meta != null ? { meta, real, frac: fr, rot: rotM, ...extra } : { semMeta: true });
   const fm = k => MP.fonte?.[k] ? '\n\n**Meta ' + rotM + '**: ' + MP.fonte[k] + '.' : '\n\nSem meta: defina em **Metas do ano** (faturamento e % de lucro) ou cadastre um Budget no QuickBooks.';
   const cards = [
-    _resCartaoMeta('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), semFat ? 'var(--gold)' : 'var(--blue)', T.fat + fm('faturamento'), mm(MP.faturamento, p.faturamento), subFat),
+    _resCartaoMeta('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), semFat ? 'var(--gold)' : 'var(--blue)', T.fat + fm('faturamento'), mm(MP.faturamento, p.faturamento), blocoMes + subFat),
     semCpv
       ? _resCartaoMeta('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), 'var(--red)', T.gastos + fm('gastos'), mm(MP.gastos, p.gastos_totais, { tipo: 'menor', frac: null, rot: 'orçada' }), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · impostos, custos e despesas (sem retiradas)')
       : _resCartaoMeta('Margem bruta', futuro ? '—' : brl(p.lucro_bruto), corLuc(p.lucro_bruto), T.lb, null, 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct)),
@@ -35975,7 +35980,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.350] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.351] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35991,7 +35996,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.350';
+window.__ATX_BUILD_ID__ = 'ATX-v3.351';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

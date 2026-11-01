@@ -8,3 +8,4 @@
 
 ## Registro da Batida
 - 2026-11-01 · feito · sem bloqueio · próximo: conferir com as contas reais de novembro
+- 2026-11-01 · feito (v3.351) · card Faturamento mostra faturado (emitido), recebido (pago) e o % da meta de cada um
