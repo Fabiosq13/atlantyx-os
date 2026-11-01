@@ -11,3 +11,4 @@
 - 2026-11-01 · feito (v3.351) · card Faturamento mostra faturado (emitido), recebido (pago) e o % da meta de cada um
 - 2026-11-01 · feito (v3.352) · card Faturamento: a faturar no mês (termos/marcos/sustentações), a receber no mês (faturas QB) e previsão × meta
 - 2026-11-01 · feito (v3.353) · cartões do LIVE reformulados: Real · Previsto · Meta · % atingido · farol; detalhes recolhidos
+- 2026-11-01 · feito (v3.354) · Real, Previsto e Meta com o mesmo tamanho e fonte

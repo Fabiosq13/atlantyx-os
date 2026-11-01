@@ -448,6 +448,15 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .rc3-top .rl{flex:1;min-width:0;line-height:1.3;}
 .rc3-luz{width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent);flex:0 0 10px;}
 .rc3-tag{float:right;font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--c);white-space:nowrap;}
+.rc3-st{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.rc3-st .rc3-tag{float:none;}
+.rc3-at{font-family:var(--M);font-size:12px;font-weight:700;color:var(--c);white-space:nowrap;}
+.rc3-at small{font-size:9px;font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;}
+.rc3-v{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;border-top:1px solid var(--bd);min-width:0;}
+.rc3-v small{font-family:var(--M);font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--t3);flex:0 0 auto;}
+.rc3-v b{font-family:var(--H);font-size:19px;font-weight:700;letter-spacing:-.3px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;min-width:0;}
+.rc3-v.real b{color:var(--c);}
+.rc3-v a{color:inherit;text-decoration:none;border-bottom:1px dashed var(--blue);}
 .rc3-det summary{cursor:pointer;font-size:11px;color:var(--t2);padding:6px 2px;}
 .rc3-real{font-family:var(--H);font-size:24px;font-weight:700;letter-spacing:-.4px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;}
 .rc3-real small{display:block;font-family:var(--M);font-size:9px;font-weight:500;letter-spacing:.6px;text-transform:uppercase;color:var(--t3);margin-bottom:2px;}
@@ -30411,11 +30420,13 @@ function _resCartaoV2(o) {
   const w = v => Math.max(0, Math.min(100, v || 0));
   const bReal = temMeta && o.meta && o.real != null ? w(o.real / o.meta * 100) : 0, bPrev = temMeta && o.meta && o.prev != null ? w(o.prev / o.meta * 100) : 0;
   const prevH = o.link && o.prev != null ? '<a href="#" onclick="event.preventDefault();event.stopPropagation();' + o.link + '">' + fc(o.prev) + '</a>' : fc(o.prev);
+  // v3.354: Real, Previsto e Meta com o MESMO tamanho e fonte (pedido do fundador); % atingido e farol no topo
+  const lin = (rot, v, cls) => '<div class="rc3-v' + (cls ? ' ' + cls : '') + '"><small>' + rot + '</small><b>' + v + '</b></div>';
   return '<div class="res-card rc3" style="--c:' + COR + ';">'
     + '<div class="rc3-top"><span class="rc3-luz" title="' + TXT + '"></span><span class="rl">' + o.rot + _tip(o.tip) + '</span></div>'
-    + '<div class="rc3-real"><small>Real <span class="rc3-tag">● ' + TXT + '</span></small>' + f(o.real) + '</div>'
-    + (temMeta ? '<div class="rc3-bar"><i class="p" style="width:' + bPrev + '%"></i><i class="r" style="width:' + bReal + '%"></i></div>' : '<div class="rc3-bar vazio"></div>')
-    + '<div class="rc3-kpis"><div><small>Previsto</small><b>' + prevH + '</b></div><div><small>Meta</small><b>' + (temMeta ? fc(o.meta) : (o.meta === null ? '—' : '<a href="#" onclick="event.preventDefault();event.stopPropagation();metasEditar()">definir</a>')) + '</b></div><div><small>Atingido</small><b style="color:' + COR + ';">' + (ating == null ? '—' : _resFmtPct(ating)) + '</b></div></div>'
+    + '<div class="rc3-st"><span class="rc3-tag">● ' + TXT + '</span><span class="rc3-at">' + (ating == null ? '—' : _resFmtPct(ating)) + ' <small>atingido</small></span></div>'
+    + lin('Real', f(o.real), 'real') + lin('Previsto', o.link && o.prev != null ? '<a href="#" onclick="event.preventDefault();event.stopPropagation();' + o.link + '">' + f(o.prev) + '</a>' : f(o.prev)) + lin('Meta', temMeta ? f(o.meta) : (o.meta === null ? '—' : '<a href="#" onclick="event.preventDefault();event.stopPropagation();metasEditar()">definir</a>'))
+    + (temMeta ? '<div class="rc3-bar"><i class="p" style="width:' + bPrev + '%"></i><i class="r" style="width:' + bReal + '%"></i></div>' : '')
     + (o.extra ? '<div class="rc3-extra">' + o.extra + '</div>' : '') + '</div>';
 }
 // v3.123: cartão com a meta do período ao lado — barra de atingimento, marcador do "esperado até hoje" no mês em curso e semáforo
@@ -36031,7 +36042,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.353] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.354] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36047,7 +36058,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.353';
+window.__ATX_BUILD_ID__ = 'ATX-v3.354';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
