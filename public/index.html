@@ -32852,15 +32852,15 @@ async function funilMetasSugerir() {
   const vendas = metaMes / tk; let need = vendas;
   for (let k = cadeia.length - 1; k >= 0; k--) { const l = cadeia[k]; l.qtd = Math.round(need * 10) / 10; if (k > 0) need = need / (l.conv / 100); }
   const topo = cadeia[0]; topo.qtd = Math.ceil(topo.qtd);
-  // preenche: topo em quantidade, as demais em % (quantidade em branco para valer a %)
-  document.querySelectorAll('.fnMq').forEach(i => { const l = cadeia.find(x => x.e.id === i.dataset.id); i.value = l && l.i === 0 ? topo.qtd : (l ? '' : i.value); });
-  document.querySelectorAll('.fnMc').forEach(i => { const l = cadeia.find(x => x.e.id === i.dataset.id); if (l && l.conv != null) i.value = l.conv; });
+  // v3.360: preenche a QUANTIDADE de cada etapa da cadeia (calculada) e a % de conversão usada no cálculo
+  document.querySelectorAll('.fnMq').forEach(i => { const l = cadeia.find(x => x.e.id === i.dataset.id); if (l) { i.value = l.qtd; i.style.outline = '1px solid var(--green)'; } });
+  document.querySelectorAll('.fnMc').forEach(i => { const l = cadeia.find(x => x.e.id === i.dataset.id); if (l && l.conv != null) { i.value = l.conv; i.style.outline = '1px solid var(--green)'; } });
   const nQ = x => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
   box.innerHTML = '<div style="margin-top:10px;border:1px solid rgba(34,211,163,.35);border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.55;">'
     + '<b>Funil sugerido para bater ' + _fnR(metaMes) + ' no mês</b> · ticket médio ' + _fnR(tk) + ' → <b>' + nQ(vendas) + ' venda(s)/mês</b>'
     + '<table style="width:100%;border-collapse:collapse;margin-top:6px;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Conversão</th><th>Seu histórico ' + new Date().getFullYear() + '</th><th>Referência</th><th style="text-align:right;">Meta/mês</th></tr>'
     + cadeia.map(l => '<tr style="border-top:1px solid var(--bd);"><td>' + _fnE(l.e.nome) + '</td><td><b>' + (l.i === 0 ? 'topo' : String(l.conv).replace('.', ',') + '%') + '</b></td><td>' + (l.i === 0 ? '—' : l.hist != null ? _resFmtPct(l.hist) : '<span style="color:var(--t3);">pouco volume</span>') + '</td><td>' + (l.ref ? l.ref.faixa[0] + '–' + l.ref.faixa[2] + '% (' + l.ref.nome + ')' : '—') + '</td><td style="text-align:right;"><b>' + nQ(l.qtd) + '</b></td></tr>').join('')
-    + '</table><div style="color:var(--t3);margin-top:6px;">Meta de faturamento: Metas da Empresa (Planejamento). Conversão = média entre o seu histórico do ano e a referência de empresas parecidas (serviços de TI e dados B2B, venda consultiva), limitada à faixa. A referência é um ponto de partida, não um levantamento dos seus concorrentes — ajuste os campos se quiser. Nada foi gravado: confira e clique em <b>Salvar metas</b>.</div></div>';
+    + '</table><div style="color:var(--t3);margin-top:6px;">Meta de faturamento: Metas da Empresa (Planejamento). Conversão = média entre o seu histórico do ano e a referência de empresas parecidas (serviços de TI e dados B2B, venda consultiva), limitada à faixa. A referência é um ponto de partida, não um levantamento dos seus concorrentes — ajuste os campos se quiser. Os campos em verde foram preenchidos com a quantidade de cada etapa e a % usada. Nada foi gravado: confira e clique em <b>Salvar metas</b>.</div></div>';
 }
 async function funilMetasEditar() {
   const D = _fn.dados; if (!D?.etapas) return toast('Carregue o funil primeiro', 'error');
@@ -36153,7 +36153,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.359] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.360] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36169,7 +36169,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.359';
+window.__ATX_BUILD_ID__ = 'ATX-v3.360';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
