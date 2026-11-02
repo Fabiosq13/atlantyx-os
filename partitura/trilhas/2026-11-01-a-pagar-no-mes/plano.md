@@ -16,3 +16,4 @@
 - 2026-11-01 · feito (v3.356) · área Vendas no Dashboard e linha Acumulado (tudo parado na etapa, de qualquer mês) nos cartões
 - 2026-11-01 · feito (v3.357) · funil gráfico com faixas na cor do farol (Real, Meta, %, Acumulado) e Gestão à vista (TV) no mesmo padrão
 - 2026-11-01 · feito (v3.358) · funil: quantidade em destaque, meta por % de conversão da etapa anterior e conversão real × meta (Dashboard, aba Vendas e TV)
+- 2026-11-02 · feito (v3.359) · botão Sugerir funil pela meta (meta de faturamento ÷ ticket; conversões = histórico do ano × referência de mercado)

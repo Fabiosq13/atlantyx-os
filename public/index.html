@@ -32818,18 +32818,62 @@ async function pendContatos(id) {
   let ct = {}; try { ct = (await finApi('funil_contatos', { ids: [id] })).negocios || {}; } catch (er) { toast(er.message, 'error'); }
   _fnTabela([p], ct, _fn.dados.hubspot_portal, document.getElementById('fnModalCorpo'), true);
 }
+// v3.359: SUGERIR O FUNIL PELA META — de trás para frente:
+//   vendas necessárias = meta de faturamento do mês (Metas da Empresa / Planejamento) ÷ ticket médio;
+//   cada etapa acima = etapa de baixo ÷ conversão. Conversão sugerida = referência de empresas parecidas (serviços de TI e
+//   dados B2B, venda consultiva) combinada com o histórico do ano no HubSpot quando há volume (≥ 10 na etapa de base),
+//   sempre dentro da faixa de referência. Preenche os campos; só grava no "Salvar metas".
+const _FN_REF = [ // tipo da etapa → conversão a partir da etapa anterior [mínimo, referência, máximo] em %
+  { re: /reuni|qualif|diagnost|descoberta/, nome: 'lead → reunião', faixa: [10, 15, 25] },
+  { re: /propost|orcament|cotac/, nome: 'reunião → proposta', faixa: [25, 40, 55] },
+  { re: /negocia|contrato|juridic/, nome: 'proposta → negociação', faixa: [40, 60, 75] },
+  { re: /ganh|fechad/, nome: 'negociação/proposta → venda', faixa: [20, 35, 50] }];
+async function funilMetasSugerir() {
+  const D = _fn.dados, box = document.getElementById('fnSug'); if (!D?.etapas || !box) return;
+  const metaMes = D.meta_base?.faturamento_periodo != null ? D.meta_base.faturamento_periodo / ({ mes: 1, trimestre: 3, ano: 12 }[D.periodo.tipo] || 1) : null;
+  const tk = Number(document.getElementById('fnTicket')?.value) || D.meta_base?.ticket_medio;
+  if (!metaMes) { box.innerHTML = '<div class="fv2-erro" style="margin-top:8px;">Sem meta de faturamento do mês. Cadastre em Planejamento → Metas da Empresa e tente de novo.</div>'; return; }
+  if (!tk) { box.innerHTML = '<div class="fv2-erro" style="margin-top:8px;">Sem ticket médio (nenhum negócio ganho no HubSpot). Informe o ticket médio abaixo e clique de novo.</div>'; return; }
+  box.innerHTML = '<div style="font-size:11px;color:var(--t3);margin-top:8px;">Lendo o histórico do ano no HubSpot…</div>';
+  let H = null; try { H = await finApi('funil_vendas', { tipo: 'ano', ref: String(new Date().getFullYear()), pipeline: D.pipeline?.id || 'todos' }, { timeoutMs: 58000 }); } catch (_) {}
+  const sem = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const E = D.etapas, hq = id => H?.etapas?.find(x => x.id === id)?.real?.qtd ?? null;
+  // tipo de cada etapa (a primeira é sempre o topo); etapas sem tipo ficam fora da cadeia
+  const linhas = E.map((e, i) => ({ e, i, ref: i === 0 ? null : (e.ganho ? _FN_REF[3] : _FN_REF.slice(0, 3).find(r => r.re.test(sem(e.nome)))) }));
+  const cadeia = linhas.filter(l => l.i === 0 || l.ref);
+  let base = null;
+  for (const l of cadeia) {
+    if (l.i === 0) { base = l; continue; }
+    const [mn, rf, mx] = l.ref.faixa, hb = hq(base.e.id), ha = hq(l.e.id);
+    const hist = hb >= 10 && ha != null ? ha / hb * 100 : null;
+    l.hist = hist; l.conv = Math.round(Math.max(mn, Math.min(mx, hist != null ? (hist + rf) / 2 : rf)) * 2) / 2; l.base = base; base = l;
+  }
+  // de trás para frente
+  const vendas = metaMes / tk; let need = vendas;
+  for (let k = cadeia.length - 1; k >= 0; k--) { const l = cadeia[k]; l.qtd = Math.round(need * 10) / 10; if (k > 0) need = need / (l.conv / 100); }
+  const topo = cadeia[0]; topo.qtd = Math.ceil(topo.qtd);
+  // preenche: topo em quantidade, as demais em % (quantidade em branco para valer a %)
+  document.querySelectorAll('.fnMq').forEach(i => { const l = cadeia.find(x => x.e.id === i.dataset.id); i.value = l && l.i === 0 ? topo.qtd : (l ? '' : i.value); });
+  document.querySelectorAll('.fnMc').forEach(i => { const l = cadeia.find(x => x.e.id === i.dataset.id); if (l && l.conv != null) i.value = l.conv; });
+  const nQ = x => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  box.innerHTML = '<div style="margin-top:10px;border:1px solid rgba(34,211,163,.35);border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.55;">'
+    + '<b>Funil sugerido para bater ' + _fnR(metaMes) + ' no mês</b> · ticket médio ' + _fnR(tk) + ' → <b>' + nQ(vendas) + ' venda(s)/mês</b>'
+    + '<table style="width:100%;border-collapse:collapse;margin-top:6px;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Conversão</th><th>Seu histórico ' + new Date().getFullYear() + '</th><th>Referência</th><th style="text-align:right;">Meta/mês</th></tr>'
+    + cadeia.map(l => '<tr style="border-top:1px solid var(--bd);"><td>' + _fnE(l.e.nome) + '</td><td><b>' + (l.i === 0 ? 'topo' : String(l.conv).replace('.', ',') + '%') + '</b></td><td>' + (l.i === 0 ? '—' : l.hist != null ? _resFmtPct(l.hist) : '<span style="color:var(--t3);">pouco volume</span>') + '</td><td>' + (l.ref ? l.ref.faixa[0] + '–' + l.ref.faixa[2] + '% (' + l.ref.nome + ')' : '—') + '</td><td style="text-align:right;"><b>' + nQ(l.qtd) + '</b></td></tr>').join('')
+    + '</table><div style="color:var(--t3);margin-top:6px;">Meta de faturamento: Metas da Empresa (Planejamento). Conversão = média entre o seu histórico do ano e a referência de empresas parecidas (serviços de TI e dados B2B, venda consultiva), limitada à faixa. A referência é um ponto de partida, não um levantamento dos seus concorrentes — ajuste os campos se quiser. Nada foi gravado: confira e clique em <b>Salvar metas</b>.</div></div>';
+}
 async function funilMetasEditar() {
   const D = _fn.dados; if (!D?.etapas) return toast('Carregue o funil primeiro', 'error');
   let cad = null; try { cad = (await finApi('funil_metas_ler')).metas; } catch (_) {}
   const et = (cad && cad.pipeline === D.pipeline.id ? cad.etapas : {}) || {}, mesesP = { mes: 1, trimestre: 3, ano: 12 }[D.periodo.tipo] || 1;
   document.getElementById('fnModal')?.remove();
   const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;';
-  m.innerHTML = '<div class="panel" style="max-width:640px;width:100%;"><div style="display:flex;align-items:center;"><b style="font-size:13px;">✎ Metas do funil — por mês</b><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div>'
+  m.innerHTML = '<div class="panel" style="max-width:640px;width:100%;"><div style="display:flex;align-items:center;"><b style="font-size:13px;">✎ Metas do funil — por mês</b><button class="btn btn-gn" style="margin-left:auto;font-size:10px;" onclick="funilMetasSugerir()" title="Monta o funil inteiro de trás para frente: meta de faturamento do Planejamento ÷ ticket médio = vendas; depois as conversões (seu histórico do ano combinado com a referência de empresas parecidas)">✨ Sugerir funil pela meta</button><button class="btn btn-g" style="margin-left:6px;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div>'
     + '<div style="font-size:10.5px;color:var(--t2);margin:6px 0 10px;">Meta MENSAL de cada etapa (o trimestre usa ×3 e o ano ×12). Informe a <b>quantidade</b> do topo (ex.: 100 leads) e, nas etapas seguintes, a <b>% de conversão</b> (ex.: reuniões 10% → 10; propostas 10% das reuniões → 1; venda 80% das propostas). Quantidade preenchida vale mais que a %.</div>'
     + '<table style="width:100%;font-size:11px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Qtd / mês</th><th title="Meta = % da etapa anterior que tem meta (ex.: reuniões = 10% dos leads). Vale quando a Qtd / mês está em branco.">% conversão</th><th>R$ / mês</th></tr>'
     + D.etapas.map(e => { const c = et[e.id] || {}; const sq = e.meta.qtd != null ? (e.meta.qtd / mesesP).toFixed(1) : '', sv = e.meta.valor != null ? Math.round(e.meta.valor / mesesP) : '';
       return '<tr><td style="padding:4px 0;">' + _fnE(e.nome) + '</td><td><input class="fi fnMq" data-id="' + _fnE(e.id) + '" type="number" min="0" step="0.5" style="width:90px;" value="' + (c.qtd_mes ?? '') + '" placeholder="' + sq + '"></td><td>' + (D.etapas.indexOf(e) > 0 ? '<input class="fi fnMc" data-id="' + _fnE(e.id) + '" type="number" min="0" max="100" step="0.5" style="width:70px;" value="' + (c.conv_pct ?? '') + '" placeholder="%">' : '<span style="color:var(--t3);">topo</span>') + '</td><td><input class="fi fnMv" data-id="' + _fnE(e.id) + '" type="number" min="0" step="1000" style="width:140px;" value="' + (c.valor_mes ?? '') + '" placeholder="' + sv + '"></td></tr>'; }).join('')
-    + '</table><div style="margin-top:8px;font-size:11px;">Ticket médio (opcional): <input class="fi" id="fnTicket" type="number" min="0" step="1000" style="width:140px;" value="' + (cad?.ticket_medio ?? '') + '" placeholder="' + (D.meta_base?.ticket_medio || '') + '"></div>'
+    + '</table><div id="fnSug"></div><div style="margin-top:8px;font-size:11px;">Ticket médio (opcional): <input class="fi" id="fnTicket" type="number" min="0" step="1000" style="width:140px;" value="' + (cad?.ticket_medio ?? '') + '" placeholder="' + (D.meta_base?.ticket_medio || '') + '"></div>'
     + '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-gn" onclick="funilMetasSalvar()">Salvar metas</button></div></div>';
   document.body.appendChild(m);
 }
@@ -36109,7 +36153,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.358] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.359] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36125,7 +36169,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.358';
+window.__ATX_BUILD_ID__ = 'ATX-v3.359';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
