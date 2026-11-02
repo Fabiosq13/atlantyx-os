@@ -497,6 +497,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
 html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--fv2-s3:#1baf7a;--fv2-warn:#c98500;}
 .fv2-app,.fv2-abas{font-family:Montserrat,var(--B),sans-serif;}
 .fv2-abas{display:flex;gap:4px;overflow-x:auto;scrollbar-width:thin;border-bottom:1px solid var(--bd);margin:0 0 12px;padding-bottom:0;}
+/* v3.362: abas roláveis com o dedo — sem min-width:0 o item flex crescia até o tamanho de todas as abas e o conteúdo cortava (não rolava) */
+.fv2-abas{min-width:0;max-width:100%;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scroll-behavior:smooth;}
+.fv2-aba{flex:0 0 auto;}
+.abas-wrap{position:relative;min-width:0;}
+.abas-wrap .abas-seta{position:absolute;top:0;bottom:12px;width:34px;border:0;display:none;align-items:center;justify-content:center;cursor:pointer;font:700 18px Montserrat,sans-serif;color:var(--t1);z-index:2;}
+.abas-wrap .abas-seta.e{left:0;background:linear-gradient(90deg,var(--bg) 55%,transparent);justify-content:flex-start;padding-left:4px;}
+.abas-wrap .abas-seta.d{right:0;background:linear-gradient(270deg,var(--bg) 55%,transparent);justify-content:flex-end;padding-right:4px;}
+.abas-wrap.tem-e .abas-seta.e,.abas-wrap.tem-d .abas-seta.d{display:flex;}
 .fv2-aba{background:none;border:0;border-bottom:3px solid transparent;color:var(--t2);font:600 11.5px Montserrat,sans-serif;padding:9px 12px;cursor:pointer;white-space:nowrap;}
 .fv2-aba:hover{color:var(--t1);}
 .fv2-aba.on{color:var(--t1);border-bottom-color:var(--fv2-brand);}
@@ -1075,7 +1083,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div id="propDashWidget"></div>
     <!-- v3.206: dashboard dividido em ABAS (antes era uma página única muito longa) -->
     <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
-      <div class="fv2-abas" id="dashAbas" style="flex:1;margin-bottom:12px;">
+      <div class="abas-wrap" style="flex:1 1 320px;min-width:0;"><button class="abas-seta e" aria-label="Abas anteriores" onclick="abasRolar('dashAbas',-1)">&#8249;</button><button class="abas-seta d" aria-label="Mais abas" onclick="abasRolar('dashAbas',1)">&#8250;</button>
+      <div class="fv2-abas" id="dashAbas" style="margin-bottom:12px;">
         <button class="fv2-aba on" data-aba="geral" onclick="dashAba('geral')">&#128202; Visão geral</button>
         <button class="fv2-aba" data-aba="todo" onclick="dashAba('todo')">&#9989; To-do <span class="dash-badge" id="dashBadgeTodo"></span></button>
         <button class="fv2-aba" data-aba="financeiro" onclick="dashAba('financeiro')">&#128176; Financeiro <span class="dash-badge" id="dashBadgeFin"></span></button>
@@ -1084,7 +1093,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         <button class="fv2-aba" data-aba="projetos" onclick="dashAba('projetos')">&#128193; Projetos <span class="dash-badge" id="dashBadgeProj"></span></button>
         <button class="fv2-aba" data-aba="rfps" onclick="dashAba('rfps')">&#128209; RFPs e editais <span class="dash-badge" id="dashBadgeRfp"></span></button>
         <button class="fv2-aba" data-aba="mkt" onclick="dashAba('mkt')">&#128227; Marketing digital <span class="dash-badge" id="dashBadgeMkt"></span></button>
-      </div>
+      </div></div>
       <div id="dashAtualizadoEm" style="font-size:9.5px;color:var(--t3);text-align:right;margin:0 2px 16px;"></div>
     </div>
 
@@ -32732,8 +32741,15 @@ function dockMover(k, d) { const L = document.getElementById('dockLista'); const
 function dockSalvar() { const l = [...document.querySelectorAll('#dockLista input:checked')].map(i => i.dataset.k).slice(0, 9); if (!l.length) return toast('Marque pelo menos um atalho', 'error'); try { localStorage.setItem('atx_dock', JSON.stringify(l)); } catch (_) {} document.getElementById('dockModal')?.remove(); dockRender(); toast('Barra de atalhos salva', 'success'); }
 function dockPadrao() { try { localStorage.removeItem('atx_dock'); } catch (_) {} document.getElementById('dockModal')?.remove(); dockRender(); }
 document.addEventListener('DOMContentLoaded', () => { try { dockRender(); setInterval(dockBadges, 30000); setTimeout(dockBadges, 8000); } catch (_) {} });
+
+// v3.362: abas roláveis — setas ‹ › aparecem quando há abas escondidas; a aba ativa vem para a vista
+function abasRolar(id, d) { const el = document.getElementById(id); if (el) el.scrollBy({ left: d * el.clientWidth * 0.7, behavior: 'smooth' }); }
+function abasSetas(id) { const el = document.getElementById(id), w = el && el.parentElement; if (!el || !w || !w.classList.contains('abas-wrap')) return;
+  w.classList.toggle('tem-e', el.scrollLeft > 4); w.classList.toggle('tem-d', el.scrollLeft + el.clientWidth < el.scrollWidth - 4); }
+document.addEventListener('DOMContentLoaded', () => { const el = document.getElementById('dashAbas'); if (!el) return; el.addEventListener('scroll', () => abasSetas('dashAbas'), { passive: true }); addEventListener('resize', () => abasSetas('dashAbas')); setTimeout(() => abasSetas('dashAbas'), 300); });
 function dashAba(a) {
   setTimeout(() => { try { dockAtivo(); } catch (_) {} }, 50); // v3.361
+  setTimeout(() => { try { const b = document.querySelector('#dashAbas .fv2-aba.on'); if (b) b.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); abasSetas('dashAbas'); } catch (_) {} }, 80); // v3.362
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
   document.querySelectorAll('#page-dash .dash-aba').forEach(sct => sct.style.display = sct.dataset.aba === a ? '' : 'none');
   try { localStorage.setItem('atx_dash_aba', a); } catch (_) {}
@@ -36222,7 +36238,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.361] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.362] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36238,7 +36254,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.361';
+window.__ATX_BUILD_ID__ = 'ATX-v3.362';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

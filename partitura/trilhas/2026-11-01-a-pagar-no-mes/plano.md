@@ -19,3 +19,4 @@
 - 2026-11-02 · feito (v3.359) · botão Sugerir funil pela meta (meta de faturamento ÷ ticket; conversões = histórico do ano × referência de mercado)
 - 2026-11-02 · feito (v3.360) · Sugerir funil preenche a quantidade de cada etapa
 - 2026-11-02 · feito (v3.361) · barra de atalhos na base da tela (dock) com alertas e personalização
+- 2026-11-02 · feito (v3.362) · abas do Dashboard roláveis com o dedo e setas ‹ ›
