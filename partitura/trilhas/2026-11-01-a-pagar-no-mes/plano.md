@@ -18,3 +18,4 @@
 - 2026-11-01 · feito (v3.358) · funil: quantidade em destaque, meta por % de conversão da etapa anterior e conversão real × meta (Dashboard, aba Vendas e TV)
 - 2026-11-02 · feito (v3.359) · botão Sugerir funil pela meta (meta de faturamento ÷ ticket; conversões = histórico do ano × referência de mercado)
 - 2026-11-02 · feito (v3.360) · Sugerir funil preenche a quantidade de cada etapa
+- 2026-11-02 · feito (v3.361) · barra de atalhos na base da tela (dock) com alertas e personalização
