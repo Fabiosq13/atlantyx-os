@@ -26,6 +26,7 @@ async function handler(req, res) {
       analise_riscos:          () => analiseRiscos(contexto),
       analise_financeira:      () => analiseFinanceira(contexto),
       analise_mercado:         () => analiseMercado(contexto),
+      analise_marketing:       () => analiseMarketing(contexto), // v3.363: etapa de marketing do planejamento
       planejamento_estrategico: () => planejamentoEstrategico(contexto),
       plano_acao:              () => planoAcao(contexto),
       replanejamento:          () => replanejamento(contexto),
@@ -410,6 +411,36 @@ Retorne:
   return { mercado };
 }
 
+
+// ── ANÁLISE DE MARKETING (v3.363) ─────────────────────────────────────────────
+// Etapa do planejamento DEPOIS de escolher alavancas de receita e produtos (plano vigente): posicionamento, ICP,
+// oferta e mensagem por alavanca/produto, diagnóstico dos canais com os leads reais por origem, plano de 90 dias e KPIs.
+async function analiseMarketing(extra) {
+  const ctx = (await ctxComFatos(extra)).ctx;
+  const system = `Você é o Agente de Marketing Estratégico da Atlantyx (B2B: dados, BI, IA e software sob medida; clientes de grande porte).
+Monte a análise de marketing que DESDOBRA o plano estratégico vigente: para cada alavanca de receita e produto escolhidos no plano,
+diga para quem vender, com qual oferta e mensagem, por quais canais e com que meta de leads. Use os leads reais por origem e o funil do HubSpot.
+Sem plano vigente no contexto, diga isso no resumo e use as alavancas mais prováveis como hipótese.
+Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
+  const user = `Análise de marketing da Atlantyx:
+${JSON.stringify(ctx, null, 2)}
+
+Retorne:
+{
+  "resumo": "2 frases: a conclusão principal e o maior gargalo de marketing",
+  "posicionamento": {"frase": "uma frase de posicionamento", "diferenciais": ["..."], "provas": ["casos/números do contexto"]},
+  "icp_prioritario": [{"segmento": "...", "dor": "...", "decisor": "...", "gatilho_de_compra": "..."}],
+  "por_alavanca": [{"alavanca_ou_produto": "...", "proposta_de_valor": "...", "oferta_de_entrada": "...", "mensagem_principal": "...", "canais": ["..."], "meta_leads_mes": "número (sugestão)"}],
+  "diagnostico_canais": [{"canal": "...", "situacao_atual": "com dado real quando houver", "recomendacao": "...", "prioridade": "Alta|Média|Baixa"}],
+  "funil_marketing": {"leads_necessarios_mes": "...", "de_onde_vem": "...", "observacao": "..."},
+  "plano_90_dias": [{"quando": "mês 1|mês 2|mês 3", "acao": "...", "dono_sugerido": "...", "indicador": "..."}],
+  "orcamento_sugerido": {"total_mes": "R$ (sugestão)", "distribuicao": [{"canal": "...", "valor": "R$"}]},
+  "kpis": [{"kpi": "...", "meta": "...", "frequencia": "semanal|mensal"}],
+  "riscos": ["..."]
+}`;
+  const r = await claude(system, user, 3000);
+  return { marketing: parseJSON(r) };
+}
 // ── PLANEJAMENTO ESTRATÉGICO ──────────────────────────────────────────────────
 async function planejamentoEstrategico(extra) {
   const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados

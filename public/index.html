@@ -802,40 +802,60 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div class="sbi" onclick="nav('s0perfiltelas',this)">&#9638; Perfil × Telas</div>
     </div>
 
-    <!-- S0 · ESTRATEGIA -->
-    <div class="sg-divisor">S0 · ESTRATEGIA</div>
-    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gProposito')" data-g="gProposito">
-      <span class="sg-lbl">Proposito + Metas</span><span class="sg-arr open" id="arr-gProposito">&#9660;</span>
-    </div>
-    <div class="sg-body" id="gProposito">
-      <div class="sbi s1" onclick="nav('s1proposito',this)">&#9670; Proposito + Metas</div>
-      <div class="sbi s1" onclick="nav('s1fundador',this)">&#9888; Inbox Aprovacoes <span class="nbx rd" id="s1DecCnt">0</span></div>
-    </div>
+    <!-- S0 · ESTRATEGIA — v3.363: planejamento na ORDEM DE USO (diagnóstico → alinhamento → alavancas e produtos → marketing → metas e orçamento → execução) -->
+    <div class="sg-divisor">S0 · ESTRATÉGIA · PLANEJAMENTO</div>
     <div class="sg-hd sg-fundador" onclick="toggleGrupo('gEstrategia')" data-g="gEstrategia">
-      <span class="sg-lbl">Inteligencia + Estrategia</span><span class="sg-arr open" id="arr-gEstrategia">&#9660;</span>
+      <span class="sg-lbl">1 · Diagnóstico da empresa</span><span class="sg-arr open" id="arr-gEstrategia">&#9660;</span>
     </div>
     <div class="sg-body" id="gEstrategia">
-      <div class="sg-sub">DIAGNOSTICO</div>
-      <div class="sbi s1" onclick="nav('s1intel',this)">&#9670; Diagnostico Completo <span class="nbx gn">IA</span></div>
-      <div class="sbi s1" onclick="nav('s1riscos',this)">&#9888; Gestao de Riscos</div>
-      <div class="sbi s1" onclick="nav('s1mercado',this)">&#9733; Inteligencia Mercado</div>
+      <div class="sbi s1" onclick="nav('s1dados',this)">1.1 &#128200; Dados reais (QB + Drive)</div>
+      <div class="sbi s1" onclick="nav('s1intel',this)">1.2 &#9670; Diagnóstico · SWOT <span class="nbx gn">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1financeiro',this)">1.3 &#8593; Finanças · alavancas <span class="nbx gn">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1mercado',this)">1.4 &#9733; Mercado · concorrência <span class="nbx gn">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1riscos',this)">1.5 &#9888; Riscos</div>
+    </div>
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gProposito')" data-g="gProposito">
+      <span class="sg-lbl">2 · Alinhamento e direção</span><span class="sg-arr" id="arr-gProposito">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gProposito">
+      <div class="sbi s1" onclick="window._estAbaInicial='trilha';nav('s0estrategia',this)">2.1 &#128506; Trilha · sócios e 11 perguntas</div>
+      <div class="sbi s1" onclick="nav('s1proposito',this)">2.2 &#9670; Propósito + metas pessoais</div>
+      <div class="sbi s1" onclick="window._estAbaInicial='atlas';nav('s0estrategia',this)">2.3 &#129504; ATLAS · Estrategista <span class="nbx gn">voz</span></div>
+      <div class="sbi s1" onclick="nav('s1cenarios',this)">2.4 &#128301; Cenários</div>
     </div>
     <div class="sg-hd sg-fundador" onclick="toggleGrupo('gPlanejamento')" data-g="gPlanejamento">
-      <span class="sg-lbl">Planejamento</span><span class="sg-arr" id="arr-gPlanejamento">&#9660;</span>
+      <span class="sg-lbl">3 · Alavancas e produtos</span><span class="sg-arr" id="arr-gPlanejamento">&#9660;</span>
     </div>
     <div class="sg-body closed" id="gPlanejamento">
-      <div class="sbi s1" onclick="nav('s0estrategia',this)">&#129504; ATLAS · Estrategista IA <span class="nbx gn">voz</span></div>
-      <div class="sbi s1" onclick="nav('s1metas',this)">&#127919; Visão e Metas <span class="nbx gn">metas · OKRs</span></div>
-      <div class="sbi s1" onclick="nav('s1plano',this)">&#9654; Plano Estratégico <span class="nbx gn">90 dias</span></div>
-      <div class="sbi s1" onclick="nav('s1projecao',this)">&#128200; Projeção 5 anos <span class="nbx pu">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1plano',this)">3.1 &#9654; Plano Estratégico · alavancas</div>
+      <div class="sbi s1" onclick="nav('s1pipeline',this)">3.2 &#9654; Pipeline de Ideias <span class="nbx bl" id="s1PipeCnt">—</span></div>
+      <div class="sbi s1" onclick="nav('s1analise',this)">3.3 &#9670; Analisar Ideia <span class="nbx pu">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1bp',this);bpTab('ideia')">3.4 &#128202; Business Plan</div>
+    </div>
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gMktPlan')" data-g="gMktPlan">
+      <span class="sg-lbl">4 · Marketing</span><span class="sg-arr" id="arr-gMktPlan">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gMktPlan">
+      <div class="sbi s1" onclick="nav('s1marketing',this)">4.1 &#128227; Análise de Marketing <span class="nbx gn">IA</span></div>
+      <div class="sbi s1" onclick="nav('s2macro',this)">4.2 &#127919; Campanhas de Marketing</div>
     </div>
     <div class="sg-hd sg-fundador" onclick="toggleGrupo('gIdeias')" data-g="gIdeias">
-      <span class="sg-lbl">Ideias + Produtos</span><span class="sg-arr" id="arr-gIdeias">&#9660;</span>
+      <span class="sg-lbl">5 · Metas e orçamento</span><span class="sg-arr" id="arr-gIdeias">&#9660;</span>
     </div>
     <div class="sg-body closed" id="gIdeias">
-      <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline de Ideias <span class="nbx bl" id="s1PipeCnt">—</span></div>
-      <div class="sbi s1" onclick="nav('s1analise',this)">&#9670; Analisar Ideia com IA <span class="nbx pu">S1-03</span></div>
-      <div class="sbi s1" onclick="nav('s1bp',this);bpTab('ideia')">&#128202; Business Plan <span class="nbx gn">novo</span></div>
+      <div class="sbi s1" onclick="nav('s1metas',this)">5.1 &#127919; Visão e Metas <span class="nbx gn">OKRs</span></div>
+      <div class="sbi s1" onclick="nav('s1projecao',this)">5.2 &#128200; Projeção 5 anos</div>
+      <div class="sbi s1" onclick="nav('dash',this);setTimeout(()=>dashAba('vendas'),300)">5.3 &#127919; Funil · metas por etapa</div>
+      <div class="sbi s1" onclick="nav('s3orcamento',this)">5.4 &#128202; Orçamento Anual</div>
+    </div>
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gExecPlan')" data-g="gExecPlan">
+      <span class="sg-lbl">6 · Execução e acompanhamento</span><span class="sg-arr" id="arr-gExecPlan">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gExecPlan">
+      <div class="sbi s1" onclick="nav('s1acoes',this)">6.1 &#9654; Plano de Ação 90 dias</div>
+      <div class="sbi s1" onclick="window._estAbaInicial='trilha';nav('s0estrategia',this)">6.2 &#128197; Calendário · ciclo trimestral</div>
+      <div class="sbi s1" onclick="nav('s1fundador',this)">6.3 &#9888; Inbox de Aprovações <span class="nbx rd" id="s1DecCnt">0</span></div>
+      <div class="sbi s1" onclick="nav('s1relatorio',this)">6.4 &#128196; Relatório Executivo</div>
     </div>
     <!-- S1 · FINANCEIRO (v1.13: seção própria, sem "Painel Financeiro") -->
     <div class="sg-divisor">S1 · FINANCEIRO</div>
@@ -2596,6 +2616,13 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
   <div class="page" id="page-s1mercado">
     <div class="panel"><div class="ph"><div class="pt">Inteligência de Mercado — PESTEL + Porter + Concorrentes</div><span class="tag on">Claude IA</span><button class="btn btn-p" id="btnMerc" style="font-size:9px;padding:4px 9px;" onclick="runIntel('analise_mercado','s1MercResult','btnMerc')">&#9670; Analisar Mercado</button></div>
       <div class="pb" id="s1MercResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Análise PESTEL, Forças de Porter, TAM/SAM/SOM e oportunidades de mercado</div></div>
+    </div>
+  </div>
+
+  <!-- v3.363: ANÁLISE DE MARKETING (etapa 4 do planejamento: depois das alavancas e produtos) -->
+  <div class="page" id="page-s1marketing">
+    <div class="panel"><div class="ph"><div class="pt">Análise de Marketing — posicionamento, ICP, ofertas por alavanca e canais</div><span class="tag on">Claude IA</span><button class="btn btn-p" id="btnMkt" style="font-size:9px;padding:4px 9px;" onclick="runIntel('analise_marketing','s1MktResult','btnMkt')">&#9670; Analisar Marketing</button></div>
+      <div class="pb" id="s1MktResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;line-height:1.6;">Rode depois de escolher as alavancas de receita e os produtos no <b>Plano Estratégico</b>: a análise parte do plano vigente, dos leads reais por origem e do funil do HubSpot.</div></div>
     </div>
   </div>
 
@@ -7460,6 +7487,7 @@ function renderIntelResult(action, data, resultId) {
   else if (action === 'analise_riscos') renderRiscos(data.riscos, el);
   else if (action === 'analise_financeira') renderFinanceiro(data.financeiro, el);
   else if (action === 'analise_mercado') renderMercado(data.mercado, el);
+  else if (action === 'analise_marketing') renderMarketingPlan(data.marketing, el); // v3.363
   else if (action === 'planejamento_estrategico') renderPlano(data.plano, el);
   else if (action === 'plano_acao') renderPlanoAcao(data.plano_acao, el);
   else if (action === 'okr_gerador') renderOkrGen(data.okrs, el);
@@ -7473,10 +7501,10 @@ function renderIntelResult(action, data, resultId) {
 // resultado ganha um botão "🕘 Histórico" que lista as versões anteriores; abrir uma mostra exatamente o que foi gerado.
 const S1_HIST = [ // [tipo, id do resultado]
   ['diagnostico_completo', 's1DiagResult'], ['replanejamento', 's1ReplanoResult'], ['analise_riscos', 's1RiscosResult'],
-  ['analise_financeira', 's1FinResult'], ['analise_mercado', 's1MercResult'], ['planejamento_estrategico', 's1PlanoResult'],
+  ['analise_financeira', 's1FinResult'], ['analise_mercado', 's1MercResult'], ['analise_marketing', 's1MktResult'], ['planejamento_estrategico', 's1PlanoResult'],
   ['plano_acao', 's1AcoesResult'], ['okr_gerador', 's1OkrGenResult'], ['cenarios_futuro', 's1CenResult'],
   ['status_okr', 's1OkrFull'], ['status_okr', 's1OkrDash'], ['relatorio_executivo', 's1RelatorioFull'], ['diagnostico_completo', 's1DadosDiagResult'] ];
-const S1_HIST_NOME = { diagnostico_completo: 'Diagnóstico completo', replanejamento: 'Replanejamento', analise_riscos: 'Análise de riscos', analise_financeira: 'Análise financeira', analise_mercado: 'Análise de mercado', planejamento_estrategico: 'Plano estratégico', plano_acao: 'Plano de ação 90d', okr_gerador: 'OKRs sugeridos', cenarios_futuro: 'Cenários de futuro', status_okr: 'Status dos OKRs', relatorio_executivo: 'Relatório executivo', bp_analise: 'Análise do business plan' };
+const S1_HIST_NOME = { analise_marketing: 'Análise de marketing', diagnostico_completo: 'Diagnóstico completo', replanejamento: 'Replanejamento', analise_riscos: 'Análise de riscos', analise_financeira: 'Análise financeira', analise_mercado: 'Análise de mercado', planejamento_estrategico: 'Plano estratégico', plano_acao: 'Plano de ação 90d', okr_gerador: 'OKRs sugeridos', cenarios_futuro: 'Cenários de futuro', status_okr: 'Status dos OKRs', relatorio_executivo: 'Relatório executivo', bp_analise: 'Análise do business plan' };
 function s1HistBotoes() {
   S1_HIST.forEach(([tipo, rid]) => {
     const el = document.getElementById(rid); if (!el || el.dataset.histBtn) return; el.dataset.histBtn = '1';
@@ -7708,6 +7736,25 @@ function renderFinanceiro(d, el) {
     ${card('ALAVANCAS FINANCEIRAS','var(--blue)',(d.alavancas_financeiras||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.impacto_receita}</span></div><div style="font-size:10.5px;color:var(--t2);">ROI: ${a.roi} · Custo: ${a.custo_implementacao} · <span style="color:${_corTxt(impCor(a.prioridade))}">${a.prioridade}</span></div></div>`).join(''))}`;
 }
 
+// v3.363: ANÁLISE DE MARKETING
+function renderMarketingPlan(d, el) {
+  if (!d) { el.innerHTML = '<div style="color:var(--red);">Sem dados</div>'; return; }
+  const E = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])), L = a => Array.isArray(a) ? a : [];
+  const P = d.posicionamento || {}, F = d.funil_marketing || {}, O = d.orcamento_sugerido || {}, corP = p => p === 'Alta' ? 'var(--red)' : p === 'Média' ? 'var(--gold)' : 'var(--t3)';
+  const row = (a, b) => '<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px;line-height:1.5;">' + a + (b ? '<div style="color:var(--t2);">' + b + '</div>' : '') + '</div>';
+  el.innerHTML = (d.resumo ? '<div style="font-size:12.5px;line-height:1.6;margin-bottom:12px;padding:10px 12px;border-left:3px solid var(--blue);background:var(--bg4);border-radius:6px;">' + E(d.resumo) + '</div>' : '')
+    + card('POSICIONAMENTO', 'var(--blue)', '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">' + E(P.frase) + '</div>' + L(P.diferenciais).map(x => row('✔ ' + E(x))).join('') + (L(P.provas).length ? '<div style="font-size:10.5px;color:var(--t3);margin-top:6px;">Provas: ' + L(P.provas).map(E).join(' · ') + '</div>' : ''))
+    + card('ICP PRIORITÁRIO', 'var(--gold)', L(d.icp_prioritario).map(x => row('<b>' + E(x.segmento) + '</b> · decisor: ' + E(x.decisor), 'Dor: ' + E(x.dor) + ' · gatilho: ' + E(x.gatilho_de_compra))).join(''))
+    + card('OFERTA E MENSAGEM POR ALAVANCA / PRODUTO', 'var(--green)', L(d.por_alavanca).map(x => row('<b>' + E(x.alavanca_ou_produto) + '</b>' + (x.meta_leads_mes ? ' <span style="font-family:var(--M);font-size:10px;color:var(--green);">· ' + E(x.meta_leads_mes) + ' leads/mês</span>' : ''),
+      E(x.proposta_de_valor) + '<br>Oferta de entrada: <b>' + E(x.oferta_de_entrada) + '</b><br>Mensagem: “' + E(x.mensagem_principal) + '”<br>Canais: ' + L(x.canais).map(E).join(', '))).join(''))
+    + card('CANAIS — HOJE × RECOMENDADO', 'var(--pu)', L(d.diagnostico_canais).map(x => row('<b>' + E(x.canal) + '</b> <span style="font-size:9.5px;font-weight:700;color:' + corP(x.prioridade) + ';">' + E(x.prioridade) + '</span>', 'Hoje: ' + E(x.situacao_atual) + '<br>→ ' + E(x.recomendacao))).join(''))
+    + card('FUNIL DE MARKETING', 'var(--blue)', row('<b>' + E(F.leads_necessarios_mes) + '</b> leads/mês', E(F.de_onde_vem) + (F.observacao ? '<br>' + E(F.observacao) : '')) + '<div style="font-size:10.5px;margin-top:6px;"><a href="#" onclick="event.preventDefault();nav(\'dash\');setTimeout(()=>dashAba(\'vendas\'),300)" style="color:var(--blue);">Conferir com as metas do funil (aba Vendas) →</a></div>')
+    + card('PLANO DE 90 DIAS', 'var(--green)', L(d.plano_90_dias).map(x => row('<span style="font-family:var(--M);font-size:9.5px;color:var(--t3);">' + E(x.quando) + '</span> <b>' + E(x.acao) + '</b>', 'Dono: ' + E(x.dono_sugerido) + ' · indicador: ' + E(x.indicador))).join(''))
+    + card('ORÇAMENTO SUGERIDO', 'var(--gold)', row('<b>' + E(O.total_mes) + '</b> por mês', L(O.distribuicao).map(x => E(x.canal) + ': ' + E(x.valor)).join(' · ')))
+    + card('KPIs', 'var(--blue)', L(d.kpis).map(x => row('<b>' + E(x.kpi) + '</b> — meta ' + E(x.meta), E(x.frequencia))).join(''))
+    + (L(d.riscos).length ? card('RISCOS', 'var(--red)', L(d.riscos).map(x => row('⚠ ' + E(x))).join('')) : '')
+    + '<div style="font-size:10px;color:var(--t3);margin-top:8px;">Sugestões da IA a partir do plano vigente e dos dados do sistema; valores marcados como sugestão não são histórico. Leve o que for aprovado para Campanhas de Marketing e para as metas do funil.</div>';
+}
 function renderMercado(d, el) {
   if (!d) { el.innerHTML = '<div style="color:var(--red);">Sem dados</div>'; return; }
   const pan = d.panorama_mercado || {};
@@ -36238,7 +36285,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.362] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.363] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36254,7 +36301,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.362';
+window.__ATX_BUILD_ID__ = 'ATX-v3.363';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
