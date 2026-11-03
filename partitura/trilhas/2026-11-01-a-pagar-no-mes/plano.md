@@ -20,3 +20,4 @@
 - 2026-11-02 · feito (v3.360) · Sugerir funil preenche a quantidade de cada etapa
 - 2026-11-02 · feito (v3.361) · barra de atalhos na base da tela (dock) com alertas e personalização
 - 2026-11-02 · feito (v3.362) · abas do Dashboard roláveis com o dedo e setas ‹ ›
+- 2026-11-03 · feito (v3.364) · camada de leads do funil = contatos do HubSpot (criados no período; acumulado = lifecycle lead/MQL/SQL)

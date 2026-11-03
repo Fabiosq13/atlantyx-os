@@ -32902,6 +32902,7 @@ function funilRender() {
 }
 async function funilFaixa(id) {
   const D = _fn.dados; const e = (D?.etapas || []).find(x => x.id === id); if (!e) return;
+  if (e.contatos) { const u = D.hubspot_portal ? 'https://app.hubspot.com/contacts/' + D.hubspot_portal + '/objects/0-1/views/all/list' : null; toast(e.real.qtd + ' contato(s) criados no período · ' + e.agora.qtd + ' em fase de lead no HubSpot', 'info'); if (u) window.open(u, '_blank', 'noopener'); return; } // v3.364
   const negs = (_fn.visao === 'agora' ? (e.ids_agora || []) : e.ids).map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
   document.getElementById('fnModal')?.remove();
   const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
@@ -36285,7 +36286,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.363] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.364] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36301,7 +36302,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.363';
+window.__ATX_BUILD_ID__ = 'ATX-v3.364';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

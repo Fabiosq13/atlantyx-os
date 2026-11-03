@@ -8275,6 +8275,18 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
     }
   }
   const gl = linhas.find(L => L.ganho); if (gl) { gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
+  // v3.364: CAMADA DE LEADS = CONTATOS DO HUBSPOT (topo do funil, antes dos negócios)
+  //   real no período = contatos CRIADOS no HubSpot no período · acumulado (agora) = contatos ainda em fase de lead
+  //   (lifecycle lead, MQL ou SQL — de qualquer data). Contagem pelo "total" da busca (sem baixar a lista). Falha → a camada não entra.
+  try {
+    const cnt = async filters => Number((await _hs('/crm/v3/objects/contacts/search', 'POST', { filterGroups: [{ filters }], properties: ['createdate'], limit: 1 }))?.total) || 0;
+    const [noPer, abertos] = await Promise.all([
+      cnt([{ propertyName: 'createdate', operator: 'BETWEEN', value: String(P.tIni), highValue: String(P.tFim) }]),
+      cnt([{ propertyName: 'lifecyclestage', operator: 'IN', values: ['subscriber', 'lead', 'marketingqualifiedlead', 'salesqualifiedlead'] }])]);
+    linhas.unshift({ id: 'contatos_hs', nome: 'Leads · contatos HubSpot', ordem: 0, probabilidade: null, ganho: false, contatos: true, etapas_hubspot: ['Contatos (lifecycle lead, MQL, SQL)'],
+      agora: { qtd: abertos, valor: 0, ponderado: 0, sem_valor: 0 }, real: { qtd: noPer, valor: 0 }, ids: [], ids_agora: [] });
+    linhas.forEach((L, i) => { L.ordem = i; });
+  } catch (e) { console.warn('[funil] contatos HubSpot:', e.message); }
   const prop = P.decorrido > 0 ? P.decorrido : 1;
   // v3.358: meta por CONVERSÃO — etapa sem quantidade cadastrada e com "% de conversão" usa a meta da etapa anterior que tem meta
   //   (ex.: leads 100 → reuniões 10% = 10 → propostas 10% das reuniões = 1 → venda 80% das propostas). conv_real = real ÷ real da mesma base.
