@@ -71,8 +71,13 @@ async function propConfig() {
     anoRef = String(hj.getUTCFullYear() + (hj.getUTCMonth() >= 9 ? 1 : 0)); if (mapa?.[anoRef] != null) aliqAno = Number(mapa[anoRef]); } catch (_) {}
   if (aliqAno != null) impostoTrib = aliqAno;
   const params = { ...PARAMS_PADRAO, ...(impostoTrib != null ? { impostos_pct: impostoTrib } : {}), ...(salvo.params || {}) };
-  return { params, instrucoes: salvo.instrucoes || '', imposto_origem: salvo.params?.impostos_pct != null ? 'manual' + (aliqAno != null && Number(salvo.params.impostos_pct) !== aliqAno ? ' — atenção: a alíquota de ' + anoRef + ' no Financeiro é ' + String(aliqAno).replace('.', ',') + '%' : '') : (aliqAno != null ? 'alíquota de ' + anoRef + ' configurada no Financeiro (' + String(aliqAno).replace('.', ',') + '%)' : impostoTrib != null ? 'tributos do financeiro (' + trib.regime + ')' : 'padrão') };
+  // v3.365: alíquota por ANO de emissão da nota. 2026 = Lucro Presumido (PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88).
+  // 2027 = CBS substitui PIS/Cofins: TCU propôs 11,3% (CBS 11,2 + IBS 0,1) em 28/10/2026; Senado fixa até 15/12/2026 → 11,3 + 5 + 4,8 + 2,88 ≈ 24%.
+  params.impostos_por_ano = { ...IMPOSTOS_ANO_PROPOSTA, ...((salvo.params || {}).impostos_por_ano || {}) };
+  return { params, impostos_fonte: IMPOSTOS_FONTE, escopos: await escoposProduto(), instrucoes: salvo.instrucoes || '', imposto_origem: salvo.params?.impostos_pct != null ? 'manual' + (aliqAno != null && Number(salvo.params.impostos_pct) !== aliqAno ? ' — atenção: a alíquota de ' + anoRef + ' no Financeiro é ' + String(aliqAno).replace('.', ',') + '%' : '') : (aliqAno != null ? 'alíquota de ' + anoRef + ' configurada no Financeiro (' + String(aliqAno).replace('.', ',') + '%)' : impostoTrib != null ? 'tributos do financeiro (' + trib.regime + ')' : 'padrão') };
 }
+const IMPOSTOS_ANO_PROPOSTA = { '2026': 16.33, '2027': 24 };
+const IMPOSTOS_FONTE = '2026: 16,33% (Lucro Presumido: PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88). 2027: 24% estimado — CBS+IBS 11,3% proposta pelo TCU em 28/10/2026 (substitui PIS/Cofins) + ISS 5 + IRPJ 4,8 + CSLL 2,88; o Senado fixa a alíquota até 15/12/2026. Antes de créditos.';
 async function rateCard() { return (await cfgGet('propostas_rate_card')) || []; }
 async function rateCardSugerir() {
   // custo/hora real do RH por cargo + preços observados nas propostas aprendidas
@@ -334,12 +339,12 @@ async function estrategiaSugerir(base, { periodo_tipo, periodo_ref } = {}) {
 }
 
 // ═══════════════════════ PROPOSTA: ESTIMAR, ANALISAR, REDIGIR ═══════════════════════
-async function estimar({ escopo, tipo_demanda, meses } = {}) {
+async function estimar({ escopo, tipo_demanda, meses, tipo_documento, semanas } = {}) {
   if (!escopo || String(escopo).length < 30) throw new Error('Descreva o escopo (mín. 30 caracteres)');
   const rc = await rateCard();
   const perfis = rc.map(x => x.perfil);
   const sys = 'Você é arquiteto de soluções e estimador sênior da Atlantyx (dados, BI, engenharia de dados, IA). Estime esforço realista por perfil. Responda APENAS JSON.';
-  const r = json(await claude(sys, `ESCOPO:\n${String(escopo).substring(0, 6000)}\nTipo de demanda: ${tipo_demanda || 'indefinido'}${meses ? '\nPrazo desejado: ' + meses + ' meses' : ''}\nPERFIS DISPONÍVEIS NO RATE CARD (use estes nomes exatamente quando couber): ${JSON.stringify(perfis)}\nDevolva {"meses":0,"risco":"baixo|medio|alto","perfis":[{"perfil":"","horas":0,"justificativa":""}],"premissas":["..."],"riscos":["..."],"entregaveis":["..."],"fases":[{"nome":"","mes_inicio":1,"mes_fim":1,"entregas":""}]}`, 2200));
+  const r = json(await claude(sys, `ESCOPO:\n${String(escopo).substring(0, 6000)}\nTipo de demanda: ${tipo_demanda || 'indefinido'}${tipo_documento === 'poc' ? '\nÉ uma POC (prova de conceito) de ' + (semanas || 6) + ' semanas: estime só o necessário para provar os critérios de sucesso, com equipe enxuta' : ''}${meses ? '\nPrazo desejado: ' + meses + ' meses' : ''}\nPERFIS DISPONÍVEIS NO RATE CARD (use estes nomes exatamente quando couber): ${JSON.stringify(perfis)}\nDevolva {"meses":0,"risco":"baixo|medio|alto","perfis":[{"perfil":"","horas":0,"justificativa":""}],"premissas":["..."],"riscos":["..."],"entregaveis":["..."],"fases":[{"nome":"","mes_inicio":1,"mes_fim":1,"entregas":""}]}`, 2200));
   r.perfis = (r.perfis || []).map(x => { const c = rc.find(y => y.perfil.toLowerCase() === String(x.perfil).toLowerCase()); return { ...x, custo_hora: c?.custo_hora ?? null, preco_hora: c?.preco_alvo ?? null, preco_teto: c?.preco_teto ?? null, preco_piso: c?.preco_piso ?? null, no_rate_card: !!c }; });
   return r;
 }
@@ -353,8 +358,8 @@ async function analisar(base, entrada = {}) {
     historico: { win_rate: pd.win_rate } });
   r.fontes = { metas: M.fonte, win_rate: Object.keys(pd.win_rate).length ? 'histórico de propostas' : 'sem histórico (aderência por tipo de demanda)' };
   if (entrada.explicar !== false && process.env.ANTHROPIC_API_KEY) {
-    try { r.explicacao = await claude('Você é o CFO comercial da Atlantyx. Explique em português, em no máximo 7 linhas, qual formato recomendar e por quê, usando os números (metas, margem, caixa, aderência ao cliente), e dê 2 dicas de negociação. Sem repetir a tabela.',
-      JSON.stringify({ cliente: entrada.cliente, tipo_demanda: r.entrada.tipo_demanda, metas: r.metas, custos: r.custos, formatos: r.formatos.map(f => ({ formato: f.nome, valor: f.valor_total, mensal: f.valor_mensal_medio, margem: f.margem_pct, no_ano: f.receita_no_ano, arr: f.arr, scores: f.scores, alertas: f.alertas })) }), 700, 30000); } catch (_) {}
+    try { r.explicacao = await claude('Você é o CFO comercial da Atlantyx. Explique em português, em no máximo 7 linhas, qual formato recomendar e por quê, usando os números (metas, margem, caixa, aderência ao cliente, impostos do ano de faturamento, inflação e a comparação com o concorrente quando houver), e dê 2 dicas de negociação. Se estiver caro frente ao concorrente, prefira trocas (escopo menor, faseamento, prazo de pagamento, POC paga com crédito) antes de desconto e NUNCA abaixo do piso. Para POC, diga se o período e o preço são razoáveis. Sem repetir a tabela.',
+      JSON.stringify({ cliente: entrada.cliente, tipo_demanda: r.entrada.tipo_demanda, metas: r.metas, custos: r.custos, tipo_documento: r.entrada.tipo_documento, custos_extra: { inflacao_pct: r.custos.inflacao_aplicada_pct, impostos_efetivo_pct: r.custos.impostos_efetivo_pct }, formatos: r.formatos.map(f => ({ formato: f.nome, valor: f.valor_total, mensal: f.valor_mensal_medio, margem: f.margem_pct, no_ano: f.receita_no_ano, arr: f.arr, scores: f.scores, alertas: f.alertas, piso: f.preco_piso, competitividade: f.competitividade, desconto_aplicado_pct: f.desconto_aplicado_pct })) }), 700, 30000); } catch (_) {}
   }
   return r;
 }
@@ -362,14 +367,20 @@ async function redigir({ proposta, formato } = {}) {
   const pr = proposta || {}; const f = (pr.analise?.formatos || []).find(x => x.formato === (formato || pr.formato)) || pr.analise?.formatos?.[0];
   if (!f) throw new Error('Analise os formatos antes de redigir');
   const pd = await padrao({}); const { instrucoes } = await propConfig();
-  const secoesPadrao = pd.padrao?.secoes?.length ? pd.padrao.secoes : [{ titulo: 'Contexto e objetivo' }, { titulo: 'Escopo e entregáveis' }, { titulo: 'Abordagem e metodologia' }, { titulo: 'Equipe e responsabilidades' }, { titulo: 'Cronograma' }, { titulo: 'Investimento e condições comerciais' }, { titulo: 'Premissas e exclusões' }, { titulo: 'Por que a Atlantyx' }];
+  const tipoDoc = pr.dados?.tipo_documento || 'proposta', poc = pr.dados?.poc || {};
+  // v3.365: POC profissional — período fechado, critérios de sucesso mensuráveis, go/no-go e crédito no contrato
+  const SECOES_POC = [{ titulo: 'Contexto e objetivo da POC' }, { titulo: 'Hipóteses e critérios de sucesso' }, { titulo: 'Escopo da POC (dentro e fora)' }, { titulo: 'Período, fases e checkpoints' },
+    { titulo: 'Ambiente, dados e LGPD' }, { titulo: 'Responsabilidades (Atlantyx e cliente)' }, { titulo: 'Entregáveis e decisão go/no-go' }, { titulo: 'Investimento e crédito no contrato' }, { titulo: 'Próximos passos: da POC ao projeto' }, { titulo: 'Por que a Atlantyx' }];
+  const secoesPadrao = tipoDoc === 'poc' ? SECOES_POC : pd.padrao?.secoes?.length ? pd.padrao.secoes : [{ titulo: 'Contexto e objetivo' }, { titulo: 'Escopo e entregáveis' }, { titulo: 'Abordagem e metodologia' }, { titulo: 'Equipe e responsabilidades' }, { titulo: 'Cronograma' }, { titulo: 'Investimento e condições comerciais' }, { titulo: 'Premissas e exclusões' }, { titulo: 'Por que a Atlantyx' }];
   const sys = `Você redige propostas comerciais da Atlantyx (consultoria de dados, BI, engenharia de dados e IA — 17 anos, clientes como CPFL Energia, Enel, Caixa Capitalização). Português do Brasil, tom executivo e objetivo. Siga EXATAMENTE as seções do padrão. Nunca invente números: use só os fornecidos. Faturamento conforme o cronograma, com vencimento em 35 dias corridos da emissão da nota fiscal (salvo instrução diferente). Responda APENAS JSON.`;
   const usr = `${instrucoes ? 'INSTRUÇÕES DO DONO (prioridade máxima):\n' + instrucoes.substring(0, 5000) + '\n\n' : ''}PADRÃO APRENDIDO: ${JSON.stringify(pd.padrao || {}).substring(0, 6000)}
 SEÇÕES (nesta ordem): ${JSON.stringify(secoesPadrao.map(s => s.titulo))}
 CLIENTE: ${pr.cliente || ''} | CONTATO: ${pr.contato || ''} | TÍTULO: ${pr.titulo || ''}
 ESCOPO: ${String(pr.dados?.escopo || '').substring(0, 5000)}
 ESTIMATIVA: ${JSON.stringify({ perfis: pr.dados?.perfis, premissas: pr.dados?.estimativa?.premissas, entregaveis: pr.dados?.estimativa?.entregaveis, fases: pr.dados?.estimativa?.fases }).substring(0, 4000)}
-FORMATO COMERCIAL ESCOLHIDO: ${f.nome} — valor total R$ ${f.valor_total}, média mensal R$ ${f.valor_mensal_medio}, prazo ${pr.analise?.entrada?.meses} meses.
+TIPO DE DOCUMENTO: ${tipoDoc === 'poc' ? 'POC (prova de conceito) — período de ' + (poc.semanas || 6) + ' semanas; critérios de sucesso: ' + (poc.criterios || 'definir 3 a 5 critérios mensuráveis com o cliente') + '; o valor da POC vira crédito no contrato se assinado em até ' + (poc.credito_dias || 60) + ' dias após o relatório final; sem compromisso de compra além da POC' : tipoDoc === 'piloto' ? 'Piloto (uso real, escopo reduzido, antes da escala)' : 'Proposta completa'}
+FORMATO COMERCIAL ESCOLHIDO: ${f.nome} — valor total R$ ${f.valor_total}${f.desconto_aplicado_pct ? ' (já com desconto de ' + f.desconto_aplicado_pct + '% sobre R$ ' + f.valor_sem_desconto + ' — cite como condição comercial especial, com validade)' : ''}, média mensal R$ ${f.valor_mensal_medio}, prazo ${pr.analise?.entrada?.meses} meses.
+REAJUSTE: ${(pr.analise?.entrada?.meses || 0) > 12 ? 'contrato acima de 12 meses — inclua cláusula de reajuste anual pelo IPCA' : 'valores fixos no período; reajuste anual pelo IPCA em caso de renovação'}. Tributos: valores com impostos inclusos conforme a legislação vigente na data de emissão de cada nota (reforma tributária: CBS a partir de 2027).
 CRONOGRAMA DE FATURAMENTO: ${JSON.stringify(f.cronograma.map(c => ({ mes: c.mes, valor: c.valor, desc: c.desc })))}
 Devolva {"titulo":"","secoes":[{"titulo":"","conteudo":"texto em markdown simples (listas com -)"}],"tabela_investimento":[{"item":"","valor":""}],"validade_dias":30}`;
   const doc = json(await claude(sys, usr, 4000, 85000));
@@ -377,6 +388,26 @@ Devolva {"titulo":"","secoes":[{"titulo":"","conteudo":"texto em markdown simple
   return { documento: doc };
 }
 
+
+// ═══════════════════════ v3.365 · ESCOPOS (catálogo de produtos, upload e geração) ═══════════════════════
+async function escoposProduto() { return (await cfgGet('propostas_escopos_produto')) || []; }
+async function escoposSalvar({ lista } = {}) {
+  const l = (Array.isArray(lista) ? lista : []).filter(x => String(x.nome || '').trim()).slice(0, 60)
+    .map(x => ({ id: x.id || novoId('esc'), nome: String(x.nome).trim().substring(0, 80), resumo: String(x.resumo || '').substring(0, 400), escopo: String(x.escopo || '').substring(0, 20000), atualizado_em: new Date().toISOString() }));
+  await cfgSet('propostas_escopos_produto', l); return { escopos: l };
+}
+async function escopoExtrair({ nome, base64 } = {}) {
+  const arq = await textoDoArquivo(nome, base64);
+  const pedido = 'Este documento descreve o ESCOPO de um trabalho. Reescreva o escopo em português, em markdown simples (títulos curtos e listas com -): objetivo, entregáveis, dentro do escopo, fora do escopo, premissas, volumes e prazos citados. Não invente nada que não esteja no documento.';
+  if (arq.pdf) return { escopo: await claude('Você organiza escopos de projetos de dados, BI e IA. Responda só com o texto do escopo.', [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: arq.pdf } }, { type: 'text', text: pedido }], 3000, 80000), origem: 'PDF (organizado pela IA)' };
+  return { escopo: String(arq.texto || '').trim().substring(0, 20000), origem: 'texto do arquivo' };
+}
+async function escopoGerar({ produto_id, cliente, necessidade, tipo_documento } = {}) {
+  const p = (await escoposProduto()).find(x => x.id === produto_id); if (!p) throw new Error('Produto não encontrado no catálogo de escopos');
+  const sys = 'Você é arquiteto de soluções da Atlantyx. Adapte o escopo padrão de um produto à necessidade de um cliente. Português, markdown simples (títulos curtos e listas com -). Não invente números de volume ou prazo que não foram dados — deixe [a confirmar].';
+  const usr = `PRODUTO: ${p.nome}\nESCOPO PADRÃO DO PRODUTO:\n${p.escopo}\n\nCLIENTE: ${cliente || '[cliente]'}\nNECESSIDADE INFORMADA: ${necessidade || '(nenhuma — use o padrão)'}\nTIPO: ${tipo_documento === 'poc' ? 'POC (prova de conceito): reduza para 1 caso de uso, 1 fonte de dados e critérios de sucesso mensuráveis' : tipo_documento === 'piloto' ? 'Piloto com usuários reais e escopo reduzido' : 'Projeto completo'}\n\nDevolva só o escopo: objetivo, entregáveis, dentro do escopo, fora do escopo, premissas, responsabilidades do cliente${tipo_documento === 'poc' ? ', critérios de sucesso e período' : ''}.`;
+  return { escopo: await claude(sys, usr, 3000, 70000), produto: p.nome };
+}
 // ═══════════════════════ CRUD PROPOSTAS ═══════════════════════
 async function propSalvar(p = {}) {
   await tabelas(); const sql = await getSql();
@@ -534,6 +565,10 @@ async function handler(req, res) {
         return { ...b, extraido: { tipo_documento: x.tipo_documento || '', secoes: (x.secoes || []).slice(0, 30), rate_card: (x.rate_card || []).map(r => ({ perfil: r.perfil })), licoes: String(x.licoes || '').substring(0, 300) } }; }) })),
     base_resultado: () => sqlRun(async sql => { await sql`UPDATE propostas_base SET resultado = ${payload.resultado} WHERE id = ${payload.id}`; return { ok: true }; }),
     base_excluir: () => sqlRun(async sql => { await sql`DELETE FROM propostas_base WHERE id = ${payload.id}`; return { ok: true }; }),
+    escopos_listar: async () => ({ escopos: await escoposProduto() }), // v3.365
+    escopos_salvar: () => escoposSalvar(payload),
+    escopo_extrair: () => escopoExtrair(payload),
+    escopo_gerar: () => escopoGerar(payload),
     padrao: () => padrao({}),
     padrao_regerar: () => padrao({ regerar: true }),
     estimar: () => estimar(payload),

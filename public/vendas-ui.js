@@ -18,7 +18,8 @@
   }
   const PN_MS = 30000; // nenhum fetch do Painel de Vendas fica pendente além disso
   const ocupado = (btn, txt) => { if (!btn) return () => {}; const o = btn.innerHTML; btn.disabled = true; btn.innerHTML = txt || 'Processando...'; return () => { btn.disabled = false; btn.innerHTML = o; }; };
-  const FMT = { tm: 'Alocação por hora (T&M)', fechado: 'Escopo fechado', mensal: 'Mensalidade recorrente', hibrido: 'Híbrido: setup + mensalidade' };
+  const FMT = { tm: 'Alocação por hora (T&M)', fechado: 'Escopo fechado', mensal: 'Mensalidade recorrente', hibrido: 'Híbrido: setup + mensalidade', poc: 'POC paga (crédito no contrato)' };
+  const TIPODOC = { proposta: 'Proposta completa', poc: 'POC — prova de conceito', piloto: 'Piloto (uso real, escopo reduzido)' };
   const TIPOS = { escopo_fechado: 'Projeto com escopo claro', evolucao: 'Evolução contínua / backlog', sustentacao: 'Sustentação / SLA', alocacao: 'Alocação de profissionais', produto: 'Produto / plataforma + serviço', indefinido: 'Ainda indefinido' };
   const STATUS = { rascunho: 'Rascunho', enviada: 'Enviada', negociacao: 'Em negociação', ganha: 'Ganha', perdida: 'Perdida' };
   const corSit = s => /abaixo/.test(s) ? 'var(--red)' : /acima/.test(s) ? 'var(--green)' : /dentro/.test(s) ? 'var(--blue)' : 'var(--t3)';
@@ -255,7 +256,7 @@
 
   // ═══════════════════════════ ELABORAÇÃO DE PROPOSTAS ═══════════════════════════
   let PROP = null, RC = [], CFG = null;
-  const novaProp = () => ({ id: null, cliente: '', contato: '', titulo: '', status: 'rascunho', formato: null, dados: { tipo_demanda: 'indefinido', meses: 3, risco: 'medio', perfis: [], escopo: '', inicio: '', orcamento_cliente: '', orcamento_tipo: 'total' }, analise: null, documento: null });
+  const novaProp = () => ({ id: null, cliente: '', contato: '', titulo: '', status: 'rascunho', formato: null, dados: { tipo_demanda: 'indefinido', meses: 3, risco: 'medio', perfis: [], escopo: '', inicio: '', orcamento_cliente: '', orcamento_tipo: 'total', tipo_documento: 'proposta', poc: { semanas: 6, credito_dias: 60, criterios: '' }, preco_concorrente: '', descontos: {} }, analise: null, documento: null });
   async function propAbrir() {
     const box = $('vdProp'); if (!box) return;
     if (!box.dataset.ok) { box.dataset.ok = '1'; box.innerHTML = propEsqueleto(); PROP = novaProp(); }
@@ -378,6 +379,15 @@
           <div class="fg"><label class="fl">Cliente</label><input class="fi" id="vpCliente" list="vpClientesDL" placeholder="Ex.: CPFL Energia"/><datalist id="vpClientesDL"></datalist></div>
           <div class="fg"><label class="fl">Contato / decisor</label><input class="fi" id="vpContato" placeholder="Nome e cargo"/></div></div>
         <div class="fg"><label class="fl">Título da proposta</label><input class="fi" id="vpTitulo" placeholder="Ex.: Plataforma de dados de geração eólica"/></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="fg"><label class="fl">Tipo de documento</label><select class="fsel" id="vpTipoDoc" onchange="VD.tipoDocMudou()">${Object.entries(TIPODOC).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="fg"><label class="fl" title="Preço total estimado do concorrente para o mesmo escopo — a máquina sugere desconto se ficarmos muito acima">Preço do concorrente (R$ total, se souber)</label><input class="fi" id="vpConc" placeholder="R$"/></div></div>
+        <div id="vpPocBox" style="display:none;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:8px;">
+          <div style="font-size:10.5px;font-weight:700;margin-bottom:6px;">🧪 POC profissional — período fechado, critérios de sucesso e crédito no contrato</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="fg"><label class="fl" title="Mercado: 2–6 semanas para produto; 4–8 para dados/IA">Duração (semanas)</label><input class="fi" id="vpPocSem" type="number" min="1" max="16"/></div>
+            <div class="fg"><label class="fl" title="O valor pago na POC vira desconto no contrato se assinado nesse prazo">Crédito no contrato se fechar em (dias)</label><input class="fi" id="vpPocCred" type="number" min="0" max="365"/></div></div>
+          <div class="fg"><label class="fl">Critérios de sucesso (mensuráveis)</label><textarea class="fta" id="vpPocCrit" style="min-height:50px;" placeholder="Ex.: reduzir de 3 dias para 4 horas o fechamento do indicador X; acurácia ≥ 85% na amostra de N registros; 5 usuários-chave usando por 2 semanas"></textarea></div></div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
           <div class="fg"><label class="fl">Natureza da demanda</label><select class="fsel" id="vpTipo">${Object.entries(TIPOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
           <div class="fg"><label class="fl">Prazo (meses)</label><input class="fi" id="vpMeses" type="number" min="1" max="60"/></div>
@@ -386,7 +396,12 @@
           <div class="fg"><label class="fl">Risco do escopo</label><select class="fsel" id="vpRisco"><option value="baixo">Baixo — escopo claro</option><option value="medio" selected>Médio</option><option value="alto">Alto — muita incerteza</option></select></div>
           <div class="fg"><label class="fl">Orçamento do cliente (se souber)</label><input class="fi" id="vpOrc" placeholder="R$"/></div>
           <div class="fg"><label class="fl">O orçamento é</label><select class="fsel" id="vpOrcTipo"><option value="total">Total do projeto</option><option value="mensal">Por mês</option></select></div></div>
-        <div class="fg"><label class="fl">Escopo / necessidade do cliente</label><textarea class="fta" id="vpEscopo" style="min-height:120px;" placeholder="O que o cliente precisa, entregáveis, sistemas envolvidos, volume, prazos, restrições..."></textarea></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+          <label class="btn btn-g" style="font-size:10px;cursor:pointer;" title="PDF, Word, Excel ou texto — o escopo vem para o campo abaixo, editável">📎 Subir documento de escopo<input type="file" accept=".pdf,.docx,.xlsx,.txt,.md,.csv" style="display:none;" onchange="VD.escopoUpload(this)"/></label>
+          <select class="fsel" id="vpProd" style="width:auto;font-size:10.5px;"><option value="">📦 Escopo de um produto…</option></select>
+          <button class="btn btn-g" style="font-size:10px;" id="vpBtnProd" onclick="VD.escopoProduto()" title="A IA adapta o escopo padrão do produto ao cliente (e à POC, se for o caso)">Gerar escopo do produto</button>
+          <span style="font-size:9.5px;color:var(--t3);">Edite o escopo à vontade antes de estimar e gerar a proposta.</span></div>
+        <div class="fg"><label class="fl">Escopo / necessidade do cliente</label><textarea class="fta" id="vpEscopo" style="min-height:160px;" placeholder="O que o cliente precisa, entregáveis, sistemas envolvidos, volume, prazos, restrições... (ou suba um documento / escolha um produto acima)"></textarea></div>
         <button class="btn btn-or" id="vpBtnEstimar" onclick="VD.estimar()" style="width:100%;justify-content:center;">🤖 Estimar equipe e horas</button></div></div>
       <div class="panel"><div class="ph"><div class="pt">② Equipe, horas e custo</div><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.addPerfil()">+ perfil</button></div><div class="pb">
         <datalist id="vpPerfisDL">${RC.map(x => `<option value="${esc(x.perfil)}">`).join('')}</datalist>
@@ -402,13 +417,15 @@
     const d = PROP.dados; $('vpCliente').value = PROP.cliente || ''; $('vpContato').value = PROP.contato || ''; $('vpTitulo').value = PROP.titulo || '';
     $('vpTipo').value = d.tipo_demanda || 'indefinido'; $('vpMeses').value = d.meses || ''; $('vpInicio').value = d.inicio || ''; $('vpRisco').value = d.risco || 'medio';
     $('vpOrc').value = d.orcamento_cliente || ''; $('vpOrcTipo').value = d.orcamento_tipo || 'total'; $('vpEscopo').value = d.escopo || '';
+    const pc = d.poc || {}; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
+    $('vpProd').innerHTML = '<option value="">📦 Escopo de um produto…</option>' + ((CFG && CFG.escopos) || []).map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('') + (((CFG && CFG.escopos) || []).length ? '' : '<option value="" disabled>(cadastre em Rate card e parâmetros → Catálogo)</option>');
     $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
     renderPerfis(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
     if (!$('vpClientesDL').dataset.ok) { $('vpClientesDL').dataset.ok = '1'; fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clientes_listar', payload: {} }) }).then(r => r.json()).then(d => { $('vpClientesDL').innerHTML = (d.clientes || []).map(c => `<option value="${esc(c.empresa)}">`).join(''); }).catch(() => {}); }
   }
   function lerForm() {
     const d = PROP.dados; PROP.cliente = $('vpCliente').value.trim(); PROP.contato = $('vpContato').value.trim(); PROP.titulo = $('vpTitulo').value.trim();
-    Object.assign(d, { tipo_demanda: $('vpTipo').value, meses: +$('vpMeses').value || null, inicio: $('vpInicio').value, risco: $('vpRisco').value, orcamento_cliente: $('vpOrc').value, orcamento_tipo: $('vpOrcTipo').value, escopo: $('vpEscopo').value.trim() });
+    Object.assign(d, { tipo_documento: $('vpTipoDoc').value, preco_concorrente: $('vpConc').value, poc: { semanas: +$('vpPocSem').value || 6, credito_dias: +$('vpPocCred').value || 0, criterios: $('vpPocCrit').value.trim() }, tipo_demanda: $('vpTipo').value, meses: +$('vpMeses').value || null, inicio: $('vpInicio').value, risco: $('vpRisco').value, orcamento_cliente: $('vpOrc').value, orcamento_tipo: $('vpOrcTipo').value, escopo: $('vpEscopo').value.trim() });
     d.perfis = [...document.querySelectorAll('#vpPerfis tr')].map(tr => { const g = c => tr.querySelector(`[data-c="${c}"]`)?.value; return { perfil: g('perfil'), horas: +g('horas') || 0, custo_hora: +String(g('custo')).replace(',', '.') || null, preco_hora: +String(g('preco')).replace(',', '.') || null, justificativa: tr.dataset.just || '' }; }).filter(x => x.perfil);
   }
   function renderPerfis() {
@@ -423,7 +440,7 @@
     lerForm(); if ((PROP.dados.escopo || '').length < 30) return nota('Descreva o escopo (pelo menos 30 caracteres)', 'error');
     if (!RC.length && !auto && !confirm('O rate card está vazio — a IA vai sugerir perfis sem custo. Continuar? (cadastre em "Rate card e parâmetros")')) return;
     const fim = ocupado($('vpBtnEstimar'), '🤖 Estimando...');
-    try { const r = await api('estimar', { escopo: PROP.dados.escopo, tipo_demanda: PROP.dados.tipo_demanda, meses: PROP.dados.meses });
+    try { const _poc = PROP.dados.tipo_documento === 'poc'; const r = await api('estimar', { escopo: PROP.dados.escopo, tipo_demanda: PROP.dados.tipo_demanda, tipo_documento: PROP.dados.tipo_documento, meses: _poc ? Math.round((PROP.dados.poc?.semanas || 6) / 4.33 * 100) / 100 : PROP.dados.meses, semanas: _poc ? PROP.dados.poc?.semanas : undefined }, 90000);
       PROP.dados.perfis = r.perfis; PROP.dados.estimativa = r; if (!PROP.dados.meses && r.meses) PROP.dados.meses = r.meses; if (r.risco) PROP.dados.risco = r.risco;
       preencherForm(); const sem = r.perfis.filter(x => !x.no_rate_card).map(x => x.perfil);
       $('vpEstInfo').innerHTML = `<b>${r.perfis.reduce((a, x) => a + (+x.horas || 0), 0)} horas</b> em ${r.meses || PROP.dados.meses} meses · risco ${esc(r.risco || '')}${sem.length ? `<br><span style="color:var(--gold);">Fora do rate card (informe custo/preço): ${esc(sem.join(', '))}</span>` : ''}${(r.premissas || []).length ? '<br>Premissas: ' + esc(r.premissas.slice(0, 4).join(' · ')) : ''}`;
@@ -434,7 +451,8 @@
     lerForm(); const d = PROP.dados; if (!d.perfis.length) return nota('Inclua a equipe (perfis e horas)', 'error');
     if (d.perfis.some(x => !(x.custo_hora > 0))) return nota('Falta o custo/hora de algum perfil (rate card ou RH)', 'error');
     const fim = ocupado($('vpBtnAnalisar'), '◆ Analisando...');
-    try { PROP.analise = await api('analisar', { cliente: PROP.cliente, perfis: d.perfis, meses: d.meses || 3, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo });
+    const _conc = +String(d.preco_concorrente || '').replace(/[^\d,]/g, '').replace(',', '.') || null; const _meses = d.tipo_documento === 'poc' ? Math.max(.25, Math.round((d.poc.semanas || 6) / 4.33 * 100) / 100) : (d.meses || 3);
+    try { PROP.analise = await api('analisar', { cliente: PROP.cliente, perfis: d.perfis, meses: _meses, tipo_documento: d.tipo_documento, preco_concorrente: _conc, descontos: d.descontos || {}, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo }, 90000);
       delete PROP.analise.success; delete PROP.analise.action; PROP.formato = PROP.analise.recomendado; renderAnalise(); $('vpAnalise').scrollIntoView({ behavior: 'smooth', block: 'start' }); fim(); return true; }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
   }
@@ -445,7 +463,9 @@
       <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--t2);margin-bottom:10px;background:var(--bg4);border-radius:8px;padding:9px 12px;">
         <span>Meta anual <b style="color:var(--t1);">${R(m.meta_anual)}</b></span><span>Realizado <b style="color:var(--t1);">${R(m.realizado_ano)}</b></span><span>Pipeline ponderado <b style="color:var(--t1);">${R(m.pipeline_ponderado)}</b></span>
         <span>Gap a cobrir <b style="color:var(--red);">${R(m.gap)}</b></span><span>Recorrência ${P(m.recorrente_pct_atual)} da receita (meta ${m.meta_recorrente_pct}%)</span>
-        <span>Custo total <b style="color:var(--t1);">${R(c.custo_total)}</b> · preço mínimo ${R(c.preco_minimo)} · alvo ${R(c.preco_alvo)}</span></div>
+        <span>Custo total <b style="color:var(--t1);">${R(c.custo_total)}</b> · preço mínimo ${R(c.preco_minimo)} · alvo ${R(c.preco_alvo)}</span>
+        <span title="${esc(CFG?.impostos_fonte || '')}">Impostos ${(c.impostos_por_mes || []).map(x => x.ano + ': ' + P(x.pct)).join(' · ') || P(c.impostos_efetivo_pct)} (média ${P(c.impostos_efetivo_pct)})</span>
+        <span>Inflação + dissídio no custo: ${P(c.inflacao_aplicada_pct)}</span>${a.entrada?.tipo_documento === 'poc' ? '<span style="color:var(--gold);">🧪 POC: margem reduzida (porta de entrada)</span>' : ''}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;">
       ${a.formatos.map((f, i) => `<label style="display:block;cursor:pointer;background:var(--bg4);border:2px solid ${PROP.formato === f.formato ? 'var(--blue)' : 'var(--bd)'};border-radius:10px;padding:11px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;"><span style="font-weight:700;font-size:12px;"><input type="radio" name="vpFmt" value="${f.formato}" ${PROP.formato === f.formato ? 'checked' : ''} onchange="VD.escolher('${f.formato}')"/> ${esc(f.nome)}</span>${i === 0 ? '<span style="font-size:9px;background:var(--green);color:#fff;border-radius:4px;padding:2px 6px;">RECOMENDADO</span>' : ''}</div>
@@ -453,9 +473,10 @@
         <div style="display:grid;gap:3px;margin-bottom:8px;">${sc('Metas', f.scores.metas)}${sc('Vendável', f.scores.vendavel)}${sc('Caixa', f.scores.caixa)}${sc('Risco', f.scores.risco)}</div>
         <div style="font-size:10.5px;line-height:1.7;">Valor <b>${R(f.valor_total)}</b> · ${R(f.valor_mensal_medio)}/mês<br>Margem <b style="color:${f.margem_pct < (a.params.margem_min_pct) ? 'var(--red)' : 'var(--green)'};">${P(f.margem_pct)}</b> · lucro ${R(f.lucro)}<br>No ano: ${R(f.receita_no_ano)}${f.cobertura_gap_pct != null ? ` (${P(f.cobertura_gap_pct)} do gap)` : ''}<br>Recorrência (ARR): ${f.arr ? R(f.arr) : '—'} · 1º recebimento ${esc(f.primeiro_recebimento || '')}<br>Preço/h efetivo ${R(f.preco_hora_efetivo)}</div>
         ${f.alertas.length ? `<div style="font-size:10px;color:var(--gold);margin-top:6px;">⚠ ${esc(f.alertas.join(' · '))}</div>` : ''}
+        ${compHtml(f)}
         <details style="margin-top:6px;font-size:10px;"><summary style="cursor:pointer;color:var(--t2);">cronograma de faturamento</summary>${f.cronograma.map(x => `<div>${esc(x.mes)} · ${esc(x.desc)} · <b>${R(x.valor)}</b> (recebe ${esc(x.recebe)})</div>`).join('')}</details></label>`).join('')}</div>
       ${a.explicacao ? `<div style="margin-top:10px;background:var(--bg4);border-left:3px solid var(--blue);border-radius:6px;padding:10px 12px;font-size:11.5px;line-height:1.7;white-space:pre-wrap;">${esc(a.explicacao)}</div>` : ''}
-      <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Pesos: metas 40% · vendável 35% · caixa 15% · risco 10%. Impostos ${a.params.impostos_pct}% · overhead ${a.params.overhead_pct}% · margem mínima ${a.params.margem_min_pct}% / alvo ${a.params.margem_alvo_pct}% · recebimento em ${a.params.prazo_recebimento_dias} dias. Fonte da conversão por formato: ${esc(a.fontes?.win_rate || '')}.</div>
+      <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Pesos: metas 40% · vendável 35% · caixa 15% · risco 10%. Impostos (média do período) ${a.custos?.impostos_efetivo_pct ?? a.params.impostos_pct}% · overhead ${a.params.overhead_pct}% · margem mínima ${a.params.margem_min_pct}% / alvo ${a.params.margem_alvo_pct}% · recebimento em ${a.params.prazo_recebimento_dias} dias. Fonte da conversão por formato: ${esc(a.fontes?.win_rate || '')}.</div>
       <button class="btn btn-or" id="vpBtnRedigir" onclick="VD.redigir()" style="margin-top:10px;width:100%;justify-content:center;">✍ Redigir proposta no formato escolhido (padrão aprendido)</button></div></div>`;
   }
   function escolher(f) { PROP.formato = f; renderAnalise(); }
@@ -482,22 +503,76 @@
     try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); funilCarregar(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
   function docMarkdownParaPdf(txt) { return String(txt || '').split('\n').map(l => l.trim().startsWith('- ') ? { text: '• ' + l.trim().substring(2), margin: [8, 1, 0, 1] } : { text: l.replace(/\*\*/g, ''), margin: [0, 1, 0, 1] }); }
+
+  // ═══ v3.365 · MÁQUINA DE POC E PROPOSTAS ═══
+  function tipoDocMudou(soVisual) {
+    const t = $('vpTipoDoc')?.value || 'proposta', b = $('vpPocBox'); if (b) b.style.display = t === 'poc' ? '' : 'none';
+    const m = $('vpMeses'); if (m) { m.disabled = t === 'poc'; m.title = t === 'poc' ? 'Na POC o prazo vem da duração em semanas' : ''; }
+    if (!soVisual && PROP) { lerForm(); PROP.analise = null; PROP.documento = null; const a = $('vpAnalise'); if (a) a.innerHTML = ''; const d = $('vpDoc'); if (d) d.innerHTML = ''; }
+  }
+  function compHtml(f) {
+    const c = f.competitividade, d = f.desconto_aplicado_pct;
+    if (!c && !d) return '';
+    let h = '<div style="margin-top:7px;padding:6px 8px;border-radius:6px;background:var(--bg3,#0b1020);font-size:10px;line-height:1.6;">';
+    if (c) h += `🆚 Concorrente ${R(c.concorrente)} · nós ${R(f.valor_total)} (<b style="color:${c.diferenca_pct > 10 ? 'var(--red)' : c.diferenca_pct > 0 ? 'var(--gold)' : 'var(--green)'};">${c.diferenca_pct > 0 ? '+' : ''}${P(c.diferenca_pct)}</b>) · piso ${R(c.piso)} · spread ${R(c.spread)}`;
+    if (d) h += `<br>✔ Desconto aplicado <b>${P(d)}</b> (de ${R(f.valor_sem_desconto)}) <a href="javascript:void(0)" onclick="event.preventDefault();VD.aplicarDesconto('${f.formato}',0)" style="color:var(--blue);">remover</a>`;
+    else if (c && c.desconto_sugerido_pct > 0) h += `<br>💡 Sugestão: <b>${P(c.desconto_sugerido_pct)}</b> → ${R(c.preco_sugerido)}${c.limitado_pelo_piso ? ' <span style="color:var(--gold);">(no piso da margem mínima; ainda ' + P(c.ainda_acima_pct) + ' acima)</span>' : ''} <a href="javascript:void(0)" onclick="event.preventDefault();VD.aplicarDesconto('${f.formato}',${c.desconto_sugerido_pct})" style="color:var(--blue);font-weight:700;">aplicar</a>`;
+    return h + '</div>';
+  }
+  async function aplicarDesconto(fmt, pct) { lerForm(); PROP.dados.descontos = { ...(PROP.dados.descontos || {}), [fmt]: +pct || 0 }; if (!(+pct)) delete PROP.dados.descontos[fmt]; PROP.formato = fmt; await analisar(); }
+  async function escopoUpload(inp) {
+    const f = inp.files[0]; if (!f) return; if (f.size > 9 * 1024 * 1024) return nota('Arquivo acima de 9 MB', 'error');
+    nota('Lendo o escopo do documento...', 'info');
+    try { const d = await api('escopo_extrair', { nome: f.name, base64: await lerB64(f) }, 90000); const e = $('vpEscopo');
+      e.value = (e.value.trim() ? e.value.trim() + '\n\n' : '') + d.escopo; nota('Escopo carregado (' + d.origem + ') — revise e edite antes de estimar'); }
+    catch (e) { nota('Não consegui ler: ' + e.message, 'error'); } inp.value = '';
+  }
+  async function escopoProduto() {
+    const id = $('vpProd').value; if (!id) return nota('Escolha um produto do catálogo', 'error'); lerForm();
+    const fim = ocupado($('vpBtnProd'), 'Gerando...');
+    try { const d = await api('escopo_gerar', { produto_id: id, cliente: PROP.cliente, necessidade: PROP.dados.escopo, tipo_documento: PROP.dados.tipo_documento }, 90000);
+      if (PROP.dados.escopo && !confirm('Substituir o escopo atual pelo escopo gerado do produto ' + d.produto + '? (Cancelar = acrescentar no fim)')) $('vpEscopo').value = PROP.dados.escopo + '\n\n' + d.escopo; else $('vpEscopo').value = d.escopo;
+      if (!PROP.titulo) $('vpTitulo').value = d.produto; nota('Escopo do produto gerado — edite à vontade antes de estimar'); }
+    catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
+  }
+  // catálogo de escopos de produto (aba Rate card e parâmetros)
+  let ESC = [];
+  function escRender() { const b = $('vdEscLista'); if (!b) return;
+    b.innerHTML = ESC.map((x, i) => `<div style="border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:8px;" data-i="${i}"><div style="display:flex;gap:6px;"><input class="fi" data-k="nome" value="${esc(x.nome)}" placeholder="Produto (ex.: Maestro)" style="font-weight:700;"/><a href="javascript:void(0)" onclick="VD.escRemover(${i})" style="color:var(--red);align-self:center;">✕</a></div>
+      <input class="fi" data-k="resumo" value="${esc(x.resumo || '')}" placeholder="Resumo em uma linha" style="margin-top:4px;"/><textarea class="fta" data-k="escopo" style="min-height:110px;margin-top:4px;font-size:11px;" placeholder="Escopo padrão: objetivo, módulos, entregáveis, dentro/fora do escopo, premissas, SLA...">${esc(x.escopo || '')}</textarea></div>`).join('') || '<div style="font-size:11px;color:var(--t3);">Nenhum produto ainda. Cadastre o escopo padrão de cada produto (Maestro, Atlantyx OS…).</div>'; }
+  function escLer() { return [...document.querySelectorAll('#vdEscLista [data-i]')].map(el => { const o = { id: ESC[+el.dataset.i]?.id }; el.querySelectorAll('[data-k]').forEach(e => o[e.dataset.k] = e.value); return o; }); }
+  function escNovo() { ESC = escLer(); ESC.push({ nome: '', resumo: '', escopo: '' }); escRender(); }
+  function escRemover(i) { ESC = escLer(); ESC.splice(i, 1); escRender(); }
+  async function escSalvar() { try { const d = await api('escopos_salvar', { lista: escLer() }); ESC = d.escopos; if (CFG) CFG.escopos = ESC; escRender(); nota('Catálogo de escopos salvo'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
+  // logo e fonte da marca nos documentos
+  async function _logoDataUrl() { try { const b = await (await fetch('/logo-atlantyx-escuro.png')).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
   async function baixarPdf() {
     lerForm(); lerDoc(); const d = PROP.documento; if (!d) return nota('Redija a proposta antes', 'error');
-    try { const pdfMake = await window._carregarPdfMake();
-      const content = [{ text: 'ATLANTYX', color: '#00708A', bold: true, fontSize: 10, characterSpacing: 2 }, { text: d.titulo || PROP.titulo, fontSize: 18, bold: true, margin: [0, 6, 0, 2] },
-        { text: `${PROP.cliente}${PROP.contato ? ' · ' + PROP.contato : ''} · ${PROP.numero || 'rascunho'} · ${new Date().toLocaleDateString('pt-BR')}`, color: '#555', fontSize: 9, margin: [0, 0, 0, 14] }];
-      (d.secoes || []).forEach(s => { content.push({ text: s.titulo, fontSize: 12.5, bold: true, color: '#0F2660', margin: [0, 10, 0, 4] }); content.push(...docMarkdownParaPdf(s.conteudo)); });
-      if ((d.tabela_investimento || []).length) content.push({ margin: [0, 10, 0, 0], table: { widths: ['*', 'auto'], body: [[{ text: 'Investimento', bold: true }, { text: 'Valor', bold: true }], ...d.tabela_investimento.map(t => [t.item, t.valor])] }, layout: 'lightHorizontalLines' });
-      content.push({ text: `Validade da proposta: ${d.validade_dias || 30} dias.`, fontSize: 8.5, color: '#777', margin: [0, 14, 0, 0] });
-      pdfMake.createPdf({ content, defaultStyle: { fontSize: 10, lineHeight: 1.25 }, pageMargins: [48, 48, 48, 48], footer: (p, t) => ({ text: `Atlantyx · ${p}/${t}`, alignment: 'right', fontSize: 8, color: '#999', margin: [0, 0, 40, 0] }) }).download(`Proposta_${(PROP.cliente || 'cliente').replace(/\W+/g, '_')}_${PROP.numero || 'rascunho'}.pdf`);
+    try { const pdfMake = await window._carregarPdfMake(); const logo = await _logoDataUrl();
+      // v3.365: Montserrat (fonte da marca) servida pelo próprio sistema; se falhar, cai na fonte padrão
+      const base = location.origin + '/fonts/montserrat-latin-';
+      const fontes = { Montserrat: { normal: base + '400-normal.woff', bold: base + '700-normal.woff', italics: base + '400-normal.woff', bolditalics: base + '700-normal.woff' }, Roboto: (pdfMake.fonts || {}).Roboto || { normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf', italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf' } };
+      const tipo = { poc: 'PROVA DE CONCEITO (POC)', piloto: 'PROPOSTA DE PILOTO' }[PROP.dados.tipo_documento] || 'PROPOSTA COMERCIAL';
+      const content = [
+        { columns: [logo ? { image: logo, width: 150 } : { text: 'ATLANTYX.', bold: true, fontSize: 16 }, { text: tipo, alignment: 'right', color: '#00708A', bold: true, fontSize: 9, characterSpacing: 1.5, margin: [0, 8, 0, 0] }] },
+        { canvas: [{ type: 'rect', x: 0, y: 8, w: 499, h: 3, color: '#00C4CC' }] },
+        { text: d.titulo || PROP.titulo, fontSize: 20, bold: true, color: '#0F172A', margin: [0, 16, 0, 4] },
+        { text: `${PROP.cliente}${PROP.contato ? ' · ' + PROP.contato : ''} · ${PROP.numero || 'rascunho'} · ${new Date().toLocaleDateString('pt-BR')}`, color: '#555', fontSize: 9, margin: [0, 0, 0, 16] }];
+      (d.secoes || []).forEach((s, i) => { content.push({ text: (i + 1) + '. ' + s.titulo, fontSize: 13, bold: true, color: '#00708A', margin: [0, 12, 0, 5] }); content.push(...docMarkdownParaPdf(s.conteudo)); });
+      if ((d.tabela_investimento || []).length) content.push({ margin: [0, 12, 0, 0], table: { headerRows: 1, widths: ['*', 'auto'], body: [[{ text: 'Investimento', bold: true, color: '#fff', fillColor: '#0F172A' }, { text: 'Valor', bold: true, color: '#fff', fillColor: '#0F172A' }], ...d.tabela_investimento.map(t => [t.item, { text: t.valor, alignment: 'right' }])] }, layout: 'lightHorizontalLines' });
+      content.push({ text: `Validade da proposta: ${d.validade_dias || 30} dias. Valores com tributos inclusos conforme a legislação vigente na data de emissão de cada nota fiscal.`, fontSize: 8.5, color: '#777', margin: [0, 14, 0, 0] });
+      const def = f => ({ content, defaultStyle: { font: f, fontSize: 10, lineHeight: 1.3, color: '#1f2937' }, pageMargins: [48, 48, 48, 56],
+        footer: (p, t) => ({ columns: [{ text: 'Atlantyx · atlantyx.io', fontSize: 8, color: '#999', margin: [48, 0, 0, 0] }, { text: `${p}/${t}`, alignment: 'right', fontSize: 8, color: '#999', margin: [0, 0, 48, 0] }] }) });
+      const nome = `${PROP.dados.tipo_documento === 'poc' ? 'POC' : 'Proposta'}_${(PROP.cliente || 'cliente').replace(/[^\w]+/g, '_')}_${PROP.numero || 'rascunho'}.pdf`;
+      try { await new Promise((ok, err) => { try { pdfMake.createPdf(def('Montserrat'), null, fontes).getBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome; a.click(); ok(); }); } catch (e) { err(e); } setTimeout(() => err(new Error('tempo')), 15000); }); }
+      catch (_) { pdfMake.createPdf(def('Roboto')).download(nome); }
     } catch (e) { nota('PDF: ' + e.message, 'error'); }
   }
   function baixarWord() {
     lerForm(); lerDoc(); const d = PROP.documento; if (!d) return nota('Redija a proposta antes', 'error');
     const md = t => esc(t).split('\n').map(l => l.trim().startsWith('- ') ? `<li>${l.trim().substring(2)}</li>` : `<p>${l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`).join('').replace(/(<li>.*?<\/li>)+/g, m => `<ul>${m}</ul>`);
-    const html = `<html><head><meta charset="utf-8"><style>body{font-family:Calibri,Arial;font-size:11pt}h1{color:#0F2660}h2{color:#00708A;font-size:13pt;margin-top:16pt}td{border-bottom:1px solid #ddd;padding:4px 8px}</style></head><body>
-      <div style="color:#00708A;font-weight:bold;letter-spacing:2px;">ATLANTYX</div><h1>${esc(d.titulo || PROP.titulo)}</h1><p style="color:#555">${esc(PROP.cliente)}${PROP.contato ? ' · ' + esc(PROP.contato) : ''} · ${esc(PROP.numero || 'rascunho')} · ${new Date().toLocaleDateString('pt-BR')}</p>
+    const html = `<html><head><meta charset="utf-8"><style>body{font-family:Montserrat,Calibri,Arial;font-size:10.5pt;color:#1f2937}h1{color:#0F172A}h2{color:#00708A;font-size:13pt;margin-top:16pt}td{border-bottom:1px solid #ddd;padding:4px 8px}</style></head><body>
+      <img src="${location.origin}/logo-atlantyx-escuro.png" width="180" alt="Atlantyx"/><div style="border-top:3px solid #00C4CC;margin:6px 0 10px;"></div><h1>${esc(d.titulo || PROP.titulo)}</h1><p style="color:#555">${esc(PROP.cliente)}${PROP.contato ? ' · ' + esc(PROP.contato) : ''} · ${esc(PROP.numero || 'rascunho')} · ${new Date().toLocaleDateString('pt-BR')}</p>
       ${(d.secoes || []).map(s => `<h2>${esc(s.titulo)}</h2>${md(s.conteudo)}`).join('')}
       ${(d.tabela_investimento || []).length ? `<h2>Investimento</h2><table>${d.tabela_investimento.map(t => `<tr><td>${esc(t.item)}</td><td style="text-align:right">${esc(t.valor)}</td></tr>`).join('')}</table>` : ''}<p style="color:#777;font-size:9pt">Validade: ${d.validade_dias || 30} dias.</p></body></html>`;
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })); a.download = `Proposta_${(PROP.cliente || 'cliente').replace(/\W+/g, '_')}_${PROP.numero || 'rascunho'}.doc`; document.body.appendChild(a); a.click(); a.remove();
@@ -590,8 +665,17 @@
           ${campo('vpp_imp', 'Impostos s/ faturamento (%)', p.impostos_pct, 'Origem: ' + (CFG?.imposto_origem || ''))}${campo('vpp_ovh', 'Overhead (%)', p.overhead_pct)}${campo('vpp_mmin', 'Margem mínima (%)', p.margem_min_pct)}${campo('vpp_malvo', 'Margem alvo (%)', p.margem_alvo_pct)}
           ${campo('vpp_desc', 'Desconto recorrente ≥12m (%)', p.desconto_recorrente_pct)}${campo('vpp_cb', 'Contingência risco baixo (%)', p.contingencia?.baixo)}${campo('vpp_cm', 'Contingência médio (%)', p.contingencia?.medio)}${campo('vpp_ca', 'Contingência alto (%)', p.contingencia?.alto)}
           ${campo('vpp_rec', 'Prazo de recebimento (dias)', p.prazo_recebimento_dias)}${campo('vpp_mrec', 'Meta de receita recorrente (%)', p.meta_recorrente_pct)}${campo('vpp_setup', 'Setup no híbrido (%)', p.setup_pct)}</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:8px;">Impostos: ${esc(CFG?.imposto_origem || '')}. As metas (anual/mensal) vêm do Dashboard; a receita realizada, do QuickBooks; o pipeline, do HubSpot.</div></div></div>`;
-    renderRC();
+        <div style="font-size:11px;font-weight:700;margin:12px 0 6px;">Impostos por ano de emissão da nota · inflação · POC · concorrência</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          ${campo('vpp_i26', 'Impostos 2026 (%)', (p.impostos_por_ano || {})['2026'], 'Lucro Presumido: PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88')}${campo('vpp_i27', 'Impostos 2027 (%)', (p.impostos_por_ano || {})['2027'], 'CBS+IBS 11,3% (TCU, a confirmar pelo Senado até 15/12) + ISS 5 + IRPJ 4,8 + CSLL 2,88')}${campo('vpp_cred', 'Créditos de CBS a partir de 2027 (pontos %)', p.creditos_cbs_pct, 'CBS paga em nuvem, software, equipamentos, aluguel e PJ abate a devida — estime com o contador')}
+          ${campo('vpp_infl', 'Inflação projetada (IPCA %/ano)', p.inflacao_anual_pct, 'Focus: IPCA 2027 4,34%')}${campo('vpp_diss', 'Dissídio acima da inflação (%)', p.dissidio_extra_pct)}
+          ${campo('vpp_mpoc', 'Margem da POC (%)', p.margem_poc_pct, 'POC é porta de entrada: margem menor')}${campo('vpp_cpoc', 'Crédito da POC no contrato (dias)', p.poc_credito_dias)}
+          ${campo('vpp_tol', 'Tolerância acima do concorrente (%)', p.tolerancia_concorrente_pct, 'Acima disso, sugere desconto')}${campo('vpp_prem', 'Prêmio aceito sobre o concorrente (%)', p.premio_qualidade_pct, 'Desconto sugerido leva o preço até concorrente + este prêmio, nunca abaixo do piso')}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:6px;line-height:1.5;">${esc(CFG?.impostos_fonte || '')}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:8px;">Impostos: ${esc(CFG?.imposto_origem || '')}. As metas (anual/mensal) vêm do Dashboard; a receita realizada, do QuickBooks; o pipeline, do HubSpot.</div></div></div>
+      <div class="panel"><div class="ph"><div class="pt">📦 Catálogo de escopos de produto</div><div style="display:flex;gap:6px;"><button class="btn btn-g" style="font-size:10px;" onclick="VD.escNovo()">+ produto</button><button class="btn btn-p" style="font-size:10px;" onclick="VD.escSalvar()">💾 Salvar catálogo</button></div></div>
+        <div class="pb"><div style="font-size:10px;color:var(--t3);margin-bottom:8px;">O escopo padrão de cada produto. Na proposta, "Escopo de um produto" adapta este texto ao cliente (e à POC) e você edita antes de gerar.</div><div id="vdEscLista"></div></div></div>`;
+    renderRC(); ESC = (CFG && CFG.escopos) || []; escRender();
   }
   function renderRC() { $('vdRC').innerHTML = RC.map((x, i) => `<tr>${['perfil', 'senioridade', 'custo_hora', 'preco_piso', 'preco_alvo', 'preco_teto'].map(k => `<td><input class="fi" data-k="${k}" value="${esc(x[k] ?? '')}"/></td>`).join('')}<td style="font-size:9.5px;color:var(--t3);">${esc(x.fonte || x.custo_fonte || '')}${x.preco_observado ? '<br>praticado: R$ ' + x.preco_observado : ''}</td><td><a href="javascript:void(0)" onclick="this.closest('tr').remove()" style="color:var(--red);">✕</a></td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--t3);padding:14px;">Rate card vazio — importe sua planilha ou clique em Sugerir.</td></tr>'; }
   function lerRC() { return [...document.querySelectorAll('#vdRC tr')].map(tr => { const o = {}; tr.querySelectorAll('[data-k]').forEach(e => o[e.dataset.k] = e.value.trim()); return o; }).filter(x => x.perfil); }
@@ -602,6 +686,8 @@
   async function paramsSalvar() {
     const g = id => { const v = $(id).value; return v === '' ? undefined : +String(v).replace(',', '.'); };
     const params = { impostos_pct: g('vpp_imp'), overhead_pct: g('vpp_ovh'), margem_min_pct: g('vpp_mmin'), margem_alvo_pct: g('vpp_malvo'), desconto_recorrente_pct: g('vpp_desc'), contingencia: { baixo: g('vpp_cb'), medio: g('vpp_cm'), alto: g('vpp_ca') }, prazo_recebimento_dias: g('vpp_rec'), meta_recorrente_pct: g('vpp_mrec'), setup_pct: g('vpp_setup') };
+    Object.assign(params, { impostos_por_ano: { '2026': g('vpp_i26'), '2027': g('vpp_i27') }, creditos_cbs_pct: g('vpp_cred'), inflacao_anual_pct: g('vpp_infl'), dissidio_extra_pct: g('vpp_diss'), margem_poc_pct: g('vpp_mpoc'), poc_credito_dias: g('vpp_cpoc'), tolerancia_concorrente_pct: g('vpp_tol'), premio_qualidade_pct: g('vpp_prem') }); // v3.365
+    Object.keys(params.impostos_por_ano).forEach(k => params.impostos_por_ano[k] == null && delete params.impostos_por_ano[k]);
     if (params.margem_min_pct > params.margem_alvo_pct) return nota('A margem mínima não pode ser maior que a alvo', 'error');
     try { CFG = await api('prop_config_salvar', { params }); nota('Parâmetros salvos'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
@@ -702,5 +788,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar };
 })();
