@@ -12,6 +12,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 //   painel (metas, quantas vendas faltam, funil, margens x benchmarks, cobranças) / coach (IA) /
 //   estrategia_salvar / estrategia_listar / estrategia_sugerir / premissas / premissas_salvar
 import { calcularFormatos, PARAMS_PADRAO, FORMATOS } from '../lib/proposta-calc.js';
+import { lerPlanoVigente, planoInicial } from '../lib/plano-estrategico.js';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 let _sql = null;
@@ -482,6 +483,30 @@ async function escoposSalvar({ lista } = {}) {
     .map(x => ({ id: x.id || novoId('esc'), nome: String(x.nome).trim().substring(0, 80), resumo: String(x.resumo || '').substring(0, 400), escopo: String(x.escopo || '').substring(0, 20000), atualizado_em: new Date().toISOString() }));
   await cfgSet('propostas_escopos_produto', l); return { escopos: l };
 }
+// v3.381 · cadastra no catálogo os produtos Atlantyx a partir do que o sistema já sabe deles:
+// alavancas de PRODUTO do plano estratégico (oferta, público, dor, prova, ticket), contexto de negócio do cadastro de QA
+// (sem credenciais) e o modelo de subscrição. A IA escreve o escopo padrão; sem IA, sai um esqueleto para completar.
+async function escoposImportarProdutos({ so } = {}) {
+  const atual = await escoposProduto(), chave = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/^atlantyx\s+/, '').split(/[\s—–-]+/)[0];
+  let plano = null; try { plano = await lerPlanoVigente(kvGet); } catch (_) {} if (!plano?.alavancas) plano = planoInicial();
+  const prods = (plano.alavancas || []).filter(a => a.grupo === 'produto' || a.tipo === 'produto' || a[2] === 'produto');
+  let qa = []; try { const sql = await getSql(); qa = await sql`SELECT nome, url, contexto FROM qa_produtos WHERE COALESCE(ativo, true)`; } catch (_) {}
+  const faltam = prods.filter(a => !atual.some(x => chave(x.nome) === chave(a.nome))).filter(a => !so || chave(a.nome) === chave(so));
+  if (!faltam.length) return { escopos: atual, criados: [], aviso: 'Os produtos do plano estratégico já estão no catálogo' };
+  const ctx = faltam.map(a => { const q = qa.find(x => chave(x.nome) === chave(a.nome)); return { nome: a.nome, oferta: a.oferta, publico: a.publico, dor: a.dor, prova: a.prova, ticket_anual: a.ticket_anual, recorrente: a.recorrente, contexto_do_sistema: q?.contexto ? String(q.contexto).substring(0, 3000) : undefined, url: q?.url }; });
+  const { params, instrucoes } = await propConfig();
+  let gerados = [];
+  try {
+    const r = json(await claude('Você é gerente de produto da Atlantyx (dados, BI e IA). Escreva o ESCOPO PADRÃO de cada produto para o catálogo de propostas. Português do Brasil, markdown simples (### subtítulos, - marcadores). Use só o que foi informado; o que não souber, deixe [a confirmar]. Responda APENAS JSON.',
+      `PRODUTOS:\n${JSON.stringify(ctx)}\n\nMODELO COMERCIAL DOS PRODUTOS ATLANTYX: subscrição — o sistema não é do cliente; suporte técnico e evolução de versão inclusos; a subscrição cobre infraestrutura e profissionais dedicados; sustentação anual de 22% do custo do produto.\nPOC padrão: ${params.poc_semanas_padrao || 6} semanas; cliente Atlantyx sem custo; demais com crédito no contrato em ${params.poc_credito_dias || 60} dias.\n${instrucoes ? 'INSTRUÇÕES DO DONO: ' + String(instrucoes).substring(0, 1500) + '\n' : ''}
+Para cada produto devolva {"nome":"nome comercial curto","resumo":"1 linha","escopo":"### Objetivo\\n...\\n### Público e dor que resolve\\n...\\n### Módulos e funcionalidades\\n- ...\\n### Implantação (fases e prazo típico)\\n- ...\\n### Integrações\\n- ...\\n### Entregáveis\\n- ...\\n### Dentro do escopo\\n- ...\\n### Fora do escopo\\n- ...\\n### Modelo comercial (subscrição) e suporte\\n- ...\\n### Premissas\\n- ...\\n### Responsabilidades do cliente\\n- ...\\n### POC sugerida (6 semanas)\\n- ..."}
+Devolva {"produtos":[...]}`, 6000, 90000));
+    gerados = (r.produtos || []).filter(x => x && x.nome && x.escopo);
+  } catch (e) { gerados = []; }
+  if (!gerados.length) gerados = ctx.map(a => ({ nome: a.nome.split(' — ')[0], resumo: a.nome.split(' — ')[1] || a.oferta || '', escopo: `### Objetivo\n${a.nome}\n\n### Público e dor que resolve\n- Público: ${a.publico || '[a confirmar]'}\n- Dor: ${a.dor || '[a confirmar]'}\n\n### Oferta de entrada\n- ${a.oferta || '[a confirmar]'}\n\n### Prova\n- ${a.prova || '[a confirmar]'}\n\n### Módulos e funcionalidades\n- [a confirmar]\n\n### Modelo comercial (subscrição) e suporte\n- Subscrição: o sistema não é do cliente; suporte técnico e evolução de versão inclusos\n- Sustentação anual: 22% do custo do produto\n\n### POC sugerida (${params.poc_semanas_padrao || 6} semanas)\n- [a confirmar]` }));
+  const lista = [...atual, ...gerados.map(g => ({ nome: g.nome, resumo: g.resumo, escopo: g.escopo }))];
+  const r2 = await escoposSalvar({ lista }); return { escopos: r2.escopos, criados: gerados.map(g => g.nome) };
+}
 async function escopoExtrair({ nome, base64 } = {}) {
   const arq = await textoDoArquivo(nome, base64);
   const pedido = 'Este documento descreve o ESCOPO de um trabalho. Reescreva o escopo em português, em markdown simples (títulos curtos e listas com -): objetivo, entregáveis, dentro do escopo, fora do escopo, premissas, volumes e prazos citados. Não invente nada que não esteja no documento.';
@@ -746,6 +771,7 @@ async function handler(req, res) {
     escopo_extrair: () => escopoExtrair(payload),
     escopo_gerar: () => escopoGerar(payload),
     escopo_briefing: () => escopoBriefing(payload),
+    escopos_importar_produtos: () => escoposImportarProdutos(payload),
     escopo_complementar: () => escopoComplementar(payload), // v3.366
     apresentacao_gerar: () => apresentacaoGerar(payload),
     padrao: () => padrao({}),
