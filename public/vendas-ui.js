@@ -637,6 +637,24 @@
     return _pptProm;
   }
   async function _imgData(url) { try { const b = await (await fetch(url)).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
+  function _pptFundos() {
+    const cv = document.createElement('canvas'); cv.width = 1920; cv.height = 1080; const g = cv.getContext('2d');
+    let sem = 7; const rnd = () => (sem = (sem * 16807) % 2147483647) / 2147483647;
+    const glow = (x, y, r, cor, a) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${cor},${a})`); gr.addColorStop(1, `rgba(${cor},0)`); g.fillStyle = gr; g.fillRect(0, 0, 1920, 1080); };
+    const rede = (x0, x1, y0, y1, n, cor, a) => { const pts = Array.from({ length: n }, () => [x0 + rnd() * (x1 - x0), y0 + rnd() * (y1 - y0)]);
+      g.lineWidth = 1; pts.forEach((p, i) => pts.slice(i + 1).forEach(q => { const d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < 190) { g.strokeStyle = `rgba(${cor},${a * (1 - d / 190)})`; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke(); } }));
+      pts.forEach(p => { g.fillStyle = `rgba(${cor},${a * 1.6})`; g.beginPath(); g.arc(p[0], p[1], 2.2 + rnd() * 2, 0, 7); g.fill(); }); };
+    const escuro = (fx) => { const lg = g.createLinearGradient(0, 0, 1920, 1080); lg.addColorStop(0, '#0B1220'); lg.addColorStop(0.6, '#0D1E2E'); lg.addColorStop(1, '#0A2E3A'); g.fillStyle = lg; g.fillRect(0, 0, 1920, 1080);
+      glow(1650, 180, 820, '0,196,204', 0.30); glow(250, 1050, 700, '0,112,138', 0.35); glow(1500, 900, 420, '0,252,168', 0.08); fx && fx();
+      g.strokeStyle = 'rgba(255,255,255,0.035)'; g.lineWidth = 1; for (let x = 0; x < 1920; x += 60) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 1080); g.stroke(); } for (let y = 0; y < 1080; y += 60) { g.beginPath(); g.moveTo(0, y); g.lineTo(1920, y); g.stroke(); } };
+    const out = {};
+    escuro(() => rede(1080, 1900, 60, 1020, 70, '0,196,204', 0.55)); out.capa = cv.toDataURL('image/png');
+    sem = 11; escuro(() => rede(40, 820, 600, 1060, 40, '0,196,204', 0.35)); out.secao = cv.toDataURL('image/png');
+    const lg = g.createLinearGradient(0, 0, 1920, 1080); lg.addColorStop(0, '#FFFFFF'); lg.addColorStop(1, '#EEF6F9'); g.fillStyle = lg; g.fillRect(0, 0, 1920, 1080);
+    glow(1920, 0, 760, '0,196,204', 0.16); glow(0, 1080, 520, '0,112,138', 0.07); sem = 23; rede(1500, 1910, 10, 330, 26, '0,112,138', 0.28);
+    g.fillStyle = '#00C4CC'; g.fillRect(0, 1062, 1920, 18); g.fillStyle = '#00708A'; g.fillRect(0, 1062, 520, 18); out.conteudo = cv.toDataURL('image/png');
+    return out;
+  }
   async function gerarApresentacao() {
     lerForm(); lerDoc(); if (!PROP.cliente) return nota('Informe o cliente', 'error');
     if ((PROP.dados.escopo || '').length < 30) { if ((PROP.dados.briefing || '').length >= 20) { if (!(await escopoBriefing(true))) return; } else return nota('Escreva o briefing ou o escopo antes', 'error'); }
@@ -646,55 +664,105 @@
       const [{ apresentacao: A }, Pptx, logoEsc, logoBr] = await Promise.all([api('apresentacao_gerar', { proposta: PROP }, 100000), _carregarPptx(), _imgData('/logo-atlantyx-escuro.png'), _imgData('/logo-atlantyx-branco.png')]);
       PROP.dados.apresentacao = A;
       const pptx = new Pptx(); pptx.layout = 'LAYOUT_WIDE'; pptx.author = 'Atlantyx'; pptx.company = 'Atlantyx'; pptx.title = A.titulo || PROP.titulo;
-      const F = 'Montserrat', ESCURO = '0B1220', TXT = '1F2937', PETROLEO = '00708A', CIANO = '00C4CC', VERDE = '00FCA8', CINZA = '6B7280';
-      pptx.defineSlideMaster({ title: 'ATX', background: { color: 'FFFFFF' }, objects: [
-        ...(logoEsc ? [{ image: { data: logoEsc, x: 0.5, y: 0.32, w: 1.9, h: 0.37 } }] : []),
-        { rect: { x: 0, y: 7.38, w: 13.33, h: 0.12, fill: { color: CIANO } } },
-        { text: { text: 'Atlantyx · atlantyx.io', options: { x: 0.5, y: 6.95, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: CINZA } } }],
-        slideNumber: { x: 12.3, y: 6.95, w: 0.6, h: 0.3, fontFace: F, fontSize: 9, color: CINZA } });
-      const titulo = (sl, t) => sl.addText(t, { x: 0.5, y: 0.95, w: 12.3, h: 0.8, fontFace: F, fontSize: 26, bold: true, color: ESCURO });
+      const F = 'Montserrat', ESCURO = '0B1220', TXT = '1F2937', PETROLEO = '00708A', CIANO = '00C4CC', VERDE = '00FCA8', CINZA = '6B7280', CLARO = 'F3F8FA';
+      const BG = _pptFundos(); // fundos desenhados em canvas (gradiente + rede de pontos), embutidos como imagem
+      const W = 13.333, H = 7.5;
+      const KICK = { contexto: 'CONTEXTO', desafio: 'O DESAFIO', solucao: 'A SOLUÇÃO', como_funciona: 'COMO FUNCIONA', escopo: 'ESCOPO', complementar: 'ESCOPO COMPLEMENTAR', resultados: 'RESULTADOS ESPERADOS', equipe: 'EQUIPE', riscos: 'RISCOS E MITIGAÇÃO', proximos_passos: 'PRÓXIMOS PASSOS', cronograma: 'CRONOGRAMA', investimento: 'INVESTIMENTO' };
+      pptx.defineSlideMaster({ title: 'ATX', background: { data: BG.conteudo }, objects: [
+        ...(logoEsc ? [{ image: { data: logoEsc, x: W - 2.35, y: 0.38, w: 1.75, h: 0.343 } }] : []),
+        { text: { text: 'atlantyx.io', options: { x: 0.6, y: 6.98, w: 4, h: 0.3, fontFace: F, fontSize: 9, color: CINZA } } }],
+        slideNumber: { x: W - 1.1, y: 6.98, w: 0.6, h: 0.3, fontFace: F, fontSize: 9, color: CINZA, align: 'right' } });
+      const cab = (sl, tipo, t) => { sl.addText(KICK[tipo] || String(tipo || '').toUpperCase(), { x: 0.6, y: 0.42, w: 8, h: 0.3, fontFace: F, fontSize: 10, bold: true, color: PETROLEO, charSpacing: 3 });
+        sl.addText(t || '', { x: 0.6, y: 0.72, w: W - 3.4, h: 0.85, fontFace: F, fontSize: 26, bold: true, color: ESCURO, fit: 'shrink', valign: 'top' });
+        sl.addShape(pptx.ShapeType.rect, { x: 0.6, y: 1.6, w: 0.9, h: 0.06, fill: { color: CIANO }, line: { type: 'none' } }); };
+      // layouts
+      const lCards = (sl, pts, cor) => { const n = pts.length, cols = n <= 3 ? n : n === 4 ? 2 : 3, rows = Math.ceil(n / cols), gx = 0.3, gy = 0.3, x0 = 0.6, w = (W - 1.2 - gx * (cols - 1)) / cols, h = Math.min(rows === 1 ? 3.0 : 2.3, (4.7 - gy * (rows - 1)) / rows), y0 = 2.0 + Math.max(0, (4.7 - rows * h - gy * (rows - 1)) / 2);
+        pts.forEach((t, k) => { const x = x0 + (k % cols) * (w + gx), y = y0 + Math.floor(k / cols) * (h + gy);
+          sl.addShape(pptx.ShapeType.roundRect, { x, y, w, h, rectRadius: 0.12, fill: { color: 'FFFFFF' }, line: { color: 'DCE7EC', width: 0.75 }, shadow: { type: 'outer', color: '0B1220', opacity: 0.08, blur: 8, offset: 2, angle: 90 } });
+          sl.addShape(pptx.ShapeType.rect, { x, y: y + 0.18, w: 0.07, h: h - 0.36, fill: { color: cor || (k % 2 ? PETROLEO : CIANO) }, line: { type: 'none' } });
+          sl.addText(String(k + 1).padStart(2, '0'), { x: x + 0.3, y: y + 0.18, w: 1, h: 0.45, fontFace: F, fontSize: 18, bold: true, color: cor || CIANO });
+          sl.addText(t, { x: x + 0.3, y: y + 0.62, w: w - 0.55, h: h - 0.8, fontFace: F, fontSize: n > 4 ? 15 : n === 4 ? 17 : 19, color: TXT, valign: 'top', fit: 'shrink' }); }); };
+      const lFluxo = (sl, pts) => { const n = pts.length, gx = 0.12, w = (W - 1.2 - gx * (n - 1)) / n, y = 2.8, h = 1.25;
+        pts.forEach((t, k) => { const x = 0.6 + k * (w + gx);
+          sl.addShape(k === 0 ? pptx.ShapeType.homePlate : pptx.ShapeType.chevron, { x, y, w, h, fill: { color: k % 2 ? PETROLEO : '0E8FA3' }, line: { type: 'none' } });
+          sl.addText('ETAPA ' + (k + 1), { x: x + 0.35, y, w: w - 0.6, h, fontFace: F, fontSize: 13, bold: true, color: 'FFFFFF', valign: 'middle', align: 'center' });
+          sl.addText(t, { x, y: y + h + 0.25, w, h: 2.6, fontFace: F, fontSize: n > 4 ? 15 : 17, color: TXT, valign: 'top', align: 'center', fit: 'shrink' }); }); };
+      const lCheck = (sl, pts) => { const cols = pts.length > 4 ? 2 : 1, rows = Math.ceil(pts.length / cols), w = (W - 1.2 - 0.4 * (cols - 1)) / cols, h = Math.min(1.05, 4.6 / rows);
+        pts.forEach((t, k) => { const x = 0.6 + Math.floor(k / rows) * (w + 0.4), y = 2.0 + (k % rows) * h;
+          sl.addShape(pptx.ShapeType.ellipse, { x, y: y + 0.1, w: 0.42, h: 0.42, fill: { color: VERDE }, line: { type: 'none' } });
+          sl.addText('✓', { x, y: y + 0.1, w: 0.42, h: 0.42, fontFace: F, fontSize: 14, bold: true, color: ESCURO, align: 'center', valign: 'middle' });
+          sl.addText(t, { x: x + 0.6, y, w: w - 0.7, h: h - 0.05, fontFace: F, fontSize: cols > 1 ? 16 : 19, color: TXT, valign: 'middle', fit: 'shrink' }); }); };
+      const lRiscos = (sl, pts) => lCards(sl, pts, 'E0A100');
+      const addConteudo = x => { const pts = (x.pontos || []).map(t => String(t).replace(/\.$/, '')).filter(Boolean).slice(0, 6); if (!pts.length) return;
+        const sl = pptx.addSlide({ masterName: 'ATX' }); cab(sl, x.tipo, x.titulo);
+        if ((x.tipo === 'como_funciona' || x.tipo === 'solucao') && pts.length >= 3 && pts.length <= 5) lFluxo(sl, pts);
+        else if (['escopo', 'complementar', 'proximos_passos', 'equipe'].includes(x.tipo)) lCheck(sl, pts);
+        else if (x.tipo === 'riscos') lRiscos(sl, pts); else lCards(sl, pts); };
       // capa
-      const capa = pptx.addSlide(); capa.background = { color: ESCURO };
-      if (logoBr) capa.addImage({ data: logoBr, x: 0.7, y: 0.7, w: 2.6, h: 0.51 });
-      capa.addShape(pptx.ShapeType.rect, { x: 0.7, y: 2.55, w: 1.2, h: 0.08, fill: { color: VERDE } });
-      capa.addText(A.titulo || PROP.titulo || 'Apresentação da solução', { x: 0.7, y: 2.8, w: 11.5, h: 1.4, fontFace: F, fontSize: 38, bold: true, color: 'FFFFFF' });
-      capa.addText(A.subtitulo || '', { x: 0.7, y: 4.2, w: 11.5, h: 0.8, fontFace: F, fontSize: 18, color: CIANO });
-      capa.addText(`${PROP.cliente}${PROP.contato ? ' · ' + PROP.contato : ''} · ${new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`, { x: 0.7, y: 6.3, w: 11.5, h: 0.4, fontFace: F, fontSize: 12, color: 'C9D3E0' });
-      // slides de conteúdo (investimento e cronograma desenhados à parte)
-      const conteudo = (A.slides || []).filter(x => x.tipo !== 'investimento');
+      const capa = pptx.addSlide(); capa.background = { data: BG.capa };
+      if (logoBr) capa.addImage({ data: logoBr, x: 0.8, y: 0.7, w: 2.4, h: 0.47 });
+      capa.addText('APRESENTAÇÃO DA SOLUÇÃO', { x: 0.8, y: 2.3, w: 8, h: 0.35, fontFace: F, fontSize: 12, bold: true, color: VERDE, charSpacing: 4 });
+      capa.addText(A.titulo || PROP.titulo || 'Apresentação da solução', { x: 0.8, y: 2.7, w: 8.6, h: 1.7, fontFace: F, fontSize: 38, bold: true, color: 'FFFFFF', valign: 'top', fit: 'shrink' });
+      capa.addText(A.subtitulo || '', { x: 0.8, y: 4.45, w: 8.6, h: 0.8, fontFace: F, fontSize: 17, color: CIANO, valign: 'top', fit: 'shrink' });
+      capa.addShape(pptx.ShapeType.rect, { x: 0.8, y: 5.75, w: 0.06, h: 0.75, fill: { color: VERDE }, line: { type: 'none' } });
+      capa.addText([{ text: 'Preparado para ' + PROP.cliente, options: { bold: true, color: 'FFFFFF', breakLine: true } }, { text: (PROP.contato ? PROP.contato + ' · ' : '') + new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }), options: { color: 'B8C4D4' } }], { x: 1.0, y: 5.72, w: 8, h: 0.8, fontFace: F, fontSize: 13 });
+      // agenda
+      const conteudo = (A.slides || []).filter(x => x.tipo !== 'investimento' && x.tipo !== 'cronograma');
       const proximos = conteudo.filter(x => x.tipo === 'proximos_passos'), corpo = conteudo.filter(x => x.tipo !== 'proximos_passos');
-      const addPontos = x => { const sl = pptx.addSlide({ masterName: 'ATX' }); titulo(sl, x.titulo || '');
-        sl.addText((x.pontos || []).slice(0, 6).map(t => ({ text: t, options: { bullet: { code: '25A0' }, color: TXT, breakLine: true } })), { x: 0.7, y: 1.95, w: 11.9, h: 4.7, fontFace: F, fontSize: 18, valign: 'top', paraSpaceAfter: 10 }); };
-      corpo.forEach(addPontos);
-      // cronograma (Gantt)
-      const C = (A.cronograma || []).filter(x => x.fase); const M = Math.max(1, Math.round(A.meses || 0), ...C.map(x => +x.mes_fim || 1));
-      if (C.length) { const sl = pptx.addSlide({ masterName: 'ATX' }); titulo(sl, 'Cronograma');
-        const x0 = 3.6, wT = 9.2, cw = wT / M, y0 = 2.05, rh = Math.min(0.62, 4.2 / Math.max(C.length, 1));
-        const mesNome = i => { if (!/^\d{4}-\d{2}$/.test(A.inicio || '')) return 'M' + (i + 1); const [y, m] = A.inicio.split('-').map(Number); const d = new Date(y, m - 1 + i, 1); return d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') + '/' + String(d.getFullYear()).slice(2); };
-        for (let i = 0; i < M; i++) { sl.addShape(pptx.ShapeType.rect, { x: x0 + i * cw, y: y0 - 0.42, w: cw, h: 0.34, fill: { color: i % 2 ? 'EEF6F8' : 'E2F1F4' }, line: { color: 'FFFFFF', width: 1 } });
-          sl.addText(mesNome(i), { x: x0 + i * cw, y: y0 - 0.42, w: cw, h: 0.34, fontFace: F, fontSize: M > 14 ? 7 : 9, bold: true, color: PETROLEO, align: 'center' }); }
-        C.forEach((x, k) => { const y = y0 + k * (rh + 0.12), ini = Math.max(1, +x.mes_inicio || 1), fimM = Math.max(ini, +x.mes_fim || ini);
-          sl.addText(x.fase, { x: 0.5, y, w: 3.0, h: rh, fontFace: F, fontSize: 11, bold: true, color: ESCURO, valign: 'middle' });
-          sl.addShape(pptx.ShapeType.roundRect, { x: x0 + (ini - 1) * cw + 0.03, y: y + 0.06, w: (fimM - ini + 1) * cw - 0.06, h: rh - 0.12, fill: { color: k % 2 ? PETROLEO : CIANO }, rectRadius: 0.08, line: { color: 'FFFFFF', width: 0 } });
-          if (x.entregas) sl.addText(String(x.entregas).substring(0, 70), { x: x0 + (ini - 1) * cw + 0.1, y: y + 0.06, w: Math.max(1.5, (fimM - ini + 1) * cw - 0.2), h: rh - 0.12, fontFace: F, fontSize: 9, color: 'FFFFFF', valign: 'middle' }); });
-        (A.marcos || []).slice(0, 8).forEach(mk => { const i = Math.min(M, Math.max(1, +mk.mes || 1)), xx = x0 + (i - 0.5) * cw, yy = y0 + C.length * (rh + 0.12) + 0.15;
-          sl.addShape(pptx.ShapeType.diamond, { x: xx - 0.11, y: yy, w: 0.22, h: 0.22, fill: { color: VERDE }, line: { color: ESCURO, width: 0.5 } });
-          sl.addText(mk.nome || '', { x: xx - 0.9, y: yy + 0.24, w: 1.8, h: 0.4, fontFace: F, fontSize: 8, color: TXT, align: 'center' }); }); }
+      const C = (A.cronograma || []).filter(x => x && x.fase).slice(0, 10), I = A.investimento;
+      const agenda = [...corpo.map(x => x.titulo), ...(C.length ? ['Cronograma'] : []), ...(I ? ['Investimento'] : []), ...proximos.map(x => x.titulo)].filter(Boolean);
+      if (agenda.length >= 4) { const sl = pptx.addSlide(); sl.background = { data: BG.secao };
+        sl.addText('AGENDA', { x: 0.8, y: 0.8, w: 5, h: 0.4, fontFace: F, fontSize: 12, bold: true, color: VERDE, charSpacing: 4 });
+        sl.addText('O que vamos apresentar', { x: 0.8, y: 1.2, w: 5, h: 1.4, fontFace: F, fontSize: 30, bold: true, color: 'FFFFFF', valign: 'top' });
+        const n = Math.min(agenda.length, 12), col = n > 6 ? 2 : 1, rows = Math.ceil(n / col);
+        agenda.slice(0, 12).forEach((t, k) => { const x = 6.2 + Math.floor(k / rows) * 3.5, y = 1.0 + (k % rows) * Math.min(0.85, 5.4 / rows);
+          sl.addText(String(k + 1).padStart(2, '0'), { x, y, w: 0.7, h: 0.5, fontFace: F, fontSize: 18, bold: true, color: CIANO });
+          sl.addText(t, { x: x + 0.7, y, w: col > 1 ? 2.7 : 5.8, h: 0.5, fontFace: F, fontSize: 14, color: 'FFFFFF', valign: 'middle', fit: 'shrink' }); }); }
+      corpo.forEach(addConteudo);
+      // cronograma (Gantt) — fases à esquerda com as entregas, barras por mês, marcos numa faixa própria
+      if (C.length) { const sl = pptx.addSlide({ masterName: 'ATX' }); cab(sl, 'cronograma', 'Cronograma do projeto');
+        const ints = C.map(x => { let a = Math.round(+x.mes_inicio || 1), b = Math.round(+x.mes_fim || a); a = Math.max(1, a); b = Math.max(a, b); return { ...x, a, b }; });
+        const M = Math.max(1, Math.min(24, Math.max(Math.round(+A.meses || 0), ...ints.map(x => x.b))));
+        ints.forEach(x => { x.a = Math.min(x.a, M); x.b = Math.min(Math.max(x.b, x.a), M); });
+        const mk = (A.marcos || []).filter(m => m && m.nome).slice(0, 6), xL = 0.6, wL = 3.5, x0 = xL + wL + 0.15, wT = W - 0.6 - x0, cw = wT / M, yH = 1.95, hH = 0.42;
+        const yRows = yH + hH + 0.1, alt = 6.75 - yRows - (mk.length ? 0.85 : 0), rh = Math.min(0.62, alt / ints.length);
+        const mesNome = i => { if (!/^\d{4}-\d{2}$/.test(A.inicio || '')) return 'M' + (i + 1); const [y, m] = A.inicio.split('-').map(Number); const d = new Date(y, m - 1 + i, 1); return d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') + (M <= 12 ? '/' + String(d.getFullYear()).slice(2) : ''); };
+        sl.addShape(pptx.ShapeType.roundRect, { x: x0, y: yH, w: wT, h: hH, rectRadius: 0.06, fill: { color: ESCURO }, line: { type: 'none' } });
+        for (let i = 0; i < M; i++) { sl.addText(mesNome(i), { x: x0 + i * cw, y: yH, w: cw, h: hH, fontFace: F, fontSize: M > 16 ? 7 : M > 10 ? 8 : 10, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
+          if (i % 2 === 1) sl.addShape(pptx.ShapeType.rect, { x: x0 + i * cw, y: yRows, w: cw, h: rh * ints.length, fill: { color: 'EEF5F8' }, line: { type: 'none' } }); }
+        ints.forEach((x, k) => { const y = yRows + k * rh;
+          sl.addShape(pptx.ShapeType.line, { x: xL, y: y + rh, w: W - 0.6 - xL, h: 0, line: { color: 'E3EAEE', width: 0.5 } });
+          sl.addText([{ text: String(x.fase).substring(0, 40), options: { bold: true, color: ESCURO, fontSize: rh < 0.45 ? 10 : 11.5, breakLine: !!x.entregas } }, ...(x.entregas ? [{ text: String(x.entregas).substring(0, 60), options: { color: CINZA, fontSize: rh < 0.45 ? 8 : 9 } }] : [])],
+            { x: xL, y, w: wL, h: rh, fontFace: F, valign: 'middle', fit: 'shrink', margin: 2 });
+          const bx = x0 + (x.a - 1) * cw + 0.04, bw = (x.b - x.a + 1) * cw - 0.08, bh = Math.max(0.2, rh * 0.52);
+          sl.addShape(pptx.ShapeType.roundRect, { x: bx, y: y + (rh - bh) / 2, w: bw, h: bh, rectRadius: Math.min(0.1, bh / 2), fill: { color: k % 2 ? PETROLEO : CIANO }, line: { type: 'none' } });
+          if (bw > 0.9) sl.addText((x.b - x.a + 1) + (x.b - x.a ? ' meses' : ' mês'), { x: bx, y: y + (rh - bh) / 2, w: bw, h: bh, fontFace: F, fontSize: 8.5, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' }); });
+        if (mk.length) { const ym = yRows + ints.length * rh + 0.15;
+          sl.addText('Marcos', { x: xL, y: ym, w: wL, h: 0.4, fontFace: F, fontSize: 11, bold: true, color: PETROLEO, valign: 'middle' });
+          sl.addShape(pptx.ShapeType.line, { x: x0, y: ym + 0.2, w: wT, h: 0, line: { color: 'B8C9D1', width: 1, dashType: 'dash' } });
+          mk.forEach((m, k) => { const i = Math.min(M, Math.max(1, Math.round(+m.mes || 1))), cx = x0 + (i - 0.5) * cw;
+            sl.addShape(pptx.ShapeType.diamond, { x: cx - 0.13, y: ym + 0.07, w: 0.26, h: 0.26, fill: { color: VERDE }, line: { color: ESCURO, width: 0.75 } });
+            sl.addText(String(m.nome).substring(0, 28), { x: Math.max(x0 - 0.3, Math.min(W - 0.6 - 1.8, cx - 0.9)), y: ym + (k % 2 ? 0.36 : 0.36), w: 1.8, h: 0.34, fontFace: F, fontSize: 8, color: TXT, align: 'center', valign: 'top', fit: 'shrink' }); }); } }
       // investimento
-      const I = A.investimento;
-      if (I) { const sl = pptx.addSlide({ masterName: 'ATX' }); titulo(sl, 'Investimento');
+      if (I) { const sl = pptx.addSlide({ masterName: 'ATX' }); cab(sl, 'investimento', 'Investimento');
         const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-        sl.addText([{ text: brl(I.valor_total), options: { fontSize: 40, bold: true, color: PETROLEO, breakLine: true } }, { text: I.formato + (I.mensal ? ' · ' + brl(I.mensal) + '/mês em média' : '') + (I.desconto_pct ? ' · condição especial de ' + String(I.desconto_pct).replace('.', ',') + '%' : ''), options: { fontSize: 14, color: TXT } }], { x: 0.7, y: 1.9, w: 11.9, h: 1.4, fontFace: F });
-        const linhas = (I.cronograma || []).slice(0, 10).map(c => [c.desc, /^\d{4}-\d{2}$/.test(c.mes || '') ? new Date(+c.mes.slice(0, 4), +c.mes.slice(5) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('. de ', '/').replace('.', '') : c.mes, brl(c.valor)]);
-        if (linhas.length) sl.addTable([[{ text: 'Faturamento', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO } } }, { text: 'Mês', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO } } }, { text: 'Valor', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO }, align: 'right' } }], ...linhas.map(l => [l[0], l[1], { text: l[2], options: { align: 'right' } }])],
-          { x: 0.7, y: 3.45, w: 11.9, colW: [7.3, 2, 2.6], fontFace: F, fontSize: 11, color: TXT, border: { type: 'solid', color: 'E5E7EB', pt: 0.5 }, rowH: 0.32 });
-        sl.addText('Valores com tributos inclusos conforme a legislação vigente na emissão de cada nota fiscal.', { x: 0.7, y: 6.55, w: 11.9, h: 0.3, fontFace: F, fontSize: 9, color: CINZA }); }
-      proximos.forEach(addPontos);
+        sl.addShape(pptx.ShapeType.roundRect, { x: 0.6, y: 2.0, w: 4.4, h: 4.5, rectRadius: 0.15, fill: { color: ESCURO }, line: { type: 'none' } });
+        sl.addText('INVESTIMENTO TOTAL', { x: 0.9, y: 2.3, w: 3.8, h: 0.3, fontFace: F, fontSize: 10, bold: true, color: VERDE, charSpacing: 3 });
+        sl.addText(brl(I.valor_total), { x: 0.9, y: 2.65, w: 3.9, h: 0.9, fontFace: F, fontSize: 32, bold: true, color: 'FFFFFF', fit: 'shrink' });
+        sl.addText([{ text: I.formato || '', options: { bold: true, color: CIANO, breakLine: true } }, ...(I.mensal ? [{ text: brl(I.mensal) + ' por mês, em média', options: { color: 'C9D3E0', breakLine: true } }] : []), ...(I.desconto_pct ? [{ text: 'Condição especial de ' + String(I.desconto_pct).replace('.', ',') + '%', options: { color: VERDE } }] : [])],
+          { x: 0.9, y: 3.7, w: 3.8, h: 1.4, fontFace: F, fontSize: 13, valign: 'top', paraSpaceAfter: 6 });
+        sl.addText('Tributos inclusos conforme a legislação vigente na emissão de cada nota fiscal.', { x: 0.9, y: 5.6, w: 3.8, h: 0.7, fontFace: F, fontSize: 9, color: '8A99AD', valign: 'bottom' });
+        const fmtMes = m => /^\d{4}-\d{2}$/.test(m || '') ? new Date(+m.slice(0, 4), +m.slice(5) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('. de ', '/').replace('.', '') : (m || '');
+        const linhas = (I.cronograma || []).slice(0, 12), hd = o => ({ bold: true, color: 'FFFFFF', fill: { color: PETROLEO }, ...o });
+        sl.addText('Cronograma de faturamento', { x: 5.4, y: 2.0, w: 7.3, h: 0.4, fontFace: F, fontSize: 14, bold: true, color: ESCURO });
+        if (linhas.length) sl.addTable([[{ text: 'Parcela', options: hd() }, { text: 'Mês', options: hd() }, { text: 'Valor', options: hd({ align: 'right' }) }], ...linhas.map((c, k) => [{ text: c.desc || '', options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: fmtMes(c.mes), options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: brl(c.valor), options: { align: 'right', bold: true, fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }])],
+          { x: 5.4, y: 2.5, w: 7.33, colW: [3.9, 1.6, 1.83], fontFace: F, fontSize: linhas.length > 8 ? 9 : 11, color: TXT, border: { type: 'solid', color: 'E3EAEE', pt: 0.5 }, rowH: Math.min(0.36, 3.9 / (linhas.length + 1)), valign: 'middle' }); }
+      proximos.forEach(addConteudo);
       // encerramento
-      const fimS = pptx.addSlide(); fimS.background = { color: ESCURO };
-      if (logoBr) fimS.addImage({ data: logoBr, x: 4.9, y: 2.6, w: 3.5, h: 0.69 });
-      fimS.addText('Obrigado', { x: 0, y: 3.7, w: 13.33, h: 0.8, fontFace: F, fontSize: 28, bold: true, color: 'FFFFFF', align: 'center' });
-      fimS.addText('atlantyx.io', { x: 0, y: 4.5, w: 13.33, h: 0.5, fontFace: F, fontSize: 14, color: CIANO, align: 'center' });
+      const fimS = pptx.addSlide(); fimS.background = { data: BG.capa };
+      if (logoBr) fimS.addImage({ data: logoBr, x: (W - 3.4) / 2, y: 2.4, w: 3.4, h: 0.667 });
+      fimS.addText('Obrigado', { x: 0, y: 3.45, w: W, h: 0.8, fontFace: F, fontSize: 32, bold: true, color: 'FFFFFF', align: 'center' });
+      fimS.addText('Dados, BI e Inteligência Artificial para decisões melhores · atlantyx.io', { x: 0, y: 4.25, w: W, h: 0.5, fontFace: F, fontSize: 13, color: CIANO, align: 'center' });
       await pptx.writeFile({ fileName: `Apresentacao_${(PROP.cliente || 'cliente').replace(/[^\w]+/g, '_')}_${PROP.numero || 'rascunho'}.pptx` });
       nota('Apresentação gerada — salve a proposta para guardar o conteúdo');
     } catch (e) { nota('Apresentação: ' + e.message, 'error'); } fim();
