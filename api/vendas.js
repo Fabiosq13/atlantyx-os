@@ -402,9 +402,8 @@ async function redigir({ proposta, formato } = {}) {
   const SECOES_POC = [{ titulo: 'Contexto e objetivo da POC' }, { titulo: 'Hipóteses e critérios de sucesso' }, { titulo: 'Escopo da POC (dentro e fora)' }, { titulo: 'Período, fases e checkpoints' },
     { titulo: 'Ambiente, dados e LGPD' }, { titulo: 'Responsabilidades (Atlantyx e cliente)' }, { titulo: 'Entregáveis e decisão go/no-go' }, { titulo: 'Investimento e crédito no contrato' }, { titulo: 'Próximos passos: da POC ao projeto' }, { titulo: 'Por que a Atlantyx' }];
   const secoesPadrao = tipoDoc === 'poc' ? SECOES_POC : pd.padrao?.secoes?.length ? pd.padrao.secoes : [{ titulo: 'Contexto e objetivo' }, { titulo: 'Escopo e entregáveis' }, { titulo: 'Abordagem e metodologia' }, { titulo: 'Equipe e responsabilidades' }, { titulo: 'Cronograma' }, { titulo: 'Investimento e condições comerciais' }, { titulo: 'Premissas e exclusões' }, { titulo: 'Por que a Atlantyx' }];
-  const sys = `Você redige propostas comerciais da Atlantyx (consultoria de dados, BI, engenharia de dados e IA — 17 anos, clientes como CPFL Energia, Enel, Caixa Capitalização). Português do Brasil, tom executivo e objetivo. Siga EXATAMENTE as seções do padrão. Nunca invente números: use só os fornecidos. Faturamento conforme o cronograma, com vencimento em 35 dias corridos da emissão da nota fiscal (salvo instrução diferente). Responda APENAS JSON.`;
+  const sys = `Você redige propostas comerciais da Atlantyx (consultoria de dados, BI, engenharia de dados e IA — 17 anos, clientes como CPFL Energia, Enel, Caixa Capitalização). Português do Brasil, tom executivo e objetivo. Siga o MODELO OFICIAL de capítulos da Atlantyx (o padrão aprendido serve só de referência de tom e conteúdo). Nunca invente números: use só os fornecidos. Faturamento conforme o cronograma, com vencimento em 35 dias corridos da emissão da nota fiscal (salvo instrução diferente). Responda APENAS JSON.`;
   const usr = `${instrucoes ? 'INSTRUÇÕES DO DONO (prioridade máxima):\n' + instrucoes.substring(0, 5000) + '\n\n' : ''}PADRÃO APRENDIDO: ${JSON.stringify(pd.padrao || {}).substring(0, 6000)}
-SEÇÕES (nesta ordem): ${JSON.stringify(secoesPadrao.map(s => s.titulo))}
 CLIENTE: ${pr.cliente || ''} | CONTATO: ${pr.contato || ''} | TÍTULO: ${pr.titulo || ''}
 ESCOPO: ${String(pr.dados?.escopo || '').substring(0, 5000)}
 ESTIMATIVA: ${JSON.stringify({ perfis: pr.dados?.perfis, premissas: pr.dados?.estimativa?.premissas, entregaveis: pr.dados?.estimativa?.entregaveis, fases: pr.dados?.estimativa?.fases }).substring(0, 4000)}
@@ -419,11 +418,47 @@ ${(() => { const K = pr.dados?.crono; const fis = K?.fases?.length ? 'CRONOGRAMA
   if (K?.pagamento === 'marcos' && K.marcos?.length) return fis + 'CRONOGRAMA FINANCEIRO POR MARCOS (pagamento atrelado à entrega; os percentuais somam 100%; use exatamente): ' + JSON.stringify(K.marcos.map(m => ({ marco: m.nome, vinculado_a: m.ref || undefined, quando: (K.unidade === 'semanas' ? 'semana ' : 'mês ') + m.quando, percentual: m.pct + '%', valor: Math.round(f.valor_total * m.pct / 100) })));
   return fis + 'CRONOGRAMA DE FATURAMENTO: ' + JSON.stringify(f.cronograma.map(c => ({ mes: c.mes, valor: c.valor, desc: c.desc }))); })()}
 MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronograma e as obrigações típicas do cliente (acesso a dados e sistemas, ponto focal, decisor, usuários-chave, homologação, infraestrutura/ambientes, aprovação dos gates${tipoDoc === 'poc' ? ', critérios de sucesso e decisão go/no-go' : ''}); use RACI: R = executa, A = aprova/responde, C = consultado, I = informado; cada linha com uma letra para Atlantyx e uma para o cliente. Inclua também uma seção curta "Responsabilidades" no texto explicando a matriz.
-Devolva {"titulo":"","secoes":[{"titulo":"","conteudo":"texto em markdown simples (listas com -)"}],"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}],"tabela_investimento":[{"item":"","valor":""}],"validade_dias":30}`;
-  const doc = json(await claude(sys, usr, 4000, 85000));
+`;
+  // v3.379: capítulos fixos do MODELO OFICIAL Atlantyx (arquivos-padrão de Proposta Técnica e Técnica-Comercial);
+  // dois pedidos em paralelo (parte técnica e parte comercial) para caber no tempo; tabelas (dados, investimento, rate card,
+  // cronograma físico-financeiro, matriz e assinaturas) são montadas pelo sistema, não pela IA.
+  const G = {
+    carta: 'Carta de apresentação SEM valores: comece com "Rio de Janeiro, [data por extenso]." numa linha, depois "À [cliente]" e a área solicitante em linhas separadas, "Prezados Senhores," e 3 a 5 parágrafos (o que é proposto, base/origem da demanda, abordagem, experiência relevante da Atlantyx); chame o documento de {{TIPO_DOC}}; termine em "Atenciosamente," (a assinatura é inserida pelo sistema).',
+    apresentacao: 'Apresentação da Atlanteam Soluções em TI (marca Atlantyx): 2 a 3 parágrafos (17 anos, dados, BI, engenharia de dados, IA e automação) e a subseção "2.1 Cases de Referência" em marcadores — só cases citados nas instruções/padrão aprendido; se não houver, descreva tipos de projeto sem números.',
+    contexto: 'Contexto do cliente e do problema (2 a 3 parágrafos) e a subseção "3.1 Justificativas" em marcadores.',
+    objetivos: 'Objetivos do projeto em 5 a 8 marcadores, começando com verbo no infinitivo.',
+    escopo: 'Escopo dos serviços: 1 parágrafo de abertura e uma subseção numerada "5.N Título" para cada frente/entrega do escopo, cada uma com os rótulos **Situação Atual:** (se houver), **Evolução Solicitada:** e **Resultado Esperado:**; feche com a subseção de itens fora do escopo e, se houver, de itens opcionais (sem preço).',
+    diferenciais: 'Diferenciais técnicos e estratégicos da Atlantyx para este projeto, 6 a 9 marcadores com **destaque em negrito** no início.',
+    entregaveis: 'Para cada fase/etapa do cronograma, uma subseção "Fase N — Nome" seguida de alíneas a), b), c)... com os entregáveis concretos.',
+    resumo_escopo: 'Resumo do escopo contratado para a proposta comercial: 1 parágrafo citando que o detalhamento técnico está na Proposta Técnica, e 5 a 8 marcadores com as entregas principais.',
+    equipe: 'Organograma e equipe: 1 parágrafo e, para cada perfil da estimativa, uma linha **Perfil — Senioridade / Regime** seguida de alíneas a), b), c)... com as atribuições.',
+    investimento: 'Resumo executivo do investimento: 2 parágrafos explicando o valor, o formato comercial, o que está incluso e as condições (descontos, condição de cliente, crédito da POC) — a tabela de valores é inserida pelo sistema logo depois.',
+    rate_card: '1 a 2 parágrafos sobre o rate card oficial Atlantyx (valores por perfil com tributos inclusos, regime de contratação) — a tabela é inserida pelo sistema.',
+    bonus: 'Bônus e condições especiais SÓ com o que existe nos dados (desconto aplicado, condição de cliente, crédito da POC no contrato, itens de escopo complementar incluídos sem custo adicional); subseções "8.1 Bônus Financeiros" e "8.2 Bônus Técnicos e Estratégicos" com marcadores. Não invente benefícios.',
+    premissas_exec: 'Premissas e condições de execução: subseções "Premissas de Execução" e "Restrições e Observações", em marcadores.',
+    premissas_com: 'Premissas e condições comerciais: subseções "Premissas Comerciais" (prazo, faturamento, impostos, reajuste, vigência) e "Restrições e Observações", em marcadores.',
+    garantias: 'Subseções com marcadores: "Confidencialidade e Sigilo", "Garantia de Qualidade", "Responsabilidades da Atlanteam", "Responsabilidades do Cliente", "Segurança da Informação e LGPD", "Propriedade Intelectual" — a matriz de responsabilidades (RACI) é inserida pelo sistema no fim deste capítulo.',
+    suporte: 'Suporte pós-implantação e SLA: período de garantia/operação assistida e níveis por severidade (Crítica, Alta, Média, Baixa) como rótulos **Severidade N (Nível):** com reconhecimento e solução; use as instruções do dono se houver, senão proponha e escreva "níveis propostos".',
+    pagamento: 'Prazo e forma de pagamento: subseção "Fluxo de Pagamento" em marcadores seguindo exatamente o cronograma financeiro/marcos e o recebimento em 35 dias após a nota; se a POC for sem custo, diga que não há pagamento na POC.',
+    validade: '1 a 2 parágrafos: validade da proposta (dias) a partir da data de emissão e o que acontece depois.',
+    aceite: '1 a 2 parágrafos de aceite da {{TIPO_DOC}} (o aceite formaliza a contratação nas condições descritas), terminando com "Rio de Janeiro, [data por extenso]." — as assinaturas são inseridas pelo sistema.',
+  };
+  const PARTES = [['carta', 'apresentacao', 'contexto', 'objetivos', 'escopo', 'diferenciais', 'entregaveis', 'resumo_escopo', 'equipe'],
+    ['investimento', 'rate_card', 'bonus', 'premissas_exec', 'premissas_com', 'garantias', 'suporte', 'pagamento', 'validade', 'aceite']];
+  const FORMA = '\nFORMATAÇÃO DO "conteudo" (markdown simples, é convertido para o modelo oficial): parágrafos separados por linha em branco; subtítulo numa linha própria começando por "### "; marcadores com "- "; alíneas com "a) "; rótulo em negrito no início da linha com "**Rótulo:** texto". Sem tabelas em markdown.';
+  const pedir = async (chaves, extra) => json(await claude(sys + ' Responda APENAS JSON.', usr + FORMA + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
+    + `\nDevolva {"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]${extra ? ',"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}]' : ''}}`, 7000, 108000));
+  const [A1, B1] = await Promise.all([pedir(PARTES[0], ''), pedir(PARTES[1], '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (8 a 14 linhas, RACI: R executa, A aprova, C consultado, I informado).')]);
+  const ordem = [...PARTES[0], ...PARTES[1]], todas = [...(A1.secoes || []), ...(B1.secoes || [])];
+  const doc = { titulo: pr.titulo || '', secoes: ordem.map(k => { const x = todas.find(y => y.chave === k); return x ? { chave: k, titulo: TITULOS_CAP[k] || k, conteudo: String(x.conteudo || '') } : null; }).filter(Boolean),
+    matriz_responsabilidades: B1.matriz_responsabilidades || [], validade_dias: 90, modelo_oficial: true };
   doc.formato = f.formato; doc.gerado_em = new Date().toISOString();
   return { documento: doc };
 }
+const TITULOS_CAP = { carta: 'Carta de Apresentação', apresentacao: 'Apresentação da Atlanteam', contexto: 'Contexto e Justificativas', objetivos: 'Objetivos do Projeto', escopo: 'Escopo dos Serviços — Solução Técnica Proposta',
+  diferenciais: 'Diferenciais Técnicos e Estratégicos', entregaveis: 'Entregáveis Detalhados por Fase', resumo_escopo: 'Resumo do Escopo Contratado', equipe: 'Organograma e Equipe do Projeto', investimento: 'Resumo Executivo do Investimento',
+  rate_card: 'Rate Card Atlantyx — Padrão Oficial', bonus: 'Bônus e Condições Especiais', premissas_exec: 'Premissas e Condições de Execução', premissas_com: 'Premissas e Condições Comerciais', garantias: 'Garantias, Papéis e Responsabilidades',
+  suporte: 'Suporte Pós-Implantação e SLA', pagamento: 'Prazo e Forma de Pagamento', validade: 'Validade da Proposta', aceite: 'Aceite da Proposta' };
 
 
 // ═══════════════════════ v3.365 · ESCOPOS (catálogo de produtos, upload e geração) ═══════════════════════

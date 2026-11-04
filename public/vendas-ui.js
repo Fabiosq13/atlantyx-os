@@ -557,6 +557,13 @@
   function renderDoc() {
     const d = PROP.documento; if (!d) return;
     $('vpDoc').innerHTML = `<div class="panel"><div class="ph"><div class="pt">④ Documento da proposta</div><span style="font-size:10px;color:var(--t2);">${esc(FMT[d.formato] || '')} · editável</span></div><div class="pb">
+      ${d.modelo_oficial ? `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px 12px;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:10.5px;"><b>📄 Modelo oficial Atlantyx</b><span style="color:var(--t2);">capa, cabeçalho, rodapé, fonte e capítulos iguais aos arquivos-padrão</span>
+          <select class="fsel" style="width:auto;font-size:10.5px;margin-left:auto;" onchange="VD.modeloSet(this.value)">${[['tecnica_comercial', 'Técnica-Comercial'], ['tecnica', 'Técnica (sem valores)'], ['comercial', 'Comercial']].map(([k, v]) => `<option value="${k}"${(PROP.dados.modelo_doc || 'tecnica_comercial') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;">${[['tecnica', 'Técnica'], ['comercial', 'Comercial'], ['tecnica_comercial', 'Técnica-Comercial']].map(([k, v]) => `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','docx')">⬇ Word ${v}</button><button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','pdf')">⬇ PDF ${v}</button>`).join('')}</div>
+        <details style="margin-top:7px;font-size:10.5px;"><summary style="cursor:pointer;color:var(--t2);">Dados da capa e da tabela "Dados do Projeto"</summary><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;">
+          ${[['area', 'Área solicitante'], ['cnpj', 'CNPJ do cliente'], ['origem', 'Documento de origem'], ['local', 'Local de execução'], ['lider', 'Líder do projeto'], ['contato_tecnico', 'Contato técnico'], ['codigo', 'Código de serviço'], ['revisao', 'Linha de revisão (capa)']].map(([k, r]) => `<label style="font-size:10px;color:var(--t2);">${r}<input class="fi" value="${esc((PROP.dados.capa || {})[k] || '')}" onchange="VD.capaSet('${k}',this.value)"/></label>`).join('')}</div></details></div>`
+        : `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:10.5px;">Este texto foi redigido antes do modelo oficial. Clique em <b>✍ Redigir</b> de novo para gerar no formato Técnica / Comercial / Técnica-Comercial.</div>`}
       <input class="fi" id="vdDocTit" value="${esc(d.titulo || PROP.titulo)}" style="font-weight:700;font-size:13px;margin-bottom:10px;"/>
       ${(d.secoes || []).map((s, i) => `<div style="margin-bottom:10px;"><input class="fi vdDocSecT" data-i="${i}" value="${esc(s.titulo)}" style="font-weight:600;margin-bottom:4px;"/><textarea class="fta vdDocSecC" data-i="${i}" style="min-height:90px;font-size:11.5px;line-height:1.6;">${esc(s.conteudo)}</textarea></div>`).join('')}
       <div class="fl" style="margin-top:6px;">Matriz de responsabilidades (RACI) <span style="font-weight:400;color:var(--t3);">R executa · A aprova · C consultado · I informado</span></div>
@@ -630,6 +637,70 @@
   // logo e fonte da marca nos documentos
   async function _logoDataUrl() { try { const b = await (await fetch('/logo-atlantyx-escuro.png')).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
 
+  // ═══ v3.379 · MODELO OFICIAL (Técnica · Comercial · Técnica-Comercial) — arquivos-padrão do fundador ═══
+  let _modProm = null;
+  const _carregarModelo = () => window.ATXModelo ? Promise.resolve(window.ATXModelo) : (_modProm = _modProm || new Promise((ok, err) => { const s = document.createElement('script'); s.src = '/proposta-modelo.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); s.onload = () => ok(window.ATXModelo); s.onerror = () => { _modProm = null; err(new Error('não carregou o modelo de proposta')); }; document.head.appendChild(s); }));
+  const _MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const _ext = (dt = new Date()) => `${dt.getDate()} de ${_MESES[dt.getMonth()]} de ${dt.getFullYear()}`;
+  const _brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  async function montarModelo(modelo) {
+    const MOD = await _carregarModelo(), M = MOD.MODELOS[modelo], CAPS = MOD.CAP, P = CFG?.params || {}, d = PROP.dados, cap = d.capa || {}, doc = PROP.documento, f = _fAtual();
+    const razao = P.empresa_razao || 'Atlanteam Soluções em TI', cnpj = P.empresa_cnpj || '10.886.193/0001-83', email = P.empresa_email || 'contato@atlanteam.com.br';
+    const assin = P.assinante_nome || 'Fábio Soares Quintanilha', cargo = P.assinante_cargo || 'CEO & Sócio-Diretor', assinEmail = P.assinante_email || '';
+    const cortesia = !!(f?.poc_cortesia && !(f.valor_total > 0)), K = d.crono || _cronoBase(), U = K.unidade === 'semanas' ? 'Semana' : 'Mês', dias = doc.validade_dias || 90;
+    const sec = k => (doc.secoes || []).find(x => x.chave === k), txt = k => String(sec(k)?.conteudo || '').replace(/\{\{TIPO_DOC\}\}/g, M.nome);
+    const tituloCap = k => k === 'aceite' ? ({ tecnica: 'Aceite da Proposta Técnica', comercial: 'Aceite da Proposta Comercial' }[modelo] || 'Aceite da Proposta') : CAPS[k].t;
+    const dt = new Date(), mesAno = _MESES[dt.getMonth()].replace(/^./, c => c.toUpperCase()) + ' de ' + dt.getFullYear();
+    const B = [{ t: 'capa', empresa: razao, titulo: M.capa, projeto: PROP.titulo || doc.titulo || 'Proposta', sub: M.sub || '', area: cap.area || '', cliente: PROP.cliente || '', cnpj: cap.cnpj || '', proponente: `${razao} — CNPJ: ${cnpj}`, data: `${mesAno} | Validade: ${dias} dias | Confidencial`, revisao: cap.revisao || '' }];
+    const md = (k, n) => MOD.mdBlocos(txt(k)).map(b => b.t === 'sub' && n ? { ...b, texto: b.texto.replace(/^\d+(\.\d+)/, (_, r) => n + r) } : b);
+    B.push({ t: 'h1', texto: 'Carta de Apresentação' }, ...md('carta'), { t: 'p', texto: `**${assin}**`, jc: 'left' }, { t: 'p', texto: `${cargo} — ${razao}`, jc: 'left' }, ...(assinEmail ? [{ t: 'p', texto: assinEmail, jc: 'left' }] : []));
+    B.push({ t: 'h1', texto: 'Índice', quebra: 1 }, { t: 'indice', itens: M.caps.map((k, i) => `${i + 1}. ${tituloCap(k)}`) });
+    const fasesF = K.fases.filter(x => x.incluir !== false), per = x => x.ini === x.fim ? `${U} ${x.ini}` : `${U} ${x.ini}–${x.fim}`;
+    M.caps.forEach((k, i) => { const n = i + 1; B.push({ t: 'h1', texto: `${n}. ${tituloCap(k)}`, quebra: CAPS[k].q });
+      if (k === 'dados') { const L = [['Nome do Projeto', PROP.titulo], ['Cliente', PROP.cliente], ['CNPJ do Cliente', cap.cnpj], ['Área Solicitante', cap.area], ['Documento de Origem', cap.origem], ['Data da Proposta', _ext(dt)], ['Validade', `${dias} dias a partir da data de emissão`],
+          ['Prazo de Execução', K.total + ' ' + K.unidade], ['Tipo de Documento', { poc: 'Prova de conceito (POC)', piloto: 'Piloto' }[d.tipo_documento] || 'Projeto'], ...(modelo !== 'tecnica' ? [['Modelo Comercial', f?.nome || '']] : []), ['Modalidade de Demanda', TIPOS[d.tipo_demanda] || ''],
+          ['Local', cap.local], ['Líder do Projeto', cap.lider || `${assin} — ${cargo}`], ['Contato Comercial', `${assin}${assinEmail ? ' — ' + assinEmail : ''}`], ['Contato Técnico', cap.contato_tecnico], ['Proponente', `${razao} — CNPJ: ${cnpj}`], ['Código de Serviço', cap.codigo]].filter(x => x[1]);
+        B.push({ t: 'kv', linhas: L }); return; }
+      if (['investimento', 'rate_card', 'equipe', 'garantias', 'pagamento', 'aceite'].includes(k) || sec(k)) B.push(...md(k, n));
+      if (k === 'investimento') { if (cortesia) B.push({ t: 'tabela', cab: ['Item', 'Valor'], larguras: [5600, 3750], linhas: [['Investimento da POC', 'Sem custo — condição de cliente Atlantyx'], ['Duração', K.total + ' ' + K.unidade], ...(f?.custo_investimento_comercial ? [['Investimento comercial assumido pela Atlantyx', _brl(f.custo_investimento_comercial)]] : [])] });
+        else if (f) { const L = [...(f.desconto_aplicado_pct ? [['Valor bruto (rate card)', _brl(f.valor_sem_desconto)], [`Desconto comercial (${String(f.desconto_aplicado_pct).replace('.', ',')}%)`, '– ' + _brl(f.valor_sem_desconto - f.valor_total)]] : []),
+            ['Modelo comercial', f.nome], ['Total de horas', N(PROP.analise?.entrada?.horas) + ' h'], ['Duração', K.total + ' ' + K.unidade], ['Tributos', `inclusos (${String(PROP.analise?.custos?.impostos_efetivo_pct ?? '').replace('.', ',')}% em média no período)`],
+            ['Faturamento', K.pagamento === 'marcos' && K.marcos.length ? `por marcos de entrega (${K.marcos.length} parcelas)` : (f.cronograma?.length || 0) + ' parcela(s)'], ['Recebimento', `${P.prazo_recebimento_dias || 35} dias após a emissão da nota fiscal`],
+            ...(f.condicao_cliente ? [[`Condição de cliente (fechando em ${f.condicao_cliente.dias} dias)`, `${f.condicao_cliente.desconto_pct}% adicional → ${_brl(f.condicao_cliente.valor_com_desconto)}`]] : []),
+            ...(d.tipo_documento === 'poc' ? [['Crédito no contrato', `valor da POC abatido do projeto se assinado em até ${d.poc?.credito_dias || 60} dias`]] : []), ['VALOR TOTAL DO CONTRATO', _brl(f.valor_total)]];
+          B.push({ t: 'tabela', cab: ['Item', 'Valor'], larguras: [5600, 3750], linhas: L, total: true, negritoCol0: true, alinhar: [null, 'right'] }); } }
+      if (k === 'rate_card') { const L = (d.perfis || []).filter(x => x.perfil).map(x => [x.perfil, N(x.horas) + ' h', _brl(x.preco_hora), _brl((+x.horas || 0) * (+x.preco_hora || 0))]);
+        if (L.length) B.push({ t: 'tabela', cab: ['Perfil', 'Horas', 'Valor (R$/h)', 'Subtotal (R$)'], larguras: [4150, 1400, 1800, 2000], alinhar: [null, 'right', 'right', 'right'], linhas: [...L, ['TOTAL DE REFERÊNCIA', N((d.perfis || []).reduce((a, x) => a + (+x.horas || 0), 0)) + ' h', '', _brl((d.perfis || []).reduce((a, x) => a + (+x.horas || 0) * (+x.preco_hora || 0), 0))]], total: true,
+          nota: `* Valores por hora do rate card oficial com tributos inclusos. O valor do contrato segue o modelo comercial${f ? ' (' + f.nome + ')' : ''} descrito no Resumo Executivo do Investimento.` }); }
+      if (k === 'equipe') { const L = (d.perfis || []).filter(x => x.perfil).map(x => [x.perfil, N(x.horas) + ' h']); if (L.length) B.push({ t: 'tabela', cab: ['Perfil', 'Horas estimadas'], larguras: [6350, 3000], alinhar: [null, 'right'], linhas: L }); }
+      if (k === 'cronograma_exec') { B.push({ t: 'p', texto: `O cronograma segue o roadmap de execução Atlantyx (etapas com gates de aprovação), com duração total de ${K.total} ${K.unidade}.` });
+        B.push({ t: 'tabela', cab: ['Nº', 'Etapa', 'Gate', 'Período', 'Entrega'], larguras: [500, 3200, 800, 1600, 3250], linhas: fasesF.map((x, j) => [String(j + 1), x.nome, x.gate || '—', per(x), x.entrega || '']) }); }
+      if (k === 'cronograma_ff') { B.push({ t: 'p', texto: `O cronograma físico-financeiro segue o roadmap de execução Atlantyx, com duração total de ${K.total} ${K.unidade}${cortesia ? '. Por se tratar de POC sem custo para cliente, não há cronograma financeiro.' : K.pagamento === 'marcos' ? ', e o pagamento é orientado a marcos de entrega homologados, cujos percentuais somam 100% do valor do contrato.' : ', com faturamento conforme o modelo comercial.'}` });
+        if (cortesia || K.pagamento !== 'marcos' || !f) B.push({ t: 'tabela', cab: ['Nº', 'Etapa', 'Gate', 'Período', 'Entrega'], larguras: [500, 3200, 800, 1600, 3250], linhas: fasesF.map((x, j) => [String(j + 1), x.nome, x.gate || '—', per(x), x.entrega || '']) });
+        else { const usados = new Set(); const L = fasesF.map((x, j) => { const ms = K.marcos.filter(m => m.ref && (m.ref === x.gate || m.ref === x.nome)); ms.forEach(m => usados.add(m)); const pct = ms.reduce((a, m) => a + (+m.pct || 0), 0);
+            return [String(j + 1), x.nome, per(x), x.entrega || '', pct ? String(pct).replace('.', ',') + '%' : '—', pct ? _brl(f.valor_total * pct / 100) : '—']; });
+          K.marcos.filter(m => !usados.has(m)).forEach(m => L.push(['◆', m.nome, `${U} ${m.quando}`, 'marco de pagamento', String(m.pct).replace('.', ',') + '%', _brl(f.valor_total * m.pct / 100)]));
+          const tot = K.marcos.reduce((a, m) => a + (+m.pct || 0), 0); L.push(['', 'TOTAL GERAL', `${K.total} ${K.unidade}`, '', String(tot).replace('.', ',') + '%', _brl(f.valor_total * tot / 100)]);
+          B.push({ t: 'tabela', cab: ['Nº', 'Fase', 'Período', 'Entrega', '% Pgto', 'Total (R$)'], larguras: [450, 2500, 1300, 2600, 900, 1600], alinhar: [null, null, null, null, 'right', 'right'], linhas: L, total: true }); }
+        if (!cortesia && f && K.pagamento !== 'marcos') B.push({ t: 'tabela', cab: ['Parcela', 'Mês de emissão', 'Valor (R$)', 'Recebimento'], larguras: [3800, 1800, 2000, 1750], alinhar: [null, null, 'right', null], linhas: [...(f.cronograma || []).map(c => [c.desc, c.mes, _brl(c.valor), c.recebe || '']), ['TOTAL', '', _brl(f.valor_total), '']], total: true }); }
+      if (k === 'garantias' && (doc.matriz_responsabilidades || []).length) B.push({ t: 'sub', texto: `${n}.${(MOD.mdBlocos(txt(k)).filter(b => b.t === 'sub').length || 0) + 1} Matriz de Responsabilidades (RACI)` }, { t: 'tabela', cab: ['Atividade', 'Atlantyx', PROP.cliente || 'Cliente'], larguras: [6150, 1600, 1600], alinhar: [null, 'center', 'center'], linhas: doc.matriz_responsabilidades.map(m => [m.atividade, m.atlantyx || '—', m.cliente || '—']), nota: 'R = executa · A = aprova · C = é consultado · I = é informado' });
+      if (k === 'pagamento' && P.dados_bancarios) B.push({ t: 'sub', texto: `${n}.2 Dados Bancários para Pagamento` }, { t: 'kv', linhas: String(P.dados_bancarios).split('\n').map(l => l.split(':')).filter(x => x.length > 1).map(x => [x[0].trim(), x.slice(1).join(':').trim()]) });
+      if (k === 'aceite') B.push({ t: 'assinatura', esq: [razao, 'CNPJ: ' + cnpj, `${assin} — ${cargo.split(' ')[0]}`], dir: [PROP.cliente || 'Cliente', cap.cnpj ? 'CNPJ: ' + cap.cnpj : '', 'Responsável / Cargo'] });
+    });
+    return { blocos: B, cabecalho: `${M.cab} – ${PROP.titulo || ''} – ${PROP.cliente || ''}${modelo === 'tecnica' ? ' (sem valores comerciais)' : ''}`, rodape: `${razao} | CNPJ: ${cnpj} | ${email}`, nomeArq: `${M.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}_${(PROP.cliente || 'cliente').replace(/[^\w]+/g, '_')}_${PROP.numero || 'rascunho'}` };
+  }
+  async function baixarModelo(modelo, tipo) {
+    try { const MOD = await _carregarModelo(), doc = await montarModelo(modelo); const salvar = (b, n) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; a.click(); };
+      if (tipo === 'docx') { salvar(await MOD.gerarDocx(doc), doc.nomeArq + '.docx'); return nota('Word gerado no modelo oficial'); }
+      const pdfMake = await window._carregarPdfMake(); const logo = await _imgData('/modelos/logo-proposta.png'); const base = location.origin + '/fonts/montserrat-latin-';
+      const fontes = { Montserrat: { normal: base + '400-normal.woff', bold: base + '700-normal.woff', italics: base + '400-normal.woff', bolditalics: base + '700-normal.woff' }, Roboto: (pdfMake.fonts || {}).Roboto || { normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf', italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf' } };
+      try { await new Promise((ok, err) => { try { pdfMake.createPdf(MOD.pdfDef(doc, logo, 'Montserrat'), null, fontes).getBlob(b => { salvar(b, doc.nomeArq + '.pdf'); ok(); }); } catch (e) { err(e); } setTimeout(() => err(new Error('tempo')), 20000); }); }
+      catch (_) { pdfMake.createPdf(MOD.pdfDef(doc, logo, 'Roboto')).download(doc.nomeArq + '.pdf'); }
+      nota('PDF gerado no modelo oficial');
+    } catch (e) { nota((tipo === 'docx' ? 'Word: ' : 'PDF: ') + e.message, 'error'); }
+  }
+  function capaSet(k, v) { PROP.dados.capa = { ...(PROP.dados.capa || {}), [k]: v }; }
+  function modeloSet(v) { PROP.dados.modelo_doc = v; }
   // ═══ v3.377 · CRONOGRAMA FÍSICO-FINANCEIRO (roadmap Atlantyx: 12 etapas com gates; POC em semanas) ═══
   const ROADMAP = [ // [nome, gate, início %, fim %, entrega]
     ['Entendimento do negócio', 'G1', 0, 8, 'Documento de Visão'], ['Planejamento', 'G2', 5, 12, 'Plano de projeto e cronograma'], ['Especificação detalhada', 'G3', 10, 25, 'ERF e ERT aprovadas'],
@@ -931,8 +1002,8 @@
       nota('Apresentação gerada — salve a proposta para guardar o conteúdo');
     } catch (e) { nota('Apresentação: ' + e.message, 'error'); } fim();
   }
-  async function baixarPdf() {
-    lerForm(); lerDoc(); if (!PROP.documento && !(await _garantirDoc())) return; const d = PROP.documento;
+  async function baixarPdf(modelo) {
+    lerForm(); lerDoc(); if (!PROP.documento && !(await _garantirDoc())) return; if (PROP.documento.modelo_oficial) return baixarModelo(modelo || PROP.dados.modelo_doc || 'tecnica_comercial', 'pdf'); const d = PROP.documento;
     try { const pdfMake = await window._carregarPdfMake(); const logo = await _logoDataUrl();
       // v3.365: Montserrat (fonte da marca) servida pelo próprio sistema; se falhar, cai na fonte padrão
       const base = location.origin + '/fonts/montserrat-latin-';
@@ -955,8 +1026,8 @@
       catch (_) { pdfMake.createPdf(def('Roboto')).download(nome); }
     } catch (e) { nota('PDF: ' + e.message, 'error'); }
   }
-  async function baixarWord() {
-    lerForm(); lerDoc(); if (!PROP.documento && !(await _garantirDoc())) return; const d = PROP.documento;
+  async function baixarWord(modelo) {
+    lerForm(); lerDoc(); if (!PROP.documento && !(await _garantirDoc())) return; if (PROP.documento.modelo_oficial) return baixarModelo(modelo || PROP.dados.modelo_doc || 'tecnica_comercial', 'docx'); const d = PROP.documento;
     const md = t => esc(t).split('\n').map(l => l.trim().startsWith('- ') ? `<li>${l.trim().substring(2)}</li>` : `<p>${l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`).join('').replace(/(<li>.*?<\/li>)+/g, m => `<ul>${m}</ul>`);
     const html = `<html><head><meta charset="utf-8"><style>body{font-family:Montserrat,Calibri,Arial;font-size:10.5pt;color:#1f2937}h1{color:#0F172A}h2{color:#00708A;font-size:13pt;margin-top:16pt}td{border-bottom:1px solid #ddd;padding:4px 8px}</style></head><body>
       <img src="${location.origin}/logo-atlantyx-escuro.png" width="180" alt="Atlantyx"/><div style="border-top:3px solid #00C4CC;margin:6px 0 10px;"></div><h1>${esc(d.titulo || PROP.titulo)}</h1><p style="color:#555">${esc(PROP.cliente)}${PROP.contato ? ' · ' + esc(PROP.contato) : ''} · ${esc(PROP.numero || 'rascunho')} · ${new Date().toLocaleDateString('pt-BR')}</p>
@@ -1095,7 +1166,8 @@
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           ${campo('vpp_i26', 'Impostos 2026 (%)', (p.impostos_por_ano || {})['2026'], 'Lucro Presumido: PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88')}${campo('vpp_i27', 'Impostos 2027 (%)', (p.impostos_por_ano || {})['2027'], 'CBS+IBS 11,3% (TCU, a confirmar pelo Senado até 15/12) + ISS 5 + IRPJ 4,8 + CSLL 2,88')}${campo('vpp_cred', 'Créditos de CBS a partir de 2027 (pontos %)', p.creditos_cbs_pct, 'CBS paga em nuvem, software, equipamentos, aluguel e PJ abate a devida — estime com o contador')}
           ${campo('vpp_infl', 'Inflação projetada (IPCA %/ano)', p.inflacao_anual_pct, 'Focus: IPCA 2027 4,34%')}${campo('vpp_diss', 'Dissídio acima da inflação (%)', p.dissidio_extra_pct)}
-          ${campo('vpp_mpoc', 'Margem da POC (%)', p.margem_poc_pct, 'POC é porta de entrada: margem menor')}${campo('vpp_cpoc', 'Crédito da POC no contrato (dias)', p.poc_credito_dias)}${campo('vpp_psem', 'POC: semanas padrão', p.poc_semanas_padrao)}${campo('vpp_pcli', 'POC para cliente: % do preço (0 = sem custo)', p.poc_cliente_pct)}${campo('vpp_dcli', 'Desconto especial de cliente (%)', p.desconto_cliente_pct)}${campo('vpp_dcd', '… se fechar em (dias)', p.desconto_cliente_dias)}
+          ${campo('vpp_mpoc', 'Margem da POC (%)', p.margem_poc_pct, 'POC é porta de entrada: margem menor')}${campo('vpp_cpoc', 'Crédito da POC no contrato (dias)', p.poc_credito_dias)}${campo('vpp_psem', 'POC: semanas padrão', p.poc_semanas_padrao)}${campo('vpp_pcli', 'POC para cliente: % do preço (0 = sem custo)', p.poc_cliente_pct)}${campo('vpp_dcli', 'Desconto especial de cliente (%)', p.desconto_cliente_pct)}${campo('vpp_dcd', '… se fechar em (dias)', p.desconto_cliente_dias)}</div><div style="font-size:10.5px;font-weight:700;margin:10px 0 4px;">Dados da empresa no modelo oficial de proposta</div><div style="display:flex;gap:8px;flex-wrap:wrap;">${[['vpt_raz', 'Razão social', p.empresa_razao], ['vpt_cnpj', 'CNPJ', p.empresa_cnpj], ['vpt_mail', 'E-mail (rodapé)', p.empresa_email], ['vpt_ass', 'Quem assina', p.assinante_nome], ['vpt_car', 'Cargo', p.assinante_cargo], ['vpt_amail', 'E-mail de quem assina', p.assinante_email]].map(([id, r, v]) => `<label style="font-size:10.5px;">${r}<br><input class="fi" id="${id}" value="${esc(v || '')}" style="width:210px;"/></label>`).join('')}
+          <label style="font-size:10.5px;">Dados bancários (uma linha por item, ex.: Banco: …)<br><textarea class="fta" id="vpt_banco" style="width:420px;min-height:60px;">${esc(p.dados_bancarios || '')}</textarea></label>
           ${campo('vpp_tol', 'Tolerância acima do concorrente (%)', p.tolerancia_concorrente_pct, 'Acima disso, sugere desconto')}${campo('vpp_prem', 'Prêmio aceito sobre o concorrente (%)', p.premio_qualidade_pct, 'Desconto sugerido leva o preço até concorrente + este prêmio, nunca abaixo do piso')}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:6px;line-height:1.5;">${esc(CFG?.impostos_fonte || '')}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:8px;">Impostos: ${esc(CFG?.imposto_origem || '')}. As metas (anual/mensal) vêm do Dashboard; a receita realizada, do QuickBooks; o pipeline, do HubSpot.</div></div></div>
@@ -1112,7 +1184,7 @@
   async function paramsSalvar() {
     const g = id => { const v = $(id).value; return v === '' ? undefined : +String(v).replace(',', '.'); };
     const params = { impostos_pct: g('vpp_imp'), overhead_pct: g('vpp_ovh'), margem_min_pct: g('vpp_mmin'), margem_alvo_pct: g('vpp_malvo'), desconto_recorrente_pct: g('vpp_desc'), contingencia: { baixo: g('vpp_cb'), medio: g('vpp_cm'), alto: g('vpp_ca') }, prazo_recebimento_dias: g('vpp_rec'), meta_recorrente_pct: g('vpp_mrec'), setup_pct: g('vpp_setup') };
-    Object.assign(params, { impostos_por_ano: { '2026': g('vpp_i26'), '2027': g('vpp_i27') }, creditos_cbs_pct: g('vpp_cred'), inflacao_anual_pct: g('vpp_infl'), dissidio_extra_pct: g('vpp_diss'), margem_poc_pct: g('vpp_mpoc'), poc_credito_dias: g('vpp_cpoc'), poc_semanas_padrao: g('vpp_psem'), poc_cliente_pct: g('vpp_pcli'), desconto_cliente_pct: g('vpp_dcli'), desconto_cliente_dias: g('vpp_dcd'), tolerancia_concorrente_pct: g('vpp_tol'), premio_qualidade_pct: g('vpp_prem') }); // v3.365
+    Object.assign(params, { impostos_por_ano: { '2026': g('vpp_i26'), '2027': g('vpp_i27') }, creditos_cbs_pct: g('vpp_cred'), inflacao_anual_pct: g('vpp_infl'), dissidio_extra_pct: g('vpp_diss'), margem_poc_pct: g('vpp_mpoc'), poc_credito_dias: g('vpp_cpoc'), poc_semanas_padrao: g('vpp_psem'), empresa_razao: $('vpt_raz')?.value.trim() || undefined, empresa_cnpj: $('vpt_cnpj')?.value.trim() || undefined, empresa_email: $('vpt_mail')?.value.trim() || undefined, assinante_nome: $('vpt_ass')?.value.trim() || undefined, assinante_cargo: $('vpt_car')?.value.trim() || undefined, assinante_email: $('vpt_amail')?.value.trim() ?? undefined, dados_bancarios: $('vpt_banco')?.value ?? undefined, poc_cliente_pct: g('vpp_pcli'), desconto_cliente_pct: g('vpp_dcli'), desconto_cliente_dias: g('vpp_dcd'), tolerancia_concorrente_pct: g('vpp_tol'), premio_qualidade_pct: g('vpp_prem') }); // v3.365
     Object.keys(params.impostos_por_ano).forEach(k => params.impostos_por_ano[k] == null && delete params.impostos_por_ano[k]);
     if (params.margem_min_pct > params.margem_alvo_pct) return nota('A margem mínima não pode ser maior que a alvo', 'error');
     try { CFG = await api('prop_config_salvar', { params }); nota('Parâmetros salvos'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
@@ -1214,5 +1286,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet };
 })();
