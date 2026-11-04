@@ -388,6 +388,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div class="fg"><label class="fl">Tipo de documento</label><select class="fsel" id="vpTipoDoc" onchange="VD.tipoDocMudou()">${Object.entries(TIPODOC).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
           <div class="fg"><label class="fl" title="Preço total estimado do concorrente para o mesmo escopo — a máquina sugere desconto se ficarmos muito acima">Preço do concorrente (R$ total, se souber)</label><input class="fi" id="vpConc" placeholder="R$"/></div></div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin:-2px 0 8px;cursor:pointer;" title="Cliente que a Atlantyx já atende ou atendeu"><input type="checkbox" id="vpJaCli" onchange="VD.tipoDocMudou()"/> <b>Já é cliente da Atlantyx</b> <span id="vpJaCliInfo" style="color:var(--t3);"></span></label>
         <div id="vpPocBox" style="display:none;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:8px;">
           <div style="font-size:10.5px;font-weight:700;margin-bottom:6px;">🧪 POC profissional — período fechado, critérios de sucesso e crédito no contrato</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -427,7 +428,7 @@
     const d = PROP.dados; $('vpCliente').value = PROP.cliente || ''; $('vpContato').value = PROP.contato || ''; $('vpTitulo').value = PROP.titulo || '';
     $('vpTipo').value = d.tipo_demanda || 'indefinido'; $('vpMeses').value = d.meses || ''; $('vpInicio').value = d.inicio || ''; $('vpRisco').value = d.risco || 'medio';
     $('vpOrc').value = d.orcamento_cliente || ''; $('vpOrcTipo').value = d.orcamento_tipo || 'total'; $('vpEscopo').value = d.escopo || ''; $('vpBriefing').value = d.briefing || '';
-    const pc = d.poc || {}; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
+    const pc = d.poc || {}; if ($('vpJaCli')) $('vpJaCli').checked = !!d.ja_cliente; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || CFG?.params?.poc_semanas_padrao || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
     $('vpProd').innerHTML = '<option value="">📦 Escopo de um produto…</option>' + ((CFG && CFG.escopos) || []).map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('') + (((CFG && CFG.escopos) || []).length ? '' : '<option value="" disabled>(cadastre em Rate card e parâmetros → Catálogo)</option>');
     $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
     renderPerfis(); complRender(); statusRender(); chatRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
@@ -435,7 +436,7 @@
   }
   function lerForm() {
     const d = PROP.dados; PROP.cliente = $('vpCliente').value.trim(); PROP.contato = $('vpContato').value.trim(); PROP.titulo = $('vpTitulo').value.trim();
-    Object.assign(d, { tipo_documento: $('vpTipoDoc').value, preco_concorrente: $('vpConc').value, poc: { semanas: +$('vpPocSem').value || 6, credito_dias: +$('vpPocCred').value || 0, criterios: $('vpPocCrit').value.trim() }, tipo_demanda: $('vpTipo').value, meses: +$('vpMeses').value || null, inicio: $('vpInicio').value, risco: $('vpRisco').value, orcamento_cliente: $('vpOrc').value, orcamento_tipo: $('vpOrcTipo').value, briefing: $('vpBriefing').value.trim(), escopo: $('vpEscopo').value.trim() });
+    Object.assign(d, { ja_cliente: !!$('vpJaCli')?.checked, tipo_documento: $('vpTipoDoc').value, preco_concorrente: $('vpConc').value, poc: { semanas: +$('vpPocSem').value || 6, credito_dias: +$('vpPocCred').value || 0, criterios: $('vpPocCrit').value.trim() }, tipo_demanda: $('vpTipo').value, meses: +$('vpMeses').value || null, inicio: $('vpInicio').value, risco: $('vpRisco').value, orcamento_cliente: $('vpOrc').value, orcamento_tipo: $('vpOrcTipo').value, briefing: $('vpBriefing').value.trim(), escopo: $('vpEscopo').value.trim() });
     d.perfis = [...document.querySelectorAll('#vpPerfis tr')].map(tr => { const g = c => tr.querySelector(`[data-c="${c}"]`)?.value; return { perfil: g('perfil'), horas: +g('horas') || 0, custo_hora: +String(g('custo')).replace(',', '.') || null, preco_hora: +String(g('preco')).replace(',', '.') || null, justificativa: tr.dataset.just || '' }; }).filter(x => x.perfil);
   }
   function renderPerfis() {
@@ -502,7 +503,7 @@
     if (semHora.length === d.perfis.length) { nota('Preencha as horas de pelo menos um perfil', 'error'); return; }
     const fim = ocupado($('vpBtnAnalisar'), '◆ Analisando...');
     const _conc = +String(d.preco_concorrente || '').replace(/[^\d,]/g, '').replace(',', '.') || null; const _meses = d.tipo_documento === 'poc' ? Math.max(.25, Math.round((d.poc.semanas || 6) / 4.33 * 100) / 100) : (d.meses || 3);
-    try { PROP.analise = await api('analisar', { cliente: PROP.cliente, perfis: d.perfis, meses: _meses, tipo_documento: d.tipo_documento, preco_concorrente: _conc, descontos: d.descontos || {}, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo }, 90000);
+    try { PROP.analise = await api('analisar', { ja_cliente: !!d.ja_cliente, cliente: PROP.cliente, perfis: d.perfis, meses: _meses, tipo_documento: d.tipo_documento, preco_concorrente: _conc, descontos: d.descontos || {}, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo }, 90000);
       delete PROP.analise.success; delete PROP.analise.action; PROP.formato = PROP.analise.recomendado; renderAnalise(); $('vpAnalise').scrollIntoView({ behavior: 'smooth', block: 'start' }); fim(); return true; }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
   }
@@ -523,6 +524,8 @@
         <div style="display:grid;gap:3px;margin-bottom:8px;">${sc('Metas', f.scores.metas)}${sc('Vendável', f.scores.vendavel)}${sc('Caixa', f.scores.caixa)}${sc('Risco', f.scores.risco)}</div>
         <div style="font-size:10.5px;line-height:1.7;">Valor <b>${R(f.valor_total)}</b> · ${R(f.valor_mensal_medio)}/mês<br>Margem <b style="color:${f.margem_pct < (a.params.margem_min_pct) ? 'var(--red)' : 'var(--green)'};">${P(f.margem_pct)}</b> · lucro ${R(f.lucro)}<br>No ano: ${R(f.receita_no_ano)}${f.cobertura_gap_pct != null ? ` (${P(f.cobertura_gap_pct)} do gap)` : ''}<br>Recorrência (ARR): ${f.arr ? R(f.arr) : '—'} · 1º recebimento ${esc(f.primeiro_recebimento || '')}<br>Preço/h efetivo ${R(f.preco_hora_efetivo)}</div>
         ${f.alertas.length ? `<div style="font-size:10px;color:var(--gold);margin-top:6px;">⚠ ${esc(f.alertas.join(' · '))}</div>` : ''}
+        ${f.poc_cortesia ? `<div style="font-size:10px;color:var(--blue);margin-top:5px;">🤝 ${f.valor_total > 0 ? 'POC com preço de cliente' : 'POC sem custo (cliente)'} · investimento comercial ${R(f.custo_investimento_comercial)}</div>` : f.formato === 'poc' ? `<div style="font-size:10px;color:var(--t2);margin-top:5px;">Crédito no contrato se fechar em ${PROP.dados.poc?.credito_dias || 60} dias</div>` : ''}
+        ${f.condicao_cliente ? `<div style="font-size:10px;color:var(--green);margin-top:5px;">🤝 Cliente: ${f.condicao_cliente.desconto_pct}% se fechar em ${f.condicao_cliente.dias} dias → <b>${R(f.condicao_cliente.valor_com_desconto)}</b>${f.condicao_cliente.limitado_pelo_piso ? ' (limitado ao piso)' : ''}</div>` : ''}
         ${compHtml(f)}
         <details style="margin-top:6px;font-size:10px;"><summary style="cursor:pointer;color:var(--t2);">cronograma de faturamento</summary>${f.cronograma.map(x => `<div>${esc(x.mes)} · ${esc(x.desc)} · <b>${R(x.valor)}</b> (recebe ${esc(x.recebe)})</div>`).join('')}</details></label>`).join('')}</div>
       ${a.explicacao ? `<div style="margin-top:10px;background:var(--bg4);border-left:3px solid var(--blue);border-radius:6px;padding:10px 12px;font-size:11.5px;line-height:1.7;white-space:pre-wrap;">${esc(a.explicacao)}</div>` : ''}
@@ -565,6 +568,9 @@
   // ═══ v3.365 · MÁQUINA DE POC E PROPOSTAS ═══
   function tipoDocMudou(soVisual) {
     const t = $('vpTipoDoc')?.value || 'proposta', b = $('vpPocBox'); if (b) b.style.display = t === 'poc' ? '' : 'none';
+    const P = CFG?.params || {}, cli = !!$('vpJaCli')?.checked, inf = $('vpJaCliInfo'), dc = P.desconto_cliente_pct ?? 5, dd = P.desconto_cliente_dias ?? 60, pp = P.poc_cliente_pct ?? 0;
+    if (inf) inf.textContent = !cli ? '' : t === 'poc' ? `→ POC ${pp > 0 ? 'com ' + pp + '% do preço' : 'sem custo'} + ${dc}% de desconto no projeto se fechar em ${dd} dias` : `→ ${dc}% de desconto especial se fechar em ${dd} dias`;
+    const cr = $('vpPocCred'); if (cr) cr.disabled = cli && t === 'poc' && !(pp > 0);
     const m = $('vpMeses'); if (m) { m.disabled = t === 'poc'; m.title = t === 'poc' ? 'Na POC o prazo vem da duração em semanas' : ''; }
     if (!soVisual && PROP) { lerForm(); PROP.analise = null; PROP.documento = null; const a = $('vpAnalise'); if (a) a.innerHTML = ''; const d = $('vpDoc'); if (d) d.innerHTML = ''; }
   }
@@ -802,14 +808,17 @@
         const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
         sl.addShape(pptx.ShapeType.roundRect, { x: 0.6, y: 2.0, w: 4.4, h: 4.5, rectRadius: 0.15, fill: { color: ESCURO }, line: { type: 'none' } });
         sl.addText('INVESTIMENTO TOTAL', { x: 0.9, y: 2.3, w: 3.8, h: 0.3, fontFace: F, fontSize: 10, bold: true, color: VERDE, charSpacing: 3 });
-        sl.addText(brl(I.valor_total), { x: 0.9, y: 2.65, w: 3.9, h: 0.9, fontFace: F, fontSize: 32, bold: true, color: 'FFFFFF', fit: 'shrink' });
-        sl.addText([{ text: I.formato || '', options: { bold: true, color: CIANO, breakLine: true } }, ...(I.mensal ? [{ text: brl(I.mensal) + ' por mês, em média', options: { color: 'C9D3E0', breakLine: true } }] : []), ...(I.desconto_pct ? [{ text: 'Condição especial de ' + String(I.desconto_pct).replace('.', ',') + '%', options: { color: VERDE } }] : [])],
+        const semCusto = I.poc_cortesia && !(I.valor_total > 0);
+        sl.addText(semCusto ? 'Sem custo' : brl(I.valor_total), { x: 0.9, y: 2.65, w: 3.9, h: 0.9, fontFace: F, fontSize: 32, bold: true, color: 'FFFFFF', fit: 'shrink' });
+        sl.addText([{ text: semCusto ? 'POC · condição de cliente Atlantyx' : (I.formato || ''), options: { bold: true, color: CIANO, breakLine: true } }, ...(I.mensal && !semCusto ? [{ text: brl(I.mensal) + ' por mês, em média', options: { color: 'C9D3E0', breakLine: true } }] : []), ...(I.desconto_pct ? [{ text: 'Condição especial de ' + String(I.desconto_pct).replace('.', ',') + '%', options: { color: VERDE, breakLine: true } }] : []),
+          ...(I.credito_dias ? [{ text: 'Valor abatido do projeto se fechar em ' + I.credito_dias + ' dias', options: { color: VERDE, breakLine: true } }] : []), ...(I.condicao_cliente ? [{ text: I.condicao_cliente.desconto_pct + '% adicional se fechar em ' + I.condicao_cliente.dias + ' dias: ' + brl(I.condicao_cliente.valor_com_desconto), options: { color: VERDE } }] : []),
+          ...(semCusto && PROP.dados.ja_cliente ? [{ text: (CFG?.params?.desconto_cliente_pct ?? 5) + '% de desconto no projeto se fechar em ' + (CFG?.params?.desconto_cliente_dias ?? 60) + ' dias', options: { color: VERDE } }] : [])],
           { x: 0.9, y: 3.7, w: 3.8, h: 1.4, fontFace: F, fontSize: 13, valign: 'top', paraSpaceAfter: 6 });
         sl.addText('Tributos inclusos conforme a legislação vigente na emissão de cada nota fiscal.', { x: 0.9, y: 5.6, w: 3.8, h: 0.7, fontFace: F, fontSize: 9, color: '8A99AD', valign: 'bottom' });
         const fmtMes = m => /^\d{4}-\d{2}$/.test(m || '') ? new Date(+m.slice(0, 4), +m.slice(5) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('. de ', '/').replace('.', '') : (m || '');
         const linhas = (I.cronograma || []).slice(0, 12), hd = o => ({ bold: true, color: 'FFFFFF', fill: { color: PETROLEO }, ...o });
         sl.addText('Cronograma de faturamento', { x: 5.4, y: 2.0, w: 7.3, h: 0.4, fontFace: F, fontSize: 14, bold: true, color: ESCURO });
-        if (linhas.length) sl.addTable([[{ text: 'Parcela', options: hd() }, { text: 'Mês', options: hd() }, { text: 'Valor', options: hd({ align: 'right' }) }], ...linhas.map((c, k) => [{ text: c.desc || '', options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: fmtMes(c.mes), options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: brl(c.valor), options: { align: 'right', bold: true, fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }])],
+        if (linhas.length && !semCusto) sl.addTable([[{ text: 'Parcela', options: hd() }, { text: 'Mês', options: hd() }, { text: 'Valor', options: hd({ align: 'right' }) }], ...linhas.map((c, k) => [{ text: c.desc || '', options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: fmtMes(c.mes), options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: brl(c.valor), options: { align: 'right', bold: true, fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }])],
           { x: 5.4, y: 2.5, w: 7.33, colW: [3.9, 1.6, 1.83], fontFace: F, fontSize: linhas.length > 8 ? 9 : 11, color: TXT, border: { type: 'solid', color: 'E3EAEE', pt: 0.5 }, rowH: Math.min(0.36, 3.9 / (linhas.length + 1)), valign: 'middle' }); }
       proximos.forEach(addConteudo);
       // encerramento
@@ -982,7 +991,7 @@
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           ${campo('vpp_i26', 'Impostos 2026 (%)', (p.impostos_por_ano || {})['2026'], 'Lucro Presumido: PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88')}${campo('vpp_i27', 'Impostos 2027 (%)', (p.impostos_por_ano || {})['2027'], 'CBS+IBS 11,3% (TCU, a confirmar pelo Senado até 15/12) + ISS 5 + IRPJ 4,8 + CSLL 2,88')}${campo('vpp_cred', 'Créditos de CBS a partir de 2027 (pontos %)', p.creditos_cbs_pct, 'CBS paga em nuvem, software, equipamentos, aluguel e PJ abate a devida — estime com o contador')}
           ${campo('vpp_infl', 'Inflação projetada (IPCA %/ano)', p.inflacao_anual_pct, 'Focus: IPCA 2027 4,34%')}${campo('vpp_diss', 'Dissídio acima da inflação (%)', p.dissidio_extra_pct)}
-          ${campo('vpp_mpoc', 'Margem da POC (%)', p.margem_poc_pct, 'POC é porta de entrada: margem menor')}${campo('vpp_cpoc', 'Crédito da POC no contrato (dias)', p.poc_credito_dias)}
+          ${campo('vpp_mpoc', 'Margem da POC (%)', p.margem_poc_pct, 'POC é porta de entrada: margem menor')}${campo('vpp_cpoc', 'Crédito da POC no contrato (dias)', p.poc_credito_dias)}${campo('vpp_psem', 'POC: semanas padrão', p.poc_semanas_padrao)}${campo('vpp_pcli', 'POC para cliente: % do preço (0 = sem custo)', p.poc_cliente_pct)}${campo('vpp_dcli', 'Desconto especial de cliente (%)', p.desconto_cliente_pct)}${campo('vpp_dcd', '… se fechar em (dias)', p.desconto_cliente_dias)}
           ${campo('vpp_tol', 'Tolerância acima do concorrente (%)', p.tolerancia_concorrente_pct, 'Acima disso, sugere desconto')}${campo('vpp_prem', 'Prêmio aceito sobre o concorrente (%)', p.premio_qualidade_pct, 'Desconto sugerido leva o preço até concorrente + este prêmio, nunca abaixo do piso')}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:6px;line-height:1.5;">${esc(CFG?.impostos_fonte || '')}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:8px;">Impostos: ${esc(CFG?.imposto_origem || '')}. As metas (anual/mensal) vêm do Dashboard; a receita realizada, do QuickBooks; o pipeline, do HubSpot.</div></div></div>
@@ -999,7 +1008,7 @@
   async function paramsSalvar() {
     const g = id => { const v = $(id).value; return v === '' ? undefined : +String(v).replace(',', '.'); };
     const params = { impostos_pct: g('vpp_imp'), overhead_pct: g('vpp_ovh'), margem_min_pct: g('vpp_mmin'), margem_alvo_pct: g('vpp_malvo'), desconto_recorrente_pct: g('vpp_desc'), contingencia: { baixo: g('vpp_cb'), medio: g('vpp_cm'), alto: g('vpp_ca') }, prazo_recebimento_dias: g('vpp_rec'), meta_recorrente_pct: g('vpp_mrec'), setup_pct: g('vpp_setup') };
-    Object.assign(params, { impostos_por_ano: { '2026': g('vpp_i26'), '2027': g('vpp_i27') }, creditos_cbs_pct: g('vpp_cred'), inflacao_anual_pct: g('vpp_infl'), dissidio_extra_pct: g('vpp_diss'), margem_poc_pct: g('vpp_mpoc'), poc_credito_dias: g('vpp_cpoc'), tolerancia_concorrente_pct: g('vpp_tol'), premio_qualidade_pct: g('vpp_prem') }); // v3.365
+    Object.assign(params, { impostos_por_ano: { '2026': g('vpp_i26'), '2027': g('vpp_i27') }, creditos_cbs_pct: g('vpp_cred'), inflacao_anual_pct: g('vpp_infl'), dissidio_extra_pct: g('vpp_diss'), margem_poc_pct: g('vpp_mpoc'), poc_credito_dias: g('vpp_cpoc'), poc_semanas_padrao: g('vpp_psem'), poc_cliente_pct: g('vpp_pcli'), desconto_cliente_pct: g('vpp_dcli'), desconto_cliente_dias: g('vpp_dcd'), tolerancia_concorrente_pct: g('vpp_tol'), premio_qualidade_pct: g('vpp_prem') }); // v3.365
     Object.keys(params.impostos_por_ano).forEach(k => params.impostos_por_ano[k] == null && delete params.impostos_por_ano[k]);
     if (params.margem_min_pct > params.margem_alvo_pct) return nota('A margem mínima não pode ser maior que a alvo', 'error');
     try { CFG = await api('prop_config_salvar', { params }); nota('Parâmetros salvos'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
