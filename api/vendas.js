@@ -473,6 +473,7 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
   G.entregaveis += ' Use exatamente as etapas do cronograma físico; cada fase com 4 a 8 entregáveis concretos (documentos, artefatos, funcionalidades, evidências de teste).';
   G.equipe += ' Cada perfil com 5 a 8 atribuições específicas deste projeto.';
   G.objetivos += ' Objetivos mensuráveis e ligados ao escopo.';
+  if (tipoDoc === 'poc') G.rate_card = 'POC: NÃO cite valores por hora nem valores do rate card. 1 parágrafo dizendo que a equipe da POC é enxuta (perfis e horas na tabela inserida pelo sistema), com Analista de IA para suporte, e que o rate card oficial com valores por perfil será apresentado na proposta do projeto.';
   G.diferenciais += ' Ligados a este projeto (não genéricos).';
   G.garantias += ' Cada subseção com 3 a 6 marcadores específicos.';
   G.premissas_exec += ' 8 a 15 premissas concretas (acessos, ambientes, dados, disponibilidade de usuários-chave, homologação, mudanças de escopo).';
