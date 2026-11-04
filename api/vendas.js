@@ -37,6 +37,24 @@ async function claude(system, content, maxTokens = 2000, ms = 55000) {
   } catch (e) { throw new Error(e.name === 'AbortError' ? 'A IA demorou demais — tente de novo' : e.message); }
   finally { clearTimeout(tm); }
 }
+// v3.383: redação em streaming — se o tempo do servidor acabar, devolve o que já foi escrito (o JSON é reparado)
+// em vez de perder o capítulo inteiro; 429/529 (limite da IA) sobem com o código para o navegador aguardar e repetir.
+async function claudeStream(system, content, maxTokens = 4000, ms = 95000) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), ms); let txt = '';
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content }] }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro')); }
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!l.startsWith('data:')) continue; try { const ev = JSON.parse(l.slice(5)); if (ev.type === 'content_block_delta' && ev.delta?.text) txt += ev.delta.text; if (ev.type === 'error') throw new Error('Claude API [stream]: ' + (ev.error?.message || 'erro')); } catch (e) { if (/Claude API/.test(e.message)) throw e; } } }
+    return txt;
+  } catch (e) { if (e.name === 'AbortError' && txt.length > 200) return txt; throw new Error(e.name === 'AbortError' ? 'A IA demorou demais — tente de novo' : e.message); }
+  finally { clearTimeout(tm); }
+}
 function json(txt) {
   const t = String(txt || '').replace(/```json|```/g, '').trim();
   const i = t.search(/[{[]/); if (i < 0) throw new Error('A IA não devolveu JSON');
@@ -53,6 +71,7 @@ function _jsonReparar(t) {
     if (c === '"') str = true; else if (c === '{' || c === '[') pilha.push(c === '{' ? '}' : ']');
     else if (c === '}' || c === ']') { pilha.pop(); cortes.push({ pos: k + 1, pilha: [...pilha] }); if (!pilha.length) break; }
     else if (c === ',') cortes.push({ pos: k, pilha: [...pilha] }); }
+  if (str) { try { return JSON.parse(semVirg(t.replace(/\\+$/, '') + '"' + pilha.slice().reverse().join(''))); } catch (_) {} } // cortado no meio de um texto: fecha o texto e aproveita
   for (let n = cortes.length - 1; n >= 0 && n >= cortes.length - 400; n--) { const c = cortes[n];
     try { return JSON.parse(semVirg(t.substring(0, c.pos) + c.pilha.slice().reverse().join(''))); } catch (_) {} }
   return undefined;
@@ -460,8 +479,8 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
   G.premissas_com += ' 8 a 12 premissas concretas.';
   const PROF = '\nNÍVEL DE DETALHE: texto completo e detalhado, pronto para enviar ao cliente, específico deste projeto (use os nomes, sistemas, áreas e números do briefing/escopo); nada de frases genéricas ou de placeholder; não resuma o escopo.';
   const FORMA = '\nFORMATAÇÃO DO "conteudo" (markdown simples, é convertido para o modelo oficial): parágrafos separados por linha em branco; subtítulo numa linha própria começando por "### "; marcadores com "- "; alíneas com "a) "; rótulo em negrito no início da linha com "**Rótulo:** texto". Sem tabelas em markdown.';
-  const pedir = async (chaves, extra) => json(await claude(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
-    + `\nDevolva {"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]${extra ? ',"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}]' : ''}}`, 7000, 108000));
+  const pedir = async (chaves, extra) => json(await claudeStream(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
+    + `\n${extra ? 'Escreva PRIMEIRO a "matriz_responsabilidades" e depois as secoes. ' : ''}Devolva {${extra ? '"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}],' : ''}"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]}`, chaves.includes('escopo') ? 6000 : 4000, 100000));
   // v3.382: o navegador pede por partes (cada parte é uma chamada própria, com repetição) — evita estourar o tempo e o limite da IA
   const MATRIZ_X = '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).';
   if (Array.isArray(chaves) && chaves.length) { const ks = chaves.filter(k => G[k]); if (!ks.length) throw new Error('capítulos inválidos');

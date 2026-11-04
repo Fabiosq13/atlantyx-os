@@ -419,7 +419,7 @@
         <div class="tw"><table style="min-width:520px;"><thead><tr><th>Perfil</th><th style="width:80px;">Horas</th><th style="width:90px;">Custo/h</th><th style="width:90px;">Preço/h</th><th style="width:26px;"></th></tr></thead><tbody id="vpPerfis"></tbody></table></div>
         <div id="vpEstInfo" style="font-size:10.5px;color:var(--t2);margin-top:8px;line-height:1.6;"></div>
         <button class="btn btn-p" id="vpBtnAnalisar" onclick="VD.analisar()" style="width:100%;justify-content:center;margin-top:10px;">◆ Analisar formatos x metas</button></div></div></div>
-      <div id="vpAnalise"></div><div id="vpCrono"></div><div id="vpDoc"></div><div id="vpChat"></div>
+      <div id="vpAnalise"></div><div id="vpCrono"></div><div id="vpRedStatus"></div><div id="vpDoc"></div><div id="vpChat"></div>
       <div class="cp-acoes"><button class="btn btn-gn" onclick="VD.salvar()" style="flex:1;justify-content:center;font-weight:700;">💾 Salvar proposta</button>
         <button class="btn btn-g" onclick="VD.baixarPdf()">⬇ PDF</button><button class="btn btn-or" id="vpBtnPpt" onclick="VD.gerarApresentacao()" title="Apresentação da solução para o cliente (PowerPoint) com escopo, complementares, cronograma e investimento">📊 Apresentação (PPTX)</button><button class="btn btn-g" onclick="VD.baixarWord()">⬇ Word</button>
         <button class="btn btn-g" onclick="VD.mudarStatus(null,'enviada')">📨 Marcar como enviada</button></div>`;
@@ -544,19 +544,28 @@
   const RED_PARTES = [['escopo'], ['carta', 'apresentacao'], ['contexto', 'objetivos', 'diferenciais'], ['entregaveis', 'equipe'], ['resumo_escopo', 'investimento', 'rate_card', 'bonus'], ['premissas_exec', 'premissas_com'], ['garantias'], ['suporte', 'pagamento', 'validade', 'aceite']];
   const RED_ORDEM = RED_PARTES.flat();
   const _vazios = () => { const S = PROP.documento?.secoes || []; return RED_ORDEM.filter(k => !String(S.find(x => x.chave === k)?.conteudo || '').trim()); };
-  async function _redigirPartes(chavesAlvo, btn) {
+  let _redRodando = false;
+  const _redMsg = (h, cor) => { const e = $('vpRedStatus'); if (e) e.innerHTML = h ? `<div style="margin:0 0 10px;padding:9px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--bg4);font-size:11px;color:${cor || 'var(--t1)'};">${h}</div>` : ''; };
+  async function _redigirPartes(chavesAlvo, btn0) {
+    if (_redRodando) { nota('A redação já está em andamento — aguarde', 'error'); return ['em andamento']; } _redRodando = true;
+    const btn = { set innerHTML(h) { _redMsg(h); if (btn0 && document.body.contains(btn0)) btn0.innerHTML = h; }, get innerHTML() { return ''; } };
     const partes = RED_PARTES.map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = [];
-    const etiqueta = btn ? btn.innerHTML : ''; const prog = () => { if (btn) btn.innerHTML = `✍ Redigindo ${feitas}/${partes.length} partes...`; }; prog();
+    const prog = () => { btn.innerHTML = `✍ Redigindo com a IA: parte ${Math.min(feitas + 1, partes.length)} de ${partes.length} (${partes[Math.min(feitas, partes.length - 1)].join(', ')})… cada parte leva até 1,5 min`; }; prog();
     const D = PROP.documento;
-    const roda = async p => { for (let t = 0; t < 2; t++) { try { const r = await api('redigir', { proposta: { ...PROP, documento: null }, formato: PROP.formato, chaves: p }, 118000);
+    const espera = (seg, txt) => new Promise(ok => { let n = seg; const tk = () => { btn.innerHTML = `⏳ ${txt} — ${n}s`; if (n-- <= 0) return ok(); setTimeout(tk, 1000); }; tk(); });
+    const roda = async p => { for (let t = 0; t < 3; t++) { try { const r = await api('redigir', { proposta: { ...PROP, documento: null }, formato: PROP.formato, chaves: p }, 118000);
           r.secoes.forEach(x => { const k = D.secoes.findIndex(y => y.chave === x.chave); if (k >= 0) D.secoes[k] = x; else D.secoes.push(x); });
-          if (r.matriz_responsabilidades?.length) D.matriz_responsabilidades = r.matriz_responsabilidades; return; } catch (e) { if (t) erros.push(p.join(', ') + ': ' + e.message); } } };
-    const fila = [...partes]; await Promise.all([0, 1].map(async () => { while (fila.length) { const p = fila.shift(); await roda(p); feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }));
-    if (btn) btn.innerHTML = etiqueta; return erros;
+          if (r.matriz_responsabilidades?.length) D.matriz_responsabilidades = r.matriz_responsabilidades; return; }
+        catch (e) { const lim = /\[(429|529)\]|rate|overloaded|limit/i.test(e.message); if (t === 2) { erros.push(p.join(', ') + ': ' + e.message); break; }
+          await espera(lim ? 45 : 5, lim ? 'Limite de uso da IA atingido, aguardando para continuar' : 'Tentando de novo'); prog(); } } };
+    const fila = [...partes]; await Promise.all([0].map(async () => { while (fila.length) { const p = fila.shift(); await roda(p); feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }));
+    _redRodando = false; D._erros = erros; renderDoc();
+    const falta = _vazios(); _redMsg(falta.length ? `⚠ ${falta.length} capítulo(s) continuam em branco (${falta.join(', ')}).${erros.length ? ' Erro da IA: ' + esc(erros[0]) : ''}` : '✅ Todos os capítulos foram redigidos — revise o texto abaixo e salve a proposta.', falta.length ? 'var(--red)' : 'var(--green)');
+    return erros;
   }
   async function redigir() {
     lerForm(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
-    const btn = $('vpBtnRedigir'), fim = ocupado(btn, '✍ Redigindo...');
+    const btn = $('vpBtnRedigir'), fim = ocupado(btn, '✍ Redigindo (2 a 4 min)...');
     PROP.documento = { titulo: PROP.titulo || '', secoes: [], matriz_responsabilidades: [], validade_dias: 90, modelo_oficial: true, formato: PROP.formato, gerado_em: new Date().toISOString() };
     renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' });
     const erros = await _redigirPartes(RED_ORDEM, btn); fim();
@@ -583,7 +592,7 @@
       ${d.modelo_oficial ? `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px 12px;margin-bottom:10px;">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:10.5px;"><b>📄 Modelo oficial Atlantyx</b><span style="color:var(--t2);">capa, cabeçalho, rodapé, fonte e capítulos iguais aos arquivos-padrão</span>
           <select class="fsel" style="width:auto;font-size:10.5px;margin-left:auto;" onchange="VD.modeloSet(this.value)">${[['tecnica_comercial', 'Técnica-Comercial'], ['tecnica', 'Técnica (sem valores)'], ['comercial', 'Comercial']].map(([k, v]) => `<option value="${k}"${(PROP.dados.modelo_doc || 'tecnica_comercial') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
-        ${(() => { const v = _vazios(); return v.length ? `<div style="margin-top:7px;padding:6px 9px;border-radius:6px;background:rgba(220,38,38,.08);color:var(--red);font-size:10.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">⚠ ${v.length} capítulo(s) em branco: ${esc(v.map(k => ({ carta: 'Carta' }[k] || k)).join(', '))}<button class="btn btn-or" id="vdBtnCompl2" style="font-size:10px;padding:4px 9px;margin-left:auto;" onclick="VD.completarVazios()">✍ Completar capítulos em branco</button></div>` : ''; })()}
+        ${(() => { const v = _vazios(); return v.length ? `<div style="margin-top:7px;padding:6px 9px;border-radius:6px;background:rgba(220,38,38,.08);color:var(--red);font-size:10.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">⚠ ${v.length} capítulo(s) em branco: ${esc(v.map(k => ({ carta: 'Carta' }[k] || k)).join(', '))}${(PROP.documento._erros || []).length ? `<div style="width:100%;font-size:10px;color:var(--t2);">Último erro da IA: ${esc(PROP.documento._erros[0])}</div>` : ''}<button class="btn btn-or" id="vdBtnCompl2" style="font-size:10px;padding:4px 9px;margin-left:auto;" onclick="VD.completarVazios()">✍ Completar capítulos em branco</button></div>` : ''; })()}
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;">${[['tecnica', 'Técnica'], ['comercial', 'Comercial'], ['tecnica_comercial', 'Técnica-Comercial']].map(([k, v]) => `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','docx')">⬇ Word ${v}</button><button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','pdf')">⬇ PDF ${v}</button>`).join('')}</div>
         <details style="margin-top:7px;font-size:10.5px;"><summary style="cursor:pointer;color:var(--t2);">Dados da capa e da tabela "Dados do Projeto"</summary><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;">
           ${[['area', 'Área solicitante'], ['cnpj', 'CNPJ do cliente'], ['origem', 'Documento de origem'], ['local', 'Local de execução'], ['lider', 'Líder do projeto'], ['contato_tecnico', 'Contato técnico'], ['codigo', 'Código de serviço'], ['revisao', 'Linha de revisão (capa)']].map(([k, r]) => `<label style="font-size:10px;color:var(--t2);">${r}<input class="fi" value="${esc((PROP.dados.capa || {})[k] || '')}" onchange="VD.capaSet('${k}',this.value)"/></label>`).join('')}</div></details></div>`
