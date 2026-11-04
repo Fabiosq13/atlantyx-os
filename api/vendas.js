@@ -378,6 +378,7 @@ async function estimar({ escopo, tipo_demanda, meses, tipo_documento, semanas } 
   return r;
 }
 async function analisar(base, entrada = {}) {
+  if (entrada.ja_cliente == null && entrada.cliente) entrada.ja_cliente = (await clienteChecar({ cliente: entrada.cliente })).ja_cliente;
   const { params } = await propConfig(); const M = await contextoMetas(base); const mg = await margens(); const pd = await padrao({});
   const rc = await rateCard();
   const perfis = (entrada.perfis || []).map(x => { const c = rc.find(y => y.perfil.toLowerCase() === String(x.perfil || '').toLowerCase()) || {};
@@ -445,6 +446,18 @@ async function escopoGerar({ produto_id, cliente, necessidade, tipo_documento } 
   return { escopo: await claude(sys, usr, 3000, 70000), produto: p.nome };
 }
 
+// v3.378 · já é cliente? procura o nome nos projetos (financeiro), nas propostas ganhas e na base aprendida
+async function clienteChecar({ cliente } = {}) {
+  const sem = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const STOP = new Set(['energia', 'grupo', 'brasil', 'servicos', 'solucoes', 'sistemas', 'tecnologia', 'holding', 'participacoes', 'ltda', 'cia', 'companhia', 'industria', 'comercio']);
+  const tokens = sem(cliente).split(/[^a-z0-9]+/).filter(t => t.length >= 3 && !STOP.has(t) && !['s/a', 'sa', 'the'].includes(t));
+  if (!tokens.length) return { ja_cliente: false, onde: [] };
+  const sql = await getSql(); const q = async f => { try { return await f(); } catch (_) { return []; } };
+  const [proj, props] = await Promise.all([q(() => sql`SELECT DISTINCT cliente FROM projetos_financeiros WHERE cliente IS NOT NULL AND COALESCE(status,'ativo') <> 'cancelado'`), q(() => sql`SELECT DISTINCT cliente FROM propostas WHERE status = 'ganha' AND cliente IS NOT NULL`)]);
+  const bate = n => { const t = sem(n).split(/[^a-z0-9]+/); return tokens.some(k => t.includes(k)); };
+  const onde = [...proj.filter(r => bate(r.cliente)).map(r => 'projeto: ' + r.cliente), ...props.filter(r => bate(r.cliente)).map(r => 'proposta ganha: ' + r.cliente)];
+  return { ja_cliente: onde.length > 0, onde: [...new Set(onde)].slice(0, 5) };
+}
 // ═══════════════════════ v3.366 · ESCOPO COMPLEMENTAR E APRESENTAÇÃO DA SOLUÇÃO ═══════════════════════
 // v3.375 · copiloto da proposta: conversa sobre valores, escopo e texto, devolvendo ajustes que o usuário aplica com um clique
 async function propChat({ proposta, mensagens } = {}) {
@@ -691,6 +704,7 @@ async function handler(req, res) {
     estimar: () => estimar(payload),
     analisar: () => analisar(base, payload),
     redigir: () => redigir(payload),
+    cliente_checar: () => clienteChecar(payload),
     prop_chat: () => propChat(payload),
     prop_salvar: () => propSalvar(payload),
     prop_listar: () => sqlRun(async sql => ({ propostas: await sql`SELECT id, numero, cliente, contato, titulo, status, formato, valor_total, valor_mensal, meses, margem_pct, motivo_resultado, projeto_id, criado_em, enviada_em, fechada_em, atualizado_em, documento->>'validade_dias' AS validade_dias FROM propostas ORDER BY atualizado_em DESC LIMIT 300` })),

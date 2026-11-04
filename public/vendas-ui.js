@@ -382,13 +382,13 @@
     return `<div id="vpRfpInfo"></div><div id="vpStatus"></div><div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">① Cliente e escopo</div></div><div class="pb">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="vpCliente" list="vpClientesDL" placeholder="Ex.: CPFL Energia"/><datalist id="vpClientesDL"></datalist></div>
+          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="vpCliente" list="vpClientesDL" placeholder="Ex.: CPFL Energia" onchange="VD.clienteChecar()"/><datalist id="vpClientesDL"></datalist></div>
           <div class="fg"><label class="fl">Contato / decisor</label><input class="fi" id="vpContato" placeholder="Nome e cargo"/></div></div>
         <div class="fg"><label class="fl">Título da proposta</label><input class="fi" id="vpTitulo" placeholder="Ex.: Plataforma de dados de geração eólica"/></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div class="fg"><label class="fl">Tipo de documento</label><select class="fsel" id="vpTipoDoc" onchange="VD.tipoDocMudou()">${Object.entries(TIPODOC).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
           <div class="fg"><label class="fl" title="Preço total estimado do concorrente para o mesmo escopo — a máquina sugere desconto se ficarmos muito acima">Preço do concorrente (R$ total, se souber)</label><input class="fi" id="vpConc" placeholder="R$"/></div></div>
-        <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin:-2px 0 8px;cursor:pointer;" title="Cliente que a Atlantyx já atende ou atendeu"><input type="checkbox" id="vpJaCli" onchange="VD.tipoDocMudou()"/> <b>Já é cliente da Atlantyx</b> <span id="vpJaCliInfo" style="color:var(--t3);"></span></label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin:-2px 0 8px;cursor:pointer;" title="Cliente que a Atlantyx já atende ou atendeu"><input type="checkbox" id="vpJaCli" onchange="PROP.dados.ja_cliente_manual=true;VD.tipoDocMudou()"/> <b>Já é cliente da Atlantyx</b> <span id="vpJaCliInfo" style="color:var(--t3);"></span></label>
         <div id="vpPocBox" style="display:none;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:8px;">
           <div style="font-size:10.5px;font-weight:700;margin-bottom:6px;">🧪 POC profissional — período fechado, critérios de sucesso e crédito no contrato</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -501,6 +501,7 @@
     const semCusto = d.perfis.filter(x => !(x.custo_hora > 0)).map(x => x.perfil), semHora = d.perfis.filter(x => !(x.horas > 0)).map(x => x.perfil);
     if (semCusto.length) { nota('Falta o custo/hora de: ' + semCusto.join(', ') + ' — preencha na linha ou cadastre no Rate card', 'error'); return; }
     if (semHora.length === d.perfis.length) { nota('Preencha as horas de pelo menos um perfil', 'error'); return; }
+    if (PROP.cliente && !d.ja_cliente && !d.ja_cliente_manual) { await clienteChecar(); lerForm(); }
     const fim = ocupado($('vpBtnAnalisar'), '◆ Analisando...');
     const _conc = +String(d.preco_concorrente || '').replace(/[^\d,]/g, '').replace(',', '.') || null; const _meses = d.tipo_documento === 'poc' ? Math.max(.25, Math.round((d.poc.semanas || 6) / 4.33 * 100) / 100) : (d.meses || 3);
     try { PROP.analise = await api('analisar', { ja_cliente: !!d.ja_cliente, cliente: PROP.cliente, perfis: d.perfis, meses: _meses, tipo_documento: d.tipo_documento, preco_concorrente: _conc, descontos: d.descontos || {}, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo }, 90000);
@@ -528,9 +529,15 @@
         ${f.condicao_cliente ? `<div style="font-size:10px;color:var(--green);margin-top:5px;">🤝 Cliente: ${f.condicao_cliente.desconto_pct}% se fechar em ${f.condicao_cliente.dias} dias → <b>${R(f.condicao_cliente.valor_com_desconto)}</b>${f.condicao_cliente.limitado_pelo_piso ? ' (limitado ao piso)' : ''}</div>` : ''}
         ${compHtml(f)}
         <details style="margin-top:6px;font-size:10px;"><summary style="cursor:pointer;color:var(--t2);">cronograma de faturamento</summary>${f.cronograma.map(x => `<div>${esc(x.mes)} · ${esc(x.desc)} · <b>${R(x.valor)}</b> (recebe ${esc(x.recebe)})</div>`).join('')}</details></label>`).join('')}</div>
-      ${a.explicacao ? `<div style="margin-top:10px;background:var(--bg4);border-left:3px solid var(--blue);border-radius:6px;padding:10px 12px;font-size:11.5px;line-height:1.7;white-space:pre-wrap;">${esc(a.explicacao)}</div>` : ''}
+      ${a.explicacao ? `<div style="margin-top:10px;background:var(--bg4);border-left:3px solid var(--blue);border-radius:6px;padding:10px 12px;font-size:11.5px;line-height:1.7;">${_mdLeve(a.explicacao)}</div>` : ''}
       <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Pesos: metas 40% · vendável 35% · caixa 15% · risco 10%. Impostos (média do período) ${a.custos?.impostos_efetivo_pct ?? a.params.impostos_pct}% · overhead ${a.params.overhead_pct}% · margem mínima ${a.params.margem_min_pct}% / alvo ${a.params.margem_alvo_pct}% · recebimento em ${a.params.prazo_recebimento_dias} dias. Fonte da conversão por formato: ${esc(a.fontes?.win_rate || '')}.</div>
       <button class="btn btn-or" id="vpBtnRedigir" onclick="VD.redigir()" style="margin-top:10px;width:100%;justify-content:center;">✍ Redigir proposta no formato escolhido (padrão aprendido)</button></div></div>`;
+  }
+  const _mdLeve = t => esc(String(t || '')).split('\n').map(l => { const h = l.match(/^\s*#{1,6}\s*(.+)$/); if (h) return `<div style="font-weight:700;margin:6px 0 2px;">${h[1]}</div>`; if (/^\s*-{3,}\s*$/.test(l)) return '<hr style="border:0;border-top:1px solid var(--bd);margin:6px 0;">';
+    return l.replace(/^\s*[-•]\s+/, '• ').replace(/^\s*(\d+)\.\s+/, '$1. ') || '<div style="height:4px;"></div>'; }).map(l => /^<(div|hr)/.test(l) ? l : l + '<br>').join('').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*\*/g, '');
+  async function clienteChecar() {
+    const d = PROP?.dados; const nome = $('vpCliente')?.value.trim(); if (!d || !nome || d.ja_cliente_manual) return;
+    try { const r = await api('cliente_checar', { cliente: nome }, 15000); if (r.ja_cliente && !$('vpJaCli').checked) { $('vpJaCli').checked = true; tipoDocMudou(); const i = $('vpJaCliInfo'); if (i) i.textContent += ' · detectado (' + (r.onde || [])[0] + ')'; nota('Cliente da Atlantyx detectado — regras de cliente aplicadas'); } } catch (_) {}
   }
   function escolher(f) { PROP.formato = f; renderAnalise(); cronoRender(); }
   async function redigir() {
@@ -1207,5 +1214,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar };
 })();
