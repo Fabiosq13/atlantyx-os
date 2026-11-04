@@ -540,12 +540,35 @@
     try { const r = await api('cliente_checar', { cliente: nome }, 15000); if (r.ja_cliente && !$('vpJaCli').checked) { $('vpJaCli').checked = true; tipoDocMudou(); const i = $('vpJaCliInfo'); if (i) i.textContent += ' · detectado (' + (r.onde || [])[0] + ')'; nota('Cliente da Atlantyx detectado — regras de cliente aplicadas'); } } catch (_) {}
   }
   function escolher(f) { PROP.formato = f; renderAnalise(); cronoRender(); }
+  // v3.382 · redação por partes: cada parte é uma chamada própria (2 ao mesmo tempo, com repetição) — nenhum capítulo fica em branco
+  const RED_PARTES = [['escopo'], ['carta', 'apresentacao'], ['contexto', 'objetivos', 'diferenciais'], ['entregaveis', 'equipe'], ['resumo_escopo', 'investimento', 'rate_card', 'bonus'], ['premissas_exec', 'premissas_com'], ['garantias'], ['suporte', 'pagamento', 'validade', 'aceite']];
+  const RED_ORDEM = RED_PARTES.flat();
+  const _vazios = () => { const S = PROP.documento?.secoes || []; return RED_ORDEM.filter(k => !String(S.find(x => x.chave === k)?.conteudo || '').trim()); };
+  async function _redigirPartes(chavesAlvo, btn) {
+    const partes = RED_PARTES.map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = [];
+    const etiqueta = btn ? btn.innerHTML : ''; const prog = () => { if (btn) btn.innerHTML = `✍ Redigindo ${feitas}/${partes.length} partes...`; }; prog();
+    const D = PROP.documento;
+    const roda = async p => { for (let t = 0; t < 2; t++) { try { const r = await api('redigir', { proposta: { ...PROP, documento: null }, formato: PROP.formato, chaves: p }, 118000);
+          r.secoes.forEach(x => { const k = D.secoes.findIndex(y => y.chave === x.chave); if (k >= 0) D.secoes[k] = x; else D.secoes.push(x); });
+          if (r.matriz_responsabilidades?.length) D.matriz_responsabilidades = r.matriz_responsabilidades; return; } catch (e) { if (t) erros.push(p.join(', ') + ': ' + e.message); } } };
+    const fila = [...partes]; await Promise.all([0, 1].map(async () => { while (fila.length) { const p = fila.shift(); await roda(p); feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }));
+    if (btn) btn.innerHTML = etiqueta; return erros;
+  }
   async function redigir() {
     lerForm(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
-    const fim = ocupado($('vpBtnRedigir'), '✍ Redigindo (até 1 min)...');
-    let ok = false;
-    try { const r = await api('redigir', { proposta: PROP, formato: PROP.formato }, 115000); PROP.documento = r.documento; renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' }); if ((r.documento.faltando || []).length) nota('A IA não devolveu ' + r.documento.faltando.length + ' capítulo(s): ' + r.documento.faltando.join(', ') + ' — clique em Redigir de novo para completar', 'error'); else nota('Proposta redigida — revise e salve'); ok = true; }
-    catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); return ok;
+    const btn = $('vpBtnRedigir'), fim = ocupado(btn, '✍ Redigindo...');
+    PROP.documento = { titulo: PROP.titulo || '', secoes: [], matriz_responsabilidades: [], validade_dias: 90, modelo_oficial: true, formato: PROP.formato, gerado_em: new Date().toISOString() };
+    renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const erros = await _redigirPartes(RED_ORDEM, btn); fim();
+    const falta = _vazios(); if (falta.length) nota(`${falta.length} capítulo(s) não vieram (${falta.join(', ')}) — clique em "Completar capítulos em branco"${erros.length ? '. Erro: ' + erros[0] : ''}`, 'error'); else nota('Proposta redigida — todos os capítulos preenchidos. Revise e salve');
+    return !falta.length || (PROP.documento.secoes.length > 0);
+  }
+  async function completarVazios() {
+    lerDoc(); if (!PROP.documento) return redigir(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
+    if (!PROP.documento.modelo_oficial) { if (!confirm('Este texto é do formato antigo. Redigir de novo no modelo oficial?')) return; return redigir(); }
+    const falta = _vazios(); if (!falta.length) return nota('Nenhum capítulo em branco');
+    const btn = $('vdBtnCompl2'), fim = ocupado(btn, '✍ Completando...'); const erros = await _redigirPartes(falta, btn); fim();
+    const ainda = _vazios(); nota(ainda.length ? `Ainda faltam ${ainda.length}: ${ainda.join(', ')}${erros.length ? ' — ' + erros[0] : ''}` : 'Capítulos completados — revise e salve', ainda.length ? 'error' : 'success'); return !ainda.length;
   }
   // v3.374: PDF/Word sem texto redigido → oferece fazer a análise (se faltar) e a redação na hora
   async function _garantirDoc() {
@@ -560,6 +583,7 @@
       ${d.modelo_oficial ? `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px 12px;margin-bottom:10px;">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:10.5px;"><b>📄 Modelo oficial Atlantyx</b><span style="color:var(--t2);">capa, cabeçalho, rodapé, fonte e capítulos iguais aos arquivos-padrão</span>
           <select class="fsel" style="width:auto;font-size:10.5px;margin-left:auto;" onchange="VD.modeloSet(this.value)">${[['tecnica_comercial', 'Técnica-Comercial'], ['tecnica', 'Técnica (sem valores)'], ['comercial', 'Comercial']].map(([k, v]) => `<option value="${k}"${(PROP.dados.modelo_doc || 'tecnica_comercial') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+        ${(() => { const v = _vazios(); return v.length ? `<div style="margin-top:7px;padding:6px 9px;border-radius:6px;background:rgba(220,38,38,.08);color:var(--red);font-size:10.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">⚠ ${v.length} capítulo(s) em branco: ${esc(v.map(k => ({ carta: 'Carta' }[k] || k)).join(', '))}<button class="btn btn-or" id="vdBtnCompl2" style="font-size:10px;padding:4px 9px;margin-left:auto;" onclick="VD.completarVazios()">✍ Completar capítulos em branco</button></div>` : ''; })()}
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;">${[['tecnica', 'Técnica'], ['comercial', 'Comercial'], ['tecnica_comercial', 'Técnica-Comercial']].map(([k, v]) => `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','docx')">⬇ Word ${v}</button><button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','pdf')">⬇ PDF ${v}</button>`).join('')}</div>
         <details style="margin-top:7px;font-size:10.5px;"><summary style="cursor:pointer;color:var(--t2);">Dados da capa e da tabela "Dados do Projeto"</summary><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;">
           ${[['area', 'Área solicitante'], ['cnpj', 'CNPJ do cliente'], ['origem', 'Documento de origem'], ['local', 'Local de execução'], ['lider', 'Líder do projeto'], ['contato_tecnico', 'Contato técnico'], ['codigo', 'Código de serviço'], ['revisao', 'Linha de revisão (capa)']].map(([k, r]) => `<label style="font-size:10px;color:var(--t2);">${r}<input class="fi" value="${esc((PROP.dados.capa || {})[k] || '')}" onchange="VD.capaSet('${k}',this.value)"/></label>`).join('')}</div></details></div>`
@@ -703,6 +727,9 @@
     return { blocos: B, cabecalho: `${M.cab} – ${PROP.titulo || ''} – ${PROP.cliente || ''}${modelo === 'tecnica' ? ' (sem valores comerciais)' : ''}`, rodape: `${razao} | CNPJ: ${cnpj} | ${email}`, nomeArq: `${M.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}_${(PROP.cliente || 'cliente').replace(/[^\w]+/g, '_')}_${PROP.numero || 'rascunho'}` };
   }
   async function baixarModelo(modelo, tipo) {
+    lerDoc(); const MODq = await _carregarModelo().catch(() => null); const caps = MODq ? ['carta', ...MODq.MODELOS[modelo].caps] : RED_ORDEM;
+    const vaz = _vazios().filter(k => caps.includes(k));
+    if (vaz.length && confirm(`${vaz.length} capítulo(s) deste formato estão em branco (${vaz.join(', ')}).\n\nCompletar agora com a IA antes de gerar o arquivo? (Cancelar = gerar assim mesmo)`)) { await completarVazios(); }
     try { const MOD = await _carregarModelo(), doc = await montarModelo(modelo); const salvar = (b, n) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; a.click(); };
       if (tipo === 'docx') { salvar(await MOD.gerarDocx(doc), doc.nomeArq + '.docx'); return nota('Word gerado no modelo oficial'); }
       const pdfMake = await window._carregarPdfMake(); const logo = await _imgData('/modelos/logo-proposta.png'); const base = location.origin + '/fonts/montserrat-latin-';
@@ -1299,5 +1326,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios };
 })();

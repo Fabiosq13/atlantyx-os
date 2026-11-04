@@ -394,7 +394,7 @@ async function analisar(base, entrada = {}) {
   }
   return r;
 }
-async function redigir({ proposta, formato } = {}) {
+async function redigir({ proposta, formato, chaves } = {}) {
   const pr = proposta || {}; const f = (pr.analise?.formatos || []).find(x => x.formato === (formato || pr.formato)) || pr.analise?.formatos?.[0];
   if (!f) throw new Error('Analise os formatos antes de redigir');
   const pd = await padrao({}); const { instrucoes, params } = await propConfig();
@@ -462,6 +462,13 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
   const FORMA = '\nFORMATAÇÃO DO "conteudo" (markdown simples, é convertido para o modelo oficial): parágrafos separados por linha em branco; subtítulo numa linha própria começando por "### "; marcadores com "- "; alíneas com "a) "; rótulo em negrito no início da linha com "**Rótulo:** texto". Sem tabelas em markdown.';
   const pedir = async (chaves, extra) => json(await claude(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
     + `\nDevolva {"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]${extra ? ',"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}]' : ''}}`, 7000, 108000));
+  // v3.382: o navegador pede por partes (cada parte é uma chamada própria, com repetição) — evita estourar o tempo e o limite da IA
+  const MATRIZ_X = '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).';
+  if (Array.isArray(chaves) && chaves.length) { const ks = chaves.filter(k => G[k]); if (!ks.length) throw new Error('capítulos inválidos');
+    const r = await pedir(ks, ks.includes('garantias') ? MATRIZ_X : '');
+    const sec = (r.secoes || []).filter(x => ks.includes(x.chave) && String(x.conteudo || '').trim()).map(x => ({ chave: x.chave, titulo: TITULOS_CAP[x.chave] || x.chave, conteudo: String(x.conteudo) }));
+    if (!sec.length) throw new Error('A IA não devolveu o texto destes capítulos');
+    return { parte: true, secoes: sec, matriz_responsabilidades: Array.isArray(r.matriz_responsabilidades) ? r.matriz_responsabilidades : null, formato: f.formato }; }
   const RES = await Promise.all(PARTES.map((p, i) => pedir(p, i === 3 ? '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).' : '').catch(e => ({ secoes: [], erro: e.message }))));
   if (RES.every(r => !(r.secoes || []).length)) throw new Error(RES[0].erro || 'A IA não devolveu o texto');
   const B1 = RES[3], ordem = PARTES.flat(), todas = RES.flatMap(r => r.secoes || []);
