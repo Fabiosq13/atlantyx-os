@@ -94,7 +94,22 @@ async function rateCardSugerir() {
     if (!m.preco_teto) m.preco_teto = r2(m.preco_alvo * 1.25); mapa[k.toLowerCase()] = m; });
   Object.entries(obs).forEach(([k, vs]) => { const m = mapa[k.toLowerCase()] || { perfil: k }; m.preco_observado = r2(mediana(vs)); m.n_observacoes = vs.length;
     if (!m.preco_alvo) m.preco_alvo = m.preco_observado; if (!m.preco_teto) m.preco_teto = r2(Math.max(...vs)); if (!m.custo_hora) m.custo_hora = r2(m.preco_observado / fator); m.custo_fonte = m.custo_fonte || 'estimado do preço praticado'; mapa[k.toLowerCase()] = m; });
-  return { sugestao: Object.values(mapa), fontes: { cargos_rh: rh.length, perfis_observados: Object.keys(obs).length } };
+  // v3.369: sem custo no RH e sem propostas aprendidas → a IA sugere um rate card de mercado (Brasil) para revisar
+  let mercado = 0, aviso = '';
+  if (!rh.length && !Object.keys(obs).length) {
+    try {
+      const r = json(await claude('Você é especialista em remuneração de TI no Brasil (consultorias de dados, BI, engenharia de dados e IA). Responda APENAS JSON.',
+        `Monte um rate card de referência de mercado (Brasil, ${new Date().getFullYear()}) para uma consultoria de dados e IA com estes perfis (pode ajustar nomes): Engenheiro de Dados Júnior, Pleno e Sênior; Arquiteto de Dados; Analista de BI Pleno e Sênior; Cientista de Dados Pleno e Sênior; Engenheiro de IA/ML Sênior; Gerente de Projetos; Analista de Negócios; QA; DevOps/Cloud.
+custo_hora = custo total da empresa por hora (salário CLT com encargos e benefícios, ou PJ equivalente) dividido por 168 h. Use faixas medianas de mercado, sem exagero.
+Devolva {"rate_card":[{"perfil":"","senioridade":"junior|pleno|senior|especialista","custo_hora":0}],"referencia":"de onde vem a estimativa em 1 frase"}`, 2000, 60000));
+      (r.rate_card || []).forEach(x => { const k = String(x.perfil || '').trim(), c = num(x.custo_hora); if (!k || !(c > 0)) return; const m = mapa[k.toLowerCase()] || { perfil: k };
+        if (!m.custo_hora) { m.custo_hora = r2(c); m.custo_fonte = 'estimativa de mercado (IA) — revise'; } if (x.senioridade && !m.senioridade) m.senioridade = x.senioridade;
+        if (!m.preco_alvo) m.preco_alvo = r2(m.custo_hora * fator); if (!m.preco_piso) m.preco_piso = r2(m.custo_hora * (1 + params.overhead_pct / 100) / (1 - params.impostos_pct / 100 - params.margem_min_pct / 100));
+        if (!m.preco_teto) m.preco_teto = r2(m.preco_alvo * 1.25); mapa[k.toLowerCase()] = m; mercado++; });
+      aviso = r.referencia || '';
+    } catch (e) { aviso = 'IA indisponível: ' + e.message; }
+  }
+  return { sugestao: Object.values(mapa), fontes: { cargos_rh: rh.length, perfis_observados: Object.keys(obs).length, mercado_ia: mercado, aviso } };
 }
 
 // ═══════════════════════ APRENDIZADO (propostas antigas) ═══════════════════════
