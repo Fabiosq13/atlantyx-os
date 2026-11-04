@@ -419,7 +419,7 @@
         <div class="tw"><table style="min-width:520px;"><thead><tr><th>Perfil</th><th style="width:80px;">Horas</th><th style="width:90px;">Custo/h</th><th style="width:90px;">Preço/h</th><th style="width:26px;"></th></tr></thead><tbody id="vpPerfis"></tbody></table></div>
         <div id="vpEstInfo" style="font-size:10.5px;color:var(--t2);margin-top:8px;line-height:1.6;"></div>
         <button class="btn btn-p" id="vpBtnAnalisar" onclick="VD.analisar()" style="width:100%;justify-content:center;margin-top:10px;">◆ Analisar formatos x metas</button></div></div></div>
-      <div id="vpAnalise"></div><div id="vpDoc"></div><div id="vpChat"></div>
+      <div id="vpAnalise"></div><div id="vpCrono"></div><div id="vpDoc"></div><div id="vpChat"></div>
       <div class="cp-acoes"><button class="btn btn-gn" onclick="VD.salvar()" style="flex:1;justify-content:center;font-weight:700;">💾 Salvar proposta</button>
         <button class="btn btn-g" onclick="VD.baixarPdf()">⬇ PDF</button><button class="btn btn-or" id="vpBtnPpt" onclick="VD.gerarApresentacao()" title="Apresentação da solução para o cliente (PowerPoint) com escopo, complementares, cronograma e investimento">📊 Apresentação (PPTX)</button><button class="btn btn-g" onclick="VD.baixarWord()">⬇ Word</button>
         <button class="btn btn-g" onclick="VD.mudarStatus(null,'enviada')">📨 Marcar como enviada</button></div>`;
@@ -431,7 +431,7 @@
     const pc = d.poc || {}; if ($('vpJaCli')) $('vpJaCli').checked = !!d.ja_cliente; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || CFG?.params?.poc_semanas_padrao || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
     $('vpProd').innerHTML = '<option value="">📦 Escopo de um produto…</option>' + ((CFG && CFG.escopos) || []).map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('') + (((CFG && CFG.escopos) || []).length ? '' : '<option value="" disabled>(cadastre em Rate card e parâmetros → Catálogo)</option>');
     $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
-    renderPerfis(); complRender(); statusRender(); chatRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
+    renderPerfis(); complRender(); statusRender(); chatRender(); cronoRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
     if (!$('vpClientesDL').dataset.ok) { $('vpClientesDL').dataset.ok = '1'; fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clientes_listar', payload: {} }) }).then(r => r.json()).then(d => { $('vpClientesDL').innerHTML = (d.clientes || []).map(c => `<option value="${esc(c.empresa)}">`).join(''); }).catch(() => {}); }
   }
   function lerForm() {
@@ -504,7 +504,7 @@
     const fim = ocupado($('vpBtnAnalisar'), '◆ Analisando...');
     const _conc = +String(d.preco_concorrente || '').replace(/[^\d,]/g, '').replace(',', '.') || null; const _meses = d.tipo_documento === 'poc' ? Math.max(.25, Math.round((d.poc.semanas || 6) / 4.33 * 100) / 100) : (d.meses || 3);
     try { PROP.analise = await api('analisar', { ja_cliente: !!d.ja_cliente, cliente: PROP.cliente, perfis: d.perfis, meses: _meses, tipo_documento: d.tipo_documento, preco_concorrente: _conc, descontos: d.descontos || {}, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo }, 90000);
-      delete PROP.analise.success; delete PROP.analise.action; PROP.formato = PROP.analise.recomendado; renderAnalise(); $('vpAnalise').scrollIntoView({ behavior: 'smooth', block: 'start' }); fim(); return true; }
+      delete PROP.analise.success; delete PROP.analise.action; PROP.formato = PROP.analise.recomendado; renderAnalise(); cronoRender(); $('vpAnalise').scrollIntoView({ behavior: 'smooth', block: 'start' }); fim(); return true; }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
   }
   function renderAnalise() {
@@ -532,7 +532,7 @@
       <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Pesos: metas 40% · vendável 35% · caixa 15% · risco 10%. Impostos (média do período) ${a.custos?.impostos_efetivo_pct ?? a.params.impostos_pct}% · overhead ${a.params.overhead_pct}% · margem mínima ${a.params.margem_min_pct}% / alvo ${a.params.margem_alvo_pct}% · recebimento em ${a.params.prazo_recebimento_dias} dias. Fonte da conversão por formato: ${esc(a.fontes?.win_rate || '')}.</div>
       <button class="btn btn-or" id="vpBtnRedigir" onclick="VD.redigir()" style="margin-top:10px;width:100%;justify-content:center;">✍ Redigir proposta no formato escolhido (padrão aprendido)</button></div></div>`;
   }
-  function escolher(f) { PROP.formato = f; renderAnalise(); }
+  function escolher(f) { PROP.formato = f; renderAnalise(); cronoRender(); }
   async function redigir() {
     lerForm(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
     const fim = ocupado($('vpBtnRedigir'), '✍ Redigindo (até 1 min)...');
@@ -552,11 +552,15 @@
     $('vpDoc').innerHTML = `<div class="panel"><div class="ph"><div class="pt">④ Documento da proposta</div><span style="font-size:10px;color:var(--t2);">${esc(FMT[d.formato] || '')} · editável</span></div><div class="pb">
       <input class="fi" id="vdDocTit" value="${esc(d.titulo || PROP.titulo)}" style="font-weight:700;font-size:13px;margin-bottom:10px;"/>
       ${(d.secoes || []).map((s, i) => `<div style="margin-bottom:10px;"><input class="fi vdDocSecT" data-i="${i}" value="${esc(s.titulo)}" style="font-weight:600;margin-bottom:4px;"/><textarea class="fta vdDocSecC" data-i="${i}" style="min-height:90px;font-size:11.5px;line-height:1.6;">${esc(s.conteudo)}</textarea></div>`).join('')}
+      <div class="fl" style="margin-top:6px;">Matriz de responsabilidades (RACI) <span style="font-weight:400;color:var(--t3);">R executa · A aprova · C consultado · I informado</span></div>
+      <div class="tw"><table style="min-width:520px;"><thead><tr><th>Atividade</th><th style="width:90px;">Atlantyx</th><th style="width:90px;">Cliente</th><th style="width:24px;"></th></tr></thead><tbody id="vdMR">${(d.matriz_responsabilidades || []).map((m, i) => `<tr><td><input class="fi" data-k="atividade" value="${esc(m.atividade)}"/></td>${['atlantyx', 'cliente'].map(k => `<td><select class="fsel" data-k="${k}" style="font-size:10.5px;">${['R', 'A', 'C', 'I', '—'].map(v => `<option${String(m[k] || '—').toUpperCase().startsWith(v) ? ' selected' : ''}>${v}</option>`).join('')}</select></td>`).join('')}<td><a href="javascript:void(0)" onclick="this.closest('tr').remove()" style="color:var(--red);">✕</a></td></tr>`).join('')}</tbody></table></div>
+      <button class="btn btn-g" style="font-size:10px;margin:4px 0 8px;" onclick="VD.mrAdd()">+ linha</button>
       ${(d.tabela_investimento || []).length ? `<div class="fl" style="margin-top:6px;">Tabela de investimento</div><table><tbody>${d.tabela_investimento.map(t => `<tr><td>${esc(t.item)}</td><td style="text-align:right;font-family:var(--M);">${esc(t.valor)}</td></tr>`).join('')}</tbody></table>` : ''}</div></div>`;
   }
   function lerDoc() {
     const d = PROP.documento; if (!d) return; const t = $('vdDocTit'); if (t) d.titulo = t.value;
-    document.querySelectorAll('.vdDocSecT').forEach(e => { d.secoes[+e.dataset.i].titulo = e.value; }); document.querySelectorAll('.vdDocSecC').forEach(e => { d.secoes[+e.dataset.i].conteudo = e.value; });
+    document.querySelectorAll('.vdDocSecT').forEach(e => { d.secoes[+e.dataset.i].titulo = e.value; });
+    if ($('vdMR')) d.matriz_responsabilidades = [...document.querySelectorAll('#vdMR tr')].map(tr => { const o = {}; tr.querySelectorAll('[data-k]').forEach(e => o[e.dataset.k] = e.value); return o; }).filter(x => x.atividade); document.querySelectorAll('.vdDocSecC').forEach(e => { d.secoes[+e.dataset.i].conteudo = e.value; });
   }
   async function salvar() {
     lerForm(); lerDoc(); if (!PROP.cliente) return nota('Informe o cliente', 'error');
@@ -596,7 +600,7 @@
     if (!auto && PROP.dados.escopo && !confirm('Substituir o escopo atual pelo escopo gerado do briefing?')) return false;
     const fim = ocupado($('vpBtnBrief'), '✨ Escrevendo o escopo...'); let ok = false;
     try { const d = await api('escopo_briefing', { briefing: PROP.dados.briefing, cliente: PROP.cliente, tipo_demanda: PROP.dados.tipo_demanda, tipo_documento: PROP.dados.tipo_documento, meses: PROP.dados.meses, poc: PROP.dados.poc }, 90000);
-      $('vpEscopo').value = d.escopo; lerForm(); ok = true; nota('Escopo gerado pelo briefing — revise, edite e depois estime a equipe'); }
+      $('vpEscopo').value = d.escopo; lerForm(); ok = true; cronoRender(); nota('Escopo gerado pelo briefing — revise, edite e depois estime a equipe'); }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); return ok;
   }
   async function escopoProduto() {
@@ -619,6 +623,81 @@
   // logo e fonte da marca nos documentos
   async function _logoDataUrl() { try { const b = await (await fetch('/logo-atlantyx-escuro.png')).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
 
+  // ═══ v3.377 · CRONOGRAMA FÍSICO-FINANCEIRO (roadmap Atlantyx: 12 etapas com gates; POC em semanas) ═══
+  const ROADMAP = [ // [nome, gate, início %, fim %, entrega]
+    ['Entendimento do negócio', 'G1', 0, 8, 'Documento de Visão'], ['Planejamento', 'G2', 5, 12, 'Plano de projeto e cronograma'], ['Especificação detalhada', 'G3', 10, 25, 'ERF e ERT aprovadas'],
+    ['Arquitetura, infraestrutura e segurança', 'G4', 15, 28, 'Arquitetura e plano de segurança/LGPD'], ['Protótipo', 'G5', 22, 35, 'Protótipo validado'], ['Construção', 'G6', 30, 70, 'Versão candidata'],
+    ['Qualidade e testes', 'G7', 45, 78, 'Relatório de qualidade'], ['Segurança e desempenho', 'G8', 65, 80, 'Relatório de segurança e desempenho'], ['Homologação', 'G9', 75, 87, 'Termo de homologação'],
+    ['Treinamento', 'G10', 82, 92, 'Usuários e operação treinados'], ['Implantação e operação assistida', 'G11', 88, 100, 'Solução estável em produção'], ['Passagem de conhecimento', 'G12', 94, 100, 'Aceite final']];
+  const ROADMAP_POC = [['Kickoff e critérios de sucesso', '', 0, 12, 'Critérios assinados'], ['Acesso a dados e ambiente', '', 8, 30, 'Dados e ambiente liberados'], ['Construção do protótipo', '', 25, 75, 'Protótipo funcionando'],
+    ['Treinamento dos usuários-chave', '', 65, 80, 'Usuários-chave treinados'], ['Uso assistido e validação', '', 70, 95, 'Medição dos critérios'], ['Relatório final e decisão go/no-go', '', 90, 100, 'Relatório e decisão'],
+    ['Suporte do Analista de IA (dúvidas)', '', 0, 100, 'Suporte contínuo aos usuários']];
+  const MARCOS_PADRAO = { fechado: [['Assinatura / kickoff', 'G1', 20], ['Especificação aprovada', 'G3', 20], ['Versão candidata entregue', 'G6', 25], ['Homologação', 'G9', 20], ['Implantação e aceite', 'G11', 15]],
+    hibrido: [['Setup — assinatura', 'G1', 30], ['Homologação', 'G9', 40], ['Implantação e aceite', 'G11', 30]], poc: [['Início da POC', 'Kickoff e critérios de sucesso', 50], ['Relatório final e go/no-go', 'Relatório final e decisão go/no-go', 50]],
+    padrao: [['Assinatura', 'G1', 30], ['Homologação', 'G9', 40], ['Aceite final', 'G12', 30]] };
+  function _cronoBase() {
+    const d = PROP.dados, poc = d.tipo_documento === 'poc'; const sem = poc ? (+d.poc?.semanas || 6) : Math.round((+d.meses || PROP.analise?.entrada?.meses || 3) * 4.33);
+    const unidade = poc || sem <= 16 ? 'semanas' : 'meses', N = unidade === 'semanas' ? Math.max(1, sem) : Math.max(1, Math.round(+d.meses || PROP.analise?.entrada?.meses || 3));
+    const fases = (poc ? ROADMAP_POC : ROADMAP).map(([nome, gate, a, b, entrega]) => { const ini = Math.min(N, Math.floor(a / 100 * N) + 1); return { nome, gate, ini, fim: Math.max(ini, Math.min(N, Math.ceil(b / 100 * N))), entrega, incluir: true }; });
+    const fmt = poc ? 'poc' : (PROP.formato || PROP.analise?.recomendado || 'fechado');
+    const marcos = (MARCOS_PADRAO[fmt] || MARCOS_PADRAO.padrao).map(([nome, ref, pct]) => { const f = fases.find(x => x.gate === ref || x.nome === ref); return { nome, ref, pct, quando: f ? f.fim : N }; });
+    if (poc) marcos[0].quando = 1;
+    return { unidade, total: N, fases, marcos, pagamento: poc || fmt === 'fechado' ? 'marcos' : 'formato', aba: 'fisico', gerado_em: new Date().toISOString() };
+  }
+  function cronoGerar() { if (PROP.dados.crono && !confirm('Refazer o cronograma pelo roadmap Atlantyx? Os ajustes manuais serão perdidos.')) return; lerForm(); PROP.dados.crono = _cronoBase(); cronoRender(); }
+  const _fAtual = () => (PROP.analise?.formatos || []).find(x => x.formato === PROP.formato) || PROP.analise?.formatos?.[0] || null;
+  function cronoRender() {
+    const b = $('vpCrono'); if (!b || !PROP) return; const d = PROP.dados;
+    if (!(d.escopo || '').trim() && !d.crono) { b.innerHTML = ''; return; }
+    if (!d.crono) d.crono = _cronoBase(); const K = d.crono, f = _fAtual(), cortesia = !!(f?.poc_cortesia && !(f.valor_total > 0)) || (d.tipo_documento === 'poc' && d.ja_cliente && !((CFG?.params?.poc_cliente_pct ?? 0) > 0));
+    const U = K.unidade === 'semanas' ? 'S' : 'M', N = K.total, F = K.fases.filter(x => x.incluir !== false);
+    const soma = K.marcos.reduce((a, m) => a + (+m.pct || 0), 0), ok100 = Math.abs(soma - 100) < 0.01;
+    const aba = cortesia ? 'fisico' : (K.aba || 'fisico');
+    const tab = (k, t) => `<button class="btn ${aba === k ? 'btn-p' : 'btn-g'}" style="font-size:10px;padding:4px 10px;" onclick="VD.cronoAba('${k}')">${t}</button>`;
+    // Gantt
+    const col = `grid-template-columns:220px repeat(${N},minmax(${N > 26 ? 14 : 22}px,1fr))`;
+    const gantt = `<div style="overflow:auto;border:1px solid var(--bd);border-radius:8px;"><div style="display:grid;${col};font-size:9.5px;min-width:${220 + N * (N > 26 ? 14 : 22)}px;">
+      <div style="padding:5px 8px;font-weight:700;background:var(--bg4);position:sticky;left:0;">Etapa</div>${Array.from({ length: N }, (_, i) => `<div style="text-align:center;padding:5px 0;background:var(--bg4);font-weight:700;color:var(--t2);">${U}${i + 1}</div>`).join('')}
+      ${F.map((x, k) => `<div style="padding:5px 8px;border-top:1px solid var(--bd);position:sticky;left:0;background:var(--bg2, var(--bg));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(x.entrega || '')}">${x.gate ? `<b style="color:var(--t3);">${esc(x.gate)}</b> ` : ''}${esc(x.nome)}</div>` + Array.from({ length: N }, (_, i) => { const on = i + 1 >= x.ini && i + 1 <= x.fim; const mk = !cortesia && K.marcos.some(m => +m.quando === i + 1 && (m.ref === x.gate || m.ref === x.nome));
+        return `<div style="border-top:1px solid var(--bd);padding:4px 1px;"><div style="height:14px;border-radius:3px;background:${on ? (/Treinamento/i.test(x.nome) ? 'var(--gold)' : k % 2 ? '#00708A' : '#00C4CC') : 'transparent'};position:relative;">${mk ? '<span style="position:absolute;right:-3px;top:-3px;color:#00A86B;font-size:12px;" title="marco de pagamento">◆</span>' : ''}</div></div>`; }).join('')).join('')}</div></div>`;
+    const fis = `<div class="tw" style="margin-top:8px;"><table style="min-width:640px;"><thead><tr><th style="width:26px;"></th><th>Etapa</th><th style="width:60px;">Gate</th><th style="width:70px;">Início (${U})</th><th style="width:70px;">Fim (${U})</th><th>Entrega</th><th style="width:24px;"></th></tr></thead><tbody>
+      ${K.fases.map((x, i) => `<tr style="${x.incluir === false ? 'opacity:.45;' : ''}"><td><input type="checkbox" ${x.incluir !== false ? 'checked' : ''} onchange="VD.cronoSet('f',${i},'incluir',this.checked)" title="Incluir no cronograma"/></td>
+        <td><input class="fi" value="${esc(x.nome)}" onchange="VD.cronoSet('f',${i},'nome',this.value)"/></td><td><input class="fi" value="${esc(x.gate || '')}" onchange="VD.cronoSet('f',${i},'gate',this.value)"/></td>
+        <td><input class="fi" type="number" min="1" max="${N}" value="${x.ini}" onchange="VD.cronoSet('f',${i},'ini',this.value)"/></td><td><input class="fi" type="number" min="1" max="${N}" value="${x.fim}" onchange="VD.cronoSet('f',${i},'fim',this.value)"/></td>
+        <td><input class="fi" value="${esc(x.entrega || '')}" onchange="VD.cronoSet('f',${i},'entrega',this.value)"/></td><td><a href="javascript:void(0)" onclick="VD.cronoDel('f',${i})" style="color:var(--red);">✕</a></td></tr>`).join('')}</tbody></table></div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;"><button class="btn btn-g" style="font-size:10px;" onclick="VD.cronoAdd('f')">+ etapa</button>
+        <span style="font-size:10px;color:var(--t2);">Duração total: <input class="fi" type="number" min="1" max="104" value="${N}" style="width:60px;display:inline-block;" onchange="VD.cronoTotal(this.value)"/> ${K.unidade}</span></div>`;
+    // financeiro
+    const vt = f ? f.valor_total : null, R0 = v => vt == null ? '—' : R(v);
+    const fin = cortesia ? '' : `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0;font-size:10.5px;">
+        <label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="radio" name="vpPag" ${K.pagamento === 'marcos' ? 'checked' : ''} onchange="VD.cronoPag('marcos')"/> <b>Pago por marcos</b> (percentuais somam 100%)</label>
+        <label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="radio" name="vpPag" ${K.pagamento !== 'marcos' ? 'checked' : ''} onchange="VD.cronoPag('formato')"/> Conforme o formato comercial${f ? ' (' + esc(f.nome) + ')' : ''}</label>
+        <span style="margin-left:auto;">Valor da proposta: <b>${vt == null ? 'analise os formatos' : R(vt)}</b></span></div>
+      ${K.pagamento === 'marcos' ? `<div class="tw"><table style="min-width:640px;"><thead><tr><th>Marco de pagamento</th><th style="width:170px;">Vinculado à etapa/gate</th><th style="width:80px;">Quando (${U})</th><th style="width:70px;">%</th><th style="width:110px;text-align:right;">Valor</th><th style="width:24px;"></th></tr></thead><tbody>
+        ${K.marcos.map((m, i) => `<tr><td><input class="fi" value="${esc(m.nome)}" onchange="VD.cronoSet('m',${i},'nome',this.value)"/></td>
+          <td><select class="fsel" style="font-size:10px;" onchange="VD.cronoSet('m',${i},'ref',this.value)"><option value="">—</option>${F.map(x => { const v = x.gate || x.nome; return `<option value="${esc(v)}"${m.ref === v ? ' selected' : ''}>${esc((x.gate ? x.gate + ' · ' : '') + x.nome)}</option>`; }).join('')}</select></td>
+          <td><input class="fi" type="number" min="1" max="${N}" value="${m.quando}" onchange="VD.cronoSet('m',${i},'quando',this.value)"/></td><td><input class="fi" type="number" min="0" max="100" step="0.5" value="${m.pct}" onchange="VD.cronoSet('m',${i},'pct',this.value)"/></td>
+          <td style="text-align:right;font-family:var(--M);">${R0((vt || 0) * (+m.pct || 0) / 100)}</td><td><a href="javascript:void(0)" onclick="VD.cronoDel('m',${i})" style="color:var(--red);">✕</a></td></tr>`).join('')}
+        <tr style="font-weight:700;"><td colspan="3" style="text-align:right;">Total</td><td style="color:${ok100 ? 'var(--green)' : 'var(--red)'};">${String(Math.round(soma * 100) / 100).replace('.', ',')}%</td><td style="text-align:right;font-family:var(--M);">${R0((vt || 0) * soma / 100)}</td><td></td></tr></tbody></table></div>
+        <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;"><button class="btn btn-g" style="font-size:10px;" onclick="VD.cronoAdd('m')">+ marco</button>${!ok100 ? `<span style="font-size:10.5px;color:var(--red);font-weight:700;">⚠ Os marcos somam ${String(Math.round(soma * 100) / 100).replace('.', ',')}% — precisam somar 100%.</span><button class="btn btn-g" style="font-size:10px;" onclick="VD.cronoNormalizar()">Ajustar para 100%</button>` : '<span style="font-size:10px;color:var(--green);">✓ 100% do valor distribuído nos marcos</span>'}</div>`
+      : `<div class="tw"><table><thead><tr><th>Parcela</th><th>Mês</th><th style="text-align:right;">Valor</th><th>Recebe</th></tr></thead><tbody>${(f?.cronograma || []).map(c => `<tr><td>${esc(c.desc)}</td><td>${esc(c.mes)}</td><td style="text-align:right;font-family:var(--M);">${R(c.valor)}</td><td>${esc(c.recebe || '')}</td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--t3);text-align:center;">Analise os formatos para ver as parcelas</td></tr>'}</tbody></table></div>`}`;
+    b.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📅 Cronograma físico-financeiro</div><span style="font-size:10px;color:var(--t2);">roadmap Atlantyx${d.tipo_documento === 'poc' ? ' · POC em semanas' : ' · 12 etapas com gates'}${cortesia ? ' · POC de cliente: só cronograma físico' : ''}</span>
+      <div style="margin-left:auto;display:flex;gap:4px;">${tab('fisico', 'Físico')}${cortesia ? '' : tab('financeiro', 'Financeiro')}<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" onclick="VD.cronoGerar()" title="Refaz pelo roadmap Atlantyx e pela duração atual">↻ Refazer</button></div></div><div class="pb">
+      ${aba === 'fisico' ? gantt + fis : fin}</div></div>`;
+  }
+  function mrAdd() { lerDoc(); (PROP.documento.matriz_responsabilidades = PROP.documento.matriz_responsabilidades || []).push({ atividade: '', atlantyx: 'R', cliente: 'C' }); renderDoc(); }
+  function cronoAba(a) { PROP.dados.crono.aba = a; cronoRender(); }
+  function cronoSet(t, i, k, v) { const K = PROP.dados.crono, L = t === 'f' ? K.fases : K.marcos, x = L[i]; if (!x) return;
+    x[k] = ['ini', 'fim', 'quando'].includes(k) ? Math.max(1, Math.min(K.total, Math.round(+v || 1))) : k === 'pct' ? Math.max(0, +String(v).replace(',', '.') || 0) : v;
+    if (t === 'f' && x.fim < x.ini) x[k === 'ini' ? 'fim' : 'ini'] = x[k];
+    if (t === 'm' && k === 'ref') { const f = K.fases.find(y => (y.gate || y.nome) === v); if (f) x.quando = f.fim; }
+    cronoRender(); }
+  function cronoDel(t, i) { const K = PROP.dados.crono; (t === 'f' ? K.fases : K.marcos).splice(i, 1); cronoRender(); }
+  function cronoAdd(t) { const K = PROP.dados.crono; if (t === 'f') K.fases.push({ nome: 'Nova etapa', gate: '', ini: 1, fim: K.total, entrega: '', incluir: true }); else K.marcos.push({ nome: 'Novo marco', ref: '', quando: K.total, pct: Math.max(0, 100 - K.marcos.reduce((a, m) => a + (+m.pct || 0), 0)) }); cronoRender(); }
+  function cronoPag(p) { PROP.dados.crono.pagamento = p; cronoRender(); }
+  function cronoTotal(v) { const K = PROP.dados.crono, n0 = K.total, n1 = Math.max(1, Math.min(104, Math.round(+v || n0))); if (n1 === n0) return; const esc2 = x => Math.max(1, Math.min(n1, Math.round(x * n1 / n0)));
+    K.fases.forEach(x => { x.ini = Math.max(1, esc2(x.ini - 1) + 1 > n1 ? n1 : Math.floor((x.ini - 1) * n1 / n0) + 1); x.fim = Math.max(x.ini, esc2(x.fim)); }); K.marcos.forEach(m => m.quando = esc2(m.quando)); K.total = n1; cronoRender(); }
+  function cronoNormalizar() { const K = PROP.dados.crono, s0 = K.marcos.reduce((a, m) => a + (+m.pct || 0), 0); if (!s0) return; K.marcos.forEach(m => m.pct = Math.round((+m.pct || 0) / s0 * 1000) / 10); const dif = Math.round((100 - K.marcos.reduce((a, m) => a + m.pct, 0)) * 10) / 10; if (K.marcos.length) K.marcos[K.marcos.length - 1].pct = Math.round((K.marcos[K.marcos.length - 1].pct + dif) * 10) / 10; cronoRender(); }
   // ═══ v3.375 · COPILOTO DA PROPOSTA (chat com IA, ajustes aplicáveis) ═══
   const _md = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split('\n').map(l => /^\s*[-•]\s/.test(l) ? '• ' + l.replace(/^\s*[-•]\s/, '') : l).join('<br>');
   function chatRender() {
@@ -723,11 +802,18 @@
     try {
       const [{ apresentacao: A }, Pptx, logoEsc, logoBr] = await Promise.all([api('apresentacao_gerar', { proposta: PROP }, 100000), _carregarPptx(), _imgData('/logo-atlantyx-escuro.png'), _imgData('/logo-atlantyx-branco.png')]);
       PROP.dados.apresentacao = A;
+      // v3.377: cronograma físico-financeiro da tela (roadmap Atlantyx) manda sobre o sugerido pela IA
+      if (!PROP.dados.crono) PROP.dados.crono = _cronoBase();
+      const K = PROP.dados.crono, fSel = _fAtual(), cortesiaP = !!(fSel?.poc_cortesia && !(fSel.valor_total > 0));
+      if (K?.fases?.length) { A.cronograma = K.fases.filter(x => x.incluir !== false).map(x => ({ fase: x.nome, mes_inicio: x.ini, mes_fim: x.fim, entregas: x.entrega })); A.meses = K.total; A.unidade = K.unidade;
+        A.marcos = !cortesiaP && K.pagamento === 'marcos' ? K.marcos.map(m => ({ mes: m.quando, nome: m.nome + ' · ' + String(m.pct).replace('.', ',') + '%' })) : (K.fases.filter(x => x.gate && x.incluir !== false && ['G1', 'G6', 'G9', 'G11'].includes(x.gate)).map(x => ({ mes: x.fim, nome: x.gate + ' ' + x.nome.split(' ')[0] }))); }
+      if (A.investimento && !cortesiaP && K?.pagamento === 'marcos' && K.marcos?.length) A.investimento.cronograma = K.marcos.map(m => ({ desc: m.nome + ' — ' + String(m.pct).replace('.', ',') + '%', mes: (K.unidade === 'semanas' ? 'Semana ' : 'Mês ') + m.quando, valor: (A.investimento.valor_total || 0) * (+m.pct || 0) / 100 }));
+      const MRx = (PROP.documento?.matriz_responsabilidades?.length ? PROP.documento.matriz_responsabilidades : A.responsabilidades) || [];
       const pptx = new Pptx(); pptx.layout = 'LAYOUT_WIDE'; pptx.author = 'Atlantyx'; pptx.company = 'Atlantyx'; pptx.title = A.titulo || PROP.titulo;
       const F = 'Montserrat', ESCURO = '0B1220', TXT = '1F2937', PETROLEO = '00708A', CIANO = '00C4CC', VERDE = '00FCA8', CINZA = '6B7280', CLARO = 'F3F8FA';
       const BG = _pptFundos(); // fundos desenhados em canvas (gradiente + rede de pontos), embutidos como imagem
       const W = 13.333, H = 7.5;
-      const KICK = { contexto: 'CONTEXTO', desafio: 'O DESAFIO', solucao: 'A SOLUÇÃO', como_funciona: 'COMO FUNCIONA', escopo: 'ESCOPO', complementar: 'ESCOPO COMPLEMENTAR', resultados: 'RESULTADOS ESPERADOS', equipe: 'EQUIPE', riscos: 'RISCOS E MITIGAÇÃO', proximos_passos: 'PRÓXIMOS PASSOS', cronograma: 'CRONOGRAMA', investimento: 'INVESTIMENTO' };
+      const KICK = { contexto: 'CONTEXTO', desafio: 'O DESAFIO', solucao: 'A SOLUÇÃO', como_funciona: 'COMO FUNCIONA', escopo: 'ESCOPO', complementar: 'ESCOPO COMPLEMENTAR', resultados: 'RESULTADOS ESPERADOS', equipe: 'EQUIPE', riscos: 'RISCOS E MITIGAÇÃO', proximos_passos: 'PRÓXIMOS PASSOS', cronograma: 'CRONOGRAMA', investimento: 'INVESTIMENTO', responsabilidades: 'RESPONSABILIDADES' };
       pptx.defineSlideMaster({ title: 'ATX', background: { data: BG.conteudo }, objects: [
         ...(logoEsc ? [{ image: { data: logoEsc, x: W - 2.35, y: 0.38, w: 1.75, h: 0.343 } }] : []),
         { text: { text: 'atlantyx.io', options: { x: 0.6, y: 6.98, w: 4, h: 0.3, fontFace: F, fontSize: 9, color: CINZA } } }],
@@ -769,8 +855,8 @@
       // agenda
       const conteudo = (A.slides || []).filter(x => x.tipo !== 'investimento' && x.tipo !== 'cronograma');
       const proximos = conteudo.filter(x => x.tipo === 'proximos_passos'), corpo = conteudo.filter(x => x.tipo !== 'proximos_passos');
-      const C = (A.cronograma || []).filter(x => x && x.fase).slice(0, 10), I = A.investimento;
-      const agenda = [...corpo.map(x => x.titulo), ...(C.length ? ['Cronograma'] : []), ...(I ? ['Investimento'] : []), ...proximos.map(x => x.titulo)].filter(Boolean);
+      const C = (A.cronograma || []).filter(x => x && x.fase).slice(0, 14), I = A.investimento;
+      const agenda = [...corpo.map(x => x.titulo), ...(C.length ? ['Cronograma'] : []), ...(MRx.length ? ['Responsabilidades'] : []), ...(I ? ['Investimento'] : []), ...proximos.map(x => x.titulo)].filter(Boolean);
       if (agenda.length >= 4) { const sl = pptx.addSlide(); sl.background = { data: BG.secao };
         sl.addText('AGENDA', { x: 0.8, y: 0.8, w: 5, h: 0.4, fontFace: F, fontSize: 12, bold: true, color: VERDE, charSpacing: 4 });
         sl.addText('O que vamos apresentar', { x: 0.8, y: 1.2, w: 5, h: 1.4, fontFace: F, fontSize: 30, bold: true, color: 'FFFFFF', valign: 'top' });
@@ -784,9 +870,9 @@
         const ints = C.map(x => { let a = Math.round(+x.mes_inicio || 1), b = Math.round(+x.mes_fim || a); a = Math.max(1, a); b = Math.max(a, b); return { ...x, a, b }; });
         const M = Math.max(1, Math.min(24, Math.max(Math.round(+A.meses || 0), ...ints.map(x => x.b))));
         ints.forEach(x => { x.a = Math.min(x.a, M); x.b = Math.min(Math.max(x.b, x.a), M); });
-        const mk = (A.marcos || []).filter(m => m && m.nome).slice(0, 6), xL = 0.6, wL = 3.5, x0 = xL + wL + 0.15, wT = W - 0.6 - x0, cw = wT / M, yH = 1.95, hH = 0.42;
-        const yRows = yH + hH + 0.1, alt = 6.75 - yRows - (mk.length ? 0.85 : 0), rh = Math.min(0.62, alt / ints.length);
-        const mesNome = i => { if (!/^\d{4}-\d{2}$/.test(A.inicio || '')) return 'M' + (i + 1); const [y, m] = A.inicio.split('-').map(Number); const d = new Date(y, m - 1 + i, 1); return d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') + (M <= 12 ? '/' + String(d.getFullYear()).slice(2) : ''); };
+        const mk = (A.marcos || []).filter(m => m && m.nome).slice(0, 8).sort((a, b) => (+a.mes || 0) - (+b.mes || 0)), xL = 0.6, wL = 3.5, x0 = xL + wL + 0.15, wT = W - 0.6 - x0, cw = wT / M, yH = 1.95, hH = 0.42;
+        const yRows = yH + hH + 0.1, alt = 6.75 - yRows - (mk.length ? 0.95 : 0), rh = Math.min(0.62, alt / ints.length);
+        const mesNome = i => { if (A.unidade === 'semanas') return 'S' + (i + 1); if (!/^\d{4}-\d{2}$/.test(A.inicio || '')) return 'M' + (i + 1); const [y, m] = A.inicio.split('-').map(Number); const d = new Date(y, m - 1 + i, 1); return d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') + (M <= 12 ? '/' + String(d.getFullYear()).slice(2) : ''); };
         sl.addShape(pptx.ShapeType.roundRect, { x: x0, y: yH, w: wT, h: hH, rectRadius: 0.06, fill: { color: ESCURO }, line: { type: 'none' } });
         for (let i = 0; i < M; i++) { sl.addText(mesNome(i), { x: x0 + i * cw, y: yH, w: cw, h: hH, fontFace: F, fontSize: M > 16 ? 7 : M > 10 ? 8 : 10, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
           if (i % 2 === 1) sl.addShape(pptx.ShapeType.rect, { x: x0 + i * cw, y: yRows, w: cw, h: rh * ints.length, fill: { color: 'EEF5F8' }, line: { type: 'none' } }); }
@@ -795,14 +881,22 @@
           sl.addText([{ text: String(x.fase).substring(0, 40), options: { bold: true, color: ESCURO, fontSize: rh < 0.45 ? 10 : 11.5, breakLine: !!x.entregas } }, ...(x.entregas ? [{ text: String(x.entregas).substring(0, 60), options: { color: CINZA, fontSize: rh < 0.45 ? 8 : 9 } }] : [])],
             { x: xL, y, w: wL, h: rh, fontFace: F, valign: 'middle', fit: 'shrink', margin: 2 });
           const bx = x0 + (x.a - 1) * cw + 0.04, bw = (x.b - x.a + 1) * cw - 0.08, bh = Math.max(0.2, rh * 0.52);
-          sl.addShape(pptx.ShapeType.roundRect, { x: bx, y: y + (rh - bh) / 2, w: bw, h: bh, rectRadius: Math.min(0.1, bh / 2), fill: { color: k % 2 ? PETROLEO : CIANO }, line: { type: 'none' } });
-          if (bw > 0.9) sl.addText((x.b - x.a + 1) + (x.b - x.a ? ' meses' : ' mês'), { x: bx, y: y + (rh - bh) / 2, w: bw, h: bh, fontFace: F, fontSize: 8.5, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' }); });
+          sl.addShape(pptx.ShapeType.roundRect, { x: bx, y: y + (rh - bh) / 2, w: bw, h: bh, rectRadius: Math.min(0.1, bh / 2), fill: { color: /treinamento/i.test(x.fase) ? 'E0A100' : k % 2 ? PETROLEO : CIANO }, line: { type: 'none' } });
+          if (bw > 0.9) sl.addText((x.b - x.a + 1) + (A.unidade === 'semanas' ? (x.b - x.a ? ' semanas' : ' semana') : (x.b - x.a ? ' meses' : ' mês')), { x: bx, y: y + (rh - bh) / 2, w: bw, h: bh, fontFace: F, fontSize: 8.5, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' }); });
         if (mk.length) { const ym = yRows + ints.length * rh + 0.15;
           sl.addText('Marcos', { x: xL, y: ym, w: wL, h: 0.4, fontFace: F, fontSize: 11, bold: true, color: PETROLEO, valign: 'middle' });
           sl.addShape(pptx.ShapeType.line, { x: x0, y: ym + 0.2, w: wT, h: 0, line: { color: 'B8C9D1', width: 1, dashType: 'dash' } });
           mk.forEach((m, k) => { const i = Math.min(M, Math.max(1, Math.round(+m.mes || 1))), cx = x0 + (i - 0.5) * cw;
             sl.addShape(pptx.ShapeType.diamond, { x: cx - 0.13, y: ym + 0.07, w: 0.26, h: 0.26, fill: { color: VERDE }, line: { color: ESCURO, width: 0.75 } });
-            sl.addText(String(m.nome).substring(0, 28), { x: Math.max(x0 - 0.3, Math.min(W - 0.6 - 1.8, cx - 0.9)), y: ym + (k % 2 ? 0.36 : 0.36), w: 1.8, h: 0.34, fontFace: F, fontSize: 8, color: TXT, align: 'center', valign: 'top', fit: 'shrink' }); }); } }
+            sl.addText(String(m.nome).substring(0, 28), { x: Math.max(x0 - 0.3, Math.min(W - 0.6 - 1.8, cx - 0.9)), y: ym + (k % 2 ? 0.58 : 0.3), w: 1.8, h: 0.3, fontFace: F, fontSize: 8, color: TXT, align: 'center', valign: 'top', fit: 'shrink' }); }); } }
+      // matriz de responsabilidades (RACI)
+      if (MRx.length) { const sl = pptx.addSlide({ masterName: 'ATX' }); cab(sl, 'responsabilidades', 'Matriz de responsabilidades');
+        const corL = { R: PETROLEO, A: ESCURO, C: CIANO, I: 'B8C4D4' }, L = MRx.slice(0, 14), rh = Math.min(0.36, 4.3 / (L.length + 1));
+        const cel = v => { const k = String(v || '—').trim().toUpperCase().charAt(0); return { text: corL[k] ? k : '—', options: { align: 'center', bold: true, color: corL[k] && k !== 'I' ? 'FFFFFF' : ESCURO, fill: { color: corL[k] || 'FFFFFF' } } }; };
+        sl.addTable([[{ text: 'Atividade', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO } } }, { text: 'Atlantyx', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO }, align: 'center' } }, { text: PROP.cliente || 'Cliente', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO }, align: 'center' } }],
+          ...L.map((m, k) => [{ text: m.atividade || '', options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, cel(m.atlantyx), cel(m.cliente)])],
+          { x: 0.6, y: 1.95, w: 12.13, colW: [8.53, 1.8, 1.8], fontFace: F, fontSize: L.length > 10 ? 10 : 12, color: TXT, border: { type: 'solid', color: 'FFFFFF', pt: 1.5 }, rowH: rh, valign: 'middle' });
+        sl.addText([['R', 'executa'], ['A', 'aprova'], ['C', 'é consultado'], ['I', 'é informado']].map(([k, t], i) => ({ text: k + ' ' + t + (i < 3 ? '     ' : ''), options: { color: TXT } })), { x: 0.6, y: 6.55, w: 12, h: 0.3, fontFace: F, fontSize: 9.5 }); }
       // investimento
       if (I) { const sl = pptx.addSlide({ masterName: 'ATX' }); cab(sl, 'investimento', 'Investimento');
         const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
@@ -818,7 +912,7 @@
         const fmtMes = m => /^\d{4}-\d{2}$/.test(m || '') ? new Date(+m.slice(0, 4), +m.slice(5) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('. de ', '/').replace('.', '') : (m || '');
         const linhas = (I.cronograma || []).slice(0, 12), hd = o => ({ bold: true, color: 'FFFFFF', fill: { color: PETROLEO }, ...o });
         sl.addText('Cronograma de faturamento', { x: 5.4, y: 2.0, w: 7.3, h: 0.4, fontFace: F, fontSize: 14, bold: true, color: ESCURO });
-        if (linhas.length && !semCusto) sl.addTable([[{ text: 'Parcela', options: hd() }, { text: 'Mês', options: hd() }, { text: 'Valor', options: hd({ align: 'right' }) }], ...linhas.map((c, k) => [{ text: c.desc || '', options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: fmtMes(c.mes), options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: brl(c.valor), options: { align: 'right', bold: true, fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }])],
+        if (linhas.length && !semCusto) sl.addTable([[{ text: 'Parcela', options: hd() }, { text: 'Quando', options: hd() }, { text: 'Valor', options: hd({ align: 'right' }) }], ...linhas.map((c, k) => [{ text: c.desc || '', options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: fmtMes(c.mes), options: { fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }, { text: brl(c.valor), options: { align: 'right', bold: true, fill: { color: k % 2 ? 'FFFFFF' : CLARO } } }])],
           { x: 5.4, y: 2.5, w: 7.33, colW: [3.9, 1.6, 1.83], fontFace: F, fontSize: linhas.length > 8 ? 9 : 11, color: TXT, border: { type: 'solid', color: 'E3EAEE', pt: 0.5 }, rowH: Math.min(0.36, 3.9 / (linhas.length + 1)), valign: 'middle' }); }
       proximos.forEach(addConteudo);
       // encerramento
@@ -843,6 +937,8 @@
         { text: d.titulo || PROP.titulo, fontSize: 20, bold: true, color: '#0F172A', margin: [0, 16, 0, 4] },
         { text: `${PROP.cliente}${PROP.contato ? ' · ' + PROP.contato : ''} · ${PROP.numero || 'rascunho'} · ${new Date().toLocaleDateString('pt-BR')}`, color: '#555', fontSize: 9, margin: [0, 0, 0, 16] }];
       (d.secoes || []).forEach((s, i) => { content.push({ text: (i + 1) + '. ' + s.titulo, fontSize: 13, bold: true, color: '#00708A', margin: [0, 12, 0, 5] }); content.push(...docMarkdownParaPdf(s.conteudo)); });
+      const MR = d.matriz_responsabilidades || [];
+      if (MR.length) content.push({ text: 'Matriz de responsabilidades', fontSize: 13, bold: true, color: '#00708A', margin: [0, 12, 0, 5] }, { table: { headerRows: 1, widths: ['*', 70, 70], body: [[{ text: 'Atividade', bold: true, color: '#fff', fillColor: '#00708A' }, { text: 'Atlantyx', bold: true, color: '#fff', fillColor: '#00708A', alignment: 'center' }, { text: 'Cliente', bold: true, color: '#fff', fillColor: '#00708A', alignment: 'center' }], ...MR.map(m => [m.atividade, { text: m.atlantyx || '—', alignment: 'center', bold: true }, { text: m.cliente || '—', alignment: 'center', bold: true }])] }, layout: 'lightHorizontalLines' }, { text: 'R = executa · A = aprova · C = consultado · I = informado', fontSize: 8, color: '#6B7280', margin: [0, 3, 0, 0] });
       if ((d.tabela_investimento || []).length) content.push({ margin: [0, 12, 0, 0], table: { headerRows: 1, widths: ['*', 'auto'], body: [[{ text: 'Investimento', bold: true, color: '#fff', fillColor: '#0F172A' }, { text: 'Valor', bold: true, color: '#fff', fillColor: '#0F172A' }], ...d.tabela_investimento.map(t => [t.item, { text: t.valor, alignment: 'right' }])] }, layout: 'lightHorizontalLines' });
       content.push({ text: `Validade da proposta: ${d.validade_dias || 30} dias. Valores com tributos inclusos conforme a legislação vigente na data de emissão de cada nota fiscal.`, fontSize: 8.5, color: '#777', margin: [0, 14, 0, 0] });
       const def = f => ({ content, defaultStyle: { font: f, fontSize: 10, lineHeight: 1.3, color: '#1f2937' }, pageMargins: [48, 48, 48, 56],
@@ -858,6 +954,7 @@
     const html = `<html><head><meta charset="utf-8"><style>body{font-family:Montserrat,Calibri,Arial;font-size:10.5pt;color:#1f2937}h1{color:#0F172A}h2{color:#00708A;font-size:13pt;margin-top:16pt}td{border-bottom:1px solid #ddd;padding:4px 8px}</style></head><body>
       <img src="${location.origin}/logo-atlantyx-escuro.png" width="180" alt="Atlantyx"/><div style="border-top:3px solid #00C4CC;margin:6px 0 10px;"></div><h1>${esc(d.titulo || PROP.titulo)}</h1><p style="color:#555">${esc(PROP.cliente)}${PROP.contato ? ' · ' + esc(PROP.contato) : ''} · ${esc(PROP.numero || 'rascunho')} · ${new Date().toLocaleDateString('pt-BR')}</p>
       ${(d.secoes || []).map(s => `<h2>${esc(s.titulo)}</h2>${md(s.conteudo)}`).join('')}
+      ${(d.matriz_responsabilidades || []).length ? `<h2>Matriz de responsabilidades</h2><table><tr><th style="background:#00708A;color:#fff;text-align:left">Atividade</th><th style="background:#00708A;color:#fff">Atlantyx</th><th style="background:#00708A;color:#fff">Cliente</th></tr>${d.matriz_responsabilidades.map(m => `<tr><td>${esc(m.atividade)}</td><td style="text-align:center"><b>${esc(m.atlantyx || '—')}</b></td><td style="text-align:center"><b>${esc(m.cliente || '—')}</b></td></tr>`).join('')}</table><p style="color:#777;font-size:8pt">R = executa · A = aprova · C = consultado · I = informado</p>` : ''}
       ${(d.tabela_investimento || []).length ? `<h2>Investimento</h2><table>${d.tabela_investimento.map(t => `<tr><td>${esc(t.item)}</td><td style="text-align:right">${esc(t.valor)}</td></tr>`).join('')}</table>` : ''}<p style="color:#777;font-size:9pt">Validade: ${d.validade_dias || 30} dias.</p></body></html>`;
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })); a.download = `Proposta_${(PROP.cliente || 'cliente').replace(/\W+/g, '_')}_${PROP.numero || 'rascunho'}.doc`; document.body.appendChild(a); a.click(); a.remove();
   }
@@ -1110,5 +1207,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd };
 })();
