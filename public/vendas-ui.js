@@ -465,12 +465,9 @@
     b.innerHTML = refUp + `<details ${_st.ia === false || (_st.teste && !_st.teste.ok) || !RC.length ? 'open' : ''} style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin-bottom:10px;font-size:10.5px;line-height:1.5;"><summary style="cursor:pointer;font-weight:700;">Pronto para gerar? ${_st.ia === false ? '· <span style="color:var(--red);">IA desligada</span>' : _st.teste && !_st.teste.ok ? '· <span style="color:var(--red);">IA sem funcionar</span>' : ''}${!RC.length ? ' · <span style="color:var(--red);">rate card vazio</span>' : ''}</summary>${linhas.join('')}</details>`;
   }
   async function refUpload(inp) {
-    const fs = [...(inp.files || [])]; if (!fs.length) return; const lb = $('vpRefBtn'), txt = lb ? lb.firstChild : null; let ok = 0;
-    for (const f of fs) { if (txt) txt.textContent = `Lendo ${ok + 1}/${fs.length}... `;
-      try { if (f.size > 9 * 1024 * 1024) throw new Error('acima de 9 MB'); await api('aprender', { nome: f.name, base64: await lerB64(f), resultado: $('vpRefRes')?.value || 'desconhecido', observacao: '' }, 120000); ok++; }
-      catch (e) { nota(f.name + ': ' + e.message, 'error'); } }
-    if (ok) { if (txt) txt.textContent = 'Consolidando o padrão... '; try { await api('padrao_regerar', {}, 120000); } catch (e) { nota('Aprendi, mas não consolidei o padrão: ' + e.message, 'error'); } try { RC = (await api('rate_card')).rate_card || RC; } catch (_) {} }
-    nota(`${ok} de ${fs.length} proposta(s) aprendida(s)`); inp.value = ''; statusRender(true);
+    const fs = [...(inp.files || [])]; if (!fs.length) return; const lb = $('vpRefBtn'), txt = lb ? lb.firstChild : null;
+    const r = await _aprenderArquivos(fs, $('vpRefRes')?.value || 'desconhecido', '', t => { if (txt) txt.textContent = t + ' '; });
+    inp.value = ''; await statusRender(true); const b = $('vpStatus'); if (b) b.insertAdjacentHTML('afterbegin', `<div style="background:var(--bg4);border-radius:8px;padding:8px 12px;margin-bottom:8px;">${_resHtml(r, fs.length)}</div>`);
   }
   const _ehIA = m => /IA desligada|ia_desligada|ANTHROPIC_API_KEY|Claude API \[(401|403|429|529|400)\]|credit|invalid x-api-key/i.test(String(m || ''));
   function equipeManual() {
@@ -856,14 +853,47 @@
     } catch (e) { $('vdBase').innerHTML = `<div style="padding:12px;color:var(--red);">${esc(e.message)}</div>`; }
   }
   const lerB64 = f => new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = err; r.readAsDataURL(f); });
+  // v3.371 · a Vercel recusa envios acima de ~4,5 MB (base64 de ~3,3 MB). Arquivos grandes: o texto é extraído no navegador
+  // (PDF com pdf.js, Word/Excel abrindo o ZIP) e só o texto vai para o servidor — capítulos, tom e preço continuam aprendíveis.
+  const _LIM = 3 * 1024 * 1024;
+  const _scr = {}; const _carregar = (u, g) => window[g] ? Promise.resolve(window[g]) : (_scr[u] = _scr[u] || new Promise((ok, err) => { const s = document.createElement('script'); s.src = u; s.onload = () => window[g] ? ok(window[g]) : err(new Error('biblioteca não carregou')); s.onerror = () => { delete _scr[u]; err(new Error('sem acesso a ' + new URL(u).host)); }; document.head.appendChild(s); }));
+  async function _textoNoNavegador(f) {
+    const ext = f.name.toLowerCase().split('.').pop();
+    if (ext === 'pdf') { const lib = await _carregar('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'pdfjsLib');
+      lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const doc = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise; const out = [];
+      for (let i = 1; i <= Math.min(doc.numPages, 80); i++) { const pg = await doc.getPage(i); const tc = await pg.getTextContent(); let y = null, l = '';
+        tc.items.forEach(it => { const yy = Math.round(it.transform[5]); if (y !== null && Math.abs(yy - y) > 3) { out.push(l); l = ''; } l += it.str + (it.hasEOL ? '' : ''); y = yy; }); out.push(l, `--- fim da página ${i} ---`); }
+      return out.join('\n').replace(/\n{3,}/g, '\n\n'); }
+    if (ext === 'docx' || ext === 'xlsx') { const JSZip = await _carregar('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip'); const z = await JSZip.loadAsync(await f.arrayBuffer());
+      const xml2t = x => x.replace(/<w:tab\/>/g, '\t').replace(/<\/w:p>/g, '\n').replace(/<\/(si|row)>/g, '\n').replace(/<\/c>/g, '\t').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      if (ext === 'docx') { const x = await z.file('word/document.xml')?.async('string'); if (!x) throw new Error('Word sem conteúdo de texto'); return xml2t(x); }
+      const ss = await z.file('xl/sharedStrings.xml')?.async('string'); return xml2t(ss || ''); }
+    throw new Error('arquivo acima de 3 MB — salve como PDF ou Word menor');
+  }
+  async function _payloadArquivo(f) {
+    if (f.size <= _LIM) return { nome: f.name, base64: await lerB64(f), via: 'arquivo' };
+    const t = (await _textoNoNavegador(f)).trim(); if (t.length < 200) throw new Error('arquivo grande e sem texto legível (PDF escaneado?) — envie uma versão menor ou em Word');
+    const b64 = btoa(unescape(encodeURIComponent(t.substring(0, 200000))));
+    return { nome: f.name + '.txt', base64: b64, via: `texto extraído no navegador (${Math.round(f.size / 1048576)} MB)` };
+  }
+  async function _aprenderArquivos(fs, resultado, observacao, progresso) {
+    const res = [];
+    for (const [k, f] of fs.entries()) { progresso(`Lendo ${f.name} (${k + 1}/${fs.length})...`);
+      try { if (f.size > 40 * 1024 * 1024) throw new Error('acima de 40 MB'); const p = await _payloadArquivo(f);
+        await api('aprender', { nome: p.nome, base64: p.base64, resultado, observacao }, 115000); res.push({ nome: f.name, ok: true, via: p.via }); }
+      catch (e) { res.push({ nome: f.name, ok: false, erro: e.message }); } }
+    const ok = res.filter(x => x.ok).length; let cons = '';
+    if (ok) { progresso(`${ok} de ${fs.length} aprendido(s). Consolidando o padrão (até 1 min)...`); try { await api('padrao_regerar', {}, 115000); cons = 'Padrão consolidado.'; } catch (e) { cons = 'Aprendi, mas não consolidei o padrão: ' + e.message; } }
+    return { res, ok, cons };
+  }
+  const _resHtml = (r, total) => `<div style="font-size:10.5px;line-height:1.6;"><b style="color:${r.ok ? 'var(--green)' : 'var(--red)'};">${r.ok} de ${total} documento(s) aprendido(s).</b> ${esc(r.cons)}`
+    + r.res.map(x => `<div>${x.ok ? '✅' : '❌'} ${esc(x.nome)}${x.ok ? (x.via !== 'arquivo' ? ` <span style="color:var(--t3);">— ${esc(x.via)}</span>` : '') : ` — <span style="color:var(--red);">${esc(x.erro)}</span>`}</div>`).join('') + '</div>';
   async function aprender() {
     const fs = [...($('vdArqs').files || [])]; if (!fs.length) return nota('Escolha os arquivos', 'error');
-    const fim = ocupado($('vdBtnAprender'), '📥 Aprendendo...'); const msg = $('vdAprMsg'); let ok = 0;
-    for (const f of fs) { msg.innerHTML = `<span style="color:var(--blue);">Lendo ${esc(f.name)} (${ok + 1}/${fs.length})...</span>`;
-      try { if (f.size > 9 * 1024 * 1024) throw new Error('acima de 9 MB'); await api('aprender', { nome: f.name, base64: await lerB64(f), resultado: $('vdArqRes').value, observacao: $('vdArqObs').value }); ok++; }
-      catch (e) { nota(f.name + ': ' + e.message, 'error'); } }
-    msg.innerHTML = `<span style="color:var(--green);">${ok} de ${fs.length} documento(s) aprendido(s). Reconsolidando o padrão...</span>`;
-    try { await api('padrao_regerar'); } catch (_) {} fim(); carregarBase(); carregarPadrao(); try { RC = (await api('rate_card')).rate_card; } catch (_) {}
+    const fim = ocupado($('vdBtnAprender'), '📥 Aprendendo...'); const msg = $('vdAprMsg');
+    const r = await _aprenderArquivos(fs, $('vdArqRes').value, $('vdArqObs').value, t => { msg.innerHTML = `<span style="color:var(--blue);">${esc(t)}</span>`; });
+    msg.innerHTML = _resHtml(r, fs.length); fim(); if (r.ok) { $('vdArqs').value = ''; carregarBase(); carregarPadrao(); try { RC = (await api('rate_card')).rate_card; } catch (_) {} }
   }
   async function salvarInstrucoes() { try { CFG = await api('prop_config_salvar', { instrucoes: $('vdInstr').value }); nota('Instruções salvas — valem para toda proposta'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
   async function regerarPadrao() { const fim = ocupado($('vdBtnPadrao'), '↻ Consolidando...'); try { await api('padrao_regerar'); await carregarPadrao(); } catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); }
