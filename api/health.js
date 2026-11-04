@@ -34,6 +34,20 @@ async function handler(req, res) {
         if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador vê o uso da IA' });
         return res.status(200).json({ success: true, ...(await iaUsoResumo(b.mes)) });
       }
+      // v3.367: teste real da chave — valida a chave (lista de modelos, sem custo) e o crédito (1 token no modelo rápido)
+      if (b.action === 'ia_teste') {
+        const k = String(process.env.ANTHROPIC_API_KEY || ''); const e = await iaEstado(true);
+        if (!e.ligada) return res.status(200).json({ success: true, ok: false, motivo: 'desligada', msg: 'A IA está desligada no Atlantyx OS.' });
+        if (!k) return res.status(200).json({ success: true, ok: false, motivo: 'sem_chave', msg: 'A Vercel não tem ANTHROPIC_API_KEY configurada.' });
+        const h = { 'x-api-key': k, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, fim = k.length >= 8 ? k.slice(-4) : '';
+        const ler = async r => { const d = await r.json().catch(() => ({})); return String(d?.error?.message || ''); };
+        const r1 = await fetch('https://api.anthropic.com/v1/models?limit=1', { headers: h }).catch(x => ({ ok: false, status: 0, json: async () => ({ error: { message: x.message } }) }));
+        if (!r1.ok) { const m = await ler(r1); return res.status(200).json({ success: true, ok: false, fim, motivo: r1.status === 401 ? 'chave_invalida' : 'erro', status: r1.status, msg: r1.status === 401 ? `A chave …${fim} da Vercel foi recusada pela Anthropic (desativada, apagada ou digitada errada). Crie uma chave nova no Console e troque na Vercel.` : `Anthropic respondeu HTTP ${r1.status}: ${m}` }); }
+        const r2 = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: h, body: JSON.stringify({ model: process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'ok' }] }) }).catch(x => ({ ok: false, status: 0, json: async () => ({ error: { message: x.message } }) }));
+        if (!r2.ok) { const m = await ler(r2); const cred = /credit|balance|billing|limit/i.test(m);
+          return res.status(200).json({ success: true, ok: false, fim, motivo: cred ? 'sem_credito' : 'erro', status: r2.status, msg: cred ? `A chave …${fim} é válida, mas a conta da Anthropic dela está sem crédito ou bateu o limite de gasto. Coloque crédito em Console → Billing (ou aumente o limite).` : `Anthropic respondeu HTTP ${r2.status}: ${m}` }); }
+        return res.status(200).json({ success: true, ok: true, fim, msg: `IA funcionando com a chave …${fim}.` });
+      }
       if (b.action === 'ia_chave_info') {
         if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) return res.status(403).json({ success: false, error: 'Só o administrador vê isso' });
         const k = String(process.env.ANTHROPIC_API_KEY || '');
