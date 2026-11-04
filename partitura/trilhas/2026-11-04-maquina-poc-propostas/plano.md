@@ -9,3 +9,4 @@
 
 ## Registro da Batida
 - 2026-11-04 · feito (v3.365) · sem bloqueio · próximo: fundador subir propostas ganhas no Aprendizado e cadastrar o catálogo de escopos; tarefa agendada em 16/12 confere a CBS definitiva
+- 2026-11-04 · feito (v3.366) · sem bloqueio · briefing → escopo pela IA, escopo complementar (incluir/opcional/não usar), apresentação da solução em PPTX com cronograma (Gantt) e investimento; proposta escrita inclui complementar, opcionais e cronograma · próximo: reativar a IA e testar com um briefing real

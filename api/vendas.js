@@ -380,6 +380,9 @@ ESCOPO: ${String(pr.dados?.escopo || '').substring(0, 5000)}
 ESTIMATIVA: ${JSON.stringify({ perfis: pr.dados?.perfis, premissas: pr.dados?.estimativa?.premissas, entregaveis: pr.dados?.estimativa?.entregaveis, fases: pr.dados?.estimativa?.fases }).substring(0, 4000)}
 TIPO DE DOCUMENTO: ${tipoDoc === 'poc' ? 'POC (prova de conceito) — período de ' + (poc.semanas || 6) + ' semanas; critérios de sucesso: ' + (poc.criterios || 'definir 3 a 5 critérios mensuráveis com o cliente') + '; o valor da POC vira crédito no contrato se assinado em até ' + (poc.credito_dias || 60) + ' dias após o relatório final; sem compromisso de compra além da POC' : tipoDoc === 'piloto' ? 'Piloto (uso real, escopo reduzido, antes da escala)' : 'Proposta completa'}
 FORMATO COMERCIAL ESCOLHIDO: ${f.nome} — valor total R$ ${f.valor_total}${f.desconto_aplicado_pct ? ' (já com desconto de ' + f.desconto_aplicado_pct + '% sobre R$ ' + f.valor_sem_desconto + ' — cite como condição comercial especial, com validade)' : ''}, média mensal R$ ${f.valor_mensal_medio}, prazo ${pr.analise?.entrada?.meses} meses.
+ESCOPO COMPLEMENTAR INCLUÍDO (faz parte do escopo e do preço): ${JSON.stringify((pr.dados?.complementar || []).filter(x => x.decisao === 'incluir').map(x => x.titulo + ' — ' + x.descricao))}
+OPCIONAIS (apresente numa seção "Itens opcionais", sem preço, a orçar à parte): ${JSON.stringify((pr.dados?.complementar || []).filter(x => x.decisao === 'opcional').map(x => x.titulo + ' — ' + x.descricao))}
+CRONOGRAMA: inclua na seção de cronograma as fases com mês de início e fim (das fases da estimativa) e os marcos de faturamento.
 REAJUSTE: ${(pr.analise?.entrada?.meses || 0) > 12 ? 'contrato acima de 12 meses — inclua cláusula de reajuste anual pelo IPCA' : 'valores fixos no período; reajuste anual pelo IPCA em caso de renovação'}. Tributos: valores com impostos inclusos conforme a legislação vigente na data de emissão de cada nota (reforma tributária: CBS a partir de 2027).
 CRONOGRAMA DE FATURAMENTO: ${JSON.stringify(f.cronograma.map(c => ({ mes: c.mes, valor: c.valor, desc: c.desc })))}
 Devolva {"titulo":"","secoes":[{"titulo":"","conteudo":"texto em markdown simples (listas com -)"}],"tabela_investimento":[{"item":"","valor":""}],"validade_dias":30}`;
@@ -407,6 +410,48 @@ async function escopoGerar({ produto_id, cliente, necessidade, tipo_documento } 
   const sys = 'Você é arquiteto de soluções da Atlantyx. Adapte o escopo padrão de um produto à necessidade de um cliente. Português, markdown simples (títulos curtos e listas com -). Não invente números de volume ou prazo que não foram dados — deixe [a confirmar].';
   const usr = `PRODUTO: ${p.nome}\nESCOPO PADRÃO DO PRODUTO:\n${p.escopo}\n\nCLIENTE: ${cliente || '[cliente]'}\nNECESSIDADE INFORMADA: ${necessidade || '(nenhuma — use o padrão)'}\nTIPO: ${tipo_documento === 'poc' ? 'POC (prova de conceito): reduza para 1 caso de uso, 1 fonte de dados e critérios de sucesso mensuráveis' : tipo_documento === 'piloto' ? 'Piloto com usuários reais e escopo reduzido' : 'Projeto completo'}\n\nDevolva só o escopo: objetivo, entregáveis, dentro do escopo, fora do escopo, premissas, responsabilidades do cliente${tipo_documento === 'poc' ? ', critérios de sucesso e período' : ''}.`;
   return { escopo: await claude(sys, usr, 3000, 70000), produto: p.nome };
+}
+
+// ═══════════════════════ v3.366 · ESCOPO COMPLEMENTAR E APRESENTAÇÃO DA SOLUÇÃO ═══════════════════════
+// briefing (o que é o projeto / solução, em texto livre) → escopo completo e editável
+async function escopoBriefing({ briefing, cliente, tipo_demanda, tipo_documento, meses, poc } = {}) {
+  if (String(briefing || '').trim().length < 20) throw new Error('Escreva o briefing do projeto (pelo menos uma frase completa)');
+  const cat = (await escoposProduto().catch(() => [])).map(p => `- ${p.nome}: ${p.resumo || String(p.escopo || '').substring(0, 300)}`).join('\n');
+  const sys = 'Você é arquiteto de soluções sênior da Atlantyx (dados, BI, IA, automação e agentes). A partir do briefing comercial, escreva o ESCOPO do projeto pronto para proposta. Português do Brasil, markdown simples (## títulos e listas com -). Seja específico ao caso do cliente. Nunca invente volumes, prazos ou números que não estejam no briefing — escreva [a confirmar]. Responda só com o escopo.';
+  const usr = `CLIENTE: ${cliente || '[cliente]'}
+TIPO DE DEMANDA: ${tipo_demanda || 'não informado'}
+TIPO DE DOCUMENTO: ${tipo_documento === 'poc' ? `POC de ${poc?.semanas || 6} semanas — 1 caso de uso, 1 fonte de dados, critérios de sucesso mensuráveis${poc?.criterios ? ' (' + poc.criterios + ')' : ''}` : tipo_documento === 'piloto' ? 'Piloto com usuários reais e escopo reduzido' : 'Projeto completo'}
+PRAZO DESEJADO: ${meses ? meses + ' meses' : 'não informado'}
+${cat ? 'PRODUTOS ATLANTYX QUE PODEM COMPOR A SOLUÇÃO (use se fizer sentido):\n' + cat + '\n' : ''}
+BRIEFING:
+${String(briefing).substring(0, 8000)}
+
+Estrutura: ## Objetivo · ## Contexto e problema · ## Solução proposta · ## Entregáveis · ## Dentro do escopo · ## Fora do escopo · ## Fases sugeridas · ## Premissas · ## Responsabilidades do cliente${tipo_documento === 'poc' ? ' · ## Critérios de sucesso' : ''} · ## Pontos a confirmar com o cliente`;
+  return { escopo: await claude(sys, usr, 3500, 80000) };
+}
+async function escopoComplementar({ escopo, cliente, tipo_demanda, tipo_documento, estimativa } = {}) {
+  if (!escopo || String(escopo).length < 30) throw new Error('Escreva o escopo antes (mín. 30 caracteres)');
+  const sys = 'Você é arquiteto de soluções sênior da Atlantyx (dados, BI, engenharia de dados, IA, software sob medida e produtos próprios como o Maestro). Sugira o escopo COMPLEMENTAR que um cliente maduro esperaria e que costuma faltar: governança e qualidade de dados, segurança e LGPD, testes e homologação, documentação, treinamento e passagem de conhecimento, operação assistida, sustentação/SLA, monitoramento, adoção pelos usuários, evolução. Só o que fizer sentido para ESTE escopo. Responda APENAS JSON.';
+  const usr = `CLIENTE: ${cliente || ''}\nTIPO: ${tipo_documento || 'proposta'} · ${tipo_demanda || ''}\nESCOPO ATUAL:\n${String(escopo).substring(0, 7000)}\nESTIMATIVA ATUAL: ${JSON.stringify({ fases: estimativa?.fases, entregaveis: estimativa?.entregaveis }).substring(0, 2500)}\n\nDevolva {"itens":[{"titulo":"","descricao":"o que entra, em 1-2 frases","por_que":"valor para o cliente","tipo":"essencial|recomendado|opcional","horas_estimadas":0}]} com 4 a 8 itens, essenciais primeiro.`;
+  const r = json(await claude(sys, usr, 2000, 70000));
+  return { itens: (r.itens || []).slice(0, 10).map(x => ({ titulo: String(x.titulo || '').substring(0, 120), descricao: String(x.descricao || '').substring(0, 500), por_que: String(x.por_que || '').substring(0, 300), tipo: ['essencial', 'recomendado', 'opcional'].includes(x.tipo) ? x.tipo : 'recomendado', horas_estimadas: num(x.horas_estimadas) || null })) };
+}
+async function apresentacaoGerar({ proposta } = {}) {
+  const pr = proposta || {}, d = pr.dados || {}, f = (pr.analise?.formatos || []).find(x => x.formato === pr.formato) || pr.analise?.formatos?.[0] || null;
+  const sys = `Você monta a APRESENTAÇÃO DA SOLUÇÃO da Atlantyx para o cliente (PowerPoint executivo). Português do Brasil, frases curtas (máx. 14 palavras por tópico, máx. 5 tópicos por slide), foco no problema e no resultado de negócio. Nunca invente números: use só os fornecidos. Responda APENAS JSON.`;
+  const usr = `CLIENTE: ${pr.cliente || ''} | CONTATO: ${pr.contato || ''} | TÍTULO: ${pr.titulo || ''}
+TIPO: ${d.tipo_documento === 'poc' ? 'POC de ' + (d.poc?.semanas || 6) + ' semanas — critérios de sucesso: ' + (d.poc?.criterios || 'a definir com o cliente') : d.tipo_documento === 'piloto' ? 'Piloto' : 'Projeto completo'}
+BRIEFING DO PROJETO: ${String(d.briefing || '').substring(0, 2500)}
+ESCOPO: ${String(d.escopo || '').substring(0, 6000)}
+ESCOPO COMPLEMENTAR INCLUÍDO: ${JSON.stringify((d.complementar || []).filter(x => x.decisao === 'incluir').map(x => x.titulo + ': ' + x.descricao))}
+OPCIONAIS: ${JSON.stringify((d.complementar || []).filter(x => x.decisao === 'opcional').map(x => x.titulo + ': ' + x.descricao))}
+ESTIMATIVA: ${JSON.stringify({ meses: pr.analise?.entrada?.meses || d.meses, fases: d.estimativa?.fases, entregaveis: d.estimativa?.entregaveis, premissas: d.estimativa?.premissas, riscos: d.estimativa?.riscos, perfis: (d.perfis || []).map(x => x.perfil + ' (' + x.horas + 'h)') }).substring(0, 4000)}
+INVESTIMENTO: ${f ? JSON.stringify({ formato: f.nome, valor_total: f.valor_total, mensal: f.valor_mensal_medio, desconto_pct: f.desconto_aplicado_pct || 0, faturamento: (f.cronograma || []).map(c => c.mes + ' ' + c.desc + ' R$ ' + c.valor) }) : 'ainda não calculado'}
+Devolva {"titulo":"","subtitulo":"","slides":[{"tipo":"contexto|desafio|solucao|como_funciona|escopo|complementar|resultados|equipe|riscos|investimento|proximos_passos","titulo":"","pontos":["..."]}],
+"cronograma":[{"fase":"","mes_inicio":1,"mes_fim":1,"entregas":"curto"}],"marcos":[{"mes":1,"nome":""}]}
+Inclua nesta ordem: contexto, desafio, solução, como funciona, escopo, ${(d.complementar || []).some(x => x.decisao) ? 'escopo complementar e opcionais, ' : ''}resultados esperados, equipe, riscos e mitigação, investimento (só os números dados), próximos passos. O cronograma deve cobrir o prazo total em meses${d.tipo_documento === 'poc' ? ' (use semanas convertidas em meses, mínimo 1)' : ''}, usando as fases da estimativa quando existirem.`;
+  const r = json(await claude(sys, usr, 4000, 85000));
+  return { apresentacao: { ...r, meses: pr.analise?.entrada?.meses || d.meses || null, inicio: pr.analise?.entrada?.inicio || d.inicio || null, investimento: f ? { formato: f.nome, valor_total: f.valor_total, mensal: f.valor_mensal_medio, desconto_pct: f.desconto_aplicado_pct || 0, cronograma: f.cronograma } : null } };
 }
 // ═══════════════════════ CRUD PROPOSTAS ═══════════════════════
 async function propSalvar(p = {}) {
@@ -569,6 +614,9 @@ async function handler(req, res) {
     escopos_salvar: () => escoposSalvar(payload),
     escopo_extrair: () => escopoExtrair(payload),
     escopo_gerar: () => escopoGerar(payload),
+    escopo_briefing: () => escopoBriefing(payload),
+    escopo_complementar: () => escopoComplementar(payload), // v3.366
+    apresentacao_gerar: () => apresentacaoGerar(payload),
     padrao: () => padrao({}),
     padrao_regerar: () => padrao({ regerar: true }),
     estimar: () => estimar(payload),

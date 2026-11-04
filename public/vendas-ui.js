@@ -396,12 +396,16 @@
           <div class="fg"><label class="fl">Risco do escopo</label><select class="fsel" id="vpRisco"><option value="baixo">Baixo — escopo claro</option><option value="medio" selected>Médio</option><option value="alto">Alto — muita incerteza</option></select></div>
           <div class="fg"><label class="fl">Orçamento do cliente (se souber)</label><input class="fi" id="vpOrc" placeholder="R$"/></div>
           <div class="fg"><label class="fl">O orçamento é</label><select class="fsel" id="vpOrcTipo"><option value="total">Total do projeto</option><option value="mensal">Por mês</option></select></div></div>
+        <div class="fg"><label class="fl">Briefing do projeto / solução</label><textarea class="fta" id="vpBriefing" style="min-height:80px;" placeholder="Conte com suas palavras: quem é o cliente, qual a dor, o que ele quer resolver, sistemas e dados envolvidos, prazo, quem decide... A IA transforma isso no escopo completo abaixo."></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:4px;"><button class="btn btn-p" style="font-size:10.5px;" id="vpBtnBrief" onclick="VD.escopoBriefing()" title="A IA escreve o escopo completo a partir do briefing e preenche a caixa de escopo (editável)">✨ Gerar escopo pelo briefing (IA)</button></div></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
           <label class="btn btn-g" style="font-size:10px;cursor:pointer;" title="PDF, Word, Excel ou texto — o escopo vem para o campo abaixo, editável">📎 Subir documento de escopo<input type="file" accept=".pdf,.docx,.xlsx,.txt,.md,.csv" style="display:none;" onchange="VD.escopoUpload(this)"/></label>
           <select class="fsel" id="vpProd" style="width:auto;font-size:10.5px;"><option value="">📦 Escopo de um produto…</option></select>
           <button class="btn btn-g" style="font-size:10px;" id="vpBtnProd" onclick="VD.escopoProduto()" title="A IA adapta o escopo padrão do produto ao cliente (e à POC, se for o caso)">Gerar escopo do produto</button>
+          <button class="btn btn-g" style="font-size:10px;" id="vpBtnCompl" onclick="VD.complSugerir()" title="A IA sugere o que costuma faltar: governança, testes, treinamento, operação assistida, sustentação...">✨ Sugerir escopo complementar</button>
           <span style="font-size:9.5px;color:var(--t3);">Edite o escopo à vontade antes de estimar e gerar a proposta.</span></div>
         <div class="fg"><label class="fl">Escopo / necessidade do cliente</label><textarea class="fta" id="vpEscopo" style="min-height:160px;" placeholder="O que o cliente precisa, entregáveis, sistemas envolvidos, volume, prazos, restrições... (ou suba um documento / escolha um produto acima)"></textarea></div>
+        <div id="vpCompl"></div>
         <button class="btn btn-or" id="vpBtnEstimar" onclick="VD.estimar()" style="width:100%;justify-content:center;">🤖 Estimar equipe e horas</button></div></div>
       <div class="panel"><div class="ph"><div class="pt">② Equipe, horas e custo</div><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.addPerfil()">+ perfil</button></div><div class="pb">
         <datalist id="vpPerfisDL">${RC.map(x => `<option value="${esc(x.perfil)}">`).join('')}</datalist>
@@ -410,22 +414,22 @@
         <button class="btn btn-p" id="vpBtnAnalisar" onclick="VD.analisar()" style="width:100%;justify-content:center;margin-top:10px;">◆ Analisar formatos x metas</button></div></div></div>
       <div id="vpAnalise"></div><div id="vpDoc"></div>
       <div class="cp-acoes"><button class="btn btn-gn" onclick="VD.salvar()" style="flex:1;justify-content:center;font-weight:700;">💾 Salvar proposta</button>
-        <button class="btn btn-g" onclick="VD.baixarPdf()">⬇ PDF</button><button class="btn btn-g" onclick="VD.baixarWord()">⬇ Word</button>
+        <button class="btn btn-g" onclick="VD.baixarPdf()">⬇ PDF</button><button class="btn btn-or" id="vpBtnPpt" onclick="VD.gerarApresentacao()" title="Apresentação da solução para o cliente (PowerPoint) com escopo, complementares, cronograma e investimento">📊 Apresentação (PPTX)</button><button class="btn btn-g" onclick="VD.baixarWord()">⬇ Word</button>
         <button class="btn btn-g" onclick="VD.mudarStatus(null,'enviada')">📨 Marcar como enviada</button></div>`;
   }
   function preencherForm() {
     const d = PROP.dados; $('vpCliente').value = PROP.cliente || ''; $('vpContato').value = PROP.contato || ''; $('vpTitulo').value = PROP.titulo || '';
     $('vpTipo').value = d.tipo_demanda || 'indefinido'; $('vpMeses').value = d.meses || ''; $('vpInicio').value = d.inicio || ''; $('vpRisco').value = d.risco || 'medio';
-    $('vpOrc').value = d.orcamento_cliente || ''; $('vpOrcTipo').value = d.orcamento_tipo || 'total'; $('vpEscopo').value = d.escopo || '';
+    $('vpOrc').value = d.orcamento_cliente || ''; $('vpOrcTipo').value = d.orcamento_tipo || 'total'; $('vpEscopo').value = d.escopo || ''; $('vpBriefing').value = d.briefing || '';
     const pc = d.poc || {}; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
     $('vpProd').innerHTML = '<option value="">📦 Escopo de um produto…</option>' + ((CFG && CFG.escopos) || []).map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('') + (((CFG && CFG.escopos) || []).length ? '' : '<option value="" disabled>(cadastre em Rate card e parâmetros → Catálogo)</option>');
     $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
-    renderPerfis(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
+    renderPerfis(); complRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
     if (!$('vpClientesDL').dataset.ok) { $('vpClientesDL').dataset.ok = '1'; fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clientes_listar', payload: {} }) }).then(r => r.json()).then(d => { $('vpClientesDL').innerHTML = (d.clientes || []).map(c => `<option value="${esc(c.empresa)}">`).join(''); }).catch(() => {}); }
   }
   function lerForm() {
     const d = PROP.dados; PROP.cliente = $('vpCliente').value.trim(); PROP.contato = $('vpContato').value.trim(); PROP.titulo = $('vpTitulo').value.trim();
-    Object.assign(d, { tipo_documento: $('vpTipoDoc').value, preco_concorrente: $('vpConc').value, poc: { semanas: +$('vpPocSem').value || 6, credito_dias: +$('vpPocCred').value || 0, criterios: $('vpPocCrit').value.trim() }, tipo_demanda: $('vpTipo').value, meses: +$('vpMeses').value || null, inicio: $('vpInicio').value, risco: $('vpRisco').value, orcamento_cliente: $('vpOrc').value, orcamento_tipo: $('vpOrcTipo').value, escopo: $('vpEscopo').value.trim() });
+    Object.assign(d, { tipo_documento: $('vpTipoDoc').value, preco_concorrente: $('vpConc').value, poc: { semanas: +$('vpPocSem').value || 6, credito_dias: +$('vpPocCred').value || 0, criterios: $('vpPocCrit').value.trim() }, tipo_demanda: $('vpTipo').value, meses: +$('vpMeses').value || null, inicio: $('vpInicio').value, risco: $('vpRisco').value, orcamento_cliente: $('vpOrc').value, orcamento_tipo: $('vpOrcTipo').value, briefing: $('vpBriefing').value.trim(), escopo: $('vpEscopo').value.trim() });
     d.perfis = [...document.querySelectorAll('#vpPerfis tr')].map(tr => { const g = c => tr.querySelector(`[data-c="${c}"]`)?.value; return { perfil: g('perfil'), horas: +g('horas') || 0, custo_hora: +String(g('custo')).replace(',', '.') || null, preco_hora: +String(g('preco')).replace(',', '.') || null, justificativa: tr.dataset.just || '' }; }).filter(x => x.perfil);
   }
   function renderPerfis() {
@@ -527,6 +531,14 @@
       e.value = (e.value.trim() ? e.value.trim() + '\n\n' : '') + d.escopo; nota('Escopo carregado (' + d.origem + ') — revise e edite antes de estimar'); }
     catch (e) { nota('Não consegui ler: ' + e.message, 'error'); } inp.value = '';
   }
+  async function escopoBriefing(auto) {
+    lerForm(); if ((PROP.dados.briefing || '').length < 20) { nota('Escreva o briefing do projeto primeiro', 'error'); return false; }
+    if (!auto && PROP.dados.escopo && !confirm('Substituir o escopo atual pelo escopo gerado do briefing?')) return false;
+    const fim = ocupado($('vpBtnBrief'), '✨ Escrevendo o escopo...'); let ok = false;
+    try { const d = await api('escopo_briefing', { briefing: PROP.dados.briefing, cliente: PROP.cliente, tipo_demanda: PROP.dados.tipo_demanda, tipo_documento: PROP.dados.tipo_documento, meses: PROP.dados.meses, poc: PROP.dados.poc }, 90000);
+      $('vpEscopo').value = d.escopo; lerForm(); ok = true; nota('Escopo gerado pelo briefing — revise, edite e depois estime a equipe'); }
+    catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); return ok;
+  }
   async function escopoProduto() {
     const id = $('vpProd').value; if (!id) return nota('Escolha um produto do catálogo', 'error'); lerForm();
     const fim = ocupado($('vpBtnProd'), 'Gerando...');
@@ -546,6 +558,104 @@
   async function escSalvar() { try { const d = await api('escopos_salvar', { lista: escLer() }); ESC = d.escopos; if (CFG) CFG.escopos = ESC; escRender(); nota('Catálogo de escopos salvo'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
   // logo e fonte da marca nos documentos
   async function _logoDataUrl() { try { const b = await (await fetch('/logo-atlantyx-escuro.png')).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
+
+  // ═══ v3.366 · ESCOPO COMPLEMENTAR (IA) ═══
+  const COMPL_DEC = { incluir: 'Incluir no escopo', opcional: 'Opcional (à parte)', ignorar: 'Não usar' };
+  async function complSugerir() {
+    lerForm(); if ((PROP.dados.escopo || '').length < 30) return nota('Escreva ou carregue o escopo antes', 'error');
+    const fim = ocupado($('vpBtnCompl'), '✨ Pensando...');
+    try { const d = await api('escopo_complementar', { escopo: PROP.dados.escopo, cliente: PROP.cliente, tipo_demanda: PROP.dados.tipo_demanda, tipo_documento: PROP.dados.tipo_documento, estimativa: PROP.dados.estimativa }, 90000);
+      PROP.dados.complementar = d.itens.map(x => ({ ...x, decisao: x.tipo === 'essencial' ? 'incluir' : x.tipo === 'recomendado' ? 'opcional' : 'ignorar' })); complRender(); nota('Escopo complementar sugerido — escolha o que entra e aplique'); }
+    catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
+  }
+  function complRender() {
+    const b = $('vpCompl'); if (!b) return; const L = PROP?.dados?.complementar || []; if (!L.length) { b.innerHTML = ''; return; }
+    const cor = { essencial: 'var(--red)', recomendado: 'var(--gold)', opcional: 'var(--t3)' };
+    b.innerHTML = `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:8px;"><div style="font-size:10.5px;font-weight:700;margin-bottom:6px;">✨ Escopo complementar sugerido</div>`
+      + L.map((x, i) => `<div style="display:grid;grid-template-columns:1fr 150px;gap:8px;align-items:start;padding:5px 0;border-top:1px solid var(--bd);font-size:10.5px;line-height:1.45;"><div><b>${esc(x.titulo)}</b> <span style="font-size:9px;font-weight:700;color:${cor[x.tipo]};text-transform:uppercase;">${esc(x.tipo)}</span>${x.horas_estimadas ? ` <span style="color:var(--t3);">~${x.horas_estimadas}h</span>` : ''}<br>${esc(x.descricao)}<br><span style="color:var(--t3);">${esc(x.por_que)}</span></div>
+        <select class="fsel" style="font-size:10px;" onchange="VD.complDecidir(${i},this.value)">${Object.entries(COMPL_DEC).map(([k, v]) => `<option value="${k}"${x.decisao === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div>`).join('')
+      + `<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;"><button class="btn btn-g" style="font-size:10px;" onclick="VD.complLimpar()">Descartar</button><button class="btn btn-p" style="font-size:10px;" onclick="VD.complAplicar()">Aplicar ao escopo</button></div></div>`;
+  }
+  function complDecidir(i, v) { const x = PROP.dados.complementar?.[i]; if (x) x.decisao = v; }
+  function complLimpar() { PROP.dados.complementar = []; complRender(); }
+  function complAplicar() {
+    lerForm(); const L = PROP.dados.complementar || [], inc = L.filter(x => x.decisao === 'incluir'), op = L.filter(x => x.decisao === 'opcional');
+    let t = String(PROP.dados.escopo || '').replace(/\n*## Escopo complementar[\s\S]*?(?=\n## (?!Escopo complementar|Opcionais)|$)/, '').replace(/\n*## Opcionais \(orçar à parte\)[\s\S]*?(?=\n## |$)/, '').trim();
+    if (inc.length) t += '\n\n## Escopo complementar\n' + inc.map(x => '- ' + x.titulo + ': ' + x.descricao).join('\n');
+    if (op.length) t += '\n\n## Opcionais (orçar à parte)\n' + op.map(x => '- ' + x.titulo + ': ' + x.descricao).join('\n');
+    $('vpEscopo').value = t; lerForm(); nota('Escopo atualizado' + (inc.length ? ' — estime a equipe de novo para incluir o complementar no preço' : ''));
+  }
+  // ═══ v3.366 · APRESENTAÇÃO DA SOLUÇÃO (PPTX) ═══
+  let _pptProm = null;
+  function _carregarPptx() {
+    if (window.PptxGenJS) return Promise.resolve(window.PptxGenJS); if (_pptProm) return _pptProm;
+    const script = src => new Promise((ok, err) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => err(new Error('não carregou ' + src)); document.head.appendChild(s); });
+    _pptProm = (async () => { for (const u of ['https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js', 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js']) { try { await script(u); if (window.PptxGenJS) return window.PptxGenJS; } catch (_) {} } _pptProm = null; throw new Error('biblioteca de PowerPoint indisponível'); })();
+    return _pptProm;
+  }
+  async function _imgData(url) { try { const b = await (await fetch(url)).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
+  async function gerarApresentacao() {
+    lerForm(); lerDoc(); if (!PROP.cliente) return nota('Informe o cliente', 'error');
+    if ((PROP.dados.escopo || '').length < 30) { if ((PROP.dados.briefing || '').length >= 20) { if (!(await escopoBriefing(true))) return; } else return nota('Escreva o briefing ou o escopo antes', 'error'); }
+    if (!PROP.analise && !confirm('Ainda não há análise de preço — a apresentação sai sem o slide de investimento. Continuar?')) return;
+    const fim = ocupado($('vpBtnPpt'), '📊 Montando (até 1 min)...');
+    try {
+      const [{ apresentacao: A }, Pptx, logoEsc, logoBr] = await Promise.all([api('apresentacao_gerar', { proposta: PROP }, 100000), _carregarPptx(), _imgData('/logo-atlantyx-escuro.png'), _imgData('/logo-atlantyx-branco.png')]);
+      PROP.dados.apresentacao = A;
+      const pptx = new Pptx(); pptx.layout = 'LAYOUT_WIDE'; pptx.author = 'Atlantyx'; pptx.company = 'Atlantyx'; pptx.title = A.titulo || PROP.titulo;
+      const F = 'Montserrat', ESCURO = '0B1220', TXT = '1F2937', PETROLEO = '00708A', CIANO = '00C4CC', VERDE = '00FCA8', CINZA = '6B7280';
+      pptx.defineSlideMaster({ title: 'ATX', background: { color: 'FFFFFF' }, objects: [
+        ...(logoEsc ? [{ image: { data: logoEsc, x: 0.5, y: 0.32, w: 1.9, h: 0.37 } }] : []),
+        { rect: { x: 0, y: 7.38, w: 13.33, h: 0.12, fill: { color: CIANO } } },
+        { text: { text: 'Atlantyx · atlantyx.io', options: { x: 0.5, y: 6.95, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: CINZA } } }],
+        slideNumber: { x: 12.3, y: 6.95, w: 0.6, h: 0.3, fontFace: F, fontSize: 9, color: CINZA } });
+      const titulo = (sl, t) => sl.addText(t, { x: 0.5, y: 0.95, w: 12.3, h: 0.8, fontFace: F, fontSize: 26, bold: true, color: ESCURO });
+      // capa
+      const capa = pptx.addSlide(); capa.background = { color: ESCURO };
+      if (logoBr) capa.addImage({ data: logoBr, x: 0.7, y: 0.7, w: 2.6, h: 0.51 });
+      capa.addShape(pptx.ShapeType.rect, { x: 0.7, y: 2.55, w: 1.2, h: 0.08, fill: { color: VERDE } });
+      capa.addText(A.titulo || PROP.titulo || 'Apresentação da solução', { x: 0.7, y: 2.8, w: 11.5, h: 1.4, fontFace: F, fontSize: 38, bold: true, color: 'FFFFFF' });
+      capa.addText(A.subtitulo || '', { x: 0.7, y: 4.2, w: 11.5, h: 0.8, fontFace: F, fontSize: 18, color: CIANO });
+      capa.addText(`${PROP.cliente}${PROP.contato ? ' · ' + PROP.contato : ''} · ${new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`, { x: 0.7, y: 6.3, w: 11.5, h: 0.4, fontFace: F, fontSize: 12, color: 'C9D3E0' });
+      // slides de conteúdo (investimento e cronograma desenhados à parte)
+      const conteudo = (A.slides || []).filter(x => x.tipo !== 'investimento');
+      const proximos = conteudo.filter(x => x.tipo === 'proximos_passos'), corpo = conteudo.filter(x => x.tipo !== 'proximos_passos');
+      const addPontos = x => { const sl = pptx.addSlide({ masterName: 'ATX' }); titulo(sl, x.titulo || '');
+        sl.addText((x.pontos || []).slice(0, 6).map(t => ({ text: t, options: { bullet: { code: '25A0' }, color: TXT, breakLine: true } })), { x: 0.7, y: 1.95, w: 11.9, h: 4.7, fontFace: F, fontSize: 18, valign: 'top', paraSpaceAfter: 10 }); };
+      corpo.forEach(addPontos);
+      // cronograma (Gantt)
+      const C = (A.cronograma || []).filter(x => x.fase); const M = Math.max(1, Math.round(A.meses || 0), ...C.map(x => +x.mes_fim || 1));
+      if (C.length) { const sl = pptx.addSlide({ masterName: 'ATX' }); titulo(sl, 'Cronograma');
+        const x0 = 3.6, wT = 9.2, cw = wT / M, y0 = 2.05, rh = Math.min(0.62, 4.2 / Math.max(C.length, 1));
+        const mesNome = i => { if (!/^\d{4}-\d{2}$/.test(A.inicio || '')) return 'M' + (i + 1); const [y, m] = A.inicio.split('-').map(Number); const d = new Date(y, m - 1 + i, 1); return d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') + '/' + String(d.getFullYear()).slice(2); };
+        for (let i = 0; i < M; i++) { sl.addShape(pptx.ShapeType.rect, { x: x0 + i * cw, y: y0 - 0.42, w: cw, h: 0.34, fill: { color: i % 2 ? 'EEF6F8' : 'E2F1F4' }, line: { color: 'FFFFFF', width: 1 } });
+          sl.addText(mesNome(i), { x: x0 + i * cw, y: y0 - 0.42, w: cw, h: 0.34, fontFace: F, fontSize: M > 14 ? 7 : 9, bold: true, color: PETROLEO, align: 'center' }); }
+        C.forEach((x, k) => { const y = y0 + k * (rh + 0.12), ini = Math.max(1, +x.mes_inicio || 1), fimM = Math.max(ini, +x.mes_fim || ini);
+          sl.addText(x.fase, { x: 0.5, y, w: 3.0, h: rh, fontFace: F, fontSize: 11, bold: true, color: ESCURO, valign: 'middle' });
+          sl.addShape(pptx.ShapeType.roundRect, { x: x0 + (ini - 1) * cw + 0.03, y: y + 0.06, w: (fimM - ini + 1) * cw - 0.06, h: rh - 0.12, fill: { color: k % 2 ? PETROLEO : CIANO }, rectRadius: 0.08, line: { color: 'FFFFFF', width: 0 } });
+          if (x.entregas) sl.addText(String(x.entregas).substring(0, 70), { x: x0 + (ini - 1) * cw + 0.1, y: y + 0.06, w: Math.max(1.5, (fimM - ini + 1) * cw - 0.2), h: rh - 0.12, fontFace: F, fontSize: 9, color: 'FFFFFF', valign: 'middle' }); });
+        (A.marcos || []).slice(0, 8).forEach(mk => { const i = Math.min(M, Math.max(1, +mk.mes || 1)), xx = x0 + (i - 0.5) * cw, yy = y0 + C.length * (rh + 0.12) + 0.15;
+          sl.addShape(pptx.ShapeType.diamond, { x: xx - 0.11, y: yy, w: 0.22, h: 0.22, fill: { color: VERDE }, line: { color: ESCURO, width: 0.5 } });
+          sl.addText(mk.nome || '', { x: xx - 0.9, y: yy + 0.24, w: 1.8, h: 0.4, fontFace: F, fontSize: 8, color: TXT, align: 'center' }); }); }
+      // investimento
+      const I = A.investimento;
+      if (I) { const sl = pptx.addSlide({ masterName: 'ATX' }); titulo(sl, 'Investimento');
+        const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+        sl.addText([{ text: brl(I.valor_total), options: { fontSize: 40, bold: true, color: PETROLEO, breakLine: true } }, { text: I.formato + (I.mensal ? ' · ' + brl(I.mensal) + '/mês em média' : '') + (I.desconto_pct ? ' · condição especial de ' + String(I.desconto_pct).replace('.', ',') + '%' : ''), options: { fontSize: 14, color: TXT } }], { x: 0.7, y: 1.9, w: 11.9, h: 1.4, fontFace: F });
+        const linhas = (I.cronograma || []).slice(0, 10).map(c => [c.desc, /^\d{4}-\d{2}$/.test(c.mes || '') ? new Date(+c.mes.slice(0, 4), +c.mes.slice(5) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('. de ', '/').replace('.', '') : c.mes, brl(c.valor)]);
+        if (linhas.length) sl.addTable([[{ text: 'Faturamento', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO } } }, { text: 'Mês', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO } } }, { text: 'Valor', options: { bold: true, color: 'FFFFFF', fill: { color: ESCURO }, align: 'right' } }], ...linhas.map(l => [l[0], l[1], { text: l[2], options: { align: 'right' } }])],
+          { x: 0.7, y: 3.45, w: 11.9, colW: [7.3, 2, 2.6], fontFace: F, fontSize: 11, color: TXT, border: { type: 'solid', color: 'E5E7EB', pt: 0.5 }, rowH: 0.32 });
+        sl.addText('Valores com tributos inclusos conforme a legislação vigente na emissão de cada nota fiscal.', { x: 0.7, y: 6.55, w: 11.9, h: 0.3, fontFace: F, fontSize: 9, color: CINZA }); }
+      proximos.forEach(addPontos);
+      // encerramento
+      const fimS = pptx.addSlide(); fimS.background = { color: ESCURO };
+      if (logoBr) fimS.addImage({ data: logoBr, x: 4.9, y: 2.6, w: 3.5, h: 0.69 });
+      fimS.addText('Obrigado', { x: 0, y: 3.7, w: 13.33, h: 0.8, fontFace: F, fontSize: 28, bold: true, color: 'FFFFFF', align: 'center' });
+      fimS.addText('atlantyx.io', { x: 0, y: 4.5, w: 13.33, h: 0.5, fontFace: F, fontSize: 14, color: CIANO, align: 'center' });
+      await pptx.writeFile({ fileName: `Apresentacao_${(PROP.cliente || 'cliente').replace(/[^\w]+/g, '_')}_${PROP.numero || 'rascunho'}.pptx` });
+      nota('Apresentação gerada — salve a proposta para guardar o conteúdo');
+    } catch (e) { nota('Apresentação: ' + e.message, 'error'); } fim();
+  }
   async function baixarPdf() {
     lerForm(); lerDoc(); const d = PROP.documento; if (!d) return nota('Redija a proposta antes', 'error');
     try { const pdfMake = await window._carregarPdfMake(); const logo = await _logoDataUrl();
@@ -788,5 +898,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing };
 })();
