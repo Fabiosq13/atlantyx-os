@@ -418,7 +418,7 @@
         <div class="tw"><table style="min-width:520px;"><thead><tr><th>Perfil</th><th style="width:80px;">Horas</th><th style="width:90px;">Custo/h</th><th style="width:90px;">Preço/h</th><th style="width:26px;"></th></tr></thead><tbody id="vpPerfis"></tbody></table></div>
         <div id="vpEstInfo" style="font-size:10.5px;color:var(--t2);margin-top:8px;line-height:1.6;"></div>
         <button class="btn btn-p" id="vpBtnAnalisar" onclick="VD.analisar()" style="width:100%;justify-content:center;margin-top:10px;">◆ Analisar formatos x metas</button></div></div></div>
-      <div id="vpAnalise"></div><div id="vpDoc"></div>
+      <div id="vpAnalise"></div><div id="vpDoc"></div><div id="vpChat"></div>
       <div class="cp-acoes"><button class="btn btn-gn" onclick="VD.salvar()" style="flex:1;justify-content:center;font-weight:700;">💾 Salvar proposta</button>
         <button class="btn btn-g" onclick="VD.baixarPdf()">⬇ PDF</button><button class="btn btn-or" id="vpBtnPpt" onclick="VD.gerarApresentacao()" title="Apresentação da solução para o cliente (PowerPoint) com escopo, complementares, cronograma e investimento">📊 Apresentação (PPTX)</button><button class="btn btn-g" onclick="VD.baixarWord()">⬇ Word</button>
         <button class="btn btn-g" onclick="VD.mudarStatus(null,'enviada')">📨 Marcar como enviada</button></div>`;
@@ -430,7 +430,7 @@
     const pc = d.poc || {}; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
     $('vpProd').innerHTML = '<option value="">📦 Escopo de um produto…</option>' + ((CFG && CFG.escopos) || []).map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('') + (((CFG && CFG.escopos) || []).length ? '' : '<option value="" disabled>(cadastre em Rate card e parâmetros → Catálogo)</option>');
     $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
-    renderPerfis(); complRender(); statusRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
+    renderPerfis(); complRender(); statusRender(); chatRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
     if (!$('vpClientesDL').dataset.ok) { $('vpClientesDL').dataset.ok = '1'; fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clientes_listar', payload: {} }) }).then(r => r.json()).then(d => { $('vpClientesDL').innerHTML = (d.clientes || []).map(c => `<option value="${esc(c.empresa)}">`).join(''); }).catch(() => {}); }
   }
   function lerForm() {
@@ -613,6 +613,49 @@
   // logo e fonte da marca nos documentos
   async function _logoDataUrl() { try { const b = await (await fetch('/logo-atlantyx-escuro.png')).blob(); return await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }); } catch (_) { return null; } }
 
+  // ═══ v3.375 · COPILOTO DA PROPOSTA (chat com IA, ajustes aplicáveis) ═══
+  const _md = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split('\n').map(l => /^\s*[-•]\s/.test(l) ? '• ' + l.replace(/^\s*[-•]\s/, '') : l).join('<br>');
+  function chatRender() {
+    const b = $('vpChat'); if (!b || !PROP) return; const M = PROP.dados.chat || [];
+    const sug = ['Como chego a 10% abaixo sem perder a margem mínima?', 'Qual formato fecha mais rápido com este cliente?', 'O concorrente cobra menos — o que faço?', 'Revise o texto do investimento para ficar mais persuasivo'];
+    b.innerHTML = `<div class="panel"><div class="ph"><div class="pt">💬 Copiloto da proposta</div><span style="font-size:10px;color:var(--t2);">discuta valores, escopo e texto — os ajustes viram botões para aplicar</span>${M.length ? '<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;margin-left:auto;" onclick="VD.chatLimpar()">Limpar conversa</button>' : ''}</div><div class="pb">
+      <div id="vpChatLog" style="max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">${M.length ? M.map((m, i) => m.papel === 'usuario'
+        ? `<div style="align-self:flex-end;max-width:85%;background:var(--blue, #00708A);color:#fff;border-radius:10px 10px 2px 10px;padding:8px 11px;font-size:11.5px;line-height:1.5;">${_md(m.texto)}</div>`
+        : `<div style="align-self:flex-start;max-width:92%;background:var(--bg4);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:8px 11px;font-size:11.5px;line-height:1.6;">${_md(m.texto)}${(m.acoes || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;">${m.acoes.map((a, k) => a.feito ? `<span style="font-size:10px;color:var(--green);">✓ ${esc(a.rotulo || a.tipo)}</span>` : `<button class="btn btn-p" style="font-size:10px;padding:4px 9px;" onclick="VD.chatAplicar(${i},${k})">⚡ ${esc(a.rotulo || a.tipo)}</button>`).join('')}</div>` : ''}</div>`).join('')
+        : `<div style="font-size:10.5px;color:var(--t3);">Pergunte sobre preço, desconto, margem, formato, escopo ou o texto. Exemplos:</div><div style="display:flex;flex-wrap:wrap;gap:5px;">${sug.map(t => `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.chatEnviar(${esc(JSON.stringify(t))})">${esc(t)}</button>`).join('')}</div>`}</div>
+      <div style="display:flex;gap:6px;align-items:flex-end;"><textarea class="fta" id="vpChatIn" style="min-height:44px;flex:1;" placeholder="Ex.: o cliente tem R$ 400 mil de orçamento — como ajusto sem cair abaixo da margem mínima?" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();VD.chatEnviar();}"></textarea>
+        <button class="btn btn-or" id="vpChatBtn" onclick="VD.chatEnviar()">Enviar</button></div></div></div>`;
+    const lg = $('vpChatLog'); if (lg) lg.scrollTop = lg.scrollHeight;
+  }
+  async function chatEnviar(txt) {
+    const inp = $('vpChatIn'); const t = String(txt || inp?.value || '').trim(); if (!t) return;
+    lerForm(); lerDoc(); PROP.dados.chat = PROP.dados.chat || []; PROP.dados.chat.push({ papel: 'usuario', texto: t, em: new Date().toISOString() }); chatRender();
+    const fim = ocupado($('vpChatBtn'), 'Pensando...');
+    try { const r = await api('prop_chat', { proposta: PROP, mensagens: PROP.dados.chat.map(m => ({ papel: m.papel, texto: m.texto })) }, 100000);
+      PROP.dados.chat.push({ papel: 'ia', texto: r.resposta, acoes: r.acoes || [], em: new Date().toISOString() }); }
+    catch (e) { PROP.dados.chat.push({ papel: 'ia', texto: '⚠ ' + e.message, acoes: [] }); }
+    PROP.dados.chat = PROP.dados.chat.slice(-40); fim(); chatRender();
+  }
+  function chatLimpar() { if (!confirm('Apagar a conversa desta proposta?')) return; PROP.dados.chat = []; chatRender(); }
+  async function chatAplicar(i, k) {
+    const m = PROP.dados.chat?.[i], a = m?.acoes?.[k]; if (!a) return; lerForm(); lerDoc(); const d = PROP.dados; const acha = n => (d.perfis || []).find(x => String(x.perfil).toLowerCase() === String(n || '').toLowerCase());
+    let reanalisar = false;
+    if (a.tipo === 'desconto') { d.descontos = { ...(d.descontos || {}), [a.formato]: +a.pct || 0 }; PROP.formato = a.formato; reanalisar = true; }
+    else if (a.tipo === 'horas') { const p = acha(a.perfil); if (!p) return nota('Perfil não encontrado: ' + a.perfil, 'error'); p.horas = +a.horas || 0; reanalisar = true; }
+    else if (a.tipo === 'preco_hora') { const p = acha(a.perfil); if (!p) return nota('Perfil não encontrado: ' + a.perfil, 'error'); p.preco_hora = +a.valor || null; reanalisar = true; }
+    else if (a.tipo === 'remover_perfil') { d.perfis = d.perfis.filter(x => x !== acha(a.perfil)); reanalisar = true; }
+    else if (a.tipo === 'adicionar_perfil') { const c = RC.find(x => x.perfil.toLowerCase() === String(a.perfil).toLowerCase()) || {}; d.perfis.push({ perfil: c.perfil || a.perfil, horas: +a.horas || 0, custo_hora: c.custo_hora ?? null, preco_hora: c.preco_alvo ?? null }); reanalisar = true; }
+    else if (a.tipo === 'meses') { d.meses = +a.valor || d.meses; reanalisar = true; }
+    else if (a.tipo === 'risco') { d.risco = a.valor; reanalisar = true; }
+    else if (a.tipo === 'formato') { PROP.formato = a.formato; if (PROP.analise) renderAnalise(); }
+    else if (a.tipo === 'escopo_adicionar') { d.escopo = (d.escopo ? d.escopo + '\n\n' : '') + a.texto; }
+    else if (a.tipo === 'secao') { if (!PROP.documento) return nota('Redija a proposta antes de mudar o texto', 'error'); const S = PROP.documento.secoes; const s0 = S.find(x => x.titulo.toLowerCase() === String(a.titulo).toLowerCase()); if (s0) s0.conteudo = a.conteudo; else S.push({ titulo: a.titulo, conteudo: a.conteudo }); }
+    else return nota('Ajuste não reconhecido', 'error');
+    a.feito = true; const docAntes = PROP.documento; preencherForm();
+    if (reanalisar && PROP.analise) { await analisar(); if (docAntes) nota('Preço recalculado — clique em ✍ Redigir de novo para o documento refletir o novo valor', 'info'); }
+    else nota('Ajuste aplicado — salve a proposta');
+    chatRender();
+  }
   // ═══ v3.366 · ESCOPO COMPLEMENTAR (IA) ═══
   const COMPL_DEC = { incluir: 'Incluir no escopo', opcional: 'Opcional (à parte)', ignorar: 'Não usar' };
   async function complSugerir() {
@@ -1058,5 +1101,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar };
 })();

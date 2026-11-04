@@ -18,3 +18,4 @@
 - 2026-11-04 · feito (v3.372) · rate card sugerido/editado não era salvo ao trocar de aba e a proposta não via: agora salva sozinho ao sair da aba e a proposta relê o rate card; botão Perfis do rate card no painel ②; envio de propostas continua e mostra o resultado ao voltar para a aba
 - 2026-11-04 · feito (v3.373) · aprender falhava com 'Expected , or ]' (JSON da IA cortado no limite de 2500 tokens): limite 6000, pedido conciso e reparo de JSON cortado em todo o vendas.js
 - 2026-11-04 · feito (v3.374) · PDF/Word sem texto redigido: oferece analisar (se faltar) e redigir na hora em vez de só avisar
+- 2026-11-04 · feito (v3.375) · Copiloto da proposta: chat com IA no fim da tela (contexto: escopo, equipe, rate card, análise de formatos, documento) que devolve ajustes aplicáveis com um clique (desconto, horas, preço/hora, perfis, prazo, risco, formato, escopo, texto de seção); conversa salva na proposta

@@ -442,6 +442,41 @@ async function escopoGerar({ produto_id, cliente, necessidade, tipo_documento } 
 }
 
 // ═══════════════════════ v3.366 · ESCOPO COMPLEMENTAR E APRESENTAÇÃO DA SOLUÇÃO ═══════════════════════
+// v3.375 · copiloto da proposta: conversa sobre valores, escopo e texto, devolvendo ajustes que o usuário aplica com um clique
+async function propChat({ proposta, mensagens } = {}) {
+  const pr = proposta || {}, d = pr.dados || {}, A = pr.analise || {};
+  const hist = (mensagens || []).filter(m => m && m.texto).slice(-14);
+  if (!hist.length || hist[hist.length - 1].papel !== 'usuario') throw new Error('Escreva uma mensagem');
+  const { params, instrucoes } = await propConfig(); const rc = await rateCard();
+  const fmts = (A.formatos || []).map(f => ({ formato: f.formato, nome: f.nome, valor_total: f.valor_total, sem_desconto: f.valor_sem_desconto, desconto_pct: f.desconto_aplicado_pct, piso: f.preco_piso, margem_pct: f.margem_pct, mensal: f.valor_mensal_medio, preco_hora_efetivo: f.preco_hora_efetivo, pior_caixa: f.pior_caixa, nota: f.scores?.total, alertas: f.alertas, concorrente: f.competitividade ? { valor: f.competitividade.concorrente, diferenca_pct: f.competitividade.diferenca_pct, desconto_sugerido_pct: f.competitividade.desconto_sugerido_pct } : null }));
+  const ctx = {
+    cliente: pr.cliente, titulo: pr.titulo, tipo_documento: d.tipo_documento || 'proposta', tipo_demanda: d.tipo_demanda, meses: d.meses, inicio: d.inicio, risco: d.risco,
+    orcamento_cliente: d.orcamento_cliente ? d.orcamento_cliente + ' (' + (d.orcamento_tipo || 'total') + ')' : null, preco_concorrente: d.preco_concorrente || null, poc: d.tipo_documento === 'poc' ? d.poc : undefined,
+    briefing: String(d.briefing || '').substring(0, 1500), escopo: String(d.escopo || '').substring(0, 4000),
+    equipe: (d.perfis || []).map(x => ({ perfil: x.perfil, horas: x.horas, custo_hora: x.custo_hora, preco_hora: x.preco_hora })),
+    rate_card: rc.map(x => ({ perfil: x.perfil, custo_hora: x.custo_hora, piso: x.preco_piso, alvo: x.preco_alvo, teto: x.preco_teto })).slice(0, 30),
+    parametros: { margem_min_pct: params.margem_min_pct, margem_alvo_pct: params.margem_alvo_pct, overhead_pct: params.overhead_pct, impostos_por_ano: params.impostos_por_ano, contingencia: params.contingencia, desconto_recorrente_pct: params.desconto_recorrente_pct },
+    analise: A.formatos ? { formato_escolhido: pr.formato, recomendado: A.recomendado, metas: A.metas, custos: { custo_total: A.custos?.custo_total, preco_minimo: A.custos?.preco_minimo, preco_alvo: A.custos?.preco_alvo, impostos_efetivo_pct: A.custos?.impostos_efetivo_pct }, formatos: fmts } : 'ainda não analisada',
+    documento: pr.documento ? (pr.documento.secoes || []).map(x => ({ titulo: x.titulo, conteudo: String(x.conteudo || '').substring(0, 600) })) : 'ainda não redigido',
+  };
+  const sys = `Você é o copiloto comercial e financeiro da Atlantyx (consultoria de dados, BI, engenharia de dados e IA, 17 anos) ajudando o fundador a ajustar UMA proposta. Português do Brasil, direto, com números.
+Regras: use só os números do CONTEXTO (não invente custos, metas ou preços de mercado específicos); quando estimar, diga que é estimativa. Nunca sugira preço abaixo do piso (margem mínima) sem dizer claramente o impacto na margem. Lembre que desconto em proposta acima de 12 meses precisa de reajuste IPCA. Para mudar preço prefira: tirar escopo, faseamento, mudar formato, ajustar horas ou mix de perfis, antes de desconto puro.
+${instrucoes ? 'Instruções do dono: ' + String(instrucoes).substring(0, 1500) + '\n' : ''}Responda APENAS JSON: {"resposta":"texto em markdown simples (até 12 linhas)","acoes":[...]} — "acoes" só quando houver um ajuste concreto a aplicar, cada uma de um destes tipos:
+{"tipo":"desconto","formato":"tm|fechado|mensal|hibrido|poc","pct":0,"rotulo":"..."}
+{"tipo":"horas","perfil":"nome exato da equipe","horas":0,"rotulo":"..."}
+{"tipo":"preco_hora","perfil":"nome exato","valor":0,"rotulo":"..."}
+{"tipo":"remover_perfil","perfil":"nome exato","rotulo":"..."}
+{"tipo":"adicionar_perfil","perfil":"nome do rate card","horas":0,"rotulo":"..."}
+{"tipo":"meses","valor":0,"rotulo":"..."}
+{"tipo":"risco","valor":"baixo|medio|alto","rotulo":"..."}
+{"tipo":"formato","formato":"tm|fechado|mensal|hibrido|poc","rotulo":"..."}
+{"tipo":"escopo_adicionar","texto":"linhas em markdown","rotulo":"..."}
+{"tipo":"secao","titulo":"título exato de uma seção do documento ou novo","conteudo":"texto completo novo da seção","rotulo":"..."}
+"rotulo" = frase curta do botão (ex.: "Aplicar 8% de desconto no escopo fechado").`;
+  const conversa = hist.map(m => (m.papel === 'usuario' ? 'FUNDADOR: ' : 'COPILOTO: ') + String(m.texto).substring(0, 3000)).join('\n\n');
+  const r = json(await claude(sys, `CONTEXTO DA PROPOSTA:\n${JSON.stringify(ctx).substring(0, 22000)}\n\nCONVERSA:\n${conversa}\n\nResponda à última mensagem do FUNDADOR.`, 3000, 90000));
+  return { resposta: String(r.resposta || ''), acoes: Array.isArray(r.acoes) ? r.acoes.slice(0, 6) : [] };
+}
 // briefing (o que é o projeto / solução, em texto livre) → escopo completo e editável
 async function escopoBriefing({ briefing, cliente, tipo_demanda, tipo_documento, meses, poc } = {}) {
   if (String(briefing || '').trim().length < 20) throw new Error('Escreva o briefing do projeto (pelo menos uma frase completa)');
@@ -651,6 +686,7 @@ async function handler(req, res) {
     estimar: () => estimar(payload),
     analisar: () => analisar(base, payload),
     redigir: () => redigir(payload),
+    prop_chat: () => propChat(payload),
     prop_salvar: () => propSalvar(payload),
     prop_listar: () => sqlRun(async sql => ({ propostas: await sql`SELECT id, numero, cliente, contato, titulo, status, formato, valor_total, valor_mensal, meses, margem_pct, motivo_resultado, projeto_id, criado_em, enviada_em, fechada_em, atualizado_em, documento->>'validade_dias' AS validade_dias FROM propostas ORDER BY atualizado_em DESC LIMIT 300` })),
     prop_obter: () => sqlRun(async sql => ({ proposta: (await sql`SELECT * FROM propostas WHERE id = ${payload.id}`)[0] || null })),
