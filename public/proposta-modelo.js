@@ -88,7 +88,7 @@
       + c(b.empresa, { cor: C.azul, sz: 22 }, sp(null, 600)) + pX('', sp(null, 600)) + pX('', sp(null, 600))
       + c(b.titulo, { b: 1, cor: 'FFFFFF', sz: 36 }, `<w:shd w:val="clear" w:color="auto" w:fill="${C.navy}"/>${sp(1200, 200)}`)
       + c(b.projeto, { b: 1, cor: 'FFFFFF', sz: 26 }, `<w:shd w:val="clear" w:color="auto" w:fill="${C.azul}"/>${sp(null, 200)}`)
-      + (b.sub ? c(b.sub, { i: 1, b: 1, cor: 'FFFFFF', sz: 18 }, `<w:shd w:val="clear" w:color="auto" w:fill="7F7F7F"/>${sp(null, 200)}`) : '')
+      + (b.sub ? c(b.sub, { i: 1, b: 1, cor: 'FFFFFF', sz: 18 }, `<w:shd w:val="clear" w:color="auto" w:fill="${b.subCor || '7F7F7F'}"/>${sp(null, 200)}`) : '')
       + (b.area ? c(b.area, { b: 1, cor: C.navy, sz: 24 }, sp(400, 100)) : pX('', sp(400, 100)))
       + c(b.cliente, { b: 1, cor: C.navy, sz: 24 }, sp(null, 60))
       + (b.cnpj ? c('CNPJ: ' + b.cnpj, { cor: C.texto, sz: 20 }, sp(null, 600)) : pX('', sp(null, 600)))
@@ -136,7 +136,7 @@
     const faixa = (t, fill, fs, o = {}) => ({ table: { widths: ['*'], body: [[{ text: t, bold: true, italics: o.i, color: '#FFFFFF', fontSize: fs, alignment: 'center', fillColor: fill, margin: [4, 3, 4, 3] }]] }, layout: 'noBorders', margin: [0, o.antes || 0, 0, TW(200)] });
     return [logo ? { image: logo, width: 210, alignment: 'center', margin: [0, TW(500), 0, TW(200)] } : { text: '', margin: [0, 40, 0, 0] },
       { text: b.empresa, alignment: 'center', color: hex(C.azul), fontSize: 11, margin: [0, 0, 0, TW(1800)] },
-      faixa(b.titulo, hex(C.navy), 18, { antes: TW(1200) }), faixa(b.projeto, hex(C.azul), 13), ...(b.sub ? [faixa(b.sub, '#7F7F7F', 9, { i: 1 })] : []),
+      faixa(b.titulo, hex(C.navy), 18, { antes: TW(1200) }), faixa(b.projeto, hex(C.azul), 13), ...(b.sub ? [faixa(b.sub, '#' + (b.subCor || '7F7F7F'), 9, { i: 1 })] : []),
       { text: b.area || ' ', alignment: 'center', bold: true, color: hex(C.navy), fontSize: 12, margin: [0, TW(400), 0, TW(100)] },
       { text: b.cliente, alignment: 'center', bold: true, color: hex(C.navy), fontSize: 12, margin: [0, 0, 0, 3] },
       { text: b.cnpj ? 'CNPJ: ' + b.cnpj : ' ', alignment: 'center', fontSize: 10, margin: [0, 0, 0, TW(600)] },

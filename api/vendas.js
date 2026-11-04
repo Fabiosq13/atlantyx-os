@@ -405,8 +405,10 @@ async function redigir({ proposta, formato } = {}) {
   const sys = `Você redige propostas comerciais da Atlantyx (consultoria de dados, BI, engenharia de dados e IA — 17 anos, clientes como CPFL Energia, Enel, Caixa Capitalização). Português do Brasil, tom executivo e objetivo. Siga o MODELO OFICIAL de capítulos da Atlantyx (o padrão aprendido serve só de referência de tom e conteúdo). Nunca invente números: use só os fornecidos. Faturamento conforme o cronograma, com vencimento em 35 dias corridos da emissão da nota fiscal (salvo instrução diferente). Responda APENAS JSON.`;
   const usr = `${instrucoes ? 'INSTRUÇÕES DO DONO (prioridade máxima):\n' + instrucoes.substring(0, 5000) + '\n\n' : ''}PADRÃO APRENDIDO: ${JSON.stringify(pd.padrao || {}).substring(0, 6000)}
 CLIENTE: ${pr.cliente || ''} | CONTATO: ${pr.contato || ''} | TÍTULO: ${pr.titulo || ''}
-ESCOPO: ${String(pr.dados?.escopo || '').substring(0, 5000)}
-ESTIMATIVA: ${JSON.stringify({ perfis: pr.dados?.perfis, premissas: pr.dados?.estimativa?.premissas, entregaveis: pr.dados?.estimativa?.entregaveis, fases: pr.dados?.estimativa?.fases }).substring(0, 4000)}
+BRIEFING DO PROJETO: ${String(pr.dados?.briefing || '').substring(0, 4000)}
+ESCOPO COMPLETO: ${String(pr.dados?.escopo || '').substring(0, 14000)}
+ESTIMATIVA: ${JSON.stringify({ perfis: pr.dados?.perfis, premissas: pr.dados?.estimativa?.premissas, entregaveis: pr.dados?.estimativa?.entregaveis, fases: pr.dados?.estimativa?.fases, riscos: pr.dados?.estimativa?.riscos }).substring(0, 6000)}
+DADOS DA CAPA: ${JSON.stringify(pr.dados?.capa || {})}
 TIPO DE DOCUMENTO: ${tipoDoc === 'poc' ? 'POC (prova de conceito) — período de ' + (poc.semanas || 6) + ' semanas; critérios de sucesso: ' + (poc.criterios || 'definir 3 a 5 critérios mensuráveis com o cliente') + '; ' + (f.poc_cortesia && !(f.valor_total > 0) ? 'POC SEM CUSTO por ser cliente da Atlantyx (apresente como condição de parceria, não como gratuidade genérica)' : 'o valor da POC vira crédito no contrato (abatido do projeto) se assinado em até ' + (poc.credito_dias || 60) + ' dias após o relatório final') + '; durante toda a POC um Analista de IA da Atlantyx fica dedicado ao suporte dos usuários para esclarecer dúvidas, e há treinamento dos usuários-chave; sem compromisso de compra além da POC' + (pr.dados?.ja_cliente ? '; e, por ser cliente, o projeto que vier da POC terá desconto especial adicional de ' + (params?.desconto_cliente_pct ?? 5) + '% se assinado em até ' + (params?.desconto_cliente_dias ?? 60) + ' dias' : '') : tipoDoc === 'piloto' ? 'Piloto (uso real, escopo reduzido, antes da escala)' : 'Proposta completa'}
 FORMATO COMERCIAL ESCOLHIDO: ${f.nome} — valor total R$ ${f.valor_total}${f.desconto_aplicado_pct ? ' (já com desconto de ' + f.desconto_aplicado_pct + '% sobre R$ ' + f.valor_sem_desconto + ' — cite como condição comercial especial, com validade)' : ''}, média mensal R$ ${f.valor_mensal_medio}, prazo ${pr.analise?.entrada?.meses} meses.
 ESCOPO COMPLEMENTAR INCLUÍDO (faz parte do escopo e do preço): ${JSON.stringify((pr.dados?.complementar || []).filter(x => x.decisao === 'incluir').map(x => x.titulo + ' — ' + x.descricao))}
@@ -443,15 +445,27 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
     validade: '1 a 2 parágrafos: validade da proposta (dias) a partir da data de emissão e o que acontece depois.',
     aceite: '1 a 2 parágrafos de aceite da {{TIPO_DOC}} (o aceite formaliza a contratação nas condições descritas), terminando com "Rio de Janeiro, [data por extenso]." — as assinaturas são inseridas pelo sistema.',
   };
-  const PARTES = [['carta', 'apresentacao', 'contexto', 'objetivos', 'escopo', 'diferenciais', 'entregaveis', 'resumo_escopo', 'equipe'],
-    ['investimento', 'rate_card', 'bonus', 'premissas_exec', 'premissas_com', 'garantias', 'suporte', 'pagamento', 'validade', 'aceite']];
+  const PARTES = [['carta', 'apresentacao', 'contexto', 'objetivos', 'diferenciais'], ['escopo'], ['entregaveis', 'equipe', 'resumo_escopo', 'investimento', 'rate_card', 'bonus'],
+    ['premissas_exec', 'premissas_com', 'garantias', 'suporte', 'pagamento', 'validade', 'aceite']];
+  // v3.380: profundidade — cada capítulo completo e específico deste cliente/escopo (nada genérico)
+  G.contexto += ' Seja específico: 3 a 5 parágrafos sobre a situação atual, os sistemas e dados envolvidos, as dores e o impacto no negócio, citando o que está no briefing e no escopo; Justificativas com 5 a 8 marcadores.';
+  G.escopo += ' Este é o capítulo mais importante: cubra TODOS os itens do escopo, sem resumir; cada subseção com 2 a 4 parágrafos/rótulos detalhando o que será feito, como, com quais dados/sistemas, regras e validações, e um rótulo **Critério de Aceite:** objetivo. Inclua também subseções de requisitos não funcionais (desempenho, segurança/LGPD, documentação) quando aplicável.';
+  G.entregaveis += ' Use exatamente as etapas do cronograma físico; cada fase com 4 a 8 entregáveis concretos (documentos, artefatos, funcionalidades, evidências de teste).';
+  G.equipe += ' Cada perfil com 5 a 8 atribuições específicas deste projeto.';
+  G.objetivos += ' Objetivos mensuráveis e ligados ao escopo.';
+  G.diferenciais += ' Ligados a este projeto (não genéricos).';
+  G.garantias += ' Cada subseção com 3 a 6 marcadores específicos.';
+  G.premissas_exec += ' 8 a 15 premissas concretas (acessos, ambientes, dados, disponibilidade de usuários-chave, homologação, mudanças de escopo).';
+  G.premissas_com += ' 8 a 12 premissas concretas.';
+  const PROF = '\nNÍVEL DE DETALHE: texto completo e detalhado, pronto para enviar ao cliente, específico deste projeto (use os nomes, sistemas, áreas e números do briefing/escopo); nada de frases genéricas ou de placeholder; não resuma o escopo.';
   const FORMA = '\nFORMATAÇÃO DO "conteudo" (markdown simples, é convertido para o modelo oficial): parágrafos separados por linha em branco; subtítulo numa linha própria começando por "### "; marcadores com "- "; alíneas com "a) "; rótulo em negrito no início da linha com "**Rótulo:** texto". Sem tabelas em markdown.';
-  const pedir = async (chaves, extra) => json(await claude(sys + ' Responda APENAS JSON.', usr + FORMA + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
+  const pedir = async (chaves, extra) => json(await claude(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
     + `\nDevolva {"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]${extra ? ',"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}]' : ''}}`, 7000, 108000));
-  const [A1, B1] = await Promise.all([pedir(PARTES[0], ''), pedir(PARTES[1], '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (8 a 14 linhas, RACI: R executa, A aprova, C consultado, I informado).')]);
-  const ordem = [...PARTES[0], ...PARTES[1]], todas = [...(A1.secoes || []), ...(B1.secoes || [])];
+  const RES = await Promise.all(PARTES.map((p, i) => pedir(p, i === 3 ? '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).' : '').catch(e => ({ secoes: [], erro: e.message }))));
+  if (RES.every(r => !(r.secoes || []).length)) throw new Error(RES[0].erro || 'A IA não devolveu o texto');
+  const B1 = RES[3], ordem = PARTES.flat(), todas = RES.flatMap(r => r.secoes || []);
   const doc = { titulo: pr.titulo || '', secoes: ordem.map(k => { const x = todas.find(y => y.chave === k); return x ? { chave: k, titulo: TITULOS_CAP[k] || k, conteudo: String(x.conteudo || '') } : null; }).filter(Boolean),
-    matriz_responsabilidades: B1.matriz_responsabilidades || [], validade_dias: 90, modelo_oficial: true };
+    matriz_responsabilidades: B1.matriz_responsabilidades || [], validade_dias: 90, modelo_oficial: true, faltando: ordem.filter(k => !todas.some(y => y.chave === k)) };
   doc.formato = f.formato; doc.gerado_em = new Date().toISOString();
   return { documento: doc };
 }

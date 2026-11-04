@@ -544,7 +544,7 @@
     lerForm(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
     const fim = ocupado($('vpBtnRedigir'), '✍ Redigindo (até 1 min)...');
     let ok = false;
-    try { const r = await api('redigir', { proposta: PROP, formato: PROP.formato }, 115000); PROP.documento = r.documento; renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' }); nota('Proposta redigida — revise e salve'); ok = true; }
+    try { const r = await api('redigir', { proposta: PROP, formato: PROP.formato }, 115000); PROP.documento = r.documento; renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' }); if ((r.documento.faltando || []).length) nota('A IA não devolveu ' + r.documento.faltando.length + ' capítulo(s): ' + r.documento.faltando.join(', ') + ' — clique em Redigir de novo para completar', 'error'); else nota('Proposta redigida — revise e salve'); ok = true; }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); return ok;
   }
   // v3.374: PDF/Word sem texto redigido → oferece fazer a análise (se faltar) e a redação na hora
@@ -644,14 +644,19 @@
   const _ext = (dt = new Date()) => `${dt.getDate()} de ${_MESES[dt.getMonth()]} de ${dt.getFullYear()}`;
   const _brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   async function montarModelo(modelo) {
-    const MOD = await _carregarModelo(), M = MOD.MODELOS[modelo], CAPS = MOD.CAP, P = CFG?.params || {}, d = PROP.dados, cap = d.capa || {}, doc = PROP.documento, f = _fAtual();
+    const MOD = await _carregarModelo(), M0 = MOD.MODELOS[modelo], CAPS = MOD.CAP, P = CFG?.params || {}, d = PROP.dados, cap = d.capa || {}, doc = PROP.documento, f = _fAtual();
     const razao = P.empresa_razao || 'Atlanteam Soluções em TI', cnpj = P.empresa_cnpj || '10.886.193/0001-83', email = P.empresa_email || 'contato@atlanteam.com.br';
     const assin = P.assinante_nome || 'Fábio Soares Quintanilha', cargo = P.assinante_cargo || 'CEO & Sócio-Diretor', assinEmail = P.assinante_email || '';
-    const cortesia = !!(f?.poc_cortesia && !(f.valor_total > 0)), K = d.crono || _cronoBase(), U = K.unidade === 'semanas' ? 'Semana' : 'Mês', dias = doc.validade_dias || 90;
+    // v3.380: capa e cabeçalho dinâmicos — POC e piloto aparecem no título, numa faixa própria e no cabeçalho de todas as páginas
+    const poc = d.tipo_documento === 'poc', piloto = d.tipo_documento === 'piloto', suf = poc ? ' de POC' : piloto ? ' de Piloto' : '';
+    const semanas = +d.poc?.semanas || 6, K0 = d.crono || _cronoBase();
+    const M = { ...M0, nome: M0.nome + (poc ? ' de Prova de Conceito (POC)' : piloto ? ' de Piloto' : ''), capa: M0.capa + suf.toUpperCase(), cab: M0.cab + suf,
+      sub: [poc ? `Prova de Conceito (POC) · ${semanas} semanas · critérios de sucesso e decisão go/no-go${f?.poc_cortesia && !(f.valor_total > 0) ? ' · sem custo para cliente Atlantyx' : ''}` : piloto ? `Piloto · ${K0.total} ${K0.unidade} · uso real com escopo reduzido` : '', M0.sub || ''].filter(Boolean).join(' — ') };
+    const cortesia = !!(f?.poc_cortesia && !(f.valor_total > 0)), K = K0, U = K.unidade === 'semanas' ? 'Semana' : 'Mês', dias = doc.validade_dias || 90;
     const sec = k => (doc.secoes || []).find(x => x.chave === k), txt = k => String(sec(k)?.conteudo || '').replace(/\{\{TIPO_DOC\}\}/g, M.nome);
-    const tituloCap = k => k === 'aceite' ? ({ tecnica: 'Aceite da Proposta Técnica', comercial: 'Aceite da Proposta Comercial' }[modelo] || 'Aceite da Proposta') : CAPS[k].t;
+    const tituloCap = k => k === 'aceite' ? 'Aceite da ' + M0.nome + suf : CAPS[k].t;
     const dt = new Date(), mesAno = _MESES[dt.getMonth()].replace(/^./, c => c.toUpperCase()) + ' de ' + dt.getFullYear();
-    const B = [{ t: 'capa', empresa: razao, titulo: M.capa, projeto: PROP.titulo || doc.titulo || 'Proposta', sub: M.sub || '', area: cap.area || '', cliente: PROP.cliente || '', cnpj: cap.cnpj || '', proponente: `${razao} — CNPJ: ${cnpj}`, data: `${mesAno} | Validade: ${dias} dias | Confidencial`, revisao: cap.revisao || '' }];
+    const B = [{ t: 'capa', empresa: razao, titulo: M.capa, projeto: PROP.titulo || doc.titulo || 'Proposta', sub: M.sub || '', subCor: poc || piloto ? '00708A' : '7F7F7F', area: cap.area || '', cliente: PROP.cliente || '', cnpj: cap.cnpj || '', proponente: `${razao} — CNPJ: ${cnpj}`, data: `${mesAno} | Validade: ${dias} dias | Confidencial`, revisao: cap.revisao || '' }];
     const md = (k, n) => MOD.mdBlocos(txt(k)).map(b => b.t === 'sub' && n ? { ...b, texto: b.texto.replace(/^\d+(\.\d+)/, (_, r) => n + r) } : b);
     B.push({ t: 'h1', texto: 'Carta de Apresentação' }, ...md('carta'), { t: 'p', texto: `**${assin}**`, jc: 'left' }, { t: 'p', texto: `${cargo} — ${razao}`, jc: 'left' }, ...(assinEmail ? [{ t: 'p', texto: assinEmail, jc: 'left' }] : []));
     B.push({ t: 'h1', texto: 'Índice', quebra: 1 }, { t: 'indice', itens: M.caps.map((k, i) => `${i + 1}. ${tituloCap(k)}`) });
