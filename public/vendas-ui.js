@@ -373,7 +373,7 @@
   }
   function nova() { if (PROP && PROP.dados.escopo && !PROP.id && !confirm('Descartar a proposta em edição (não salva)?')) return; PROP = novaProp(); aba('nova'); }
   function formHtml() {
-    return `<div id="vpRfpInfo"></div><div class="kg k2">
+    return `<div id="vpRfpInfo"></div><div id="vpStatus"></div><div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">① Cliente e escopo</div></div><div class="pb">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div class="fg"><label class="fl">Cliente</label><input class="fi" id="vpCliente" list="vpClientesDL" placeholder="Ex.: CPFL Energia"/><datalist id="vpClientesDL"></datalist></div>
@@ -424,7 +424,7 @@
     const pc = d.poc || {}; $('vpTipoDoc').value = d.tipo_documento || 'proposta'; $('vpConc').value = d.preco_concorrente || ''; $('vpPocSem').value = pc.semanas || 6; $('vpPocCred').value = pc.credito_dias ?? 60; $('vpPocCrit').value = pc.criterios || ''; tipoDocMudou(true);
     $('vpProd').innerHTML = '<option value="">📦 Escopo de um produto…</option>' + ((CFG && CFG.escopos) || []).map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('') + (((CFG && CFG.escopos) || []).length ? '' : '<option value="" disabled>(cadastre em Rate card e parâmetros → Catálogo)</option>');
     $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
-    renderPerfis(); complRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
+    renderPerfis(); complRender(); statusRender(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
     if (!$('vpClientesDL').dataset.ok) { $('vpClientesDL').dataset.ok = '1'; fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clientes_listar', payload: {} }) }).then(r => r.json()).then(d => { $('vpClientesDL').innerHTML = (d.clientes || []).map(c => `<option value="${esc(c.empresa)}">`).join(''); }).catch(() => {}); }
   }
   function lerForm() {
@@ -440,6 +440,31 @@
   }
   function addPerfil() { lerForm(); PROP.dados.perfis.push({ perfil: '', horas: 0 }); renderPerfis(); }
   function perfilRC(inp) { const c = RC.find(x => x.perfil.toLowerCase() === inp.value.toLowerCase()); if (!c) return; const tr = inp.closest('tr'); const s = (k, v) => { const e = tr.querySelector(`[data-c="${k}"]`); if (e && !e.value && v != null) e.value = v; }; s('custo', c.custo_hora); s('preco', c.preco_alvo); }
+  // v3.367 · o que a tela precisa para funcionar: IA ligada, rate card e propostas de referência
+  let _st = null;
+  async function statusRender(forcar) {
+    const b = $('vpStatus'); if (!b) return;
+    if (!_st || forcar) { _st = { ia: null, padrao: null };
+      const [ia, pd] = await Promise.all([fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_estado' }) }).then(r => r.json()).catch(() => null), api('padrao', {}, 20000).catch(() => null)]);
+      _st.ia = ia && ia.success ? !!ia.ligada : null; _st.padrao = pd; }
+    if (!$('vpStatus')) return;
+    const pd = _st.padrao || {}, nEx = pd.exemplos || 0, secoes = (pd.padrao?.secoes || []).map(x => x.titulo || x).filter(Boolean);
+    const item = (ok, txt, acao) => `<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;"><span style="font-size:12px;">${ok === true ? '🟢' : ok === false ? '🔴' : '🟡'}</span><div style="flex:1;">${txt}</div>${acao || ''}</div>`;
+    const bt = (t, js) => `<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;white-space:nowrap;" onclick="${js}">${t}</button>`;
+    const linhas = [
+      item(_st.ia, _st.ia === false ? '<b>IA desligada</b> — não funcionam: gerar escopo pelo briefing, escopo complementar, 🤖 estimar equipe, importar rate card por planilha, redigir proposta e apresentação. A análise de formatos funciona sem IA (só sai sem o comentário).' : _st.ia ? 'IA ligada' : 'Não consegui ler o estado da IA', _st.ia === false && typeof window.iaChave === 'function' ? bt('Ligar IA', 'iaChave()') : ''),
+      item(RC.length ? true : false, RC.length ? `Rate card com <b>${RC.length}</b> perfil(is)` : '<b>Rate card vazio</b> — sem custo/hora dos perfis a análise de formatos não calcula. Cadastre os perfis (custo e preço por hora).', RC.length ? '' : bt('Abrir rate card', "VD.aba('rate')")),
+      item(nEx ? true : null, nEx ? `Padrão de proposta aprendido de <b>${nEx}</b> documento(s)${secoes.length ? ' · capítulos: ' + esc(secoes.slice(0, 8).join(' → ')) + (secoes.length > 8 ? '…' : '') : ' · ainda não consolidado (Reconsolidar no Aprendizado)'}` : '<b>Nenhuma proposta de referência</b> — os capítulos seguem o modelo padrão. Suba as suas propostas na aba 📚 Aprendizado.', bt(nEx ? 'Ver referências' : 'Subir propostas', "VD.aba('aprender')")),
+      item(true, '<span style="color:var(--t3);">Visual dos arquivos (PDF, Word, PPTX): padrão Atlantyx fixo — fonte Montserrat, logos Atlantyx, petróleo e ciano.</span>')];
+    b.innerHTML = `<details ${_st.ia === false || !RC.length ? 'open' : ''} style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin-bottom:10px;font-size:10.5px;line-height:1.5;"><summary style="cursor:pointer;font-weight:700;">Pronto para gerar? ${_st.ia === false ? '· <span style="color:var(--red);">IA desligada</span>' : ''}${!RC.length ? ' · <span style="color:var(--red);">rate card vazio</span>' : ''}</summary>${linhas.join('')}</details>`;
+  }
+  const _ehIA = m => /IA desligada|ia_desligada|ANTHROPIC_API_KEY|Claude API \[(401|403|429|529|400)\]|credit|invalid x-api-key/i.test(String(m || ''));
+  function equipeManual() {
+    if (!RC.length) { nota('Rate card vazio — cadastre os perfis primeiro', 'error'); aba('rate'); return; }
+    lerForm(); const ja = new Set((PROP.dados.perfis || []).map(x => String(x.perfil).toLowerCase()));
+    RC.forEach(c => { if (!ja.has(c.perfil.toLowerCase())) PROP.dados.perfis.push({ perfil: c.perfil, horas: 0, custo_hora: c.custo_hora ?? null, preco_hora: c.preco_alvo ?? null }); });
+    renderPerfis(); $('vpEstInfo').innerHTML = '<span style="color:var(--gold);">Equipe montada a partir do rate card — preencha as horas de cada perfil (apague com ✕ quem não entra) e clique em Analisar.</span>';
+  }
   async function estimar(auto) {
     lerForm(); if ((PROP.dados.escopo || '').length < 30) return nota('Descreva o escopo (pelo menos 30 caracteres)', 'error');
     if (!RC.length && !auto && !confirm('O rate card está vazio — a IA vai sugerir perfis sem custo. Continuar? (cadastre em "Rate card e parâmetros")')) return;
@@ -449,11 +474,15 @@
       preencherForm(); const sem = r.perfis.filter(x => !x.no_rate_card).map(x => x.perfil);
       $('vpEstInfo').innerHTML = `<b>${r.perfis.reduce((a, x) => a + (+x.horas || 0), 0)} horas</b> em ${r.meses || PROP.dados.meses} meses · risco ${esc(r.risco || '')}${sem.length ? `<br><span style="color:var(--gold);">Fora do rate card (informe custo/preço): ${esc(sem.join(', '))}</span>` : ''}${(r.premissas || []).length ? '<br>Premissas: ' + esc(r.premissas.slice(0, 4).join(' · ')) : ''}`;
       fim(); return true;
-    } catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
+    } catch (e) { nota('Erro: ' + e.message, 'error');
+      if (_ehIA(e.message) && $('vpEstInfo')) $('vpEstInfo').innerHTML = `<div style="color:var(--red);margin-bottom:4px;">A estimativa automática precisa da IA, que está desligada ou sem chave válida.</div><button class="btn btn-g" style="font-size:10px;" onclick="VD.equipeManual()">Montar equipe pelo rate card (sem IA)</button>${typeof window.iaChave === 'function' ? ' <button class="btn btn-g" style="font-size:10px;" onclick="iaChave()">Ligar IA</button>' : ''}`; }
+    fim();
   }
   async function analisar() {
-    lerForm(); const d = PROP.dados; if (!d.perfis.length) return nota('Inclua a equipe (perfis e horas)', 'error');
-    if (d.perfis.some(x => !(x.custo_hora > 0))) return nota('Falta o custo/hora de algum perfil (rate card ou RH)', 'error');
+    lerForm(); const d = PROP.dados; if (!d.perfis.length) { nota('Inclua a equipe (perfis e horas): use 🤖 Estimar ou + perfil', 'error'); return; }
+    const semCusto = d.perfis.filter(x => !(x.custo_hora > 0)).map(x => x.perfil), semHora = d.perfis.filter(x => !(x.horas > 0)).map(x => x.perfil);
+    if (semCusto.length) { nota('Falta o custo/hora de: ' + semCusto.join(', ') + ' — preencha na linha ou cadastre no Rate card', 'error'); return; }
+    if (semHora.length === d.perfis.length) { nota('Preencha as horas de pelo menos um perfil', 'error'); return; }
     const fim = ocupado($('vpBtnAnalisar'), '◆ Analisando...');
     const _conc = +String(d.preco_concorrente || '').replace(/[^\d,]/g, '').replace(',', '.') || null; const _meses = d.tipo_documento === 'poc' ? Math.max(.25, Math.round((d.poc.semanas || 6) / 4.33 * 100) / 100) : (d.meses || 3);
     try { PROP.analise = await api('analisar', { cliente: PROP.cliente, perfis: d.perfis, meses: _meses, tipo_documento: d.tipo_documento, preco_concorrente: _conc, descontos: d.descontos || {}, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo }, 90000);
@@ -791,7 +820,7 @@
   function lerRC() { return [...document.querySelectorAll('#vdRC tr')].map(tr => { const o = {}; tr.querySelectorAll('[data-k]').forEach(e => o[e.dataset.k] = e.value.trim()); return o; }).filter(x => x.perfil); }
   function rateLinha() { RC = lerRC(); RC.push({ perfil: '', fonte: 'manual' }); renderRC(); }
   async function rateSalvar() { try { RC = (await api('rate_card_salvar', { rate_card: lerRC() })).rate_card; renderRC(); nota('Rate card salvo'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
-  async function rateSugerir() { const fim = ocupado($('vdBtnSug'), '🔎 Buscando...'); try { const d = await api('rate_card_sugerir'); RC = d.sugestao; renderRC(); nota(`Sugestão: ${d.fontes.cargos_rh} cargo(s) do RH, ${d.fontes.perfis_observados} perfil(is) de propostas — revise e salve`); } catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); }
+  async function rateSugerir() { const fim = ocupado($('vdBtnSug'), '🔎 Buscando...'); try { const d = await api('rate_card_sugerir'); RC = d.sugestao; renderRC(); if (!d.fontes.cargos_rh && !d.fontes.perfis_observados) nota('Nada para sugerir: o RH não tem custo/hora por cargo e nenhuma proposta com rate card foi aprendida. Cadastre os perfis com + perfil ou importe uma planilha.', 'error'); else nota(`Sugestão: ${d.fontes.cargos_rh} cargo(s) do RH, ${d.fontes.perfis_observados} perfil(is) de propostas — revise e salve`); } catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); }
   async function rateImportar(inp) { const f = inp.files[0]; if (!f) return; nota('Lendo o rate card...'); try { const d = await api('rate_card_importar', { nome: f.name, base64: await lerB64(f) }); RC = d.rate_card; renderRC(); nota(`${d.importados} perfil(is) importado(s) e salvos`); } catch (e) { nota('Erro: ' + e.message, 'error'); } inp.value = ''; }
   async function paramsSalvar() {
     const g = id => { const v = $(id).value; return v === '' ? undefined : +String(v).replace(',', '.'); };
@@ -898,5 +927,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender };
 })();
