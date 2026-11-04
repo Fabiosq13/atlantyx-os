@@ -413,7 +413,7 @@ async function analisar(base, entrada = {}) {
   }
   return r;
 }
-async function redigir({ proposta, formato, chaves } = {}) {
+async function redigir({ proposta, formato, chaves, escopo_modo, itens, inicio } = {}) {
   const pr = proposta || {}; const f = (pr.analise?.formatos || []).find(x => x.formato === (formato || pr.formato)) || pr.analise?.formatos?.[0];
   if (!f) throw new Error('Analise os formatos antes de redigir');
   const pd = await padrao({}); const { instrucoes, params } = await propConfig();
@@ -483,6 +483,15 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
     + `\n${extra ? 'Escreva PRIMEIRO a "matriz_responsabilidades" e depois as secoes. ' : ''}Devolva {${extra ? '"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}],' : ''}"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]}`, chaves.includes('escopo') ? 6000 : 4000, 100000));
   // v3.382: o navegador pede por partes (cada parte é uma chamada própria, com repetição) — evita estourar o tempo e o limite da IA
   const MATRIZ_X = '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).';
+  // v3.384: o Escopo (capítulo mais longo) é escrito em etapas: plano dos itens → itens de 3 em 3 → requisitos e fora do escopo
+  if (escopo_modo) { const ESC = '\nCAPÍTULO: "Escopo dos Serviços — Solução Técnica Proposta" (capítulo 5 do modelo oficial).';
+    if (escopo_modo === 'plano') { const r = json(await claudeStream(sys + ' Responda APENAS JSON.', usr + PROF + ESC + '\nTAREFA: planeje o capítulo. Liste TODOS os itens/frentes do escopo (sem juntar nem omitir; normalmente 4 a 15), com títulos curtos e específicos, e escreva a abertura do capítulo (1 a 2 parágrafos).\nDevolva {"abertura":"...","itens":["título 1","título 2"]}', 2500, 80000));
+      if (!(r.itens || []).length) throw new Error('A IA não listou os itens do escopo'); return { plano: { abertura: String(r.abertura || ''), itens: r.itens.map(String).slice(0, 20) } }; }
+    const n0 = Math.max(1, +inicio || 1);
+    const tarefa = escopo_modo === 'itens' ? `TAREFA: escreva SOMENTE as subseções destes itens do escopo, nesta ordem, numeradas a partir de 5.${n0}: ${JSON.stringify(itens || [])}. Cada subseção começa com "### 5.N Título" e traz os rótulos **Situação Atual:** (se houver), **Evolução Solicitada:**, **Resultado Esperado:** e **Critério de Aceite:**, com 2 a 4 parágrafos/rótulos detalhando o que será feito, como, com quais dados/sistemas, regras e validações.`
+      : `TAREFA: escreva SOMENTE as subseções finais do capítulo, numeradas a partir de 5.${n0}: "### 5.${n0} Requisitos Não Funcionais" (desempenho, disponibilidade, segurança e LGPD, documentação, quando aplicável), "### 5.${n0 + 1} Fora do Escopo" (marcadores) e, se houver itens opcionais nos dados, "### 5.${n0 + 2} Itens Opcionais (orçados à parte)" (marcadores, sem preço).`;
+    const texto = await claudeStream(sys, usr + FORMA + PROF + ESC + '\n' + tarefa + '\nResponda SOMENTE com o texto em markdown simples (sem JSON, sem repetir o título do capítulo).', 4500, 100000);
+    if (String(texto).trim().length < 40) throw new Error('A IA não devolveu o texto do escopo'); return { texto: String(texto).replace(/^```\w*\n?|```$/g, '').trim() }; }
   if (Array.isArray(chaves) && chaves.length) { const ks = chaves.filter(k => G[k]); if (!ks.length) throw new Error('capítulos inválidos');
     const r = await pedir(ks, ks.includes('garantias') ? MATRIZ_X : '');
     const sec = (r.secoes || []).filter(x => ks.includes(x.chave) && String(x.conteudo || '').trim()).map(x => ({ chave: x.chave, titulo: TITULOS_CAP[x.chave] || x.chave, conteudo: String(x.conteudo) }));

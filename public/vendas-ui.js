@@ -553,7 +553,21 @@
     const prog = () => { btn.innerHTML = `✍ Redigindo com a IA: parte ${Math.min(feitas + 1, partes.length)} de ${partes.length} (${partes[Math.min(feitas, partes.length - 1)].join(', ')})… cada parte leva até 1,5 min`; }; prog();
     const D = PROP.documento;
     const espera = (seg, txt) => new Promise(ok => { let n = seg; const tk = () => { btn.innerHTML = `⏳ ${txt} — ${n}s`; if (n-- <= 0) return ok(); setTimeout(tk, 1000); }; tk(); });
-    const roda = async p => { for (let t = 0; t < 3; t++) { try { const r = await api('redigir', { proposta: { ...PROP, documento: null }, formato: PROP.formato, chaves: p }, 118000);
+    // v3.384: Escopo em etapas (plano → itens de 3 em 3 → requisitos/fora do escopo), cada etapa com repetição
+    const tenta = async (rot, fn) => { for (let t = 0; t < 3; t++) { try { return await fn(); } catch (e) { const lim = /\[(429|529)\]|rate|overloaded|limit/i.test(e.message);
+        if (t === 2) throw new Error(rot + ': ' + e.message); await espera(lim ? 45 : 5, lim ? 'Limite de uso da IA atingido, aguardando para continuar' : 'Tentando de novo (' + rot + ')'); } } };
+    const base = { proposta: { ...PROP, documento: null }, formato: PROP.formato };
+    const escopoEtapas = async () => {
+      btn.innerHTML = '✍ Escopo: listando todos os itens do escopo…';
+      const pl = (await tenta('plano do escopo', () => api('redigir', { ...base, escopo_modo: 'plano' }, 118000))).plano; const blocos = [pl.abertura];
+      for (let i = 0; i < pl.itens.length; i += 3) { const lote = pl.itens.slice(i, i + 3); btn.innerHTML = `✍ Escopo: itens ${i + 1} a ${i + lote.length} de ${pl.itens.length} (${esc(lote.join(', '))})…`;
+        blocos.push((await tenta('itens do escopo', () => api('redigir', { ...base, escopo_modo: 'itens', itens: lote, inicio: i + 1 }, 118000))).texto);
+        const k = D.secoes.findIndex(y => y.chave === 'escopo'), sec = { chave: 'escopo', titulo: 'Escopo dos Serviços — Solução Técnica Proposta', conteudo: blocos.join('\n\n') }; if (k >= 0) D.secoes[k] = sec; else D.secoes.push(sec); renderDoc(); }
+      btn.innerHTML = '✍ Escopo: requisitos não funcionais e fora do escopo…';
+      try { blocos.push((await tenta('fim do escopo', () => api('redigir', { ...base, escopo_modo: 'final', inicio: pl.itens.length + 1 }, 118000))).texto); } catch (e) { erros.push(e.message); }
+      const k = D.secoes.findIndex(y => y.chave === 'escopo'), sec = { chave: 'escopo', titulo: 'Escopo dos Serviços — Solução Técnica Proposta', conteudo: blocos.filter(Boolean).join('\n\n') }; if (k >= 0) D.secoes[k] = sec; else D.secoes.push(sec); };
+    const roda = async p => { if (p.length === 1 && p[0] === 'escopo') { try { await escopoEtapas(); } catch (e) { erros.push(e.message); } return; }
+      for (let t = 0; t < 3; t++) { try { const r = await api('redigir', { proposta: { ...PROP, documento: null }, formato: PROP.formato, chaves: p }, 118000);
           r.secoes.forEach(x => { const k = D.secoes.findIndex(y => y.chave === x.chave); if (k >= 0) D.secoes[k] = x; else D.secoes.push(x); });
           if (r.matriz_responsabilidades?.length) D.matriz_responsabilidades = r.matriz_responsabilidades; return; }
         catch (e) { const lim = /\[(429|529)\]|rate|overloaded|limit/i.test(e.message); if (t === 2) { erros.push(p.join(', ') + ': ' + e.message); break; }
