@@ -533,8 +533,16 @@
   async function redigir() {
     lerForm(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
     const fim = ocupado($('vpBtnRedigir'), '✍ Redigindo (até 1 min)...');
-    try { const r = await api('redigir', { proposta: PROP, formato: PROP.formato }); PROP.documento = r.documento; renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' }); nota('Proposta redigida — revise e salve'); }
-    catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
+    let ok = false;
+    try { const r = await api('redigir', { proposta: PROP, formato: PROP.formato }, 115000); PROP.documento = r.documento; renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' }); nota('Proposta redigida — revise e salve'); ok = true; }
+    catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); return ok;
+  }
+  // v3.374: PDF/Word sem texto redigido → oferece fazer a análise (se faltar) e a redação na hora
+  async function _garantirDoc() {
+    if (PROP.documento) return true;
+    if (!confirm('O PDF e o Word saem do texto da proposta (passo ④), que ainda não foi redigido.\n\nQuer que eu ' + (PROP.analise ? '' : 'analise os formatos de preço e ') + 'redija a proposta agora com a IA? (leva até 1 minuto)')) return false;
+    if (!PROP.analise && !(await analisar())) return false;
+    return await redigir();
   }
   function renderDoc() {
     const d = PROP.documento; if (!d) return;
@@ -771,7 +779,7 @@
     } catch (e) { nota('Apresentação: ' + e.message, 'error'); } fim();
   }
   async function baixarPdf() {
-    lerForm(); lerDoc(); const d = PROP.documento; if (!d) return nota('Redija a proposta antes', 'error');
+    lerForm(); lerDoc(); if (!PROP.documento && !(await _garantirDoc())) return; const d = PROP.documento;
     try { const pdfMake = await window._carregarPdfMake(); const logo = await _logoDataUrl();
       // v3.365: Montserrat (fonte da marca) servida pelo próprio sistema; se falhar, cai na fonte padrão
       const base = location.origin + '/fonts/montserrat-latin-';
@@ -792,8 +800,8 @@
       catch (_) { pdfMake.createPdf(def('Roboto')).download(nome); }
     } catch (e) { nota('PDF: ' + e.message, 'error'); }
   }
-  function baixarWord() {
-    lerForm(); lerDoc(); const d = PROP.documento; if (!d) return nota('Redija a proposta antes', 'error');
+  async function baixarWord() {
+    lerForm(); lerDoc(); if (!PROP.documento && !(await _garantirDoc())) return; const d = PROP.documento;
     const md = t => esc(t).split('\n').map(l => l.trim().startsWith('- ') ? `<li>${l.trim().substring(2)}</li>` : `<p>${l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`).join('').replace(/(<li>.*?<\/li>)+/g, m => `<ul>${m}</ul>`);
     const html = `<html><head><meta charset="utf-8"><style>body{font-family:Montserrat,Calibri,Arial;font-size:10.5pt;color:#1f2937}h1{color:#0F172A}h2{color:#00708A;font-size:13pt;margin-top:16pt}td{border-bottom:1px solid #ddd;padding:4px 8px}</style></head><body>
       <img src="${location.origin}/logo-atlantyx-escuro.png" width="180" alt="Atlantyx"/><div style="border-top:3px solid #00C4CC;margin:6px 0 10px;"></div><h1>${esc(d.titulo || PROP.titulo)}</h1><p style="color:#555">${esc(PROP.cliente)}${PROP.contato ? ' · ' + esc(PROP.contato) : ''} · ${esc(PROP.numero || 'rascunho')} · ${new Date().toLocaleDateString('pt-BR')}</p>
