@@ -420,7 +420,7 @@
         <div id="vpEstInfo" style="font-size:10.5px;color:var(--t2);margin-top:8px;line-height:1.6;"></div>
         <button class="btn btn-p" id="vpBtnAnalisar" onclick="VD.analisar()" style="width:100%;justify-content:center;margin-top:10px;">◆ Analisar formatos x metas</button></div></div></div>
       <div id="vpAnalise"></div><div id="vpCrono"></div><div id="vpRedStatus"></div><div id="vpDoc"></div><div id="vpChat"></div>
-      <div class="cp-acoes"><button class="btn btn-gn" onclick="VD.salvar()" style="flex:1;justify-content:center;font-weight:700;">💾 Salvar proposta</button>
+      <div class="cp-acoes"><button class="btn btn-or" onclick="VD.redigirTudo()" title="Analisa os formatos de preço (se ainda não foi feito) e redige a proposta no modelo oficial" style="font-weight:700;">✍ Redigir proposta</button><button class="btn btn-gn" onclick="VD.salvar()" style="flex:1;justify-content:center;font-weight:700;">💾 Salvar proposta</button>
         <button class="btn btn-g" onclick="VD.baixarPdf()">⬇ PDF</button><button class="btn btn-or" id="vpBtnPpt" onclick="VD.gerarApresentacao()" title="Apresentação da solução para o cliente (PowerPoint) com escopo, complementares, cronograma e investimento">📊 Apresentação (PPTX)</button><button class="btn btn-g" onclick="VD.baixarWord()">⬇ Word</button>
         <button class="btn btn-g" onclick="VD.mudarStatus(null,'enviada')">📨 Marcar como enviada</button></div>`;
   }
@@ -585,6 +585,14 @@
     const erros = await _redigirPartes(RED_ORDEM, btn); fim();
     const falta = _vazios(); if (falta.length) nota(`${falta.length} capítulo(s) não vieram (${falta.join(', ')}) — clique em "Completar capítulos em branco"${erros.length ? '. Erro: ' + erros[0] : ''}`, 'error'); else nota('Proposta redigida — todos os capítulos preenchidos. Revise e salve');
     return !falta.length || (PROP.documento.secoes.length > 0);
+  }
+  // v3.385: botão sempre visível na barra de ações — faz a análise de formatos se faltar e redige
+  async function redigirTudo() {
+    lerForm(); const d = PROP.dados;
+    if ((d.escopo || '').length < 30) return nota('Escreva o briefing e gere o escopo (passo ①) antes de redigir', 'error');
+    if (!(d.perfis || []).length) return nota('Monte a equipe (passo ②: 🤖 Estimar ou ⬇ Perfis do rate card) antes de redigir', 'error');
+    if (PROP.documento?.secoes?.length && !confirm('Já existe texto redigido. Redigir tudo de novo? (para preencher só o que falta use "Completar capítulos em branco")')) return;
+    if (!PROP.analise && !(await analisar())) return; return redigir();
   }
   async function completarVazios() {
     lerDoc(); if (!PROP.documento) return redigir(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
@@ -1349,5 +1357,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo };
 })();
