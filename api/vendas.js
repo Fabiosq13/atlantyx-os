@@ -40,7 +40,21 @@ function json(txt) {
   const t = String(txt || '').replace(/```json|```/g, '').trim();
   const i = t.search(/[{[]/); if (i < 0) throw new Error('A IA não devolveu JSON');
   const fecha = t[i] === '{' ? '}' : ']'; const j = t.lastIndexOf(fecha);
-  return JSON.parse(t.substring(i, j + 1));
+  try { return JSON.parse(t.substring(i, j + 1)); } catch (e) { const r = _jsonReparar(t.substring(i)); if (r !== undefined) return r; throw e; }
+}
+// v3.373: resposta cortada pelo limite de tokens (ou vírgula sobrando) → fecha a estrutura no último elemento completo
+function _jsonReparar(t) {
+  const semVirg = x => x.replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(semVirg(t)); } catch (_) {}
+  const pilha = [], cortes = []; let str = false, esc = false;
+  for (let k = 0; k < t.length; k++) { const c = t[k];
+    if (str) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') str = false; continue; }
+    if (c === '"') str = true; else if (c === '{' || c === '[') pilha.push(c === '{' ? '}' : ']');
+    else if (c === '}' || c === ']') { pilha.pop(); cortes.push({ pos: k + 1, pilha: [...pilha] }); if (!pilha.length) break; }
+    else if (c === ',') cortes.push({ pos: k, pilha: [...pilha] }); }
+  for (let n = cortes.length - 1; n >= 0 && n >= cortes.length - 400; n--) { const c = cortes[n];
+    try { return JSON.parse(semVirg(t.substring(0, c.pos) + c.pilha.slice().reverse().join(''))); } catch (_) {} }
+  return undefined;
 }
 
 async function tabelas() {
@@ -152,7 +166,7 @@ Extraia em JSON: {"tipo_documento":"proposta|rate_card|modelo|instrucoes|outro",
 "rate_card":[{"perfil":"","senioridade":"","valor_hora":0,"valor_mensal":0}],"condicoes":["pagamento, reajuste, validade, faturamento..."],"premissas":["..."],"exclusoes":["..."],
 "sla":"se houver, resumo","diferenciais":["argumentos de venda usados"],"riscos_mitigados":["..."],"licoes":"o que este documento ensina sobre como a Atlantyx propõe (2-3 frases)"}`;
   const content = arq.pdf ? [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: arq.pdf } }, { type: 'text', text: pedido }] : [{ type: 'text', text: pedido + '\n\nCONTEÚDO:\n' + arq.texto }];
-  const ex = json(await claude(SYS_EXTRAI, content, 2500, 80000));
+  const ex = json(await claude(SYS_EXTRAI + ' Seja conciso: listas com no máximo 12 itens curtos.', content, 6000, 100000));
   const sql = await getSql(); const id = novoId('pb');
   await sql`INSERT INTO propostas_base (id, arquivo, cliente, data_ref, resultado, formato, valor_total, extraido) VALUES (${id}, ${nome}, ${ex.cliente || null}, ${ex.data || null}, ${resultado}, ${ex.formato_comercial || null}, ${num(ex.valor_total) || null}, ${JSON.stringify(ex)})`;
   // rate card encontrado no documento → já entra como sugestão no rate card (sem sobrescrever o que existe)
