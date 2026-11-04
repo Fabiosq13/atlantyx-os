@@ -270,7 +270,7 @@
     PROP = novaProp(); PROP.cliente = ctx.cliente || ''; PROP.titulo = ctx.titulo || '';
     Object.assign(PROP.dados, { escopo: ctx.escopo || '', orcamento_cliente: /\d/.test(ctx.valorRef || '') ? ctx.valorRef : '', orcamento_tipo: 'total', rfp_origem: { rfp_id: ctx.rfp_id, link: ctx.link, fonte: ctx.fonte, prazo: ctx.prazo, rfp_recebida: ctx.rfp_recebida, identificada_em: ctx.identificada_em, proposta_criada_em: new Date().toISOString() } });
     rfpLog(PROP.dados.rfp_origem, null);
-    aba('nova'); nota('Proposta pré-preenchida com a RFP — a IA está montando o rascunho');
+    await aba('nova'); nota('Proposta pré-preenchida com a RFP — a IA está montando o rascunho');
     rascunhoRFP();
   }
   // ?rfp_ctx=<base64 de JSON UTF-8> (gerado por abrirPropostaRFP em index.html); consumido uma vez e removido da URL
@@ -367,7 +367,13 @@
       <div class="seg" id="vdAbas"><button data-a="nova" onclick="VD.aba('nova')">Nova / editar</button><button data-a="lista" onclick="VD.aba('lista')">Propostas</button><button data-a="aprender" onclick="VD.aba('aprender')">Aprendizado</button><button data-a="rate" onclick="VD.aba('rate')">Rate card e parâmetros</button></div>
       <button class="btn btn-p" onclick="VD.nova()">＋ Nova proposta</button></div><div id="funil-propostas"></div><div id="vdPropCorpo"></div>`;
   }
-  function aba(a) {
+  // v3.372: sair do Rate card salva sozinho o que foi editado; entrar em Nova/editar relê o rate card do servidor
+  let _rcSalvo = null;
+  async function aba(a) {
+    const de = $('vdProp').dataset.aba;
+    if (de === 'rate' && a !== 'rate' && $('vdRC')) { try { const atual = lerRC().filter(x => String(x.perfil || '').trim()); const j = JSON.stringify(atual);
+      if (atual.length && j !== _rcSalvo) { RC = (await api('rate_card_salvar', { rate_card: atual })).rate_card; _rcSalvo = JSON.stringify(RC); nota('Rate card salvo automaticamente (' + RC.length + ' perfis)'); } } catch (e) { nota('Não salvei o rate card: ' + e.message, 'error'); } }
+    if (a === 'nova') { try { RC = (await api('rate_card', {}, 15000)).rate_card || RC; } catch (_) {} }
     $('vdProp').dataset.aba = a; document.querySelectorAll('#vdAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === a));
     const c = $('vdPropCorpo'); if (a === 'nova') { c.innerHTML = formHtml(); preencherForm(); } else if (a === 'lista') listar(); else if (a === 'aprender') aprenderAbrir(); else rateAbrir();
   }
@@ -407,7 +413,7 @@
         <div class="fg"><label class="fl">Escopo / necessidade do cliente</label><textarea class="fta" id="vpEscopo" style="min-height:160px;" placeholder="O que o cliente precisa, entregáveis, sistemas envolvidos, volume, prazos, restrições... (ou suba um documento / escolha um produto acima)"></textarea></div>
         <div id="vpCompl"></div>
         <button class="btn btn-or" id="vpBtnEstimar" onclick="VD.estimar()" style="width:100%;justify-content:center;">🤖 Estimar equipe e horas</button></div></div>
-      <div class="panel"><div class="ph"><div class="pt">② Equipe, horas e custo</div><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.addPerfil()">+ perfil</button></div><div class="pb">
+      <div class="panel"><div class="ph"><div class="pt">② Equipe, horas e custo</div><div style="display:flex;gap:4px;"><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.equipeManual()" title="Traz todos os perfis do rate card com custo e preço; você preenche as horas">⬇ Perfis do rate card (${RC.length})</button><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.addPerfil()">+ perfil</button></div></div><div class="pb">
         <datalist id="vpPerfisDL">${RC.map(x => `<option value="${esc(x.perfil)}">`).join('')}</datalist>
         <div class="tw"><table style="min-width:520px;"><thead><tr><th>Perfil</th><th style="width:80px;">Horas</th><th style="width:90px;">Custo/h</th><th style="width:90px;">Preço/h</th><th style="width:26px;"></th></tr></thead><tbody id="vpPerfis"></tbody></table></div>
         <div id="vpEstInfo" style="font-size:10.5px;color:var(--t2);margin-top:8px;line-height:1.6;"></div>
@@ -830,7 +836,7 @@
         <textarea class="fta" id="vdInstr" style="min-height:170px;font-size:11px;">${esc(CFG?.instrucoes || '')}</textarea></div></div></div>
       <div class="panel"><div class="ph"><div class="pt">🏛 Padrão Atlantyx de proposta (consolidado)</div><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" id="vdBtnPadrao" onclick="VD.regerarPadrao()">↻ Reconsolidar</button></div><div class="pb" id="vdPadrao" style="font-size:11px;">Carregando...</div></div>
       <div class="panel"><div class="ph"><div class="pt">Documentos aprendidos</div></div><div class="pb" id="vdBase" style="padding:0;">Carregando...</div></div>`;
-    carregarBase(); carregarPadrao();
+    carregarBase(); carregarPadrao(); _upMostrar();
   }
   async function carregarPadrao() {
     try { const d = await api('padrao'); const p = d.padrao; const box = $('vdPadrao'); if (!box) return;
@@ -877,7 +883,11 @@
     const b64 = btoa(unescape(encodeURIComponent(t.substring(0, 200000))));
     return { nome: f.name + '.txt', base64: b64, via: `texto extraído no navegador (${Math.round(f.size / 1048576)} MB)` };
   }
-  async function _aprenderArquivos(fs, resultado, observacao, progresso) {
+  let _UP = null; // estado do envio em andamento/último resultado — sobrevive à troca de aba
+  const _upMostrar = () => { const m = $('vdAprMsg'); if (m && _UP) m.innerHTML = _UP.html; };
+  async function _aprenderArquivos(fs, resultado, observacao, progresso0) {
+    if (_UP && _UP.rodando) { nota('Já tem um envio em andamento — aguarde terminar', 'error'); return { res: [], ok: 0, cons: '' }; }
+    _UP = { rodando: true, html: '' }; const progresso = t => { _UP.html = `<span style="color:var(--blue);">⏳ ${esc(t)} (pode trocar de aba, o envio continua)</span>`; _upMostrar(); try { progresso0(t); } catch (_) {} };
     const res = [];
     for (const [k, f] of fs.entries()) { progresso(`Lendo ${f.name} (${k + 1}/${fs.length})...`);
       try { if (f.size > 40 * 1024 * 1024) throw new Error('acima de 40 MB'); const p = await _payloadArquivo(f);
@@ -885,15 +895,16 @@
       catch (e) { res.push({ nome: f.name, ok: false, erro: e.message }); } }
     const ok = res.filter(x => x.ok).length; let cons = '';
     if (ok) { progresso(`${ok} de ${fs.length} aprendido(s). Consolidando o padrão (até 1 min)...`); try { await api('padrao_regerar', {}, 115000); cons = 'Padrão consolidado.'; } catch (e) { cons = 'Aprendi, mas não consolidei o padrão: ' + e.message; } }
-    return { res, ok, cons };
+    const out = { res, ok, cons }; _UP = { rodando: false, html: _resHtml(out, fs.length) }; _upMostrar(); if (ok) { carregarBase(); carregarPadrao(); } _st = null;
+    return out;
   }
   const _resHtml = (r, total) => `<div style="font-size:10.5px;line-height:1.6;"><b style="color:${r.ok ? 'var(--green)' : 'var(--red)'};">${r.ok} de ${total} documento(s) aprendido(s).</b> ${esc(r.cons)}`
     + r.res.map(x => `<div>${x.ok ? '✅' : '❌'} ${esc(x.nome)}${x.ok ? (x.via !== 'arquivo' ? ` <span style="color:var(--t3);">— ${esc(x.via)}</span>` : '') : ` — <span style="color:var(--red);">${esc(x.erro)}</span>`}</div>`).join('') + '</div>';
   async function aprender() {
     const fs = [...($('vdArqs').files || [])]; if (!fs.length) return nota('Escolha os arquivos', 'error');
     const fim = ocupado($('vdBtnAprender'), '📥 Aprendendo...'); const msg = $('vdAprMsg');
-    const r = await _aprenderArquivos(fs, $('vdArqRes').value, $('vdArqObs').value, t => { msg.innerHTML = `<span style="color:var(--blue);">${esc(t)}</span>`; });
-    msg.innerHTML = _resHtml(r, fs.length); fim(); if (r.ok) { $('vdArqs').value = ''; carregarBase(); carregarPadrao(); try { RC = (await api('rate_card')).rate_card; } catch (_) {} }
+    const r = await _aprenderArquivos(fs, $('vdArqRes').value, $('vdArqObs').value, () => {});
+    fim(); if (r.ok) { if ($('vdArqs')) $('vdArqs').value = ''; try { RC = (await api('rate_card')).rate_card; } catch (_) {} }
   }
   async function salvarInstrucoes() { try { CFG = await api('prop_config_salvar', { instrucoes: $('vdInstr').value }); nota('Instruções salvas — valem para toda proposta'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
   async function regerarPadrao() { const fim = ocupado($('vdBtnPadrao'), '↻ Consolidando...'); try { await api('padrao_regerar'); await carregarPadrao(); } catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); }
@@ -926,12 +937,12 @@
         <div style="font-size:10px;color:var(--t3);margin-top:8px;">Impostos: ${esc(CFG?.imposto_origem || '')}. As metas (anual/mensal) vêm do Dashboard; a receita realizada, do QuickBooks; o pipeline, do HubSpot.</div></div></div>
       <div class="panel"><div class="ph"><div class="pt">📦 Catálogo de escopos de produto</div><div style="display:flex;gap:6px;"><button class="btn btn-g" style="font-size:10px;" onclick="VD.escNovo()">+ produto</button><button class="btn btn-p" style="font-size:10px;" onclick="VD.escSalvar()">💾 Salvar catálogo</button></div></div>
         <div class="pb"><div style="font-size:10px;color:var(--t3);margin-bottom:8px;">O escopo padrão de cada produto. Na proposta, "Escopo de um produto" adapta este texto ao cliente (e à POC) e você edita antes de gerar.</div><div id="vdEscLista"></div></div></div>`;
-    renderRC(); ESC = (CFG && CFG.escopos) || []; escRender();
+    renderRC(); try { _rcSalvo = JSON.stringify(lerRC().filter(x => String(x.perfil || '').trim())); } catch (_) {} ESC = (CFG && CFG.escopos) || []; escRender();
   }
   function renderRC() { $('vdRC').innerHTML = RC.map((x, i) => `<tr>${['perfil', 'senioridade', 'custo_hora', 'preco_piso', 'preco_alvo', 'preco_teto'].map(k => `<td><input class="fi" data-k="${k}" value="${esc(x[k] ?? '')}"/></td>`).join('')}<td style="font-size:9.5px;color:var(--t3);">${esc(x.fonte || x.custo_fonte || '')}${x.preco_observado ? '<br>praticado: R$ ' + x.preco_observado : ''}</td><td><a href="javascript:void(0)" onclick="this.closest('tr').remove()" style="color:var(--red);">✕</a></td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--t3);padding:14px;">Rate card vazio — importe sua planilha ou clique em Sugerir.</td></tr>'; }
   function lerRC() { return [...document.querySelectorAll('#vdRC tr')].map(tr => { const o = {}; tr.querySelectorAll('[data-k]').forEach(e => o[e.dataset.k] = e.value.trim()); return o; }).filter(x => x.perfil); }
   function rateLinha() { RC = lerRC(); RC.push({ perfil: '', fonte: 'manual' }); renderRC(); }
-  async function rateSalvar() { try { RC = (await api('rate_card_salvar', { rate_card: lerRC() })).rate_card; renderRC(); nota('Rate card salvo'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
+  async function rateSalvar() { try { RC = (await api('rate_card_salvar', { rate_card: lerRC() })).rate_card; _rcSalvo = JSON.stringify(RC); renderRC(); nota('Rate card salvo'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
   async function rateSugerir() { const fim = ocupado($('vdBtnSug'), '🔎 Buscando...'); try { const d = await api('rate_card_sugerir'); RC = d.sugestao; renderRC(); if (d.fontes.mercado_ia) nota(`${d.fontes.mercado_ia} perfil(is) com custo de mercado estimado pela IA (o RH não tem custo/hora e não há propostas aprendidas) — revise os valores e clique em 💾 Salvar rate card`); else if (!d.fontes.cargos_rh && !d.fontes.perfis_observados) nota('Nada para sugerir: o RH não tem custo/hora por cargo, nenhuma proposta com rate card foi aprendida e a IA não respondeu' + (d.fontes.aviso ? ' (' + d.fontes.aviso + ')' : '') + '. Cadastre os perfis com + perfil ou importe uma planilha.', 'error'); else nota(`Sugestão: ${d.fontes.cargos_rh} cargo(s) do RH, ${d.fontes.perfis_observados} perfil(is) de propostas — revise e salve`); } catch (e) { nota('Erro: ' + e.message, 'error'); } fim(); }
   async function rateImportar(inp) { const f = inp.files[0]; if (!f) return; nota('Lendo o rate card...'); try { const d = await api('rate_card_importar', { nome: f.name, base64: await lerB64(f) }); RC = d.rate_card; renderRC(); nota(`${d.importados} perfil(is) importado(s) e salvos`); } catch (e) { nota('Erro: ' + e.message, 'error'); } inp.value = ''; }
   async function paramsSalvar() {
