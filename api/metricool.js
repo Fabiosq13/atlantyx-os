@@ -289,8 +289,15 @@ async function _meta(caminho, metodo = 'GET', corpo = null) {
   const form = new URLSearchParams(); Object.entries(corpo || {}).forEach(([k, v]) => form.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))); form.set('access_token', c.token);
   op.headers['Content-Type'] = 'application/x-www-form-urlencoded'; op.body = form.toString();
   const r = await fetch(url, op); const d = await r.json().catch(() => ({}));
-  if (!r.ok || d.error) throw new Error('Meta: ' + (d.error?.error_user_title ? d.error.error_user_title + ' — ' : '') + (d.error?.error_user_msg || d.error?.message || 'HTTP ' + r.status));
+  if (!r.ok || d.error) throw Object.assign(new Error('Meta: ' + (d.error?.error_user_title ? d.error.error_user_title + ' — ' : '') + (d.error?.error_user_msg || d.error?.message || 'HTTP ' + r.status) + _metaPasso(caminho, d.error)), { meta_code: d.error?.code, meta_subcode: d.error?.error_subcode, meta_passo: caminho });
   return d;
+}
+// v3.398: diz EM QUE PASSO o Meta recusou (campanha, conjunto, imagem, criativo, anúncio) e o código — sem isso "Erro de
+// permissão" não diz se o problema é o token, a conta, a Página ou o Instagram
+function _metaPasso(caminho, err) {
+  const c = String(caminho || ''); const passo = /\/campaigns/.test(c) ? 'criar a campanha' : /\/adsets/.test(c) ? 'criar o conjunto de anúncios' : /\/adimages/.test(c) ? 'enviar a imagem' : /\/adcreatives/.test(c) ? 'criar o criativo (Página/Instagram)' : /\/ads$/.test(c) ? 'criar o anúncio' : /\/insights/.test(c) ? 'ler os resultados' : '';
+  const cod = err?.code ? ' · código ' + err.code + (err.error_subcode ? '/' + err.error_subcode : '') : '';
+  return passo || cod ? ' [' + [passo ? 'ao ' + passo : '', cod.replace(/^ · /, '')].filter(Boolean).join(' · ') + ']' : '';
 }
 async function _kvMc(k, v) {
   const sql = await getSql(); await sql`CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMPTZ DEFAULT NOW())`;
@@ -312,7 +319,16 @@ function _baseDe(req) {
 async function patrocinadoStatus(req) {
   const c = _metaCfg(); const falta = [['META_ADS_TOKEN', c.token], ['META_AD_ACCOUNT_ID', c.conta], ['META_PAGE_ID', c.pagina], ['META_IG_USER_ID', c.ig]].filter(([, v]) => !v).map(([k]) => k);
   const out = { meta_configurado: !falta.length, falta, conta: c.conta ? 'act_' + c.conta : null };
-  if (!falta.length) { try { const a = await _meta('act_' + c.conta + '?fields=name,currency,account_status,amount_spent'); out.conta_nome = a.name; out.moeda = a.currency; out.conta_ativa = a.account_status === 1; } catch (e) { out.erro = e.message; } }
+  if (!falta.length) { try { const a = await _meta('act_' + c.conta + '?fields=name,currency,account_status,amount_spent'); out.conta_nome = a.name; out.moeda = a.currency; out.conta_ativa = a.account_status === 1; } catch (e) { out.erro = e.message; }
+    // v3.398: confere também o token, a Página e o Instagram — é aqui que o "Erro de permissão" do Meta costuma nascer
+    out.checagens = {};
+    try { const me = await _meta('me?fields=id,name'); out.checagens.token = { ok: true, usuario: me.name }; } catch (e) { out.checagens.token = { ok: false, erro: e.message }; }
+    try { const pm = await _meta('me/permissions'); const con = (pm.data || []).filter(x => x.status === 'granted').map(x => x.permission); const falt = ['ads_management', 'pages_read_engagement', 'business_management'].filter(x => !con.includes(x)); out.checagens.permissoes = { ok: !falt.length, faltam: falt, concedidas: con }; } catch (e) { out.checagens.permissoes = { ok: null, erro: e.message }; }
+    try { const pg = await _meta(c.pagina + '?fields=id,name'); out.checagens.pagina = { ok: true, nome: pg.name }; } catch (e) { out.checagens.pagina = { ok: false, erro: e.message }; }
+    try { const ig = await _meta(c.ig + '?fields=id,username'); out.checagens.instagram = { ok: true, nome: ig.username }; } catch (e) { out.checagens.instagram = { ok: false, erro: e.message }; }
+    const ruins = Object.entries(out.checagens).filter(([, v]) => v.ok === false).map(([k, v]) => k + ': ' + v.erro).concat(out.checagens.permissoes?.faltam?.length ? ['permissões que faltam no token: ' + out.checagens.permissoes.faltam.join(', ')] : []);
+    if (ruins.length) out.alerta = ruins.join(' · ');
+  }
   try { out.linkedin = await liStatus(_baseDe(req)); } catch (e) { out.linkedin = { configurado: false, erro: e.message }; } // v3.239
   return out;
 }
