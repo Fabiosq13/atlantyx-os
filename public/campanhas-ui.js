@@ -46,7 +46,7 @@
           <div>Receita<div style="font-size:13px;font-weight:700;color:var(--t1);">${R(T.receita)}</div>${T.roi_pct != null ? 'ROI ' + N(T.roi_pct) + '%' : ''}</div></div>
         ${rt ? `<div style="margin-top:9px;">${pill(rt[0], rt[1])} <span style="font-size:10px;color:var(--t3);">${N(c.ritmo.leads_pct)}% da meta de leads em ${N(c.ritmo.tempo_pct)}% do período</span></div>` : ''}</div></div>`; }).join('')}</div>`
       : card('Nenhuma campanha ainda', `<div style="font-size:12px;color:var(--t2);line-height:1.7;">Crie a primeira: dê nome e período, ligue a um plano e depois adicione as ações. As campanhas digitais e os disparos que você já tem podem entrar como ações.</div>`);
-    $('cmpApp').innerHTML = topo + aviso + cards;
+    $('cmpApp').innerHTML = topo + aviso + gerenteHtml('geral') + cards;
   }
 
   // ── detalhe ──
@@ -88,9 +88,49 @@
     const plano = card('Plano da campanha', `<div style="font-size:11.5px;color:var(--t2);margin-bottom:8px;">${planoTxt(p)}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 16px;font-size:11.5px;line-height:1.5;">
       ${[['Objetivo', p.objetivo], ['Público', B.publico], ['Oferta', B.oferta], ['Dor', B.dor], ['Prova', B.prova], ['Mensagem', p.mensagem]].filter(x => x[1]).map(([k, v]) => `<div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">${k}</div>${esc(v)}</div>`).join('')}</div>${p.racional ? `<div style="font-size:11.5px;color:var(--t2);margin-top:10px;line-height:1.6;">${esc(p.racional)}</div>` : ''}`);
     const fech = c.fechamento ? card(`🏁 Relatório de fechamento <span style="font-weight:400;color:var(--t3);font-size:11px;">${dt(c.fechamento.em.slice(0, 10))}</span>`, `<div style="font-size:12px;line-height:1.7;">${md(c.fechamento.texto)}</div>`) : '';
-    $('cmpApp').innerHTML = cab + fech + metas + kpis + funil + acoes + plano;
+    $('cmpApp').innerHTML = cab + fech + metas + kpis + funil + gerenteHtml('c:' + c.id) + acoes + plano;
   }
   function md(t) { return esc(t).replace(/^### (.*)$/gm, '<div style="font-weight:700;margin-top:8px;">$1</div>').replace(/^## (.*)$/gm, '<div style="font-weight:700;font-size:13px;margin-top:12px;">$1</div>').replace(/^# (.*)$/gm, '<div style="font-weight:700;font-size:14px;margin-top:12px;">$1</div>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '<div style="padding-left:12px;">• $1</div>').replace(/\n{2,}/g, '<br>').replace(/\n/g, '<br>'); }
+
+  // ═══ v3.391 · GERENTE DE MARKETING IA dentro do dashboard de campanhas — diagnóstico de conversão ═══
+  // Usa o mesmo Gerente de Marketing (api/db gerente_marketing: publicações, Metricool, visitas, leads, auditoria do funil)
+  // e soma os números que estão NA TELA (funil e ações da campanha, ou o resumo de todas as campanhas).
+  const GM = {}; // histórico por contexto
+  const GM_PERG = ['Por que nenhum lead está convertendo? Faça o diagnóstico etapa por etapa do funil (alcance → cliques → visitas → leads → reuniões → propostas → negócios), diga onde quebra e por quê.',
+    'Quais 3 ajustes eu faço esta semana para gerar leads qualificados e reuniões? Seja específico (canal, público, oferta, criativo, orçamento).',
+    'A página de captura, a oferta e o rastreamento (UTM/etiqueta) estão funcionando? O que pode estar fazendo o lead não aparecer?',
+    'Os leads que chegam são do perfil certo (ICP)? Por que não viram reunião e o que mudar no follow-up?'];
+  const GM_CURTO = ['🔍 Por que não converte?', '🛠 3 ajustes para esta semana', '🧲 Página, oferta e rastreio', '👥 Lead certo e follow-up'];
+  function gmContexto(k) {
+    if (k === 'geral') return { tela: 'Campanhas de Marketing (todas)', campanhas: (D?.campanhas || []).map(c => ({ nome: c.nome, inicio: c.inicio, fim: c.fim, status: c.status, metas: c.metas, totais: c.totais, ritmo: c.ritmo })) };
+    const c = det?.campanha, r = det?.resultado; if (!c || !r) return null;
+    return { tela: 'Dashboard da campanha', campanha: { nome: c.nome, periodo: [c.inicio, c.fim], objetivo: c.objetivo, etiqueta_utm: c.utm, janela_atribuicao_dias: c.janela_dias, plano: c.plano?.briefing || c.plano, orcamento: c.orcamento },
+      totais: r.totais, metas_vs_realizado: r.metas, ritmo: r.ritmo, status: r.status,
+      acoes: (r.acoes || []).map(a => ({ nome: a.nome, tipo: a.tipo, custo: a.custo, custo_previsto: a.custo_estimado, alcance: a.alcance, cliques: a.cliques, leads: a.leads, reunioes: a.reunioes, propostas: a.propostas, negocios: a.negocios, receita: a.receita })),
+      leads_sem_acao: r.sem_acao, link_captura: det.link_geral?.captura, ajustes_manuais: c.ajustes };
+  }
+  function gmLog(k) { return (GM[k] || []).map(m => m.role === 'user' ? `<div style="align-self:flex-end;max-width:85%;background:rgba(79,124,255,.16);border-radius:10px 10px 2px 10px;padding:8px 11px;font-size:11.5px;">${esc(m.content)}</div>`
+      : `<div style="align-self:flex-start;max-width:96%;background:var(--bg3);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:12px;line-height:1.65;">${m.pensando ? '⏳ ' + esc(m.content) : md(String(m.content).replace(/\n{2,}/g, '\n').trim())}</div>`).join(''); }
+  function gerenteHtml(k) {
+    const id = k.replace(/[^\w]/g, '_');
+    return card('🤖 Gerente de Marketing IA <span style="font-weight:400;color:var(--t3);font-size:11px;">— diagnóstico de conversão com os números desta tela, das publicações, do Metricool e dos leads</span>',
+      `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${GM_CURTO.map((t, i) => `<button class="btn btn-g" style="font-size:10.5px;" onclick="CMP._gm('${esc(k)}',${i})">${t}</button>`).join('')}${(GM[k] || []).length ? `<button class="btn btn-g" style="font-size:10.5px;margin-left:auto;" onclick="CMP._gmLimpar('${esc(k)}')">Limpar</button>` : ''}</div>
+      <div id="gmLog_${id}" style="display:flex;flex-direction:column;gap:8px;max-height:460px;overflow:auto;${(GM[k] || []).length ? 'margin-bottom:8px;' : ''}">${gmLog(k)}</div>
+      <div style="display:flex;gap:6px;"><input class="fi" id="gmIn_${id}" placeholder="Pergunte ao gerente (ex.: por que o Meta Ads tem cliques e nenhum lead?)" onkeydown="if(event.key==='Enter')CMP._gm('${esc(k)}')" style="flex:1;"/><button class="btn btn-p" id="gmBtn_${id}" onclick="CMP._gm('${esc(k)}')">Perguntar</button></div>`);
+  }
+  async function gmPerguntar(k, i) {
+    const id = k.replace(/[^\w]/g, '_'), inp = $('gmIn_' + id), btn = $('gmBtn_' + id); const msg = i != null ? GM_PERG[i] : String(inp?.value || '').trim(); if (!msg) return inp?.focus();
+    if (inp) inp.value = ''; const H = GM[k] = GM[k] || []; const hist = H.filter(m => !m.pensando).map(m => ({ role: m.role, content: m.content })).slice(-10);
+    H.push({ role: 'user', content: msg }, { role: 'assistant', content: 'Lendo funil, ações, publicações, Metricool, visitas e leads… (até 1 min)', pensando: true });
+    const box = $('gmLog_' + id); const rr = () => { const b = $('gmLog_' + id); if (b) { b.innerHTML = gmLog(k); b.style.marginBottom = '8px'; b.scrollTop = b.scrollHeight; } }; rr(); if (btn) btn.disabled = true;
+    try { const h = typeof window.authHeaders === 'function' ? window.authHeaders() : {};
+      const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify({ action: 'gerente_marketing', value: { mensagem: msg, historico: hist, contexto_tela: gmContexto(k) } }) });
+      const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status })); if (!d.success) throw new Error(d.error || 'falha');
+      H[H.length - 1] = { role: 'assistant', content: d.resposta || '(sem resposta)' }; }
+    catch (e) { H[H.length - 1] = { role: 'assistant', content: '⛔ ' + e.message }; }
+    if (btn) btn.disabled = false; rr();
+  }
+  function gmLimpar(k) { GM[k] = []; if (view === 'detalhe') rDetalhe(); else rLista(); }
 
   // ── modal ──
   function modal(titulo, corpo, botoes) { let m = $('cmpModal'); if (m) m.remove(); m = document.createElement('div'); m.id = 'cmpModal';
@@ -200,5 +240,5 @@
   function excluir() { confirmar('Excluir a campanha <b>' + esc(det.campanha.nome) + '</b>? As ações ligadas (campanhas digitais, disparos, vídeos) continuam existindo.', async () => { try { await api('excluir', { id: det.campanha.id }); det = null; D = await api('inicio'); rLista(); nota('Campanha excluída'); } catch (e) { nota(e.message, 'error'); } }); }
 
   window.CMP = { abrir: id => id ? abrirCampanha(id) : abrir(), voltar: () => { det = null; carregar(); }, editar, acao, acaoExcluir, links, ajustes, fechar, reabrir, excluir, fecharModal,
-    _pt: pt, _al: () => lerPlano(), _metas: metasPlano, _ia: ia, _salvar: salvarCamp, _tipo: () => tipo(), _ref: ref, _acaoSalvar: acaoSalvar, _ajSalvar: ajSalvar, _estado: () => ({ D, O, det, view }) };
+    _pt: pt, _al: () => lerPlano(), _metas: metasPlano, _ia: ia, _salvar: salvarCamp, _tipo: () => tipo(), _ref: ref, _acaoSalvar: acaoSalvar, _ajSalvar: ajSalvar, _estado: () => ({ D, O, det, view }), _gm: gmPerguntar, _gmLimpar: gmLimpar };
 })();
