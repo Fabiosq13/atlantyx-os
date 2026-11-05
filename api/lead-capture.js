@@ -578,6 +578,26 @@ async function agendarFollowUp(lead, dealId, mensagemOriginal) {
       ${lead.job_title || lead.title || null}, ${dealId || null}, ${String(mensagemOriginal || '').substring(0, 2000)}, ${new Date(Date.now() + 48 * 3600 * 1000).toISOString()})`;
 }
 
+// v3.396: leads do formulário público que ficaram SEM a 1ª mensagem (regra antiga exigia cargo de decisor) — reaborda os dos
+// últimos 30 dias com a regra nova, 1 por vez (o cron chama; a tela também pode chamar). Respeita opt-out e quem já foi abordado.
+export async function reabordarLeadsPendentes({ limite = 3, dias = 30 } = {}) {
+  const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL);
+  const L = await sql`SELECT id, data, etapas FROM leads WHERE criado_em > NOW() - (${dias} || ' days')::interval AND COALESCE(status, 'novo') <> 'qa_teste'
+    AND COALESCE(etapas->>'whatsapp', '') LIKE 'pulado:%' AND COALESCE(etapas->>'reabordado', '') = '' AND COALESCE(telefone, '') <> '' ORDER BY criado_em DESC LIMIT ${limite}`;
+  const out = [];
+  for (const row of L) {
+    let lead = row.data; try { if (typeof lead === 'string') lead = JSON.parse(lead); } catch (_) { lead = null; } if (!lead) continue;
+    const et = { ...(row.etapas || {}), reabordado: new Date().toISOString() };
+    try {
+      if (!(lead.form_name === 'captura-publica' && lead.consentimento?.aceito)) { et.reabordado_motivo = 'não é do formulário público com consentimento'; }
+      else { const pode = await _podeWhats(lead, row.id);
+        if (!pode.ok) et.reabordado_motivo = pode.motivo;
+        else { const msg = await gerarMensagemClaude(lead); await enviarWhatsApp(lead.phone, msg); et.whatsapp = 'ok'; et.reabordado_motivo = 'mensagem enviada'; try { await agendarFollowUp(lead, null, msg); et.followup = 'ok'; } catch (e) { et.followup = 'falha: ' + e.message; } } }
+    } catch (e) { et.reabordado_motivo = 'falha: ' + e.message; }
+    await sql`UPDATE leads SET etapas = ${JSON.stringify(et)}::jsonb WHERE id = ${row.id}`; out.push({ id: row.id, resultado: et.reabordado_motivo });
+  }
+  return { processados: out.length, itens: out };
+}
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 // v3.237: varredura — leads gravados que não foram processados (aba fechada antes do 2º passo, função cortada)
 export async function processarLeadsPendentes({ limite = 5 } = {}) {

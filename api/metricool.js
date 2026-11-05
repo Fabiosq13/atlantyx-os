@@ -1959,7 +1959,8 @@ async function handler(req, res) {
       let icp = null, icpConteudo = null, leads = null;
       if (out[0].ocioso) {
         // leads que ficaram sem processar (aba fechada antes do 2º passo) — 1 por minuto
-        try { const { processarLeadsPendentes } = await import('./lead-capture.js'); leads = await processarLeadsPendentes({ limite: 1 }); } catch (e) { leads = { erro: e.message }; }
+        try { const { processarLeadsPendentes, reabordarLeadsPendentes } = await import('./lead-capture.js'); leads = await processarLeadsPendentes({ limite: 1 });
+          if (!leads?.processados) { const r = await reabordarLeadsPendentes({ limite: 1 }); if (r.processados) leads = { ...leads, reabordados: r.itens }; } } catch (e) { leads = { erro: e.message }; } // v3.396
         if (!leads?.processados) { // v3.234/v3.235: guardiões do ICP (anúncios de hora em hora; conteúdo: 1 item por minuto livre)
           try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; }
           if (icp?.pulado && Date.now() - t0 < 15000) { try { icpConteudo = await _icpConteudoGuardiao(); } catch (e) { icpConteudo = { erro: e.message }; } } } }
