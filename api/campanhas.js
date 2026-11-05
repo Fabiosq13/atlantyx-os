@@ -116,10 +116,19 @@ async function detalhe(b, req) {
   const r = consolidar(c, await coletar([c])), B = base(req);
   return { campanha: c, resultado: r, links: Object.fromEntries((c.acoes || []).map(a => [a.id, linksAcao(B, c, a)])), link_geral: { captura: B + '/agenda/' + c.utm + '?f=geral', reuniao: B + '/reuniao/' + c.utm + '?f=geral' } };
 }
+// v3.392: campanhas digitais (tabela campanhas: Autocampanha, Campanha Digital, patrocinadas) que não estão ligadas a nenhuma ação
+async function digitaisSoltas(L) {
+  try { const sql = await getSql();
+    const dig = await tabela(sql, s => s`SELECT id, nome, canal, status, ativa, data_inicio, data_fim, COALESCE(data->>'origem', data->>'fonte', '') AS origem, COALESCE(data->>'tipo', '') AS tipo FROM campanhas ORDER BY atualizado_em DESC NULLS LAST LIMIT 80`);
+    const usados = new Set(L.flatMap(c => (c.acoes || []).map(a => String(a.ref?.id || '')).filter(Boolean)));
+    return dig.filter(x => !usados.has(String(x.id))).map(x => ({ id: x.id, nome: x.nome, canal: x.canal, status: x.status || (x.ativa ? 'ativa' : ''), data_inicio: x.data_inicio ? String(x.data_inicio).slice(0, 10) : null, data_fim: x.data_fim ? String(x.data_fim).slice(0, 10) : null,
+      origem: /auto/i.test(x.origem + ' ' + x.tipo + ' ' + x.id) ? 'Autocampanha' : x.origem || null, tipo_acao: /anunc|ads|patroc|meta|google/i.test(String(x.canal || '') + ' ' + String(x.origem || '') + ' ' + String(x.tipo || '')) ? 'anuncio' : 'digital' }));
+  } catch (e) { return []; }
+}
 async function inicio() {
   const L = await lista(), col = await coletar(L), vig = await vigente();
   return { campanhas: L.map(c => { const r = consolidar(c, col); return { id: c.id, nome: c.nome, objetivo: c.objetivo, inicio: c.inicio, fim: c.fim, utm: c.utm, plano: c.plano, orcamento: c.orcamento, metas: c.metas, n_acoes: (c.acoes || []).length, tipos: [...new Set((c.acoes || []).map(a => a.tipo))], status: r.status, totais: r.totais, ritmo: r.ritmo, fechada_em: c.fechamento?.em || null }; }),
-    plano_vigente: vig?.plano ? { versao: vig.versao, nome: vig.plano.nome } : null, status_nome: STATUS_NOME, tipos: TIPOS };
+    plano_vigente: vig?.plano ? { versao: vig.versao, nome: vig.plano.nome } : null, status_nome: STATUS_NOME, tipos: TIPOS, digitais_soltas: await digitaisSoltas(L) };
 }
 
 // ── IA ──

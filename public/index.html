@@ -2930,6 +2930,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       </div>
     </div>
     <div class="erro-api" id="despErro" style="display:none;"></div>
+    <!-- v3.392: Gerente de Marketing IA dentro do Dashboard de Desempenho (módulo /campanhas-ui.js) -->
+    <div id="despGerente"><div class="panel" style="margin-bottom:14px;"><div class="pb" style="font-size:11px;color:var(--t3);">🤖 Carregando o Gerente de Marketing IA…</div></div></div>
 
     <!-- v3.324: ordem nova — ① pagos + leads no topo · ② orgânico · ③ detalhes recolhidos -->
     <!-- v3.179: anúncios pagos (Meta / Instagram) criados pelo sistema — gasto, alcance, cliques e leads (HubSpot via UTM) -->
@@ -11994,6 +11996,14 @@ async function tvConferir(b) {
 }
 async function tvAtualizar(b) { b.disabled = true; b.textContent = '⏳ Lendo QuickBooks e vendas…'; try { await tvApi('atualizar_dados'); toast('Números atualizados', 'success'); const f = document.getElementById('tvPrev'); if (f) f.src = f.src; } catch (e) { toast(e.message, 'error'); } b.disabled = false; b.textContent = '↻ Atualizar os números agora'; }
 // v3.147: Reuniões Semanais — ritos recorrentes com pauta automática (módulo sob demanda: /reunioes-ui.js)
+// v3.392: Gerente de Marketing IA no Dashboard de Desempenho — reaproveita o painel do módulo de campanhas
+function despGerenteMontar() {
+  const b = document.getElementById('despGerente'); if (!b || b.dataset.ok) return;
+  const montar = () => { if (window.CMP && CMP.gerenteMontar) { CMP.gerenteMontar('desempenho', 'despGerente'); b.dataset.ok = '1'; } };
+  if (window.CMP) return montar();
+  const s = document.createElement('script'); s.src = '/campanhas-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); s.onload = montar;
+  s.onerror = () => { b.innerHTML = ''; }; document.head.appendChild(s);
+}
 // v3.255: Campanhas de Marketing — campanha macro ligada a um plano, com ações de vários canais e visão única (módulo sob demanda)
 function cmpAbrir() {
   if (window.CMP) return CMP.abrir();
@@ -34318,6 +34328,7 @@ function despLeadsDetalhe(campId) {
 }
 async function carregarDesempenho(forcar) {
   forcar = forcar === true; // o setTimeout do nav() não passa argumento
+  despGerenteMontar();
   const seq = ++_despSeq;
   const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
   const cache = _despCacheLer(dias);
@@ -36302,7 +36313,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.391] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.392] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36318,7 +36329,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.391';
+window.__ATX_BUILD_ID__ = 'ATX-v3.392';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

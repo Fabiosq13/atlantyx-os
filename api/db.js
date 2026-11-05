@@ -419,7 +419,7 @@ async function handler(req, res) {
         let aud = ck[0] && (Date.now() - new Date(ck[0].updated_at).getTime() < 30 * 60000) ? (typeof ck[0].value === 'string' ? JSON.parse(ck[0].value) : ck[0].value) : null;
         if (!aud) {
           const base = (process.env.MEDIA_PUBLIC_BASE || 'https://' + (req.headers.host || 'atlantyx-os.vercel.app')).replace(/\/$/, '');
-          const c = new AbortController(); const t = setTimeout(() => c.abort(), 30000);
+          const c = new AbortController(); const t = setTimeout(() => c.abort(), value?.contexto_tela ? 15000 : 30000); // v3.392: no dashboard a auditoria não pode segurar a resposta
           const r = await fetch(base + '/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'auditoria_funil', payload: { dias } }), signal: c.signal }).finally(() => clearTimeout(t));
           const d = await r.json().catch(() => ({}));
           if (d.success) { aud = { veredito: d.veredito, problemas: (d.problemas || []).slice(0, 8), funil_por_rede: d.funil_por_rede, posts_metricool: d.posts };
@@ -434,12 +434,15 @@ async function handler(req, res) {
       const system = `Você é o GERENTE DE MARKETING IA da Atlantyx — direto, prático, português do Brasil. Você TEM os dados reais do marketing abaixo: campanhas; PUBLICAÇÕES dos últimos 30 dias por rede e por campanha (status no Metricool, impressões, cliques, curtidas, comentários, melhores posts, posts com erro); agenda dos próximos 14 dias; visitas à página de captura e leads por origem/campanha; follow-ups; auditoria do funil por rede (gargalo e ação de cada rede); configuração do clique (para onde o link leva). Use ESSES números para responder — cite-os. Pense no funil post → impressão → clique → visita à página → lead → reunião e aponte onde perde mais. Se um dado está zerado ou ausente, diga exatamente qual e o provável motivo (ex.: métrica não sincronizada, rede sem API), sem dizer que "não tem acesso" ao que está no contexto. Seja concreto e acionável (~250 palavras salvo pedido de detalhe); nunca invente número.${ctx.numeros_da_tela_de_campanhas ? '\n\nVOCÊ ESTÁ DENTRO DO DASHBOARD DE CAMPANHAS: use primeiro os "numeros_da_tela_de_campanhas" (funil e ações). Para diagnóstico de conversão responda em seções curtas: ## Onde o funil quebra (etapa por etapa com os números e a taxa de passagem), ## Causas prováveis (ordenadas pela evidência nos dados; separe o que é fato do que é hipótese), ## O que fazer agora (3 a 5 ações concretas com dono e prazo), ## O que medir para confirmar. Se faltar dado para concluir (ex.: rastreio sem leads, cliques sem visitas), diga exatamente qual e onde verificar.' : ''}\n\nCONTEXTO (JSON):\n${JSON.stringify(ctx.numeros_da_tela_de_campanhas ? { numeros_da_tela_de_campanhas: ctx.numeros_da_tela_de_campanhas, ...ctx } : ctx).substring(0, 30000)}`;
       const msgs = [...historico.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content||'').substring(0,2000) })), { role: 'user', content: String(mensagem).substring(0,3000) }];
       if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ success: false, error: 'ANTHROPIC_API_KEY não configurada' });
-      const rr = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':process.env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' }, body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: ctx.numeros_da_tela_de_campanhas ? 2600 : 1400, system, messages: msgs }) });
+      // v3.392: limite de tempo na IA (antes podia passar dos 60s da função e virar HTTP 504 sem explicação)
+      const cAI = new AbortController(); const tAI = setTimeout(() => cAI.abort(), 80000);
+      const rr = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', signal: cAI.signal, headers:{ 'Content-Type':'application/json', 'x-api-key':process.env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' }, body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: ctx.numeros_da_tela_de_campanhas ? 2200 : 1400, system, messages: msgs }) })
+        .catch(e => { throw new Error(e.name === 'AbortError' ? 'A IA demorou mais de 80s para responder — tente de novo' : e.message); }).finally(() => clearTimeout(tAI));
       const dd = await rr.json().catch(() => ({}));
       if (!rr.ok) return res.status(400).json({ success: false, error: 'Claude API [' + rr.status + ']: ' + (dd.error?.message || 'erro') });
       // v1.71: se a mensagem for uma ORDEM (ex.: "crie campanha com briefing X"), executa e devolve o link
       let tarefaMkt = null;
-      try {
+      if (!value?.contexto_tela) try { // v3.392: no diagnóstico do dashboard não há ordem a executar — pula a 2ª chamada à IA
         const hojeM = new Date().toISOString().split('T')[0];
         const sysT = `Decida se a mensagem é uma ORDEM para executar uma operação de marketing.
 Hoje é ${hojeM}.

@@ -25,7 +25,7 @@
 
   function abrir() { if (!$('cmpApp')) return; view = 'lista'; carregar(); }
   async function carregar() { const box = $('cmpApp'); if (!box) return; if (!D) box.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:30px;text-align:center;">Carregando as campanhas…</div>';
-    try { D = await api('inicio'); if (view === 'detalhe' && det) await abrirCampanha(det.campanha.id, true); else rLista(); } catch (e) { box.innerHTML = `<div style="color:var(--red);font-size:12px;padding:14px;">${esc(e.message)}</div>`; } }
+    try { D = await api('inicio'); if (view === 'detalhe' && det) await abrirCampanha(det.campanha.id, true); else rLista(); } catch (e) { console.error('[campanhas]', e.stack); box.innerHTML = `<div style="color:var(--red);font-size:12px;padding:14px;">${esc(e.message)}</div>`; } }
 
   // ── lista ──
   function rLista() {
@@ -46,9 +46,25 @@
           <div>Receita<div style="font-size:13px;font-weight:700;color:var(--t1);">${R(T.receita)}</div>${T.roi_pct != null ? 'ROI ' + N(T.roi_pct) + '%' : ''}</div></div>
         ${rt ? `<div style="margin-top:9px;">${pill(rt[0], rt[1])} <span style="font-size:10px;color:var(--t3);">${N(c.ritmo.leads_pct)}% da meta de leads em ${N(c.ritmo.tempo_pct)}% do período</span></div>` : ''}</div></div>`; }).join('')}</div>`
       : card('Nenhuma campanha ainda', `<div style="font-size:12px;color:var(--t2);line-height:1.7;">Crie a primeira: dê nome e período, ligue a um plano e depois adicione as ações. As campanhas digitais e os disparos que você já tem podem entrar como ações.</div>`);
-    $('cmpApp').innerHTML = topo + aviso + gerenteHtml('geral') + cards;
+    // v3.392: campanhas digitais (Autocampanha / Campanha Digital / anúncios) que ainda não estão em nenhuma campanha de marketing
+    const SL = D.digitais_soltas || [];
+    const soltas = SL.length ? card(`📡 Campanhas digitais fora de uma campanha de marketing <span style="font-weight:400;color:var(--t3);font-size:11px;">(${SL.length}) — criadas na Autocampanha, Campanha Digital ou anúncios; os resultados delas só entram aqui depois de ligadas a uma campanha</span>`,
+      `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;"><thead><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;"><th style="text-align:left;padding:5px 4px;">Campanha digital</th><th style="text-align:left;padding:5px 4px;">Canal</th><th style="text-align:left;padding:5px 4px;">Status</th><th style="text-align:left;padding:5px 4px;">Período</th><th style="padding:5px 4px;"></th></tr></thead><tbody>
+      ${SL.map(x => `<tr style="border-top:1px solid var(--bd);"><td style="padding:6px 4px;"><b>${esc(x.nome)}</b>${x.origem ? `<div style="font-size:10px;color:var(--t3);">${esc(x.origem)}</div>` : ''}</td><td style="padding:6px 4px;">${esc(x.canal || '—')}</td><td style="padding:6px 4px;">${esc(x.status || '—')}</td><td style="padding:6px 4px;white-space:nowrap;">${dt(x.data_inicio)} a ${dt(x.data_fim)}</td>
+        <td style="padding:6px 4px;text-align:right;white-space:nowrap;"><select class="fsel" style="width:auto;font-size:10.5px;display:inline-block;" id="ligar_${esc(x.id)}">${L.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}<option value="__nova">＋ nova campanha com este nome</option></select> <button class="btn btn-p" style="font-size:10.5px;padding:4px 9px;" onclick="CMP._ligar('${esc(x.id)}')">Ligar</button></td></tr>`).join('')}</tbody></table></div>`) : '';
+    $('cmpApp').innerHTML = topo + aviso + gerenteHtml('geral') + soltas + cards;
   }
 
+  async function ligar(digId) {
+    const x = (D.digitais_soltas || []).find(z => String(z.id) === String(digId)); if (!x) return; const sel = $('ligar_' + digId); const alvo = sel?.value;
+    try {
+      let campId = alvo;
+      if (alvo === '__nova') { const r = await api('salvar', { campanha: { nome: x.nome, inicio: x.data_inicio || new Date().toISOString().slice(0, 10), fim: x.data_fim || new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), objetivo: 'Campanha digital ' + (x.canal || ''), plano: { tipo: 'proprio', objetivo: 'Gerar leads com a campanha digital ' + x.nome, publico: '[a confirmar — edite o plano]', oferta: '[a confirmar — edite o plano]' }, metas: {}, acoes: [] } }); campId = r.campanha?.id; if (!campId) throw new Error('não consegui criar a campanha'); }
+      det = await api('detalhe', { id: campId });
+      await api('acao_salvar', { campanha_id: campId, acao: { tipo: x.tipo_acao || 'digital', nome: x.nome, ref: { kind: x.tipo_acao || 'digital', id: String(x.id), nome: x.nome }, inicio: x.data_inicio || '', fim: x.data_fim || '' } });
+      nota('Ligada à campanha — os resultados passam a contar nela'); D = await api('inicio'); await abrirCampanha(campId, true);
+    } catch (e) { nota('Não consegui ligar: ' + e.message, 'error'); }
+  }
   // ── detalhe ──
   async function abrirCampanha(id, silencioso) {
     if (!silencioso) $('cmpApp').innerHTML = '<div style="color:var(--t3);font-size:11px;padding:30px;text-align:center;">Somando os resultados…</div>';
@@ -102,6 +118,11 @@
     'Os leads que chegam são do perfil certo (ICP)? Por que não viram reunião e o que mudar no follow-up?'];
   const GM_CURTO = ['🔍 Por que não converte?', '🛠 3 ajustes para esta semana', '🧲 Página, oferta e rastreio', '👥 Lead certo e follow-up'];
   function gmContexto(k) {
+    if (k === 'desempenho') { const g = id => document.getElementById(id)?.textContent?.trim(); const P = window._despPagosL || [];
+      return { tela: 'Dashboard de Desempenho (Metricool + anúncios pagos + leads HubSpot)', periodo_dias: document.getElementById('despPeriodoSel')?.value, filtro_campanha: document.getElementById('despCampanhaSel')?.selectedOptions?.[0]?.textContent,
+        kpis_organico: { publicacoes: g('despPub'), impressoes: g('despImp'), cliques: g('despCli'), engajamento: g('despEng'), leads: g('despLeads'), custo_por_lead: g('despCPL') },
+        anuncios_pagos: P.slice(0, 20).map(r => ({ nome: r.nome, estado: r.estado_meta || r.estado, inicio: r.inicio, fim: r.fim, gasto: r.resultado?.gasto, impressoes: r.resultado?.impressoes, cliques_link: r.resultado?.cliques_link, cpc: r.resultado?.cpc, visitas: r.funil?.visitas, leads: r.funil?.leads })),
+        leads_info: window._despLeadsInfo ? { total: window._despLeadsInfo.total, por_campanha: window._despLeadsInfo.leads_por_campanha } : undefined }; }
     if (k === 'geral') return { tela: 'Campanhas de Marketing (todas)', campanhas: (D?.campanhas || []).map(c => ({ nome: c.nome, inicio: c.inicio, fim: c.fim, status: c.status, metas: c.metas, totais: c.totais, ritmo: c.ritmo })) };
     const c = det?.campanha, r = det?.resultado; if (!c || !r) return null;
     return { tela: 'Dashboard da campanha', campanha: { nome: c.nome, periodo: [c.inicio, c.fim], objetivo: c.objetivo, etiqueta_utm: c.utm, janela_atribuicao_dias: c.janela_dias, plano: c.plano?.briefing || c.plano, orcamento: c.orcamento },
@@ -124,13 +145,16 @@
     H.push({ role: 'user', content: msg }, { role: 'assistant', content: 'Lendo funil, ações, publicações, Metricool, visitas e leads… (até 1 min)', pensando: true });
     const box = $('gmLog_' + id); const rr = () => { const b = $('gmLog_' + id); if (b) { b.innerHTML = gmLog(k); b.style.marginBottom = '8px'; b.scrollTop = b.scrollHeight; } }; rr(); if (btn) btn.disabled = true;
     try { const h = typeof window.authHeaders === 'function' ? window.authHeaders() : {};
-      const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify({ action: 'gerente_marketing', value: { mensagem: msg, historico: hist, contexto_tela: gmContexto(k) } }) });
-      const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status })); if (!d.success) throw new Error(d.error || 'falha');
+      const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 118000);
+      const r = await fetch('/api/db', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify({ action: 'gerente_marketing', value: { mensagem: msg, historico: hist, contexto_tela: gmContexto(k) } }) }).finally(() => clearTimeout(tm));
+      const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'O servidor demorou demais (HTTP 504). Tente de novo — a 2ª vez costuma ser mais rápida porque a auditoria do Metricool fica em cache.' : 'HTTP ' + r.status })); if (!d.success) throw new Error(d.error || 'falha');
       H[H.length - 1] = { role: 'assistant', content: d.resposta || '(sem resposta)' }; }
     catch (e) { H[H.length - 1] = { role: 'assistant', content: '⛔ ' + e.message }; }
     if (btn) btn.disabled = false; rr();
   }
-  function gmLimpar(k) { GM[k] = []; if (view === 'detalhe') rDetalhe(); else rLista(); }
+  function gmLimpar(k) { GM[k] = []; if (k === 'desempenho') return gmMontar('desempenho', 'despGerente'); if (view === 'detalhe') rDetalhe(); else rLista(); }
+  // v3.392: monta o gerente num container de outra tela (Dashboard de Desempenho)
+  function gmMontar(k, containerId) { const b = document.getElementById(containerId); if (b) b.innerHTML = gerenteHtml(k); }
 
   // ── modal ──
   function modal(titulo, corpo, botoes) { let m = $('cmpModal'); if (m) m.remove(); m = document.createElement('div'); m.id = 'cmpModal';
@@ -240,5 +264,5 @@
   function excluir() { confirmar('Excluir a campanha <b>' + esc(det.campanha.nome) + '</b>? As ações ligadas (campanhas digitais, disparos, vídeos) continuam existindo.', async () => { try { await api('excluir', { id: det.campanha.id }); det = null; D = await api('inicio'); rLista(); nota('Campanha excluída'); } catch (e) { nota(e.message, 'error'); } }); }
 
   window.CMP = { abrir: id => id ? abrirCampanha(id) : abrir(), voltar: () => { det = null; carregar(); }, editar, acao, acaoExcluir, links, ajustes, fechar, reabrir, excluir, fecharModal,
-    _pt: pt, _al: () => lerPlano(), _metas: metasPlano, _ia: ia, _salvar: salvarCamp, _tipo: () => tipo(), _ref: ref, _acaoSalvar: acaoSalvar, _ajSalvar: ajSalvar, _estado: () => ({ D, O, det, view }), _gm: gmPerguntar, _gmLimpar: gmLimpar };
+    _pt: pt, _al: () => lerPlano(), _metas: metasPlano, _ia: ia, _salvar: salvarCamp, _tipo: () => tipo(), _ref: ref, _acaoSalvar: acaoSalvar, _ajSalvar: ajSalvar, _estado: () => ({ D, O, det, view }), _gm: gmPerguntar, _gmLimpar: gmLimpar, gerenteMontar: gmMontar, _ligar: ligar };
 })();
