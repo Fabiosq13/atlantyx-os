@@ -10,3 +10,4 @@
 ## Interseções
 - T1: vercel.json (maxDuration de api/db.js 60→120) alterado nesta trilha por pedido do fundador
 - 2026-11-05 · feito (v3.393) · diagnóstico do gerente, ajustes técnicos: (1) anúncios pagos (mkt:patrocinados) aparecem em Campanhas de Marketing como digitais soltas e, ligados, trazem gasto/impressões/cliques do Meta e leads pela utm_campaign; (2) lead do formulário público (sem cargo) nunca recebia a 1ª mensagem — agora recebe a entrega do Mapa + pergunta de cargo/área, e o follow-up é agendado; (3) guardião horário dos agendados: posts sem link ganham link da captura e imagens Ideogram viram permanentes
+- 2026-11-05 · feito (v3.394) · formulário de captura ganha campo Cargo (combo com 10 cargos do ICP + Outro com texto livre); 1ª mensagem do WhatsApp no formulário público sai para decisor, head e gerência (só cargo técnico/operacional e empresa pequena ficam para avaliação humana)

@@ -226,9 +226,9 @@ async function _podeWhats(lead, leadId) {
   // v3.393: o formulário público pede só nome, empresa e WhatsApp (sem cargo) — o lead NUNCA vira "decisor" e a 1ª mensagem
   // (entrega do Mapa de Oportunidades prometido) não saía para ninguém. Com consentimento, o que foi prometido é entregue;
   // a trava do ICP só vale quando o cargo foi informado (ou a empresa é pequena).
-  const semCargo = !(lead.job_title && String(lead.job_title).trim()), publico = lead.form_name === 'captura-publica' && lead.consentimento?.aceito;
+  const publico = lead.form_name === 'captura-publica' && lead.consentimento?.aceito;
   if (lead.icp_cargo === 'fora' || ['ate_50', '51_200'].includes(lead.porte)) return { ok: false, motivo: 'fora do ICP (' + (lead.icp_cargo === 'fora' ? 'cargo técnico/operacional' : 'empresa pequena') + ') — avaliação humana' };
-  if (!(publico && semCargo)) {
+  if (!publico) { // v3.394: no formulário público a isca é entregue a decisor, head e gerência; só cargo técnico/operacional e empresa pequena ficam para avaliação humana
     if (lead.score_label === 'C') return { ok: false, motivo: 'fora do ICP (score C) — avaliação humana' };
     if (lead.score_label !== 'A' && !(lead.score_label === 'B' && lead.icp_cargo === 'decisor' && !lead.email_pessoal)) return { ok: false, motivo: 'score ' + lead.score_label + ' sem cargo de decisor confirmado — avaliação humana' };
   }

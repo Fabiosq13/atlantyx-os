@@ -199,9 +199,25 @@
            "Preencher automaticamente com informações salvas" (nome, e-mail, telefone, empresa, cargo) -->
       <form id="form" method="post" action="#" autocomplete="on" novalidate onsubmit="event.preventDefault(); enviar();">
         <h2>Receba seu Mapa de Oportunidades</h2>
-        <p class="ajuda">3 campos · chega no seu WhatsApp em até 1 dia útil.</p>
+        <p class="ajuda">4 campos · chega no seu WhatsApp em até 1 dia útil.</p>
         <label for="nome">Seu nome</label><input id="nome" name="name" autocomplete="name" required>
         <label for="empresa">Empresa</label><input id="empresa" name="company" autocomplete="organization" required placeholder="Nome da empresa em que você trabalha">
+        <!-- v3.394: cargo — é o critério de maior peso do score (decisor x operacional); combo com os 10 cargos mais comuns no ICP + Outro -->
+        <label for="cargo">Seu cargo</label><select id="cargo" name="job_title" autocomplete="organization-title" required onchange="document.getElementById('cargoOutroBox').style.display=this.value==='Outro'?'block':'none';if(this.value==='Outro')document.getElementById('cargoOutro').focus();">
+          <option value="" disabled selected>Selecione…</option>
+          <option>CEO / Presidente / Sócio</option>
+          <option>Diretor(a) Financeiro (CFO)</option>
+          <option>Diretor(a) de Operações (COO)</option>
+          <option>Diretor(a) de TI / CIO / CTO</option>
+          <option>Diretor(a) Comercial / Marketing</option>
+          <option>Diretor(a) de outra área</option>
+          <option>Gerente de TI / Dados</option>
+          <option>Gerente Financeiro / Controladoria</option>
+          <option>Gerente Comercial / Marketing</option>
+          <option>Gerente de outra área</option>
+          <option>Outro</option>
+        </select>
+        <div id="cargoOutroBox" style="display:none;"><label for="cargoOutro">Qual cargo?</label><input id="cargoOutro" maxlength="80" placeholder="Ex.: Coordenador de BI"></div>
         <label for="telefone">WhatsApp</label><input id="telefone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="(21) 99999-9999">
         <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Deixe em branco</label><input id="website" name="hp_x7q" tabindex="-1" autocomplete="new-password" data-lpignore="true" data-form-type="other"></div>
         <button class="btn" id="btn" type="submit">Quero meu mapa grátis <span class="seta">→</span></button>
@@ -284,13 +300,15 @@
     const erro = document.getElementById('erro');
     erro.style.display = 'none';
     // v3.327: 3 campos — nome, empresa e WhatsApp (isca: Mapa de Oportunidades com IA, sem reunião)
-    if (!g('nome') || !g('empresa') || !g('telefone')) { erro.textContent = 'Preencha nome, empresa e WhatsApp.'; erro.style.display = 'block'; return; }
+    const cargoSel = g('cargo'), cargo = cargoSel === 'Outro' ? g('cargoOutro') : cargoSel;
+    if (!g('nome') || !g('empresa') || !g('telefone') || !cargoSel) { erro.textContent = 'Preencha nome, empresa, cargo e WhatsApp.'; erro.style.display = 'block'; return; }
+    if (cargoSel === 'Outro' && !cargo) { erro.textContent = 'Diga qual é o seu cargo.'; erro.style.display = 'block'; return; }
     if (g('telefone').replace(/\D/g, '').length < 10) { erro.textContent = 'Confira o WhatsApp com DDD (ex.: 21 99999-9999).'; erro.style.display = 'block'; return; }
     const btn = document.getElementById('btn'); btn.disabled = true; btn.textContent = 'Enviando...';
     try {
       const r = await fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: g('nome'), company: g('empresa'), phone: g('telefone'),
+          name: g('nome'), company: g('empresa'), phone: g('telefone'), job_title: cargo,
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
           page: location.href, form_name: 'captura-publica', oferta: 'mapa_ia', rapido: true, website: g('website'), t_preenchimento_ms: Date.now() - _t0, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
         }) });
