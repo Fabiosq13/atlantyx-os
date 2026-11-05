@@ -30,3 +30,4 @@
 - 2026-11-04 · feito (v3.384) · Escopo continuava em branco (capítulo mais longo não cabia numa chamada): passa a ser escrito em etapas — plano com todos os itens, itens de 3 em 3 (markdown puro, sem JSON) e requisitos não funcionais/fora do escopo/opcionais —, cada etapa com repetição e o texto aparecendo à medida que fica pronto
 - 2026-11-04 · feito (v3.385) · botão ✍ Redigir proposta sempre visível na barra de ações (faz a análise de formatos se faltar)
 - 2026-11-04 · feito (v3.386) · POC: capítulo Rate Card sem valores (só perfis e horas, nota de que os valores vêm na proposta do projeto) e IA instruída a não citar valores por hora
+- 2026-11-05 · feito (v3.388) · Simulador de custo/hora na proposta (CLT: salário + 13º + férias 1/3 + encargos LP 35,8% + provisão de rescisão + benefícios, horas × 11/12 × utilização; PJ: valor mensal/hora + benefícios), aplica no perfil e no rate card, premissas salvas como padrão

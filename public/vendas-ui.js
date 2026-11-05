@@ -414,7 +414,7 @@
         <div class="fg"><label class="fl">Escopo / necessidade do cliente</label><textarea class="fta" id="vpEscopo" style="min-height:160px;" placeholder="O que o cliente precisa, entregáveis, sistemas envolvidos, volume, prazos, restrições... (ou suba um documento / escolha um produto acima)"></textarea></div>
         <div id="vpCompl"></div>
         <button class="btn btn-or" id="vpBtnEstimar" onclick="VD.estimar()" style="width:100%;justify-content:center;">🤖 Estimar equipe e horas</button></div></div>
-      <div class="panel"><div class="ph"><div class="pt">② Equipe, horas e custo</div><div style="display:flex;gap:4px;"><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.equipeManual()" title="Traz todos os perfis do rate card com custo e preço; você preenche as horas">⬇ Perfis do rate card (${RC.length})</button><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.addPerfil()">+ perfil</button></div></div><div class="pb">
+      <div class="panel"><div class="ph"><div class="pt">② Equipe, horas e custo</div><div style="display:flex;gap:4px;"><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.equipeManual()" title="Traz todos os perfis do rate card com custo e preço; você preenche as horas">⬇ Perfis do rate card (${RC.length})</button><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.simAbrir()" title="Calcula o custo/hora a partir do salário CLT (encargos, 13º, férias, benefícios) ou do valor PJ">🧮 Simulador de custo/hora</button><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="VD.addPerfil()">+ perfil</button></div></div><div class="pb">
         <datalist id="vpPerfisDL">${RC.map(x => `<option value="${esc(x.perfil)}">`).join('')}</datalist>
         <div class="tw"><table style="min-width:520px;"><thead><tr><th>Perfil</th><th style="width:80px;">Horas</th><th style="width:90px;">Custo/h</th><th style="width:90px;">Preço/h</th><th style="width:26px;"></th></tr></thead><tbody id="vpPerfis"></tbody></table></div>
         <div id="vpEstInfo" style="font-size:10.5px;color:var(--t2);margin-top:8px;line-height:1.6;"></div>
@@ -442,9 +442,69 @@
   function renderPerfis() {
     const tb = $('vpPerfis'); if (!tb) return;
     tb.innerHTML = (PROP.dados.perfis || []).map((x, i) => `<tr data-just="${esc(x.justificativa || '')}"><td><input class="fi" data-c="perfil" list="vpPerfisDL" value="${esc(x.perfil)}" onchange="VD.perfilRC(this)" title="${esc(x.justificativa || '')}"/></td>
-      <td><input class="fi" data-c="horas" type="number" value="${x.horas || ''}"/></td><td><input class="fi" data-c="custo" value="${x.custo_hora ?? ''}" placeholder="RH"/></td><td><input class="fi" data-c="preco" value="${x.preco_hora ?? ''}" placeholder="rate card"/></td>
+      <td><input class="fi" data-c="horas" type="number" value="${x.horas || ''}"/></td><td><div style="display:flex;gap:3px;align-items:center;"><input class="fi" data-c="custo" value="${x.custo_hora ?? ''}" placeholder="RH"/><a href="javascript:void(0)" onclick="VD.simAbrir(${i})" title="Simular o custo/hora deste perfil (CLT ou PJ)" style="text-decoration:none;font-size:13px;">🧮</a></div></td><td><input class="fi" data-c="preco" value="${x.preco_hora ?? ''}" placeholder="rate card"/></td>
       <td><a href="javascript:void(0)" onclick="this.closest('tr').remove()" style="color:var(--red);">✕</a></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--t3);text-align:center;font-size:11px;">Estime com a IA ou adicione perfis do rate card.</td></tr>';
   }
+  // ═══ v3.388 · SIMULADOR DE CUSTO/HORA (CLT ou PJ) ═══
+  // CLT: (salário + 13º + férias com 1/3) × (1 + encargos) + provisão de rescisão + benefícios; horas = horas/mês × 11/12 (férias) × utilização.
+  // Lucro Presumido: INSS patronal 20% + RAT 2% + terceiros 5,8% + FGTS 8% (Simples: sem INSS patronal/terceiros — CPP no DAS).
+  const SIM_PAD = { regime: 'clt', salario: '', pj_mensal: '', pj_hora: '', vr: 900, saude: 450, outros: 0, inss: 20, rat: 2, terceiros: 5.8, fgts: 8, rescisao: 4, simples: false, horas_mes: 168, utilizacao: 85, pj_ferias: false };
+  let SIM = null;
+  const _n = v => { if (typeof v === 'number') return isFinite(v) ? v : 0; const t = String(v ?? '').trim(); return +(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t) || 0; };
+  function simCalc(x) {
+    const ut = Math.max(10, Math.min(100, _n(x.utilizacao) || 85)) / 100, hm = _n(x.horas_mes) || 168, ben = _n(x.vr) + _n(x.saude) + _n(x.outros);
+    if (x.regime === 'pj') { const mensal = _n(x.pj_mensal) || _n(x.pj_hora) * hm; const fer = x.pj_ferias ? 11 / 12 : 1; const horas = hm * fer * ut; const custo = mensal + ben;
+      return { mensal: custo, horas, hora: horas ? custo / horas : 0, linhas: [['Valor PJ mensal', mensal], ['Benefícios', ben], ['Custo mensal', custo]], horasTxt: `${hm} h × ${x.pj_ferias ? '11/12 (férias pagas) × ' : ''}${Math.round(ut * 100)}% utilização` }; }
+    const S = _n(x.salario), dec = S / 12, fer = S * (4 / 3) / 12, base = S + dec + fer;
+    const enc = (x.simples ? 0 : _n(x.inss) + _n(x.terceiros)) + _n(x.rat) + _n(x.fgts), encV = base * enc / 100, resc = S * _n(x.rescisao) / 100;
+    const custo = base + encV + resc + ben, horas = hm * (11 / 12) * ut;
+    return { mensal: custo, horas, hora: horas ? custo / horas : 0, enc, fator: S ? custo / S : 0,
+      linhas: [['Salário', S], ['13º salário (1/12)', dec], ['Férias + 1/3 (1/12)', fer], [`Encargos ${String(Math.round(enc * 10) / 10).replace('.', ',')}% (${x.simples ? 'Simples: RAT + FGTS' : 'INSS, RAT, terceiros, FGTS'})`, encV], ['Provisão de rescisão (multa FGTS e aviso)', resc], ['Benefícios (VR/VA, saúde, outros)', ben], ['Custo mensal total', custo]],
+      horasTxt: `${hm} h × 11/12 (férias) × ${Math.round(ut * 100)}% utilização` };
+  }
+  function simAbrir(i) {
+    lerForm(); const P = CFG?.params?.simulador || {}; SIM = { ...SIM_PAD, ...P, idx: i == null ? '' : i, perfil: i != null ? (PROP.dados.perfis[i]?.perfil || '') : '' };
+    let m = $('vpSimModal'); if (!m) { m = document.createElement('div'); m.id = 'vpSimModal'; document.body.appendChild(m); }
+    m.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px;';
+    m.onclick = e => { if (e.target === m) simFechar(); }; simRender();
+  }
+  function simFechar() { const m = $('vpSimModal'); if (m) m.remove(); }
+  function simSet(k, v) { SIM[k] = typeof SIM_PAD[k] === 'boolean' ? !!v : v; simRender(true); }
+  function simRender(soResultado) {
+    const m = $('vpSimModal'); if (!m) return; const r = simCalc(SIM), clt = SIM.regime !== 'pj';
+    const res = `<div style="display:grid;grid-template-columns:1fr auto;gap:2px 14px;font-size:11.5px;">${r.linhas.map(([a, v], k) => `<span style="${k === r.linhas.length - 1 ? 'font-weight:700;border-top:1px solid var(--bd);padding-top:4px;' : 'color:var(--t2);'}">${esc(a)}</span><span style="text-align:right;font-family:var(--M);${k === r.linhas.length - 1 ? 'font-weight:700;border-top:1px solid var(--bd);padding-top:4px;' : ''}">${R(v)}</span>`).join('')}</div>
+      <div style="font-size:10.5px;color:var(--t2);margin-top:8px;">Horas produtivas: <b>${N(Math.round(r.horas * 10) / 10)} h/mês</b> (${esc(r.horasTxt)})${clt && r.fator ? ` · custo total = <b>${N(Math.round(r.fator * 100) / 100)}×</b> o salário` : ''}</div>
+      <div style="margin-top:10px;padding:12px;border-radius:10px;background:var(--bg4);border:1px solid var(--bd);display:flex;align-items:baseline;justify-content:space-between;"><span style="font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;">Custo por hora</span><b style="font-family:var(--H);font-size:26px;color:var(--blue);">R$ ${(Math.round(r.hora * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b></div>`;
+    if (soResultado && $('vpSimRes')) { $('vpSimRes').innerHTML = res; return; }
+    const inp = (k, rot, dica, w) => `<label style="font-size:10.5px;color:var(--t2);">${rot}<input class="fi" value="${esc(SIM[k])}" oninput="VD.simSet('${k}',this.value)" title="${esc(dica || '')}" style="${w ? 'width:' + w : ''}"/></label>`;
+    const perfis = (PROP.dados.perfis || []).map((x, i) => `<option value="${i}"${String(SIM.idx) === String(i) ? ' selected' : ''}>${esc(x.perfil || 'perfil ' + (i + 1))}</option>`).join('');
+    m.innerHTML = `<div style="background:var(--bg2,var(--bg));border:1px solid var(--bd);border-radius:14px;max-width:760px;width:100%;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><b style="font-size:14px;">🧮 Simulador de custo/hora</b><span style="font-size:10.5px;color:var(--t2);">CLT com encargos e provisões, ou PJ</span><a href="javascript:void(0)" onclick="VD.simFechar()" style="margin-left:auto;color:var(--t2);font-size:16px;text-decoration:none;">✕</a></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <div style="display:flex;gap:6px;">${[['clt', 'CLT'], ['pj', 'PJ']].map(([k, v]) => `<button class="btn ${SIM.regime === k ? 'btn-p' : 'btn-g'}" style="font-size:10.5px;flex:1;justify-content:center;" onclick="VD.simSet('regime','${k}');VD.simRender()">${v}</button>`).join('')}</div>
+          ${clt ? inp('salario', 'Salário bruto mensal (R$)', 'Salário em carteira') : inp('pj_mensal', 'Valor PJ mensal (R$)', 'Valor da nota mensal do PJ') + inp('pj_hora', '… ou valor PJ por hora (R$)', 'Usado se o mensal estiver vazio')}
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">${inp('vr', 'VR/VA (R$/mês)')}${inp('saude', 'Plano de saúde (R$/mês)')}${inp('outros', 'Outros (R$/mês)', 'Auxílio home office, seguro de vida, treinamento…')}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">${inp('horas_mes', 'Horas por mês', '168 = 8 h × 21 dias')}${inp('utilizacao', 'Utilização faturável (%)', 'Parte das horas efetivamente alocadas em projeto (reuniões internas, bancada…)')}</div>
+          ${clt ? `<details><summary style="cursor:pointer;font-size:10.5px;color:var(--t2);">Encargos (Lucro Presumido) — editar</summary><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:6px;">${inp('inss', 'INSS %')}${inp('rat', 'RAT %')}${inp('terceiros', 'Terceiros %')}${inp('fgts', 'FGTS %')}${inp('rescisao', 'Rescisão %', 'Provisão: multa de 40% do FGTS e aviso prévio')}</div>
+            <label style="font-size:10.5px;display:flex;gap:5px;align-items:center;margin-top:6px;"><input type="checkbox" ${SIM.simples ? 'checked' : ''} onchange="VD.simSet('simples',this.checked)"/> Empresa no Simples (sem INSS patronal e terceiros)</label></details>`
+          : `<label style="font-size:10.5px;display:flex;gap:5px;align-items:center;"><input type="checkbox" ${SIM.pj_ferias ? 'checked' : ''} onchange="VD.simSet('pj_ferias',this.checked)"/> PJ com 30 dias de descanso remunerado no ano</label>`}
+        </div>
+        <div id="vpSimRes">${res}</div></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--bd);padding-top:10px;">
+        <span style="font-size:10.5px;color:var(--t2);">Aplicar em</span><select class="fsel" id="vpSimPerfil" style="width:auto;font-size:10.5px;"><option value="">— escolha o perfil —</option>${perfis}</select>
+        <label style="font-size:10.5px;display:flex;gap:4px;align-items:center;"><input type="checkbox" id="vpSimRC" checked/> atualizar também no rate card</label>
+        <button class="btn btn-g" style="font-size:10.5px;margin-left:auto;" onclick="VD.simPadrao()" title="Guarda benefícios, horas, utilização e encargos como padrão do simulador">Salvar premissas como padrão</button>
+        <button class="btn btn-p" style="font-size:10.5px;" onclick="VD.simAplicar()">Aplicar custo/hora</button></div></div>`;
+  }
+  async function simAplicar() {
+    const r = simCalc(SIM), v = Math.round(r.hora * 100) / 100, i = $('vpSimPerfil')?.value; if (!(v > 0)) return nota('Preencha o salário ou o valor PJ', 'error'); if (i === '' || i == null) return nota('Escolha o perfil', 'error');
+    const p = PROP.dados.perfis[+i]; p.custo_hora = v; renderPerfis();
+    if ($('vpSimRC')?.checked && p.perfil) { const k = RC.findIndex(x => x.perfil.toLowerCase() === p.perfil.toLowerCase()); const novo = { ...(k >= 0 ? RC[k] : { perfil: p.perfil }), custo_hora: v, custo_fonte: 'simulador ' + (SIM.regime === 'pj' ? 'PJ' : 'CLT') };
+      const L = [...RC]; if (k >= 0) L[k] = novo; else L.push(novo); try { RC = (await api('rate_card_salvar', { rate_card: L })).rate_card || L; } catch (e) { nota('Custo aplicado na proposta, mas o rate card não foi salvo: ' + e.message, 'error'); } }
+    simFechar(); nota(`Custo/hora de ${p.perfil || 'perfil'}: R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${PROP.analise ? ' — clique em Analisar de novo para atualizar os preços' : ''}`);
+  }
+  async function simPadrao() { const { regime, salario, pj_mensal, pj_hora, idx, perfil, ...pad } = SIM; try { CFG = await api('prop_config_salvar', { params: { ...(CFG?.params || {}), simulador: pad } }); nota('Premissas do simulador salvas como padrão'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
   function addPerfil() { lerForm(); PROP.dados.perfis.push({ perfil: '', horas: 0 }); renderPerfis(); }
   function perfilRC(inp) { const c = RC.find(x => x.perfil.toLowerCase() === inp.value.toLowerCase()); if (!c) return; const tr = inp.closest('tr'); const s = (k, v) => { const e = tr.querySelector(`[data-c="${k}"]`); if (e && !e.value && v != null) e.value = v; }; s('custo', c.custo_hora); s('preco', c.preco_alvo); }
   // v3.367 · o que a tela precisa para funcionar: IA ligada, rate card e propostas de referência
@@ -1360,5 +1420,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo, simAbrir, simFechar, simSet, simRender, simAplicar, simPadrao };
 })();
