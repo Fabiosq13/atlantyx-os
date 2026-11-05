@@ -762,6 +762,20 @@ async function patrocinadoPeriodo({ id, inicio, fim, orcamento_diario } = {}) {
   await _kvMc('mkt:patrocinados', lista);
   return { ok: true, campanha: reg, aviso: avisoInicio };
 }
+// v3.397: DUPLICAR uma campanha paga com o público B2B nacional do ICP (cargo de decisor · capitais · 35–60), copiando o
+// criativo dela ou de outra (copy que converteu melhor). Sai PAUSADA, como toda campanha criada pelo sistema; sem geolocalização.
+async function patrocinadoDuplicar({ id, copy_de, orcamento_diario, dias = 14, nome } = {}, req) {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
+  if (reg.rede === 'linkedin') throw Object.assign(new Error('Duplicar vale para campanhas do Meta (Instagram/Facebook)'), { status: 400 });
+  const copia = copy_de ? (lista.find(x => String(x.id) === String(copy_de)) || reg) : reg;
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()); const n = Math.max(3, Math.min(60, parseInt(dias) || 14));
+  const fim = new Date(Date.now() + (n - 1) * 864e5).toISOString().slice(0, 10);
+  const p = { nome: String(nome || (reg.nome.replace(/\s*·\s*B2B nacional.*$/i, '') + ' · B2B nacional · ' + hoje)).substring(0, 80), texto: copia.texto, titulo: copia.titulo, descricao: copia.descricao, imagem: copia.imagem || reg.imagem,
+    orcamento_diario: orcamento_diario || reg.orcamento_diario || 30, inicio: hoje, fim, meta_leads: reg.meta_leads, idade_min: 35, idade_max: 60, ...(reg.trilha ? { trilha: reg.trilha } : {}), ...(reg.arte ? { arte: reg.arte } : {}) };
+  const r = await patrocinadoCriar(p, req);
+  if (r.modo === 'kit') return { ...r, aviso: 'Meta não configurado — o kit foi montado, mas a campanha não foi criada' };
+  return { ...r, origem: reg.nome, copy_de: copia.nome, publico: 'B2B nacional (cargo de decisor · capitais · 35–60 anos)', estado: 'PAUSED', aviso: 'Criada PAUSADA: revise e ative na aba Resultados e leads' };
+}
 async function patrocinadoEstado({ id, estado } = {}) {
   if (!['ACTIVE', 'PAUSED'].includes(estado)) throw Object.assign(new Error('Estado inválido'), { status: 400 });
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw new Error('Campanha não encontrada');
@@ -2054,6 +2068,7 @@ async function handler(req, res) {
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
     geo_local_resolver:     () => geoLocalResolver(payload), // v3.316: confere o local da campanha geolocalizada (não cria nada)
     patrocinado_estado:     () => patrocinadoEstado(payload),
+    patrocinado_duplicar:   () => patrocinadoDuplicar(payload, req), // v3.397
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_meta:       () => patrocinadoMeta(payload), // v3.332
     patrocinado_alinhar_texto: () => patrocinadoAlinharTexto(payload), // v3.337

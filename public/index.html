@@ -26357,6 +26357,7 @@ async function patListar() {
         + '<span class="tag ' + ps.cls + '"' + (c.estado_erro ? ' title="' + _patE(c.estado_erro) + '"' : '') + '>' + _patE(ps.rot) + '</span>'
         + (at ? '<button class="btn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'PAUSED\')">⏸ Pausar</button>' : '<button class="btn btn-gn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'ACTIVE\',' + Number(c.total_maximo || 0) + ')">▶ Ativar</button>')
         + '<button class="btn" style="font-size:10px;" onclick="patPeriodo(\'' + c.id + '\')" title="Alterar início, fim e R$/dia no Meta">📅 Período</button>' // v3.193
+        + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10px;" onclick="patDuplicar(\'' + c.id + '\')" title="Cria uma cópia PAUSADA com o público B2B nacional do ICP (cargo de decisor, capitais, 35–60) — pode copiar o texto de outro anúncio">⧉ Duplicar p/ B2B nacional</button>' : '') // v3.397
         + (c.rede !== 'linkedin' ? '<button class="btn" style="font-size:10px;" onclick="patConferir(\'' + c.id + '\')" title="Confere no Meta se campanha, conjunto e anúncio existem, o status de cada um e abre a pré-visualização">🔎 Conferir no Meta</button>' : '') // v3.318
         + '<a class="btn" style="font-size:10px;text-decoration:none;" href="' + _patE(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a></div>'; }).join('');
     window._patLista = l;
@@ -26407,6 +26408,26 @@ async function patPeriodoSalvar(id) {
     alert('✅ Período atualizado no Meta: ' + d.campanha.inicio.split('-').reverse().join('/') + ' a ' + d.campanha.fim.split('-').reverse().join('/') + ' · ' + fmtBRLcompleto(d.campanha.orcamento_diario) + '/dia · máx. ' + fmtBRLcompleto(d.campanha.total_maximo) + (d.aviso ? '\n\n' + d.aviso : ''));
     patListar();
   } catch (e) { alert('Não alterou: ' + e.message); if (b) { b.disabled = false; b.textContent = 'Salvar no Meta'; } }
+}
+// v3.397: duplica com público B2B nacional; escolhe de qual anúncio copiar o texto (ex.: o copy de "perda" que converteu melhor)
+async function patDuplicar(id) {
+  let L = []; try { L = (await mcApi('patrocinado_listar')).campanhas || []; } catch (_) {}
+  const reg = L.find(x => String(x.id) === String(id)); if (!reg) return toast('Campanha não encontrada', 'error');
+  const E = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  let m = document.getElementById('patDupModal'); if (!m) { m = document.createElement('div'); m.id = 'patDupModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;align-items:center;justify-content:center;padding:20px;'; document.body.appendChild(m); }
+  m.style.display = 'flex';
+  m.innerHTML = '<div class="panel" style="width:560px;max-width:96vw;margin:0;"><div class="ph"><div class="pt">⧉ Duplicar "' + E(reg.nome) + '" para público B2B nacional</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'patDupModal\').style.display=\'none\'">✕</button></div><div class="pb" style="font-size:12px;line-height:1.6;">'
+    + '<div style="color:var(--t2);margin-bottom:10px;">Público: <b>quem ocupa cargo de decisor</b> (dono, sócio, C-level, diretor) · capitais de negócio · 35 a 60 anos · Instagram. Sem geolocalização de evento. A cópia nasce <b>PAUSADA</b>.</div>'
+    + '<label class="fl">Texto e título do anúncio</label><select class="fsel" id="patDupCopy">' + L.filter(x => x.rede !== 'linkedin' && x.texto).map(x => '<option value="' + E(x.id) + '"' + (String(x.id) === String(id) ? ' selected' : '') + '>' + E(x.nome) + (x.funil?.leads ? ' · ' + x.funil.leads + ' lead(s)' : '') + (x.resultado?.gasto != null ? ' · R$ ' + Number(x.resultado.gasto).toFixed(0) : '') + '</option>').join('') + '</select>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><div><label class="fl">Orçamento (R$/dia)</label><input class="fi" id="patDupDia" value="' + E(reg.orcamento_diario || 30) + '"></div><div><label class="fl">Duração (dias)</label><input class="fi" id="patDupDias" value="14"></div></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="document.getElementById(\'patDupModal\').style.display=\'none\'">Cancelar</button><button class="btn btn-gn" id="patDupBtn" onclick="patDuplicarOk(\'' + E(id) + '\')">⧉ Criar cópia pausada</button></div></div></div>';
+}
+async function patDuplicarOk(id) {
+  const b = document.getElementById('patDupBtn'); b.disabled = true; b.textContent = '⏳ Criando no Meta…';
+  try { const d = await mcApi('patrocinado_duplicar', { id, copy_de: document.getElementById('patDupCopy').value, orcamento_diario: document.getElementById('patDupDia').value, dias: document.getElementById('patDupDias').value });
+    document.getElementById('patDupModal').style.display = 'none';
+    alert((d.aviso || 'Cópia criada') + '\n\nTexto copiado de: ' + (d.copy_de || '—') + '\nPúblico: ' + (d.publico || '—')); addLog('ok', '[Patrocinado] duplicada ' + id); patListar(); }
+  catch (e) { alert('Não criou: ' + e.message); b.disabled = false; b.textContent = '⧉ Criar cópia pausada'; }
 }
 async function patEstado(id, estado, total) {
   if (estado === 'ACTIVE' && !confirm('Ativar a campanha patrocinada?\n\nA partir de agora o Meta passa a cobrar — até ' + fmtBRLcompleto(total || 0) + ' no período configurado.')) return;
@@ -36313,7 +36334,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.396] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.397] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36329,7 +36350,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.396';
+window.__ATX_BUILD_ID__ = 'ATX-v3.397';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
