@@ -1963,7 +1963,17 @@ async function handler(req, res) {
         if (!leads?.processados) { // v3.234/v3.235: guardiões do ICP (anúncios de hora em hora; conteúdo: 1 item por minuto livre)
           try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; }
           if (icp?.pulado && Date.now() - t0 < 15000) { try { icpConteudo = await _icpConteudoGuardiao(); } catch (e) { icpConteudo = { erro: e.message }; } } } }
-      return res.status(200).json({ success: true, passos: out, leads, icp, icp_conteudo: icpConteudo }); }
+      // v3.393: guardião dos agendados — 1x por hora, quando ocioso: posts sem link ganham a chamada com o link da captura e
+      // imagens que vão expirar (Ideogram) viram URL permanente. Antes só rodava pelo botão da tela e os posts saíam sem link.
+      let agendados = null;
+      if (out[0].ocioso && Date.now() - t0 < 20000) { try { const sql = await getSql(); const k = 'mkt:guardiao_agendados';
+          const r = (await sql`SELECT updated_at FROM kv_store WHERE key = ${k}`)[0]; const ha = r ? Date.now() - new Date(r.updated_at).getTime() : Infinity;
+          if (ha > 60 * 60000) { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, '{}', NOW()) ON CONFLICT (key) DO UPDATE SET updated_at = NOW()`;
+            const links = await trocarLinkAgendados({ aplicar: true, adicionar: true, dias: 30 }, req).catch(e => ({ erro: e.message }));
+            const imgs = await corrigirImagensAgendadas({ dias: 30, aplicar: true }).catch(e => ({ erro: e.message }));
+            agendados = { links: { feitos: links.feitos?.length ?? links.erro, falhas: links.falhas?.length }, imagens: { corrigidos: imgs.corrigidos ?? imgs.erro, afetados: imgs.afetados?.length } };
+            await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify({ em: new Date().toISOString(), ...agendados })}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } } catch (e) { agendados = { erro: e.message }; } }
+      return res.status(200).json({ success: true, passos: out, leads, icp, icp_conteudo: icpConteudo, agendados }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   res.setHeader('Access-Control-Allow-Origin', '*');

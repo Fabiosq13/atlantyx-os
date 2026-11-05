@@ -223,8 +223,15 @@ async function handler(req, res) {
 async function _podeWhats(lead, leadId) {
   if (!lead.phone) return { ok: false, motivo: 'sem telefone' };
   // v3.234: abordagem AUTOMÁTICA só para o ICP — A, ou B com cargo de decisor e e-mail corporativo. O resto o time avalia.
-  if (lead.score_label === 'C' || lead.icp_cargo === 'fora') return { ok: false, motivo: 'fora do ICP (score ' + (lead.score_label || '?') + ') — avaliação humana' };
-  if (lead.score_label !== 'A' && !(lead.score_label === 'B' && lead.icp_cargo === 'decisor' && !lead.email_pessoal)) return { ok: false, motivo: 'score ' + lead.score_label + ' sem cargo de decisor confirmado — avaliação humana' };
+  // v3.393: o formulário público pede só nome, empresa e WhatsApp (sem cargo) — o lead NUNCA vira "decisor" e a 1ª mensagem
+  // (entrega do Mapa de Oportunidades prometido) não saía para ninguém. Com consentimento, o que foi prometido é entregue;
+  // a trava do ICP só vale quando o cargo foi informado (ou a empresa é pequena).
+  const semCargo = !(lead.job_title && String(lead.job_title).trim()), publico = lead.form_name === 'captura-publica' && lead.consentimento?.aceito;
+  if (lead.icp_cargo === 'fora' || ['ate_50', '51_200'].includes(lead.porte)) return { ok: false, motivo: 'fora do ICP (' + (lead.icp_cargo === 'fora' ? 'cargo técnico/operacional' : 'empresa pequena') + ') — avaliação humana' };
+  if (!(publico && semCargo)) {
+    if (lead.score_label === 'C') return { ok: false, motivo: 'fora do ICP (score C) — avaliação humana' };
+    if (lead.score_label !== 'A' && !(lead.score_label === 'B' && lead.icp_cargo === 'decisor' && !lead.email_pessoal)) return { ok: false, motivo: 'score ' + lead.score_label + ' sem cargo de decisor confirmado — avaliação humana' };
+  }
   if (lead.form_name === 'captura-publica' || lead.exige_consentimento) {
     const c = lead.consentimento;
     if (!c || !c.aceito || (Array.isArray(c.canais) && c.canais.length && !c.canais.includes('whatsapp'))) return { ok: false, motivo: 'sem consentimento para WhatsApp' };
@@ -440,12 +447,16 @@ REGRAS:
 - NUNCA mencionar que é IA ou sistema automatizado
 - NUNCA começar com "Olá, meu nome é..."`;
 
+  // v3.393: lead do formulário público pediu o "Mapa de Oportunidades com IA" — a 1ª mensagem ENTREGA o que foi prometido
+  // e faz UMA pergunta de qualificação (cargo/área), que é o dado que falta para o score.
+  const isca = lead.form_name === 'captura-publica' || lead.oferta === 'mapa_ia';
   const userPrompt = `Crie a mensagem de primeiro contato:
 Nome: ${lead.name}
 Empresa: ${lead.company || 'a empresa'}
-Cargo: ${lead.job_title || 'Gestor'}
+Cargo: ${lead.job_title || (isca ? 'não informado' : 'Gestor')}
 Veio de: ${lead.source}
 Score ICP: ${lead.score_label}
+${isca ? `CONTEXTO: a pessoa acabou de pedir no site o "Mapa de Oportunidades com IA" (diagnóstico gratuito de onde dados e IA geram ganho na empresa dela). A mensagem deve: agradecer o pedido em 1 linha; dizer que o mapa é montado sob medida e que você precisa de 2 informações para isso; e terminar perguntando qual é a área/cargo dela na ${lead.company || 'empresa'} e qual processo mais dói hoje (vendas, financeiro, operação, dados). Não ofereça reunião nesta mensagem.` : ''}
 
 Retorne APENAS a mensagem, sem aspas ou explicações.`;
 

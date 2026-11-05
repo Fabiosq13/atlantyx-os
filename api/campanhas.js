@@ -50,14 +50,17 @@ async function dealsHubSpot(ids) {
 async function coletar(C) {
   const sql = await getSql(), utms = [...new Set(C.flatMap(c => [c.utm, ...(c.acoes || []).flatMap(chavesAcao)]).filter(Boolean))];
   const refsDisp = [...new Set(C.flatMap(c => (c.acoes || []).filter(a => ['email', 'whatsapp', 'digital'].includes(a.tipo) && a.ref?.id).map(a => String(a.ref.id))))];
-  if (!utms.length) return { leads: [], visitas: [], disparos: {} };
+  if (!utms.length) return { leads: [], visitas: [], disparos: {}, anuncios: {} };
   const L = await tabela(sql, s => s`SELECT id, campanha, utm, status, reuniao_marcada_em, hubspot_deal, criado_em FROM leads WHERE campanha = ANY(${utms}) AND COALESCE(status,'') <> 'qa_teste' ORDER BY criado_em DESC LIMIT 5000`);
   const V = await tabela(sql, s => s`SELECT campanha, conteudo, COUNT(*)::int AS n FROM captura_visitas WHERE campanha = ANY(${utms}) GROUP BY campanha, conteudo`);
   const Dp = refsDisp.length ? await tabela(sql, s => s`SELECT campanha_id, COUNT(*) FILTER (WHERE status='enviado' OR enviado_em IS NOT NULL)::int AS enviados, COUNT(aberto_em)::int AS aberturas, COUNT(clicado_em)::int AS cliques FROM disparo_envios WHERE campanha_id = ANY(${refsDisp}) GROUP BY campanha_id`) : [];
   const deals = await dealsHubSpot(L.map(l => l.hubspot_deal)).catch(() => ({}));
+  // v3.393: números do Meta/LinkedIn dos anúncios ligados (gasto, impressões, cliques) — lidos do registro do patrocinado
+  const anuncios = {}; try { const refsAn = C.flatMap(c => (c.acoes || []).filter(a => a.tipo === 'anuncio' && a.ref?.id)); if (refsAn.length) { const pat = (await kv('mkt:patrocinados')) || [];
+    for (const a of refsAn) { const r = pat.find(x => String(x.id) === String(a.ref.meta_id || a.ref.id) || (() => { try { return new URL(x.link).searchParams.get('utm_campaign') === String(a.ref.id); } catch (_) { return false; } })()); if (r?.resultado) anuncios[String(a.ref.id)] = { gasto: Number(r.resultado.gasto) || 0, impressoes: Number(r.resultado.impressoes) || 0, cliques: Number(r.resultado.cliques_link) || 0, estado: r.estado_meta || r.estado }; } } } catch (_) {}
   const leads = L.map(l => { let u = l.utm; try { if (typeof u === 'string') u = JSON.parse(u); } catch (_) { u = {}; } const d = l.hubspot_deal ? deals[String(l.hubspot_deal)] : null;
     return { id: l.id, campanha: l.campanha, conteudo: (u || {}).content || null, criado_em: l.criado_em, reuniao: !!(l.reuniao_marcada_em || l.status === 'reuniao_marcada' || d), proposta: !!d?.proposta, ganho: !!d?.ganho, valor: d?.ganho ? d.valor : 0 }; });
-  return { leads, visitas: V, disparos: Object.fromEntries(Dp.map(d => [d.campanha_id, { enviados: d.enviados, aberturas: d.aberturas, cliques: d.cliques }])) };
+  return { leads, visitas: V, disparos: Object.fromEntries(Dp.map(d => [d.campanha_id, { enviados: d.enviados, aberturas: d.aberturas, cliques: d.cliques }])), anuncios };
 }
 
 // ── opções para ligar ações e plano ──
@@ -100,7 +103,7 @@ async function acaoSalvar(b) {
   const x = b.acao || {}; if (!TIPOS[x.tipo]) throw new Error('Escolha o tipo da ação');
   const nome = txt(x.nome, 90); if (!nome) throw new Error('Dê um nome à ação');
   const atual = x.id ? c.acoes.find(a => a.id === x.id) : null; if (x.id && !atual) throw new Error('Ação não encontrada');
-  const ref = x.ref?.id ? { kind: txt(x.ref.kind, 20) || x.tipo, id: txt(x.ref.id, 80), nome: txt(x.ref.nome, 120) } : null;
+  const ref = x.ref?.id ? { kind: txt(x.ref.kind, 20) || x.tipo, id: txt(x.ref.id, 80), nome: txt(x.ref.nome, 120), ...(x.ref.meta_id ? { meta_id: txt(x.ref.meta_id, 80) } : {}) } : null;
   if (ref && c.acoes.some(a => a.id !== x.id && a.ref?.id === ref.id && a.tipo === x.tipo)) throw new Error('Esse item já está ligado a outra ação desta campanha');
   if (ref && L.some(z => z.id !== c.id && (z.acoes || []).some(a => a.ref?.id === ref.id && a.tipo === x.tipo))) throw new Error('Esse item já pertence a outra campanha — cada ação conta em uma campanha só');
   const m = x.manual || {};
@@ -120,9 +123,13 @@ async function detalhe(b, req) {
 async function digitaisSoltas(L) {
   try { const sql = await getSql();
     const dig = await tabela(sql, s => s`SELECT id, nome, canal, status, ativa, data_inicio, data_fim, COALESCE(data->>'origem', data->>'fonte', '') AS origem, COALESCE(data->>'tipo', '') AS tipo FROM campanhas ORDER BY atualizado_em DESC NULLS LAST LIMIT 80`);
-    const usados = new Set(L.flatMap(c => (c.acoes || []).map(a => String(a.ref?.id || '')).filter(Boolean)));
-    return dig.filter(x => !usados.has(String(x.id))).map(x => ({ id: x.id, nome: x.nome, canal: x.canal, status: x.status || (x.ativa ? 'ativa' : ''), data_inicio: x.data_inicio ? String(x.data_inicio).slice(0, 10) : null, data_fim: x.data_fim ? String(x.data_fim).slice(0, 10) : null,
-      origem: /auto/i.test(x.origem + ' ' + x.tipo + ' ' + x.id) ? 'Autocampanha' : x.origem || null, tipo_acao: /anunc|ads|patroc|meta|google/i.test(String(x.canal || '') + ' ' + String(x.origem || '') + ' ' + String(x.tipo || '')) ? 'anuncio' : 'digital' }));
+    const usados = new Set(L.flatMap(c => (c.acoes || []).flatMap(a => [String(a.ref?.id || ''), String(a.ref?.meta_id || '')]).filter(Boolean)));
+    // v3.393: anúncios pagos criados pelo sistema (Meta / LinkedIn — kv mkt:patrocinados); a chave de atribuição é a utm_campaign do link
+    const pat = ((await kv('mkt:patrocinados')) || []).filter(r => !['DELETED', 'ARCHIVED'].includes(String(r.estado_meta || r.estado || '').toUpperCase())).map(r => { let slug = null; try { slug = new URL(r.link).searchParams.get('utm_campaign'); } catch (_) {}
+      return { id: slug || String(r.id), meta_id: String(r.id), nome: r.nome, canal: (r.rede || 'instagram') + ' · anúncio pago', status: String(r.estado_meta || r.estado || '').toLowerCase() || 'pausada', data_inicio: r.inicio || (r.criado_em || '').slice(0, 10) || null, data_fim: r.fim || null, origem: 'Autocampanha · patrocinado', tipo_acao: 'anuncio', gasto: r.resultado?.gasto }; })
+      .filter(x => !usados.has(x.id) && !usados.has(x.meta_id));
+    return [...pat, ...dig.filter(x => !usados.has(String(x.id))).map(x => ({ id: x.id, nome: x.nome, canal: x.canal, status: x.status || (x.ativa ? 'ativa' : ''), data_inicio: x.data_inicio ? String(x.data_inicio).slice(0, 10) : null, data_fim: x.data_fim ? String(x.data_fim).slice(0, 10) : null,
+      origem: /auto/i.test(x.origem + ' ' + x.tipo + ' ' + x.id) ? 'Autocampanha' : x.origem || null, tipo_acao: /anunc|ads|patroc|meta|google/i.test(String(x.canal || '') + ' ' + String(x.origem || '') + ' ' + String(x.tipo || '')) ? 'anuncio' : 'digital' }))];
   } catch (e) { return []; }
 }
 async function inicio() {
