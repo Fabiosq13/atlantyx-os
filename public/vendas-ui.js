@@ -608,6 +608,10 @@
   const _redMsg = (h, cor) => { const e = $('vpRedStatus'); if (e) e.innerHTML = h ? `<div style="margin:0 0 10px;padding:9px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--bg4);font-size:11px;color:${cor || 'var(--t1)'};">${h}</div>` : ''; };
   async function _redigirPartes(chavesAlvo, btn0) {
     if (_redRodando) { nota('A redação já está em andamento — aguarde', 'error'); return ['em andamento']; } _redRodando = true;
+    // v3.389: antes de começar, confere se a IA responde (chave válida, com crédito e ligada) — senão para já com o motivo
+    _redMsg('🔎 Conferindo se a IA está respondendo…');
+    try { const t = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_teste' }) }).then(r => r.json());
+      if (t && t.success && t.ok === false) { _redRodando = false; _redMsg(`⛔ A redação não começou: ${esc(t.msg || 'a IA não está respondendo')}${t.motivo === 'desligada' && typeof window.iaChave === 'function' ? ' <a href="javascript:void(0)" onclick="iaChave()">Ligar IA</a>' : ''}`, 'var(--red)'); nota('IA indisponível: ' + (t.msg || ''), 'error'); return ['IA indisponível: ' + (t.msg || '')]; } } catch (_) {}
     const btn = { set innerHTML(h) { _redMsg(h); if (btn0 && document.body.contains(btn0)) btn0.innerHTML = h; }, get innerHTML() { return ''; } };
     const partes = RED_PARTES.map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = [];
     const prog = () => { btn.innerHTML = `✍ Redigindo com a IA: parte ${Math.min(feitas + 1, partes.length)} de ${partes.length} (${partes[Math.min(feitas, partes.length - 1)].join(', ')})… cada parte leva até 1,5 min`; }; prog();
@@ -632,7 +636,7 @@
           if (r.matriz_responsabilidades?.length) D.matriz_responsabilidades = r.matriz_responsabilidades; return; }
         catch (e) { const lim = /\[(429|529)\]|rate|overloaded|limit/i.test(e.message); if (t === 2) { erros.push(p.join(', ') + ': ' + e.message); break; }
           await espera(lim ? 45 : 5, lim ? 'Limite de uso da IA atingido, aguardando para continuar' : 'Tentando de novo'); prog(); } } };
-    const fila = [...partes]; await Promise.all([0].map(async () => { while (fila.length) { const p = fila.shift(); await roda(p); feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }));
+    const fila = [...partes]; await Promise.all([0].map(async () => { while (fila.length) { if (erros.length >= 2 && feitas === erros.length) { erros.push('interrompido: as primeiras partes falharam com erro da IA'); break; } const p = fila.shift(); await roda(p); feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }));
     _redRodando = false; D._erros = erros; renderDoc();
     const falta = _vazios(); _redMsg(falta.length ? `⚠ ${falta.length} capítulo(s) continuam em branco (${falta.join(', ')}).${erros.length ? ' Erro da IA: ' + esc(erros[0]) : ''}` : '✅ Todos os capítulos foram redigidos — revise o texto abaixo e salve a proposta.', falta.length ? 'var(--red)' : 'var(--green)');
     return erros;

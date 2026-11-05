@@ -31,3 +31,4 @@
 - 2026-11-04 · feito (v3.385) · botão ✍ Redigir proposta sempre visível na barra de ações (faz a análise de formatos se faltar)
 - 2026-11-04 · feito (v3.386) · POC: capítulo Rate Card sem valores (só perfis e horas, nota de que os valores vêm na proposta do projeto) e IA instruída a não citar valores por hora
 - 2026-11-05 · feito (v3.388) · Simulador de custo/hora na proposta (CLT: salário + 13º + férias 1/3 + encargos LP 35,8% + provisão de rescisão + benefícios, horas × 11/12 × utilização; PJ: valor mensal/hora + benefícios), aplica no perfil e no rate card, premissas salvas como padrão
+- 2026-11-05 · feito (v3.389) · redação confere a IA antes de começar (chave, crédito, ligada) e mostra o motivo na faixa; interrompe se as primeiras partes falharem em sequência
