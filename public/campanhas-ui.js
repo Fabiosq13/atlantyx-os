@@ -131,7 +131,7 @@
       leads_sem_acao: r.sem_acao, link_captura: det.link_geral?.captura, ajustes_manuais: c.ajustes };
   }
   function gmLog(k) { return (GM[k] || []).map(m => m.role === 'user' ? `<div style="align-self:flex-end;max-width:85%;background:rgba(79,124,255,.16);border-radius:10px 10px 2px 10px;padding:8px 11px;font-size:11.5px;">${esc(m.content)}</div>`
-      : `<div style="align-self:flex-start;max-width:96%;background:var(--bg3);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:12px;line-height:1.65;">${m.pensando ? '⏳ ' + esc(m.content) : md(String(m.content).replace(/\n{2,}/g, '\n').trim())}</div>`).join(''); }
+      : `<div style="align-self:flex-start;max-width:96%;background:var(--bg3);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:12px;line-height:1.65;" data-ia="${m.pensando ? '' : '1'}">${m.pensando ? '⏳ ' + esc(m.content) : (window.ATX_IA ? '<div class="ia-txt">' + ATX_IA.md(m.content) + '</div>' : md(String(m.content).replace(/\n{2,}/g, '\n').trim()))}</div>`).join(''); }
   function gerenteHtml(k) {
     const id = k.replace(/[^\w]/g, '_');
     return card('🤖 Gerente de Marketing IA <span style="font-weight:400;color:var(--t3);font-size:11px;">— diagnóstico de conversão com os números desta tela, das publicações, do Metricool e dos leads</span>',
@@ -148,9 +148,11 @@
       const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 118000);
       const r = await fetch('/api/db', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify({ action: 'gerente_marketing', value: { mensagem: msg, historico: hist, contexto_tela: gmContexto(k) } }) }).finally(() => clearTimeout(tm));
       const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'O servidor demorou demais (HTTP 504). Tente de novo — a 2ª vez costuma ser mais rápida porque a auditoria do Metricool fica em cache.' : 'HTTP ' + r.status })); if (!d.success) throw new Error(d.error || 'falha');
-      H[H.length - 1] = { role: 'assistant', content: d.resposta || '(sem resposta)' }; }
+      H[H.length - 1] = { role: 'assistant', content: d.resposta || '(sem resposta)', fluir: true }; }
     catch (e) { H[H.length - 1] = { role: 'assistant', content: '⛔ ' + e.message }; }
     if (btn) btn.disabled = false; rr();
+    // v3.399: a resposta nova aparece aos poucos (fluidez), como no Claude
+    try { const ult = H[H.length - 1]; const b = $('gmLog_' + id); const el = b && b.lastElementChild && b.lastElementChild.querySelector('.ia-txt'); if (ult?.fluir && el && window.ATX_IA) { delete ult.fluir; ATX_IA.fluir(el, ult.content); } } catch (_) {}
   }
   function gmLimpar(k) { GM[k] = []; if (k === 'desempenho') return gmMontar('desempenho', 'despGerente'); if (view === 'detalhe') rDetalhe(); else rLista(); }
   // v3.392: monta o gerente num container de outra tela (Dashboard de Desempenho)

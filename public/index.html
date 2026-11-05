@@ -4,6 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
+// v3.399: ATX_IA — renderização de markdown e "fluidez" (texto aparecendo aos poucos, como no Claude) para todas as IAs do sistema
+window.ATX_IA = (() => {
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inl = t => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[\s(])\*(?!\s)([^*]+?)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>').replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  function md(txt) {
+    const L = String(txt ?? '').replace(/\r/g, '').split('\n'); const out = []; let i = 0, para = [];
+    const flush = () => { if (para.length) { out.push('<p>' + para.map(inl).join('<br>') + '</p>'); para = []; } };
+    while (i < L.length) { const l = L[i];
+      if (/^```/.test(l)) { flush(); const b = []; i++; while (i < L.length && !/^```/.test(L[i])) b.push(L[i++]); i++; out.push('<pre><code>' + esc(b.join('\n')) + '</code></pre>'); continue; }
+      const h = l.match(/^(#{1,3})\s+(.*)$/); if (h) { flush(); out.push('<h' + h[1].length + '>' + inl(h[2]) + '</h' + h[1].length + '>'); i++; continue; }
+      if (/^\s*([-*_]\s*){3,}$/.test(l)) { flush(); out.push('<hr>'); i++; continue; }
+      if (/^\s*>/.test(l)) { flush(); const b = []; while (i < L.length && /^\s*>/.test(L[i])) b.push(L[i++].replace(/^\s*>\s?/, '')); out.push('<blockquote>' + b.map(inl).join('<br>') + '</blockquote>'); continue; }
+      if (/^\s*\|/.test(l) && i + 1 < L.length && /^\s*\|?\s*:?-{2,}/.test(L[i + 1])) { flush(); const cel = r => r.replace(/^\s*\||\|\s*$/g, '').split('|').map(c => c.trim()); const th = cel(l); i += 2; const rows = []; while (i < L.length && /^\s*\|/.test(L[i])) rows.push(cel(L[i++]));
+        out.push('<table><thead><tr>' + th.map(c => '<th>' + inl(c) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr>' + r.map(c => '<td>' + inl(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table>'); continue; }
+      const li = l.match(/^(\s*)([-*•]|\d+[.)])\s+(.*)$/); if (li) { flush(); const ord = /\d/.test(li[2]); const tag = ord ? 'ol' : 'ul'; const items = []; const base = li[1].length;
+        while (i < L.length) { const m = L[i].match(/^(\s*)([-*•]|\d+[.)])\s+(.*)$/); if (m && m[1].length <= base + 1) { items.push(inl(m[3])); i++; } else if (m && m[1].length > base + 1) { items[items.length - 1] += '<ul><li>' + inl(m[3]) + '</li></ul>'; i++; } else if (/^\s{2,}\S/.test(L[i]) && items.length) { items[items.length - 1] += '<br>' + inl(L[i].trim()); i++; } else break; }
+        out.push('<' + tag + '>' + items.map(x => '<li>' + x + '</li>').join('') + '</' + tag + '>'); continue; }
+      if (!l.trim()) { flush(); i++; continue; }
+      para.push(l); i++; }
+    flush(); return out.join('');
+  }
+  // fluir(el, texto): mostra o texto aos poucos (≈ 60 palavras/s), já formatado, com cursor; devolve uma Promise
+  function fluir(el, texto, { ms = 24, passo = 2 } = {}) {
+    if (!el) return Promise.resolve(); const t = String(texto ?? ''); el.classList.add('ia-txt');
+    if (t.length < 60 || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { el.innerHTML = md(t); return Promise.resolve(); }
+    const tok = t.split(/(\s+)/); let i = 0; el.classList.add('ia-fluindo'); el.innerHTML = '';
+    const sc = () => { let p = el.parentElement; while (p && p !== document.body) { if (p.scrollHeight > p.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(p).overflowY)) { p.scrollTop = p.scrollHeight; break; } p = p.parentElement; } };
+    return new Promise(res => { const tick = () => { i = Math.min(tok.length, i + passo * 2); el.innerHTML = md(tok.slice(0, i).join('')); sc();
+      if (i < tok.length) setTimeout(tick, ms); else { el.classList.remove('ia-fluindo'); res(); } }; tick(); });
+  }
+  return { md, fluir, esc };
+})();
 // v3.84: "Copiar" nunca quebra — se o navegador recusar a área de transferência (aba sem foco, permissão),
 // copia pelo método antigo; se nem assim der, avisa em vez de gerar erro de JavaScript.
 // v3.94: também cobre navegador sem Clipboard API (http, aba embutida) e erro síncrono do writeText, e expõe
@@ -182,7 +214,7 @@ function alternarTema() {
 document.addEventListener('DOMContentLoaded', _temaIcone);
 </script>
 <title>Atlantyx OS — Monitor de Agentes</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&family=Montserrat:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#07080f;--bg2:#0c0d18;--bg3:#101120;--bg4:#151628;--bd:rgba(255,255,255,0.065);--bd2:rgba(255,255,255,0.12);--t1:#eceefa;--t2:#7a7c9e;--t3:#42445a;--blue:#4f7cff;--b2:rgba(79,124,255,0.12);--green:#22d3a3;--g2:rgba(34,211,163,0.1);--red:#ff5b5b;--r2:rgba(255,91,91,0.1);--gold:#f5a623;--go2:rgba(245,166,35,0.1);--pu:#9c6dff;--pu2:rgba(156,109,255,0.1);--or:#f07030;--or2:rgba(240,112,48,0.12);--s7:#f03070;--s72:rgba(240,48,112,0.12);--H:Syne,sans-serif;--B:DM Sans,sans-serif;--M:DM Mono,monospace;--SB:222px;--s1c:#6b9fff;--ei:#00cfc8;color-scheme:dark;}
 /* ═══ v3.10 TEMA CLARO — identidade Atlantyx (Montserrat · preto/branco · ciano #00C4CC/#00C2E4 · verde #00FCA8) ═══
@@ -787,6 +819,18 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
 .kg.k5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .diag-it{border-radius:5px;transition:background .15s}.diag-it:hover{background:rgba(107,159,255,.08)}
+/* v3.399: texto das IAs — mesma fonte e mesma fluidez de leitura do Claude (Inter, corpo maior, respiro entre blocos) */
+.ia-txt{font-family:Inter,'DM Sans',system-ui,-apple-system,sans-serif;font-size:13.5px;line-height:1.75;color:var(--t1);letter-spacing:.005em;word-break:break-word;}
+.ia-txt p{margin:0 0 10px;}.ia-txt p:last-child{margin-bottom:0;}
+.ia-txt h1,.ia-txt h2,.ia-txt h3{font-family:Inter,'DM Sans',sans-serif;font-weight:600;line-height:1.35;margin:14px 0 6px;color:var(--t1);}
+.ia-txt h1{font-size:16px;}.ia-txt h2{font-size:15px;}.ia-txt h3{font-size:14px;}.ia-txt>:first-child{margin-top:0;}
+.ia-txt ul,.ia-txt ol{margin:4px 0 10px 20px;padding:0;}.ia-txt li{margin:3px 0;}.ia-txt li>p{margin:0;}
+.ia-txt b,.ia-txt strong{font-weight:600;}.ia-txt code{font-family:var(--M);font-size:12px;background:var(--bg4);border:1px solid var(--bd);border-radius:4px;padding:1px 5px;}
+.ia-txt pre{background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;overflow:auto;margin:6px 0 10px;}.ia-txt pre code{background:none;border:0;padding:0;}
+.ia-txt table{border-collapse:collapse;margin:6px 0 10px;font-size:12.5px;}.ia-txt th,.ia-txt td{border:1px solid var(--bd);padding:4px 8px;text-align:left;}.ia-txt th{background:var(--bg4);font-weight:600;}
+.ia-txt hr{border:0;border-top:1px solid var(--bd);margin:10px 0;}.ia-txt blockquote{border-left:3px solid var(--bd2);margin:6px 0 10px;padding:2px 10px;color:var(--t2);}
+.ia-txt.ia-fluindo::after{content:'▍';display:inline-block;margin-left:1px;color:var(--pu);animation:iaPisca .9s steps(2) infinite;}
+@keyframes iaPisca{to{opacity:0;}}
 </style>
 </head>
 <body>
@@ -2931,6 +2975,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </div>
     <div class="erro-api" id="despErro" style="display:none;"></div>
     <!-- v3.392: Gerente de Marketing IA dentro do Dashboard de Desempenho (módulo /campanhas-ui.js) -->
+    <div class="panel" style="margin-bottom:14px;border-left:3px solid var(--gold);" id="raioXPanel"><div class="ph"><div class="pt">🩻 Raio-X do funil pago — onde o cadastro quebra</div><button class="btn btn-p" id="raioXBtn" style="font-size:10px;padding:4px 10px;" onclick="raioXFunil()">Rodar raio-X</button></div>
+      <div class="pb" id="raioXOut" style="font-size:11px;color:var(--t3);">Testa o formulário público de ponta a ponta (como se fosse uma pessoa no Instagram), compara cliques e visualizações do Meta com as visitas, formulários iniciados, leads e descartados de cada campanha paga, e confere a imagem de cada anúncio e dos posts orgânicos agendados.</div></div>
     <div id="despGerente"><div class="panel" style="margin-bottom:14px;"><div class="pb" style="font-size:11px;color:var(--t3);">🤖 Carregando o Gerente de Marketing IA…</div></div></div>
 
     <!-- v3.324: ordem nova — ① pagos + leads no topo · ② orgânico · ③ detalhes recolhidos -->
@@ -5522,6 +5568,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div class="ph"><div class="pt">Carregar Dados para os Agentes S1</div></div>
       <div class="pb" style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-gn" id="btnContexto" onclick="loadContextoEstrategico()" style="flex:1;min-width:160px;">&#9670; Contexto Estrategico Completo (QB + Drive)</button>
+        <button class="btn btn-g" onclick="s1HistAbrir('dados_contexto','contextoResult')" title="Versões gravadas do contexto estratégico" style="font-size:10px;">&#128344; Histórico 1.1</button>
         <button class="btn btn-g" id="btnQBFin" onclick="loadQBFinanceiro()">&#128200; Financeiro QuickBooks</button>
         <button class="btn btn-g" id="btnDrive" onclick="loadDrivePasta()">&#128193; Ler Pasta do Drive</button>
         <button class="btn btn-g" id="btnDiagReal" onclick="runDiagComDados()">&#9670; Diagnostico com Dados Reais</button>
@@ -7516,8 +7563,9 @@ const S1_HIST = [ // [tipo, id do resultado]
   ['diagnostico_completo', 's1DiagResult'], ['replanejamento', 's1ReplanoResult'], ['analise_riscos', 's1RiscosResult'],
   ['analise_financeira', 's1FinResult'], ['analise_mercado', 's1MercResult'], ['analise_marketing', 's1MktResult'], ['planejamento_estrategico', 's1PlanoResult'],
   ['plano_acao', 's1AcoesResult'], ['okr_gerador', 's1OkrGenResult'], ['cenarios_futuro', 's1CenResult'],
-  ['status_okr', 's1OkrFull'], ['status_okr', 's1OkrDash'], ['relatorio_executivo', 's1RelatorioFull'], ['diagnostico_completo', 's1DadosDiagResult'] ];
-const S1_HIST_NOME = { analise_marketing: 'Análise de marketing', diagnostico_completo: 'Diagnóstico completo', replanejamento: 'Replanejamento', analise_riscos: 'Análise de riscos', analise_financeira: 'Análise financeira', analise_mercado: 'Análise de mercado', planejamento_estrategico: 'Plano estratégico', plano_acao: 'Plano de ação 90d', okr_gerador: 'OKRs sugeridos', cenarios_futuro: 'Cenários de futuro', status_okr: 'Status dos OKRs', relatorio_executivo: 'Relatório executivo', bp_analise: 'Análise do business plan' };
+  ['status_okr', 's1OkrFull'], ['status_okr', 's1OkrDash'], ['relatorio_executivo', 's1RelatorioFull'], ['diagnostico_completo', 's1DadosDiagResult'],
+  ['dados_financeiro_qb', 'qbResult'], ['dados_drive', 'driveResult'], ['dados_contexto', 'contextoResult'] ]; // v3.399: 1.1 Dados reais também fica gravado
+const S1_HIST_NOME = { dados_financeiro_qb: 'Financeiro QuickBooks (1.1)', dados_drive: 'Resumo do Drive (1.1)', dados_contexto: 'Contexto estratégico QB + Drive (1.1)', analise_marketing: 'Análise de marketing', diagnostico_completo: 'Diagnóstico completo', replanejamento: 'Replanejamento', analise_riscos: 'Análise de riscos', analise_financeira: 'Análise financeira', analise_mercado: 'Análise de mercado', planejamento_estrategico: 'Plano estratégico', plano_acao: 'Plano de ação 90d', okr_gerador: 'OKRs sugeridos', cenarios_futuro: 'Cenários de futuro', status_okr: 'Status dos OKRs', relatorio_executivo: 'Relatório executivo', bp_analise: 'Análise do business plan' };
 function s1HistBotoes() {
   S1_HIST.forEach(([tipo, rid]) => {
     const el = document.getElementById(rid); if (!el || el.dataset.histBtn) return; el.dataset.histBtn = '1';
@@ -7557,6 +7605,9 @@ async function s1HistVer(id, tipo, rid) {
     if (tipo === 'bp_analise') { _bpIA.analise = dados.analise || dados; bpIaDesenhar(); }
     else if (tipo === 'status_okr') await loadOKR(dados);
     else if (tipo === 'relatorio_executivo') await loadRelatorio(dados.periodo || '', dados);
+    else if (tipo === 'dados_financeiro_qb') renderQBResult(dados.analise_financeira || dados); // v3.399: 1.1 gravado
+    else if (tipo === 'dados_drive') renderDriveResult(dados);
+    else if (tipo === 'dados_contexto') renderContextoResult(dados);
     else renderIntelResult(tipo, dados, rid);
     _semUndef(el);
     const quando = new Date(h.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -7692,8 +7743,7 @@ async function diagAtlasPerguntar(id, texto) {
     const r = await fetch('/api/estrategia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chat', conversa_id: R?.conv || null, mensagem: q, titulo_extra: 'Diagnóstico Completo da Empresa', contexto_extra: 'DIAGNÓSTICO NA TELA: ' + resumo + '\nDADOS QUE O DIAGNÓSTICO USOU: ' + JSON.stringify(R?.dados || {}).substring(0, 5000) }) });
     const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha'); if (R) R.conv = d.conversa_id;
     box.querySelector('.diag-pensando')?.remove();
-    const html = esc(d.resposta).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
-    box.insertAdjacentHTML('beforeend', '<div style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:8px 10px;">' + html + '</div>');
+    box.insertAdjacentHTML('beforeend', '<div class="ia-txt" style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:10px 12px;"></div>'); await ATX_IA.fluir(box.lastElementChild, d.resposta);
   } catch (e) { box.querySelector('.diag-pensando')?.remove(); box.insertAdjacentHTML('beforeend', '<div style="color:var(--red);margin:6px 0;">ATLAS: ' + esc(e.message) + '</div>'); }
   if (btn) btn.disabled = false; box.scrollTop = box.scrollHeight;
 }
@@ -7737,8 +7787,7 @@ async function atlasTelaPerguntar(p, texto) {
     const r = await fetch('/api/estrategia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chat', conversa_id: S.conv || null, mensagem: q, titulo_extra: cfg.titulo, contexto_extra: 'O QUE ESTÁ NA TELA "' + cfg.titulo + '" AGORA:\n' + _atlasTelaContexto(p) }) });
     const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha'); S.conv = d.conversa_id;
     box.querySelector('.diag-pensando')?.remove();
-    const html = esc(d.resposta).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
-    box.insertAdjacentHTML('beforeend', '<div style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:8px 10px;">' + html + '</div>');
+    box.insertAdjacentHTML('beforeend', '<div class="ia-txt" style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:10px 12px;"></div>'); await ATX_IA.fluir(box.lastElementChild, d.resposta);
   } catch (e) { box.querySelector('.diag-pensando')?.remove(); box.insertAdjacentHTML('beforeend', '<div style="color:var(--red);margin:6px 0;">ATLAS: ' + esc(e.message) + '</div>'); }
   if (btn) btn.disabled = false; box.scrollTop = box.scrollHeight;
 }
@@ -11226,6 +11275,11 @@ async function loadContextoEstrategico() {
     return;
   }
 
+  renderContextoResult(data);
+}
+// v3.399: desenho separado para poder reabrir uma versão gravada (🕘 Histórico)
+function renderContextoResult(data) {
+  const result = document.getElementById('contextoResult'); const panel = document.getElementById('contextoPanel'); if (panel) panel.style.display = 'block';
   dadosEmpresaCache = data;
   const ctx = data.contexto_estrategico || {};
   const semCor = ctx.semaforo === 'Verde' ? 'var(--green)' : ctx.semaforo === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
@@ -12042,6 +12096,33 @@ async function tvConferir(b) {
 async function tvAtualizar(b) { b.disabled = true; b.textContent = '⏳ Lendo QuickBooks e vendas…'; try { await tvApi('atualizar_dados'); toast('Números atualizados', 'success'); const f = document.getElementById('tvPrev'); if (f) f.src = f.src; } catch (e) { toast(e.message, 'error'); } b.disabled = false; b.textContent = '↻ Atualizar os números agora'; }
 // v3.147: Reuniões Semanais — ritos recorrentes com pauta automática (módulo sob demanda: /reunioes-ui.js)
 // v3.392: Gerente de Marketing IA no Dashboard de Desempenho — reaproveita o painel do módulo de campanhas
+// v3.399: Raio-X do funil pago (api/metricool → funil_raio_x)
+async function raioXFunil() {
+  const out = document.getElementById('raioXOut'), btn = document.getElementById('raioXBtn'); if (!out) return;
+  const E = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); const N = v => Number(v || 0).toLocaleString('pt-BR');
+  btn.disabled = true; out.innerHTML = '<span style="color:var(--t2);">🩻 Testando o formulário, lendo o Meta e conferindo imagens… (até 1 min)</span>';
+  try { const d = await mcApi('funil_raio_x', { dias: 30 }); window._raioX = d;
+    const F = d.formulario || {}; let h = '';
+    h += '<div style="margin-bottom:8px;"><b>Formulário público:</b> ' + (F.gravou ? '<span style="color:var(--green);">✅ grava o cadastro pelo caminho real (anti-robô, limite por IP, resposta em ' + N(F.ms) + ' ms)</span>' : '<span style="color:var(--red);">❌ NÃO gravou — HTTP ' + E(F.http) + ' ' + E(F.erro || '') + '</span>') + '</div>';
+    if ((d.problemas || []).length) h += '<div style="margin-bottom:8px;">' + d.problemas.map(p => '<div style="color:' + (p.g === 'alta' ? 'var(--red)' : 'var(--gold)') + ';">' + (p.g === 'alta' ? '🔴' : '🟡') + ' ' + E(p.txt) + '</div>').join('') + '</div>';
+    else h += '<div style="color:var(--green);margin-bottom:8px;">✅ Nenhum problema técnico encontrado no caminho anúncio → página → cadastro.</div>';
+    h += '<table style="width:100%;font-size:10.5px;border-collapse:collapse;"><tr style="color:var(--t3);"><th style="text-align:left;">Campanha</th><th>Cliques (Meta)</th><th>Pág. (Meta)</th><th>Visitas (nossa)</th><th>Começaram</th><th>Leads</th><th>Descartados</th><th>Imagem</th></tr>'
+      + (d.campanhas || []).map(c => { const m = c.meta || {}, f = c.funil || {}, im = c.imagem || {}; const imOk = (im.publica?.ok !== false) && (im.meta?.tem_imagem !== false) && !(im.meta?.problemas || []).length;
+        return '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px 0;"><b>' + E(c.nome) + '</b> <span style="color:var(--t3);">' + E(c.estado || '') + '</span><div style="color:var(--t2);font-size:10px;">' + c.veredito.map(E).join('<br>') + '</div></td>'
+          + '<td style="text-align:center;">' + (m.erro ? '—' : N(m.cliques_link)) + '</td><td style="text-align:center;">' + (m.erro ? '—' : N(m.visualizacoes_pagina)) + '</td><td style="text-align:center;">' + N(f.visitas) + '</td><td style="text-align:center;">' + N(f.comecaram) + '</td><td style="text-align:center;">' + N(f.leads) + '</td><td style="text-align:center;">' + N(f.descartados) + '</td>'
+          + '<td style="text-align:center;">' + (imOk ? '✅' : '❌') + (im.meta?.url ? ' <a href="' + E(im.meta.url) + '" target="_blank" style="color:var(--blue,#4f7cff);">ver</a>' : '') + '</td></tr>'; }).join('') + '</table>';
+    const io = d.imagens_organicas || {}; h += '<div style="margin-top:8px;"><b>Posts orgânicos agendados:</b> ' + (io.erro ? '<span style="color:var(--red);">' + E(io.erro) + '</span>' : io.afetados ? '<span style="color:var(--gold);">' + N(io.afetados) + ' com imagem em endereço temporário (o guardião corrige de hora em hora)</span>' : '<span style="color:var(--green);">imagens ok</span>') + '</div>';
+    h += '<div style="margin-top:8px;"><button class="btn btn-g" style="font-size:10px;" onclick="raioXDiscutir()">🤖 Discutir com o Gerente de Marketing</button></div>';
+    out.innerHTML = h; out.style.color = '';
+  } catch (e) { out.innerHTML = '<span style="color:var(--red);">Não rodou: ' + E(e.message) + '</span>'; }
+  btn.disabled = false;
+}
+function raioXDiscutir() {
+  const d = window._raioX; const inp = document.getElementById('gmIn_desempenho'); if (!d || !inp || !(window.CMP && CMP._gm)) { alert('Rode o raio-X e abra o Gerente de Marketing abaixo.'); return; }
+  const linhas = (d.campanhas || []).map(c => { const m = c.meta || {}, f = c.funil || {}; return '- ' + c.nome + ' (' + (c.estado || '?') + '): cliques Meta ' + (m.cliques_link ?? '?') + ', visualizações de página Meta ' + (m.visualizacoes_pagina ?? '?') + ', visitas medidas ' + (f.visitas ?? 0) + ', começaram formulário ' + (f.comecaram ?? 0) + ', leads ' + (f.leads ?? 0) + ', descartados ' + (f.descartados ?? 0) + '. Veredito técnico: ' + c.veredito.join(' '); });
+  inp.value = 'Rodei o Raio-X técnico do funil pago. Formulário público: ' + (d.formulario?.gravou ? 'grava normalmente' : 'FALHOU (' + (d.formulario?.erro || d.formulario?.http) + ')') + '. Campanhas:\n' + linhas.join('\n') + '\n\nCom base nisso, me diga campanha por campanha por que ninguém se cadastra e o que mudar primeiro (página, oferta, público ou criativo).';
+  document.getElementById('despGerente')?.scrollIntoView({ behavior: 'smooth' }); CMP._gm('desempenho');
+}
 function despGerenteMontar() {
   const b = document.getElementById('despGerente'); if (!b || b.dataset.ok) return;
   const montar = () => { if (window.CMP && CMP.gerenteMontar) { CMP.gerenteMontar('desempenho', 'despGerente'); b.dataset.ok = '1'; } };
@@ -14411,7 +14492,7 @@ function gabAba(qual) {
   if (a) a.style.display = sim ? 'block' : 'none'; if (b) b.style.display = sim ? 'none' : 'block';
   const bs = document.getElementById('gabAbaBtnSim'), bp = document.getElementById('gabAbaBtnPainel');
   if (bs) bs.className = 'btn ' + (sim ? 'btn-p' : 'btn-g'); if (bp) bp.className = 'btn ' + (sim ? 'btn-g' : 'btn-p');
-  if (sim) { gabCarregarRiscos(false); gabRenderHistorico(); }
+  if (sim) { gabCarregarRiscos(false); gabRenderHistorico(); gabSincronizar(); }
 }
 
 function _gabTxt(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim(); }
@@ -14541,9 +14622,11 @@ function gabRenderSimulacao(sim) {
 }
 
 function _gabLer() { try { const l = JSON.parse(localStorage.getItem(GAB_LS) || '[]'); return Array.isArray(l) ? l : []; } catch (_) { return []; } }
-function gabSalvar(sim) { const l = [sim, ..._gabLer().filter(x => x.id !== sim.id)].slice(0, GAB_MAX_HIST); try { localStorage.setItem(GAB_LS, JSON.stringify(l)); } catch (_) {} }
+function gabSalvar(sim) { const l = [sim, ..._gabLer().filter(x => x.id !== sim.id)].slice(0, GAB_MAX_HIST); try { localStorage.setItem(GAB_LS, JSON.stringify(l)); } catch (_) {} _kvSet('gab:simulacoes', l); } // v3.399: também no banco (kv_store)
+// v3.399: ao abrir, junta o que está no banco com o que está neste navegador — a simulação fica consultável de qualquer máquina
+async function gabSincronizar() { try { const r = _kvParse(await _kvGet('gab:simulacoes')); if (!Array.isArray(r) || !r.length) return; const loc = _gabLer(); const ids = new Set(loc.map(x => x.id)); const l = [...loc, ...r.filter(x => x && x.id && !ids.has(x.id))].sort((a, b) => String(b.em).localeCompare(String(a.em))).slice(0, GAB_MAX_HIST); localStorage.setItem(GAB_LS, JSON.stringify(l)); gabRenderHistorico(); } catch (_) {} }
 function gabAbrirHist(id) { const s = _gabLer().find(x => x.id === id); if (s) { gabRenderSimulacao(s); document.getElementById('gabResultado')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
-function gabExcluirHist(id) { if (!confirm('Excluir esta simulação do histórico?')) return; try { localStorage.setItem(GAB_LS, JSON.stringify(_gabLer().filter(x => x.id !== id))); } catch (_) {} gabRenderHistorico(); }
+function gabExcluirHist(id) { if (!confirm('Excluir esta simulação do histórico?')) return; try { localStorage.setItem(GAB_LS, JSON.stringify(_gabLer().filter(x => x.id !== id))); } catch (_) {} _kvSet('gab:simulacoes', _gabLer()); gabRenderHistorico(); }
 function gabRenderHistorico() {
   const box = document.getElementById('gabHistorico'); if (!box) return;
   const l = _gabLer();
@@ -30327,8 +30410,8 @@ async function perguntarMkt(textoFixo) {
     const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'gerente_marketing', value: { mensagem: msg, historico: _mktHist, config: (() => { try { const c = ctaCfg(); return { clique_leva_para: c.destino === 'reuniao' ? 'agenda de reunião direto (pula a página de captura — quem não agenda não vira lead)' : 'página de captura (cadastro) → agenda', instagram_cta: c.ig, oferta: 'diagnóstico gratuito de dados e IA', autocampanha_redes: JSON.parse(localStorage.getItem('atx:ac:redes') || 'null') }; } catch (_) { return null; } })() } }) }); // v3.68
     const d = await r.json();
     if (!d.success) throw new Error(d.error || 'falha');
-    think.textContent = d.resposta;
-    if (d.tarefa) _gfCartaoTarefa(think, d.tarefa) || '(sem resposta)';
+    await ATX_IA.fluir(think, d.resposta || '(sem resposta)'); // v3.399: fluidez
+    if (d.tarefa) _gfCartaoTarefa(think, d.tarefa);
     _mktHist.push({ role: 'user', content: msg }, { role: 'assistant', content: d.resposta || '' });
   } catch (e) { think.textContent = '⛔ ' + e.message; think.style.border = '1px solid var(--red)'; }
   finally { if (btn) btn.disabled = false; }
@@ -30480,7 +30563,7 @@ async function perguntarRh(textoFixo) {
   if (btn) btn.disabled = true;
   try {
     const d = await rhApi('gerente_rh', { mensagem: msg, historico: _rhHist });
-    think.textContent = d.resposta || '(sem resposta)';
+    await ATX_IA.fluir(think, d.resposta || '(sem resposta)'); // v3.399: fluidez
     _rhHist.push({ role: 'user', content: msg }, { role: 'assistant', content: d.resposta || '' });
   } catch (e) { think.textContent = '⛔ ' + e.message; think.style.border = '1px solid var(--red)'; }
   finally { if (btn) btn.disabled = false; }
@@ -33919,7 +34002,7 @@ async function perguntarGerente(textoFixo) {
   if (btn) btn.disabled = true;
   try {
     const d = await finApi('gerente_financeiro', { mensagem: msg, historico: _gfHist });
-    think.textContent = d.resposta || '(sem resposta)';
+    await ATX_IA.fluir(think, d.resposta || '(sem resposta)'); // v3.399: fluidez
     // v1.71: quando o gerente EXECUTOU uma tarefa, mostra o resultado e o link que abre a tela filtrada
     if (d.tarefa) _gfCartaoTarefa(think, d.tarefa);
     _gfHist.push({ role: 'user', content: msg }, { role: 'assistant', content: d.resposta || '' });
@@ -36379,7 +36462,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.398] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.399] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36395,7 +36478,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.398';
+window.__ATX_BUILD_ID__ = 'ATX-v3.399';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

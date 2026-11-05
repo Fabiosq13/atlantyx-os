@@ -1051,6 +1051,64 @@ async function patrocinadoConferir({ id } = {}) {
   out.anuncios.filter(a => !a.conjunto_existe).forEach(a => out.avisos.push('O anúncio "' + a.nome + '" aponta para um conjunto que não existe mais (sobra de tentativa que falhou) — pode excluir.'));
   return out;
 }
+// v3.399: RAIO-X DO FUNIL PAGO — responde "168 pessoas na página e nenhum cadastro: onde quebra?". Para cada campanha
+// paga do Meta: cliques e visualizações de página (Meta) → visitas medidas pela página → começaram o formulário → leads
+// → descartados pelo anti-robô, com veredito por regra. Também (a) envia um cadastro de TESTE pelo MESMO caminho do
+// formulário público (anti-robô, limite por IP, captura-publica, resposta rápida) e apaga em seguida, e (b) confere a
+// imagem de cada anúncio (endereço público + o que o Meta tem no criativo) e as imagens dos posts orgânicos agendados.
+async function funilRaioX({ dias = 30 } = {}, req) {
+  const out = { campanhas: [], problemas: [], formulario: null, imagens_organicas: null };
+  const c = _metaCfg(); const base = _baseDe(req);
+  // (a) teste do formulário público — exatamente o que a página manda, em modo QA (grava, não dispara nada, apaga)
+  try {
+    const camp = 'qa-raio-x'; const t0 = Date.now();
+    const r = await fetch(base + '/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) Instagram 330.0' },
+      body: JSON.stringify({ name: 'Teste Raio-X', company: 'Empresa Teste QA', phone: '21999990000', job_title: 'Diretor(a)', source: 'instagram', campaign_name: camp, utm: { source: 'instagram', medium: 'pago', campaign: camp, content: 'saiba_mais' },
+        page: base + '/captura.html?utm_campaign=' + camp, form_name: 'captura-publica', oferta: 'mapa_ia', rapido: true, website: '', t_preenchimento_ms: 15000, consentimento: { aceito: true, versao: '2026-10-15', canais: ['whatsapp'], em: new Date().toISOString() }, qa_teste: true }) });
+    const d = await r.json().catch(() => ({}));
+    out.formulario = { http: r.status, ms: Date.now() - t0, gravou: !!d.lead_id, modo_teste: !!d.qa_teste, campanha_atribuida: d.campanha || null, erro: d.error || null };
+    if (!d.lead_id) out.problemas.push({ g: 'alta', txt: 'O formulário público NÃO grava o cadastro (HTTP ' + r.status + (d.error ? ' · ' + d.error : '') + ') — esta é a causa provável de 0 cadastros.' });
+    try { const sql = await getSql(); if (d.lead_id) await sql`DELETE FROM leads WHERE id = ${d.lead_id}`; await sql`DELETE FROM captura_visitas WHERE campanha = ${camp}`; await sql`DELETE FROM kv_store WHERE key LIKE ${'funil:' + camp + ':%'}`; } catch (_) {}
+  } catch (e) { out.formulario = { erro: e.message }; out.problemas.push({ g: 'alta', txt: 'Não consegui testar o formulário público: ' + e.message }); }
+  // (b) campanhas pagas com funil + imagem
+  const L = await patrocinadoListar(); const desde = new Date(Date.now() - dias * 864e5);
+  for (const r of (L.campanhas || []).filter(x => x.rede !== 'linkedin').slice(0, 12)) {
+    const f = r.funil || {}; const item = { id: r.id, nome: r.nome, estado: r.estado_meta, inicio: r.inicio, fim: r.fim, link: r.link, meta: {}, funil: f, imagem: {}, veredito: [] };
+    if (c.token) try {
+      const i = await _meta(`${r.id}/insights?fields=spend,impressions,reach,inline_link_clicks,actions&date_preset=maximum`); const x = (i.data || [])[0] || {};
+      const act = n => Number((x.actions || []).find(a => a.action_type === n)?.value || 0);
+      item.meta = { gasto: Number(x.spend || 0), impressoes: Number(x.impressions || 0), alcance: Number(x.reach || 0), cliques_link: Number(x.inline_link_clicks || 0), visualizacoes_pagina: act('landing_page_view'), leads_pixel: act('lead') || act('offsite_conversion.fb_pixel_lead') };
+    } catch (e) { item.meta = { erro: e.message }; }
+    if (c.token) try {
+      const ads = await _meta(`${r.id}/ads?fields=effective_status,issues_info,creative{image_url,thumbnail_url,object_story_spec}&limit=5`);
+      const a = (ads.data || [])[0] || {}; const cr = a.creative || {}; const ld = cr.object_story_spec?.link_data || {};
+      item.imagem.meta = { anuncio_estado: a.effective_status || null, problemas: (a.issues_info || []).map(x => x.error_summary || x.error_message).filter(Boolean), tem_imagem: !!(cr.image_url || cr.thumbnail_url || ld.image_hash || ld.picture), url: cr.image_url || cr.thumbnail_url || null, link_anuncio: ld.link || null };
+      if (!item.imagem.meta.tem_imagem) item.veredito.push('O anúncio no Meta está SEM imagem no criativo.');
+      if (item.imagem.meta.problemas.length) item.veredito.push('O Meta aponta problema no anúncio: ' + item.imagem.meta.problemas.join('; '));
+      if (ld.link && r.link && !String(ld.link).includes('captura.html')) item.veredito.push('O link do anúncio no Meta NÃO vai para a página de captura: ' + ld.link);
+    } catch (e) { item.imagem.meta = { erro: e.message }; }
+    if (r.imagem) try { const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 12000); const h = await fetch(r.imagem, { method: 'GET', signal: ctrl.signal, headers: { Range: 'bytes=0-2048' } }); clearTimeout(tm);
+      item.imagem.publica = { url: r.imagem, http: h.status, tipo: h.headers.get('content-type') || null, ok: h.ok && /^image\//.test(h.headers.get('content-type') || '') };
+      if (!item.imagem.publica.ok) item.veredito.push('A imagem pública do anúncio não abre (HTTP ' + h.status + (h.headers.get('content-type') ? ' · ' + h.headers.get('content-type') : '') + ').');
+    } catch (e) { item.imagem.publica = { url: r.imagem, erro: e.message }; item.veredito.push('A imagem pública do anúncio não respondeu: ' + e.message); }
+    // veredito do funil
+    const M = item.meta, cl = M.cliques_link || 0, lpv = M.visualizacoes_pagina || 0, vis = f.visitas || 0, ini = f.comecaram || 0, leads = f.leads || 0, desc = f.descartados || 0;
+    const recente = r.fim ? new Date(r.fim) >= desde : true;
+    if (cl >= 10 && vis === 0) item.veredito.push('O Meta registra ' + cl + ' cliques no link, mas a página NÃO registrou nenhuma visita desta campanha: o clique não chega na página (link/UTM diferente do esperado, ou a página não carrega no navegador do Instagram).');
+    else if (lpv >= 10 && vis < lpv * 0.5) item.veredito.push('O Meta conta ' + lpv + ' visualizações de página e a página só mediu ' + vis + ' visitas: parte das pessoas fecha antes de a página terminar de carregar (peso/velocidade) ou o rastreio não dispara.');
+    if (vis >= 20 && ini === 0 && recente) item.veredito.push(vis + ' visitas e NINGUÉM começou a preencher: o problema é a PÁGINA (oferta/primeira dobra/formulário fora da tela) ou o PÚBLICO (quem clica não é decisor) — não é técnico.');
+    if (ini > 0 && leads === 0 && desc > 0) item.veredito.push(desc + ' envio(s) foram DESCARTADOS pelo anti-robô (campo oculto preenchido ou envio em menos de 3 s): pode estar descartando pessoas reais — ver "descartados".');
+    if (ini > 0 && leads === 0 && desc === 0) item.veredito.push(ini + ' pessoa(s) começaram a preencher e nenhuma concluiu: desistência dentro do formulário (campo que trava, teclado do celular, validação do WhatsApp).');
+    if (cl < 10 && vis < 10) item.veredito.push('Volume baixo demais para diagnóstico (' + cl + ' cliques · ' + vis + ' visitas).');
+    if (!item.veredito.length) item.veredito.push('Funil sem anomalia técnica: cliques → visitas → formulário → leads coerentes.');
+    out.campanhas.push(item);
+  }
+  // (c) imagens dos posts orgânicos agendados (só confere — não altera)
+  try { const im = await corrigirImagensAgendadas({ dias: 60, aplicar: false }); out.imagens_organicas = { afetados: (im.afetados || []).length, lista: (im.afetados || []).slice(0, 20), erros: (im.erros || []).length }; if ((im.afetados || []).length) out.problemas.push({ g: 'media', txt: (im.afetados || []).length + ' post(s) orgânico(s) agendado(s) com imagem em endereço temporário/protegido — o guardião de hora em hora corrige; confira na lista.' }); }
+  catch (e) { out.imagens_organicas = { erro: e.message }; }
+  out.campanhas.forEach(x => x.veredito.filter(v => /NÃO|SEM imagem|não abre|não respondeu|DESCARTADOS|problema no anúncio/.test(v)).forEach(v => out.problemas.push({ g: 'alta', txt: x.nome + ': ' + v })));
+  return out;
+}
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
   // v3.233: status e resultado em consultas independentes (antes, falha nos insights deixava o status antigo — "ACTIVE"
@@ -2085,6 +2143,7 @@ async function handler(req, res) {
     geo_local_resolver:     () => geoLocalResolver(payload), // v3.316: confere o local da campanha geolocalizada (não cria nada)
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_duplicar:   () => patrocinadoDuplicar(payload, req), // v3.397
+    funil_raio_x:           () => funilRaioX(payload, req), // v3.399
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_meta:       () => patrocinadoMeta(payload), // v3.332
     patrocinado_alinhar_texto: () => patrocinadoAlinharTexto(payload), // v3.337

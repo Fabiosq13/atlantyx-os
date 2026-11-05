@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { salvarHistorico } from '../lib/historico-s1.js'; // v3.399: 1.1 Dados reais fica gravado (🕘 Histórico)
 // api/s1-data.js
 // Leitor de Dados para os Agentes S1 — QuickBooks + Google Drive
 // Alimenta o planejamento estratégico com dados reais da empresa
@@ -44,7 +45,10 @@ async function handler(req, res) {
     });
 
     const resultado = await acoes[action]();
-    return res.status(200).json({ success: true, action, ...resultado });
+    // v3.399: cada leitura/análise da tela 1.1 (Dados reais) fica gravada em s1_historico para consulta posterior
+    const TIPO_HIST = { analisar_financeiro: 'dados_financeiro_qb', drive_resumir_pasta: 'dados_drive', contexto_estrategico: 'dados_contexto' };
+    let historico_id = null; if (TIPO_HIST[action] && resultado && !resultado.error) historico_id = await salvarHistorico(TIPO_HIST[action], resultado, req.sessao?.login);
+    return res.status(200).json({ success: true, action, historico_id, ...resultado });
 
   } catch (error) {
     console.error('[ERRO s1-data]', error.message);
