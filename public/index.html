@@ -31400,7 +31400,8 @@ function _mcRender() {
     + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Sugestões para começar</div><div class="fv2-pq">Preenche os campos abaixo — nada é salvo até você clicar em Salvar.</div></div></div><div class="mc-sug">'
     + '<button class="btn btn-g" onclick="_mcSugerirBP()">📈 Usar o BP Atlantyx (plano dinâmico)</button>'
     + (S.orcamento ? '<button class="btn btn-g" onclick="_mcSugerirOrc()">📊 Usar o ' + _fv2Esc(S.orcamento.nome) + ' (' + _fv2K(S.orcamento.faturamento) + ', margem ' + _fv2N(S.orcamento.margem_pct) + '%)</button>' : '<span class="fv2-pq">Sem orçamento do QuickBooks para ' + anoTxt + '.</span>')
-    + (AA.faturamento ? '<button class="btn btn-g" onclick="_mcSugerirHist()">↗ ' + (anoTxt - 1) + ' + 25% (' + _fv2K(AA.faturamento) + ' → ' + _fv2K(AA.faturamento * 1.25) + ')</button>' : '')
+    + (AA.faturamento ? '<button class="btn btn-g" onclick="_mcSugerirHist()" title="Realizado do QuickBooks em ' + (anoTxt - 1) + ' com o crescimento que você escolher (0% = repetir o ano)">📒 QuickBooks ' + (anoTxt - 1) + ' + crescimento (' + _fv2K(AA.faturamento) + ' → ' + _fv2K(AA.faturamento * 1.25) + ' a 25%)</button>' : '')
+    + (((D.realizado?.mensal || []).filter(r => r && r.faturamento != null).length) ? '<button class="btn btn-g" onclick="_mcSugerirQbAno()" title="Meses já fechados no QuickBooks + projeção dos meses que faltam">📒 QuickBooks ' + anoTxt + ' (realizado + projeção dos meses que faltam)</button>' : '') // v3.402
     + '</div></div>'
     + '<div class="fv2-panel"><div class="fv2-ph"><div><div class="fv2-pt">Metas de ' + anoTxt + '</div><div class="fv2-pq">Valores em R$ e percentuais · aceita "4,8M", "4.800.000" ou "20%"</div></div></div><div class="mc-grid">'
     + campo('mcCresc', 'Crescimento do faturamento (% a.a.)', pct(M.crescimento_pct ?? PAD.crescimento_pct), String(PAD.crescimento_pct), 'meta da empresa: ' + _fv2N(PAD.crescimento_pct) + '% ao ano' + (AA.faturamento ? ' · aplica sobre ' + (anoTxt - 1) + (AA.parcial ? ' — base: ' + fmtBRL(AA.faturamento) + ' (' + _fv2Esc(AA.base_fonte || '') + ')' : '') : ''))
@@ -31459,6 +31460,27 @@ function _mcSugerirOrc() { const o = _mcDados?.sugestoes?.orcamento; if (o) _mcP
 function _mcSugerirHist() { const AA = _mcDados?.ano_anterior || {}; const g = prompt('Crescimento sobre ' + (_mcAno - 1) + ' (%):', String(_mcNum(_mcV('mcCresc')) ?? 25).replace('.', ',')); if (g === null) return;
   const ec = document.getElementById('mcCresc'); if (ec) ec.value = g;
   const f = AA.faturamento * (1 + _numBR(g) / 100); _mcPreencher({ faturamento: f, margem_pct: AA.margem_pct, margem_ebitda_pct: AA.margem_ebitda_pct, mensal: _mcDados.sugestoes.sazonalidade ? _mcDados.sugestoes.sazonalidade.map(p => f * p) : null, fonte: (_mcAno - 1) + ' + ' + g + '%' }); }
+// v3.402: compor a meta do ano com o QuickBooks DO PRÓPRIO ANO — meses fechados = realizado; meses que faltam = projeção
+// (média dos últimos 3 meses fechados, ou sazonalidade do ano anterior aplicada ao ritmo atual, se existir)
+function _mcSugerirQbAno() {
+  const D = _mcDados || {}, RM = D.realizado?.mensal || [], hoje = new Date();
+  const mesH = hoje.getFullYear() === _mcAno ? hoje.getMonth() : (_mcAno < hoje.getFullYear() ? 12 : 0); // meses fechados: 0..mesH-1
+  const fechados = []; for (let i = 0; i < Math.min(12, mesH); i++) if (RM[i]?.faturamento != null) fechados.push(i);
+  if (!fechados.length) { toast('O QuickBooks ainda não tem mês fechado em ' + _mcAno, 'error'); return; }
+  const modo = fechados.length < 12 ? prompt('Como projetar os ' + (12 - fechados.length) + ' meses que faltam?\n1 = média dos últimos 3 meses fechados\n2 = sazonalidade de ' + (_mcAno - 1) + ' aplicada ao ritmo de ' + _mcAno + (D.sugestoes?.sazonalidade ? '' : ' (indisponível)') + '\n3 = só o realizado (meses que faltam ficam zerados)', '1') : '3';
+  if (modo === null) return;
+  const mens = Array(12).fill(null); let rec = 0, luc = 0; fechados.forEach(i => { mens[i] = RM[i].faturamento; rec += RM[i].faturamento; luc += RM[i].lucro ?? (RM[i].margem != null ? RM[i].faturamento * RM[i].margem / 100 : 0); });
+  const ult3 = fechados.slice(-3).map(i => RM[i].faturamento), media = ult3.reduce((a, b) => a + b, 0) / ult3.length;
+  const S = D.sugestoes?.sazonalidade; const pesoFech = S ? fechados.reduce((a, i) => a + (S[i] || 0), 0) : 0;
+  for (let i = 0; i < 12; i++) if (mens[i] == null) {
+    if (modo === '1') mens[i] = media;
+    else if (modo === '2' && S && pesoFech > 0) mens[i] = rec / pesoFech * (S[i] || 0);
+    else mens[i] = modo === '2' ? media : 0;
+  }
+  const fat = mens.reduce((a, b) => a + (b || 0), 0); const mg = rec ? luc / rec * 100 : null;
+  _mcPreencher({ faturamento: fat, margem_pct: mg != null ? Math.round(mg * 10) / 10 : null, margem_ebitda_pct: D.realizado?.ano?.margem_ebitda_pct ?? null, mensal: mens, fonte: 'QuickBooks ' + _mcAno + ' (' + fechados.length + ' meses fechados' + (fechados.length < 12 ? ' + ' + ({ 1: 'média dos últimos 3', 2: 'sazonalidade', 3: 'sem projeção' }[modo] || 'projeção') : '') + ')' });
+  const ec = document.getElementById('mcCresc'); const AA = D.ano_anterior || {}; if (ec && AA.faturamento && fat) ec.value = String(Math.round((fat / AA.faturamento - 1) * 1000) / 10).replace('.', ',');
+}
 async function _mcSugerirBP() {
   try { toast('Calculando o BP Atlantyx com os dados reais…', 'info');
     const d = await bpApi('atlantyx', {}); const P = d.bp?.premissas || {}, M = d.bp?.resultado?.mensal || {}, ini = P.inicio || (new Date().toISOString().substring(0, 7));
@@ -36544,7 +36566,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.401] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.402] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36560,7 +36582,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.401';
+window.__ATX_BUILD_ID__ = 'ATX-v3.402';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
