@@ -31411,7 +31411,7 @@ function _mcRender() {
     + campo('mcRec', 'Receita recorrente — ARR ÷ receita (%)', pct(M.recorrencia_pct), anoTxt <= 2027 ? 'meta estratégica: 30% até 2027' : 'meta estratégica: 60% até 2031', 'migração de pessoas para produto')
     + campo('mcCx', 'Caixa mínimo (R$)', brl(M.caixa_minimo), 'ex.: 300.000', 'alerta quando o caixa projetado ficar abaixo')
     + '<label class="mc-f"><span>Lucro líquido (calculado)</span><div class="mc-calc" id="mcLucro">—</div><small>faturamento × margem</small></label>'
-    + '</div><div class="fv2-pt" style="font-size:12px;margin:14px 0 6px;">Faturamento por motor (R$) <span class="fv2-pq">— opcional; a soma deve fechar o ano</span></div><div class="mc-grid">'
+    + '</div><div class="fv2-pt" style="font-size:12px;margin:14px 0 6px;">Faturamento por motor (R$) <span class="fv2-pq">— opcional; a soma deve fechar o ano' + ((D.realizado?.motores || AA.motores) ? ' · QuickBooks ' + (D.realizado?.motores ? anoTxt + ': ' + ['pessoas', 'projetos', 'produtos'].map(k => k + ' ' + _fv2K(D.realizado.motores[k])).join(' · ') : '') + (AA.motores ? (D.realizado?.motores ? ' | ' : '') + (anoTxt - 1) + ': ' + ['pessoas', 'projetos', 'produtos'].map(k => k + ' ' + _fv2K(AA.motores[k])).join(' · ') : '') : '') + '</span></div><div class="mc-grid">'
     + campo('mcMotPes', '<span class="fv2-dot" style="background:var(--fv2-s1);"></span>Pessoas (alocação)', brl(M.motores?.pessoas), '')
     + campo('mcMotPro', '<span class="fv2-dot" style="background:var(--fv2-s2);"></span>Projetos', brl(M.motores?.projetos), '')
     + campo('mcMotPrd', '<span class="fv2-dot" style="background:var(--fv2-s3);"></span>Produtos (recorrente)', brl(M.motores?.produtos), '')
@@ -31453,13 +31453,16 @@ function _mcDistribuir(modo) {
   const S = _mcDados?.sugestoes?.sazonalidade;
   _mcSetMensal(modo === 'sazonal' && S ? S.map(p => fat * p) : Array(12).fill(fat / 12));
 }
+// v3.403: receita por motor lançada no QuickBooks, escalada para o faturamento-meta (mantém a proporção real entre motores)
+function _mcMotoresEscalar(mo, fat) { if (!mo) return null; const tot = (mo.pessoas || 0) + (mo.projetos || 0) + (mo.produtos || 0); if (!tot) return null; const k = fat ? fat / tot : 1; return { pessoas: Math.round((mo.pessoas || 0) * k), projetos: Math.round((mo.projetos || 0) * k), produtos: Math.round((mo.produtos || 0) * k) }; }
 function _mcPreencher(o) { const set = (id, v) => { const e = document.getElementById(id); if (e && v != null) e.value = String(Math.round(v * 10) / 10).replace('.', ','); };
   set('mcFat', o.faturamento != null ? Math.round(o.faturamento) : null); set('mcMg', o.margem_pct); set('mcEb', o.margem_ebitda_pct);
+  if (o.motores) { set('mcMotPes', o.motores.pessoas); set('mcMotPro', o.motores.projetos); set('mcMotPrd', o.motores.produtos); }
   if (o.mensal) _mcSetMensal(o.mensal); else _mcDistribuir(_mcDados?.sugestoes?.sazonalidade ? 'sazonal' : 'igual'); window._mcFonte = o.fonte; _mcRecalc(); toast('Campos preenchidos com ' + o.fonte + ' — revise e salve', 'success'); }
 function _mcSugerirOrc() { const o = _mcDados?.sugestoes?.orcamento; if (o) _mcPreencher({ ...o, fonte: o.nome }); }
 function _mcSugerirHist() { const AA = _mcDados?.ano_anterior || {}; const g = prompt('Crescimento sobre ' + (_mcAno - 1) + ' (%):', String(_mcNum(_mcV('mcCresc')) ?? 25).replace('.', ',')); if (g === null) return;
   const ec = document.getElementById('mcCresc'); if (ec) ec.value = g;
-  const f = AA.faturamento * (1 + _numBR(g) / 100); _mcPreencher({ faturamento: f, margem_pct: AA.margem_pct, margem_ebitda_pct: AA.margem_ebitda_pct, mensal: _mcDados.sugestoes.sazonalidade ? _mcDados.sugestoes.sazonalidade.map(p => f * p) : null, fonte: (_mcAno - 1) + ' + ' + g + '%' }); }
+  const f = AA.faturamento * (1 + _numBR(g) / 100); _mcPreencher({ faturamento: f, margem_pct: AA.margem_pct, margem_ebitda_pct: AA.margem_ebitda_pct, motores: _mcMotoresEscalar(AA.motores, f), mensal: _mcDados.sugestoes.sazonalidade ? _mcDados.sugestoes.sazonalidade.map(p => f * p) : null, fonte: (_mcAno - 1) + ' + ' + g + '%' }); }
 // v3.402: compor a meta do ano com o QuickBooks DO PRÓPRIO ANO — meses fechados = realizado; meses que faltam = projeção
 // (média dos últimos 3 meses fechados, ou sazonalidade do ano anterior aplicada ao ritmo atual, se existir)
 function _mcSugerirQbAno() {
@@ -31478,7 +31481,7 @@ function _mcSugerirQbAno() {
     else mens[i] = modo === '2' ? media : 0;
   }
   const fat = mens.reduce((a, b) => a + (b || 0), 0); const mg = rec ? luc / rec * 100 : null;
-  _mcPreencher({ faturamento: fat, margem_pct: mg != null ? Math.round(mg * 10) / 10 : null, margem_ebitda_pct: D.realizado?.ano?.margem_ebitda_pct ?? null, mensal: mens, fonte: 'QuickBooks ' + _mcAno + ' (' + fechados.length + ' meses fechados' + (fechados.length < 12 ? ' + ' + ({ 1: 'média dos últimos 3', 2: 'sazonalidade', 3: 'sem projeção' }[modo] || 'projeção') : '') + ')' });
+  _mcPreencher({ faturamento: fat, margem_pct: mg != null ? Math.round(mg * 10) / 10 : null, margem_ebitda_pct: D.realizado?.ano?.margem_ebitda_pct ?? null, mensal: mens, motores: _mcMotoresEscalar(D.realizado?.motores, fat), fonte: 'QuickBooks ' + _mcAno + ' (' + fechados.length + ' meses fechados' + (fechados.length < 12 ? ' + ' + ({ 1: 'média dos últimos 3', 2: 'sazonalidade', 3: 'sem projeção' }[modo] || 'projeção') : '') + ')' });
   const ec = document.getElementById('mcCresc'); const AA = D.ano_anterior || {}; if (ec && AA.faturamento && fat) ec.value = String(Math.round((fat / AA.faturamento - 1) * 1000) / 10).replace('.', ',');
 }
 async function _mcSugerirBP() {
@@ -36566,7 +36569,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.402] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.403] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36582,7 +36585,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.402';
+window.__ATX_BUILD_ID__ = 'ATX-v3.403';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

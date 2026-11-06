@@ -6041,6 +6041,14 @@ async function metasEmpresaLer({ ano, metodo } = {}) {
       out.ano_anterior.faturamento = metaAnt || (out.ano_anterior.faturamento ? round(out.ano_anterior.faturamento / frac) : null);
       out.ano_anterior.base_fonte = metaAnt ? 'meta de ' + (a - 1) + ' (o ano ainda não fechou)' : 'realizado de ' + (a - 1) + ' até hoje, anualizado (o ano ainda não fechou)'; }
     else { const tot = mm.reduce((s, x) => s + (x?.faturamento || 0), 0); if (tot > 0) out.sugestoes.sazonalidade = mm.map(x => Math.round((x?.faturamento || 0) / tot * 10000) / 10000); } }
+  // v3.403: receita POR MOTOR (pessoas / projetos / produtos) lançada no QuickBooks, do próprio ano e do anterior — a carga
+  // QuickBooks das Metas preenche também o "Faturamento por motor" com a proporção real das contas classificadas
+  try { if (qbConfigurado() && (out.realizado || out.ano_anterior)) { const token = await qbToken(), cfg = await _fv2Cfg();
+    const motDe = async (ano) => { const pl = await qbPL(`${ano}-01-01`, `${ano}-12-31`, token, '', metodo); const mo = _fv2Motores(_fv2Folhas(pl).folhas, cfg, -1, _camMeses(pl)).motores; return { pessoas: round(mo.pessoas?.receita || 0), projetos: round(mo.projetos?.receita || 0), produtos: round(mo.produtos?.receita || 0) }; };
+    const [mA, mP] = await Promise.allSettled([out.realizado ? motDe(a) : Promise.resolve(null), out.ano_anterior && !antParcial ? motDe(a - 1) : Promise.resolve(null)]);
+    if (mA.status === 'fulfilled' && mA.value && out.realizado) out.realizado.motores = mA.value; else if (mA.status === 'rejected') out.erros.push('Motores ' + a + ': ' + mA.reason?.message);
+    if (mP.status === 'fulfilled' && mP.value && out.ano_anterior) out.ano_anterior.motores = mP.value; else if (mP.status === 'rejected') out.erros.push('Motores ' + (a - 1) + ': ' + mP.reason?.message); } }
+  catch (e) { out.erros.push('Motores: ' + e.message); }
   if (antParcial && !out.ano_anterior) { const metaAnt = m.por_ano?.[String(a - 1)]?.faturamento ?? null; // ano anterior também é futuro: cresce sobre a meta dele
     out.ano_anterior = { faturamento: metaAnt, margem_pct: m.por_ano?.[String(a - 1)]?.margem_pct ?? null, margem_ebitda_pct: null, mensal: Array(12).fill(null), parcial: true, base_fonte: 'meta de ' + (a - 1) }; }
   if (antParcial && rS.status === 'fulfilled' && rS.value) { const ms = mesesDe(rS.value, anoSaz), tot = ms.reduce((s, x) => s + (x?.faturamento || 0), 0);
