@@ -11442,7 +11442,7 @@ function invPlanoHtml(PF, R, P, esc) {
 function invRender(d) {
   const el = document.getElementById('invResult'); if (!el || !d) return; const A = d.analise || d.investimentos?.analise || {}, M = d.macro || d.investimentos?.macro || {}, E = (A.diagnostico_caixa || {});
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); const R = v => v == null || v === '' || isNaN(+v) ? '—' : 'R$ ' + Math.round(+v).toLocaleString('pt-BR'); const P = v => v == null || v === '' || isNaN(+v) ? '—' : (+v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%';
-  const q = document.getElementById('invQuando'); if (q) q.textContent = (d.em || d.investimentos?.em) ? 'gerada em ' + new Date(d.em || d.investimentos.em).toLocaleString('pt-BR') : '';
+  const q = document.getElementById('invQuando'); if (q) q.textContent = ((d.em || d.investimentos?.em) ? 'gerada em ' + new Date(d.em || d.investimentos.em).toLocaleString('pt-BR') : '') + ((d.por || d.investimentos?.por) === 'robô Copom' ? ' · automática (decisão do Copom)' : '') + ' · reanálise automática toda quinta se a Selic mudar ou a cada 45 dias';
   const card = (t, v, sub, cor) => '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:9px;padding:10px 12px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;">' + esc(t) + '</div><div style="font-family:var(--H);font-size:17px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + v + '</div>' + (sub ? '<div style="font-size:10px;color:var(--t2);">' + esc(sub) + '</div>' : '') + '</div>';
   const tab = (lista) => (lista || []).length ? '<table style="width:100%;font-size:10.5px;border-collapse:collapse;margin:4px 0 8px;"><tr style="color:var(--t3);"><th style="text-align:left;">Classe / instrumento</th><th>%</th><th>Valor</th><th>Rentab. esperada</th><th>Liquidez</th><th>Risco</th><th>Local</th></tr>' + lista.map(x => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px 0;"><b>' + esc(x.classe) + '</b> · ' + esc(x.instrumento) + '<div style="color:var(--t2);font-size:10px;">' + esc(x.por_que) + '</div></td><td style="text-align:center;">' + P(x.pct) + '</td><td style="text-align:center;">' + (x.valor ? R(x.valor) : '—') + '</td><td style="text-align:center;">' + esc(x.rentabilidade_esperada) + '</td><td style="text-align:center;">' + esc(x.liquidez) + '</td><td style="text-align:center;color:' + ({ baixo: 'var(--green)', medio: 'var(--gold)', alto: 'var(--red)' }[x.risco] || 'var(--t2)') + ';">' + esc(x.risco) + '</td><td style="text-align:center;">' + esc(x.local) + '</td></tr>').join('') + '</table>' : '<div style="font-size:10.5px;color:var(--t3);">—</div>';
   const cart = (C, titulo) => C ? '<div class="panel" style="margin:10px 0 0;"><div class="ph"><div class="pt">' + titulo + '</div><span style="font-size:10px;color:var(--t2);">' + esc(C.objetivo || '') + (C.total_aplicavel ? ' · aplicável ' + R(C.total_aplicavel) : '') + (C.rentabilidade_esperada_total ? ' · ' + esc(C.rentabilidade_esperada_total) : '') + '</span></div><div class="pb">'
@@ -36544,7 +36544,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.400] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.401] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36560,7 +36560,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.400';
+window.__ATX_BUILD_ID__ = 'ATX-v3.401';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

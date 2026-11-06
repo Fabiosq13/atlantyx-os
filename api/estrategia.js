@@ -559,6 +559,21 @@ async function pessoalSalvar({ pessoal, apagar }, usuario) {
 
 async function handler(req, res) {
   // v3.240: cron mensal — a ATLAS sugere o ajuste fino do plano vigente (fica pendente, nada muda sem o fundador)
+  // v3.401: cron semanal (quinta, 9h de Brasília) — reanálise de Investimentos & Retiradas quando o Copom decide.
+  // Lê a Selic meta na API aberta do Banco Central (série SGS 432, sem chave): mudou desde a última análise → reanalisa;
+  // sem mudança, reanalisa mesmo assim a cada 45 dias (intervalo entre reuniões do Copom), para cobrir decisão de manutenção.
+  if (req.method === 'GET' && req.query?.cron === 'investimentos') {
+    try { const ult = await kv('inv:ultima'); if (!ult) return res.status(200).json({ success: true, pulado: 'o fundador ainda não rodou a primeira análise' });
+      let selic = null; try { const r = await fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json', { signal: AbortSignal.timeout(15000) }); const j = await r.json(); selic = Number(String(j?.[0]?.valor || '').replace(',', '.')) || null; } catch (_) {}
+      const dias = (Date.now() - Date.parse(ult.em)) / 864e5, selicAnt = Number(ult.macro?.brasil?.selic_pct) || null;
+      const mudou = selic != null && selicAnt != null && Math.abs(selic - selicAnt) >= 0.05;
+      if (!mudou && dias < 45) return res.status(200).json({ success: true, pulado: 'Selic ' + (selic ?? '?') + '% sem mudança desde a última análise (' + Math.round(dias) + ' dias)' });
+      if (dias < 5) return res.status(200).json({ success: true, pulado: 'análise feita há menos de 5 dias' });
+      const r = await investimentosAnalisar({ claude, claudeTools, kv, chamar, contexto, contextoAmplo, propositoPessoal, salvarHistorico: salvarHistoricoS1 }, { params: { ...(ult.params || {}) } }, 'robô Copom');
+      await kv('inv:cron', { em: new Date().toISOString(), motivo: mudou ? 'Selic mudou de ' + selicAnt + '% para ' + selic + '%' : 'reanálise periódica (45 dias)', historico_id: r.historico_id });
+      return res.status(200).json({ success: true, motivo: mudou ? 'selic_mudou' : 'periodica', selic, selic_anterior: selicAnt, historico_id: r.historico_id }); }
+    catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
   if (req.method === 'GET' && req.query?.cron === 'ajuste_plano') {
     try { const L = (await kv(K_AJUSTES)) || []; const ult = L.find(x => x.automatico);
       if (ult && Date.now() - Date.parse(ult.em) < 25 * 864e5) return res.status(200).json({ success: true, pulado: 'sugestão automática recente' });

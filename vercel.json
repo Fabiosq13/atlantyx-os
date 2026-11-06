@@ -279,6 +279,10 @@
       "schedule": "7 12 1 * *"
     },
     {
+      "path": "/api/estrategia?cron=investimentos",
+      "schedule": "17 12 * * 4"
+    },
+    {
       "path": "/api/financeiro?cron=maestro_aprovados",
       "schedule": "*/10 * * * *"
     }
