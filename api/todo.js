@@ -156,6 +156,37 @@ async function criar({ texto, responsavel, data, notas }, usuario) {
     concluido: false, criado_em: new Date().toISOString(), criado_por: usuario || null, contexto: 'Criada no To-do' + (usuario ? ' por ' + usuario : '') };
   L.unshift(x); await kv(K_ITENS, L.slice(0, 500)); return { ok: true, item: x };
 }
+// v3.410: TAREFAS CRIADAS PELAS IAs (ATLAS, Sala do Conselho, NORTE, Riscos, Diagnóstico, Planejamento) — em lote, com a
+// origem registrada no contexto ("Criada pela IA ATLAS a partir de …"). A IA só cria direto quando o fundador pede no chat;
+// nos demais casos as telas mostram a lista proposta para revisar (marcar/editar responsável e data) antes de gravar.
+async function criarLote({ itens, origem_ia, contexto, por }, usuario) {
+  const L0 = (Array.isArray(itens) ? itens : []).map(i => typeof i === 'string' ? { texto: i } : i).filter(i => String(i?.texto || '').trim()).slice(0, 40);
+  if (!L0.length) throw Object.assign(new Error('Nenhuma tarefa para criar'), { status: 400 });
+  const L = (await kv(K_ITENS)) || [], agora = new Date().toISOString(), quem = usuario || por || null, criadas = [];
+  const jaTem = new Set(L.filter(x => !x.concluido).map(x => norm(x.texto)));
+  for (const i of L0) { const t = txt(i.texto, 300); if (jaTem.has(norm(t))) continue; jaTem.add(norm(t));
+    const x = { id: 'm_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), texto: t, responsavel: txt(i.responsavel, 80), data: dataISO(i.data), notas: String(i.notas || '').substring(0, 1500),
+      concluido: false, criado_em: agora, criado_por: quem, ia: txt(origem_ia || 'IA', 40), contexto: txt('Criada pela IA ' + (origem_ia || '') + (contexto ? ' — ' + contexto : ''), 200) };
+    L.unshift(x); criadas.push(x); }
+  await kv(K_ITENS, L.slice(0, 500)); return { ok: true, criadas, ignoradas_duplicadas: L0.length - criadas.length };
+}
+// extrai tarefas de um texto (lista colada no chat, plano, análise de riscos) — devolve PROPOSTA, não grava
+async function extrair({ texto, origem_ia, instrucao }, sessao) {
+  const T = String(texto || '').trim(); if (!T) throw Object.assign(new Error('Sem texto para extrair tarefas'), { status: 400 });
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const EQ = await equipe(sessao), H = hoje();
+  const sys = `Você transforma texto de gestão em TAREFAS do To-do da Atlantyx. Hoje é ${H}. Cada tarefa: verbo no infinitivo, específica e verificável (até 160 caracteres), responsável e data.
+Equipe (use EXATAMENTE estes nomes como responsável; se o texto disser um papel — "CTO", "GP", "Comercial", "Fundador", "Marketing" — escolha o membro desse papel; se ninguém se encaixar, deixe vazio): ${JSON.stringify(EQ.membros.map(m => ({ nome: m.nome, papel: PAPEIS[m.papel] || m.papel })))}
+Datas: converta prazos relativos ("2 semanas", "até sexta", "30 dias", "1 mês") em AAAA-MM-DD a partir de hoje; sem prazo no texto, deixe vazio. Não invente tarefa que o texto não pede; quebre ações compostas ("1) … 2) … 3) …") em tarefas separadas. No máximo 25.
+${instrucao ? 'Instrução do usuário: ' + String(instrucao).substring(0, 400) : ''}
+Responda SOMENTE JSON: {"tarefas":[{"texto":"...","responsavel":"nome ou vazio","data":"AAAA-MM-DD ou vazio","notas":"de onde veio (1 linha)"}]}`;
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 3000, system: sys, messages: [{ role: 'user', content: T.substring(0, 18000) }] }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA [' + r.status + ']: ' + (d.error?.message || 'erro'));
+  const t = (d.content || []).map(c => c.text || '').join(''); const a = t.indexOf('{'), b = t.lastIndexOf('}'); let j = null; try { j = JSON.parse(t.substring(a, b + 1)); } catch (_) {}
+  const tarefas = (j?.tarefas || []).map(x => ({ texto: txt(x.texto, 300), responsavel: txt(x.responsavel, 80), data: dataISO(x.data), notas: txt(x.notas, 300) })).filter(x => x.texto);
+  return { tarefas, equipe: EQ.membros, origem_ia: origem_ia || null };
+}
 async function excluir({ id }, usuario) {
   if (String(id).startsWith('m_')) { const L = (await kv(K_ITENS)) || []; await kv(K_ITENS, L.filter(i => i.id !== id)); return { ok: true }; }
   const O = (await kv(K_OVER)) || {}; O[id] = { ...(O[id] || {}), oculto: true, em: new Date().toISOString(), por: usuario || null }; await kv(K_OVER, O); return { ok: true, oculto: true };
@@ -170,7 +201,7 @@ async function equipeSalvar({ membros }, sessao) {
 async function handler(req, res) {
   try {
     const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {}, usuario = req.sessao?.login || req.usuario || null;
-    const A = { listar: () => listar(req.sessao, b), salvar: () => salvar(b, usuario), criar: () => criar(b, usuario), excluir: () => excluir(b, usuario), equipe_salvar: () => equipeSalvar(b, req.sessao) };
+    const A = { listar: () => listar(req.sessao, b), salvar: () => salvar(b, usuario), criar: () => criar(b, usuario), excluir: () => excluir(b, usuario), equipe_salvar: () => equipeSalvar(b, req.sessao), criar_lote: () => criarLote(b, usuario), extrair: () => extrair(b, req.sessao) }; // v3.410
     if (!A[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });
     return res.status(200).json({ success: true, ...(await A[b.action]()) });
   } catch (e) { console.error('[todo]', e.message); return res.status(e.status || 500).json({ success: false, error: e.message }); }

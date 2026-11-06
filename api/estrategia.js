@@ -225,6 +225,32 @@ const json = t => { const s = String(t || '').replace(/```json|```/g, ''); const
 const REGRAS = `Regras: português do Brasil; use os números do CONTEXTO quando existirem e diga quando um dado falta — nunca invente número, cliente ou fato; seja específico para a Atlantyx (nada de conselho genérico); prefira poucas escolhas claras com o porquê e o próximo passo.`;
 
 // ── chat com o ATLAS ──
+// ═══ v3.410: IAs de estratégia criam tarefas no To-do do dashboard ═══
+// A IA devolve um bloco ```tarefas [...]``` no fim da resposta. Se o fundador PEDIU para criar tarefas, grava direto
+// (api/todo → criar_lote, com a origem registrada); senão devolve como sugestão para a tela mostrar "Criar N tarefas".
+const PEDE_TAREFA = /\b(cri[ae]r?|cria|adicion[ae]r?|coloc[ae]r?|lan[cç][ae]r?|ponha|p[oõ]e|gere|gerar|inclu[ai]r?|mand[ae]r?|jog[ae]r?|registr[ae]r?|transform[ae]r?|vir[ae]r?)\b[^.?!\n]{0,80}\b(tarefas?|to-?do|pend[eê]ncias?|checklist)\b|\b(tarefas?|to-?do)\b[^.?!\n]{0,30}\b(cri[ae]|adicion[ae]|coloc[ae])/i;
+const INSTR_TAREFAS = (hoje) => `
+TAREFAS NO TO-DO (você tem essa ferramenta): o dashboard tem um To-do da empresa. Quando o fundador pedir para criar tarefas (de uma lista que ele colou, de ações que você recomendou ou dos itens que ele está olhando) OU quando sua resposta recomendar ações concretas, termine a resposta com um bloco exatamente assim (não comente o bloco no texto):
+\`\`\`tarefas
+[{"texto":"verbo no infinitivo, ação específica e verificável","responsavel":"nome ou papel (Fabio/Fundador, CTO, GP, Comercial, Marketing…) ou vazio","data":"AAAA-MM-DD ou vazio"}]
+\`\`\`
+Hoje é ${hoje}. Converta prazos relativos em data. Quebre listas numeradas em tarefas separadas. Máximo 15. Se o pedido foi criar tarefas, no texto diga só em 1 frase o que vai para o To-do.`;
+function _extrairBlocoTarefas(t) {
+  const m = String(t || '').match(/```\s*tarefas\s*([\s\S]*?)```/i); if (!m) return { texto: String(t || '').trim(), tarefas: [] };
+  let L = []; try { const a = m[1].indexOf('['), b = m[1].lastIndexOf(']'); L = JSON.parse(m[1].substring(a, b + 1)); } catch (_) {}
+  L = (Array.isArray(L) ? L : []).map(x => ({ texto: String(x?.texto || '').trim().substring(0, 300), responsavel: String(x?.responsavel || '').trim().substring(0, 80), data: String(x?.data || '').trim().substring(0, 10) })).filter(x => x.texto).slice(0, 25);
+  return { texto: String(t).replace(m[0], '').trim(), tarefas: L };
+}
+async function _tarefasResolver(pedido, tarefas, origem_ia, contexto, usuario) {
+  if (!tarefas.length) return {};
+  if (!PEDE_TAREFA.test(String(pedido || ''))) return { tarefas_sugeridas: tarefas };
+  try { const r = await chamar('todo', { action: 'criar_lote', itens: tarefas, origem_ia, contexto: String(contexto || '').substring(0, 120), por: usuario });
+    return { tarefas_criadas: r.criadas || [], tarefas_duplicadas: r.ignoradas_duplicadas || 0 }; }
+  catch (e) { return { tarefas_sugeridas: tarefas, tarefas_erro: e.message }; }
+}
+async function tarefasCriar({ itens, origem_ia, contexto, _usuario }) { // ação direta (botão "Criar tarefas" das telas de estratégia)
+  const r = await chamar('todo', { action: 'criar_lote', itens, origem_ia: origem_ia || 'ATLAS', contexto, por: _usuario }); return { criadas: r.criadas || [], ignoradas_duplicadas: r.ignoradas_duplicadas || 0 };
+}
 async function chat({ conversa_id, mensagem, voz, persona, contexto_extra, titulo_extra, _usuario }) {
   const sql = await getSql(); const m = String(mensagem || '').trim(); if (!m) throw new Error('Escreva ou fale a sua pergunta');
   let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
@@ -255,10 +281,14 @@ PROPÓSITO E METAS PESSOAIS (cadastrados em S1 · Propósito e Metas Pessoais) +
 PREMISSAS E METAS DA EMPRESA: ${prem}
 PLANO ESTRATÉGICO VIGENTE: ${plano ? JSON.stringify(plano.sintese).substring(0, 2000) : '(nenhum)'}
 RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { mes: ctx.financeiro?.mes, ano: ctx.financeiro?.ano }, comercial: { meta_mes_pct: ctx.financeiro?.mes?.pct ?? null, meta_ano_pct: ctx.financeiro?.ano?.pct ?? null } })}` : null;
-  const resposta = await claude(sysNorte || system, [...hist, { role: 'user', content: m }], voz ? 600 : 1400);
-  const msgs = [...(conv.mensagens || []), { role: 'user', content: m, em: new Date().toISOString(), voz: !!voz }, { role: 'assistant', content: resposta, em: new Date().toISOString() }].slice(-60);
+  const hojeBR = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const bruto = await claude((sysNorte || system) + INSTR_TAREFAS(hojeBR), [...hist, { role: 'user', content: m }], voz ? 900 : 2200);
+  const X = _extrairBlocoTarefas(bruto); let resposta = X.texto; // v3.410
+  const T = await _tarefasResolver(m, X.tarefas, quem === 'norte' ? 'NORTE' : 'ATLAS', titulo_extra ? 'tela ' + titulo_extra : 'chat', _usuario);
+  if (T.tarefas_criadas?.length) resposta += '\n\n✅ **' + T.tarefas_criadas.length + ' tarefa(s) criada(s) no To-do:**\n' + T.tarefas_criadas.map(x => '- ' + x.texto + (x.responsavel ? ' — ' + x.responsavel : '') + (x.data ? ' · ' + x.data.split('-').reverse().join('/') : '')).join('\n') + (T.tarefas_duplicadas ? '\n(' + T.tarefas_duplicadas + ' já existia(m) e não foi(ram) duplicada(s))' : '');
+  const msgs = [...(conv.mensagens || []), { role: 'user', content: m, em: new Date().toISOString(), voz: !!voz }, { role: 'assistant', content: resposta, em: new Date().toISOString(), ...(T.tarefas_sugeridas ? { tarefas_sugeridas: T.tarefas_sugeridas } : {}) }].slice(-60);
   await sql`UPDATE est_conversas SET mensagens=${JSON.stringify(msgs)}, atualizado_em=NOW() WHERE id=${conv.id}`;
-  return { conversa_id: conv.id, resposta, contexto_em: ctx.em, persona: quem };
+  return { conversa_id: conv.id, resposta, contexto_em: ctx.em, persona: quem, ...T };
 }
 // plano de alinhamento propósito × metas (NORTE)
 async function nortePlano(usuario) {
@@ -405,7 +435,7 @@ CADEIRAS NESTA SESSÃO:
 ${cadeiras}
 - atlas = ATLAS (Estrategista-chefe): abre em 1 frase e FECHA com a síntese.
 Como funciona: cada conselheiro fala UMA vez por pauta (60–110 palavras, posição clara, cita número do contexto, concorda ou discorda nominalmente de outro conselheiro, termina com 1 recomendação). Só falam os conselheiros cuja lente é relevante para a pauta (mínimo 3), mas o Conselheiro do Contra SEMPRE fala por último antes do ATLAS: ataca a premissa mais frágil do que foi dito, aponta o que pode dar errado e o que precisaria ser verdade para a decisão valer. ATLAS fecha: síntese em 3–5 frases, a decisão recomendada, os pontos do Contra que ficaram em pé e os próximos passos com dono e prazo.
-Responda SOMENTE JSON: {"abertura":"1 frase do ATLAS enquadrando a pauta","falas":[{"autor":"cfo|cro|cto|coo|gmkt|gfin|gcom|grh|pmo|norte|cliente|critico","texto":"..."}],"atlas":{"sintese":"...","decisao":"...","contra_ficou_em_pe":["..."],"proximos_passos":[{"acao":"...","dono":"...","prazo":"..."}],"pergunta_ao_fundador":"1 pergunta que destrava a decisão (ou vazio)"}}
+Responda SOMENTE JSON: {"abertura":"1 frase do ATLAS enquadrando a pauta","falas":[{"autor":"cfo|cro|cto|coo|gmkt|gfin|gcom|grh|pmo|norte|cliente|critico","texto":"..."}],"atlas":{"sintese":"...","decisao":"...","contra_ficou_em_pe":["..."],"proximos_passos":[{"acao":"verbo no infinitivo","dono":"nome ou papel","prazo":"AAAA-MM-DD"}],"pergunta_ao_fundador":"1 pergunta que destrava a decisão (ou vazio)"}}
 
 PREMISSAS ESTRATÉGICAS: ${prem}
 PLANO VIGENTE: ${plano ? JSON.stringify({ tema: plano.tema, sintese: plano.sintese }).substring(0, 3000) : '(nenhum aprovado)'}
@@ -416,6 +446,9 @@ CONTEXTO VIVO (JSON): ${resumoCtx(ctx, 26000)}`;
   const j = json(t); if (!j || !Array.isArray(j.falas)) throw new Error('O conselho não devolveu a resposta no formato esperado — tente de novo');
   const falas = j.falas.filter(f => AGENTES[f.autor] && f.autor !== 'atlas').map(f => ({ autor: f.autor, texto: String(f.texto || '').substring(0, 1500) }));
   const resp = { abertura: String(j.abertura || '').substring(0, 400), falas, atlas: j.atlas || {} };
+  // v3.410: próximos passos do conselho viram tarefas — direto se a pauta pediu; senão ficam sugeridos (botão na tela)
+  const passos = (resp.atlas.proximos_passos || []).map(p => typeof p === 'string' ? { texto: p } : { texto: p.acao, responsavel: p.dono, data: /^\d{4}-\d{2}-\d{2}$/.test(String(p.prazo || '')) ? p.prazo : '', notas: p.prazo && !/^\d{4}-/.test(String(p.prazo)) ? 'Prazo: ' + p.prazo : '' }).filter(x => x.texto);
+  Object.assign(resp, await _tarefasResolver(m, passos, 'Sala do Conselho', 'pauta: ' + m.substring(0, 80), _usuario));
   const msgs = [...(conv.mensagens || []), { role: 'user', content: m, em: new Date().toISOString() }, { role: 'assistant', content: resumoConselho(resp), ...resp, em: new Date().toISOString() }].slice(-40);
   await sql`UPDATE est_conversas SET mensagens=${JSON.stringify(msgs)}, atualizado_em=NOW() WHERE id=${conv.id}`;
   try { await salvarHistoricoS1('conselho', { conselho: { headline: resp.atlas?.decisao || m.substring(0, 120), pauta: m, ...resp, conversa_id: conv.id } }, _usuario); } catch (_) {}
@@ -657,7 +690,8 @@ async function handler(req, res) {
       projecao_salvar: () => projecaoSalvar(b, usuario), projecao_ia: () => projecaoIA(b), projecao_para_metas: () => projecaoParaMetas(b),
       premissas_salvar: async () => { const t = String(b.texto || '').trim(); if (t.length < 30) throw new Error('Escreva as premissas (pelo menos algumas frases)'); await kv('est:premissas', { texto: t.substring(0, 6000), em: new Date().toISOString(), por: usuario }); return { ok: true }; },
       chat: () => chat({ ...b, _usuario: usuario }),
-      conselho_chat: () => conselhoChat({ ...b, _usuario: usuario }), // v3.404: Sala do Conselho (todos os agentes + Conselheiro do Contra)
+      conselho_chat: () => conselhoChat({ ...b, _usuario: usuario }),
+      tarefas_criar: () => tarefasCriar({ ...b, _usuario: usuario }), // v3.410 // v3.404: Sala do Conselho (todos os agentes + Conselheiro do Contra)
       // v3.400: Investimentos e retiradas (tela do Financeiro) — só o fundador
       investimentos_obter: () => (soFundador(req), investimentosObter({ kv })),
       investimentos_params: () => (soFundador(req), investimentosParamsSalvar({ kv }, b)),

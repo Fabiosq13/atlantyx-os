@@ -36,6 +36,50 @@ window.ATX_IA = (() => {
   }
   return { md, fluir, esc };
 })();
+// v3.410: ATX_TODO — as IAs (ATLAS, NORTE, Sala do Conselho, telas do Diagnóstico/Planejamento/Riscos) criam tarefas no
+// To-do do dashboard. revisar(itens) abre a lista proposta para marcar/editar responsável e data antes de gravar;
+// deTexto(texto) pede à IA para extrair as tarefas de um texto (lista colada, análise, plano) e abre a revisão.
+window.ATX_TODO = (() => {
+  const E = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  let _eq = null;
+  async function api(action, body = {}) { const r = await fetch('/api/todo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) }); const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status })); if (!d.success) throw new Error(d.error || 'falha'); return d; }
+  async function equipe() { if (_eq) return _eq; try { const d = await api('listar', { incluir_concluidas: false }); _eq = d.equipe || []; } catch (_) { _eq = []; } return _eq; }
+  function _iso(d) { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[0]; const b = String(d || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/); return b ? b[3] + '-' + b[2] + '-' + b[1] : ''; }
+  async function revisar(itens, origem, contexto) {
+    const L = (itens || []).map(i => typeof i === 'string' ? { texto: i } : i).filter(i => i && String(i.texto || '').trim()); if (!L.length) { try { toast('Nenhuma tarefa encontrada', 'error'); } catch (_) {} return; }
+    const eq = await equipe(); document.getElementById('atxTodoModal')?.remove();
+    const opts = v => '<option value="">— sem responsável —</option>' + eq.map(m => '<option' + (String(v || '').toLowerCase() === String(m.nome).toLowerCase() ? ' selected' : '') + '>' + E(m.nome) + '</option>').join('') + (v && !eq.some(m => String(m.nome).toLowerCase() === String(v).toLowerCase()) ? '<option selected>' + E(v) + '</option>' : '');
+    const html = '<div id="atxTodoModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)this.remove()"><div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(860px,100%);max-height:88vh;display:flex;flex-direction:column;">'
+      + '<div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">✅ Criar tarefas no To-do</b><span style="font-size:10.5px;color:var(--t2);">' + E(origem || 'IA') + (contexto ? ' · ' + E(String(contexto).substring(0, 80)) : '') + ' — confira, ajuste e grave</span><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'atxTodoModal\').remove()">Fechar</button></div>'
+      + '<div style="overflow:auto;padding:10px 16px;"><table style="width:100%;font-size:11.5px;border-collapse:collapse;"><tr style="color:var(--t3);font-size:10px;"><th><input type="checkbox" checked onclick="document.querySelectorAll(\'.atxTdOk\').forEach(c=>c.checked=this.checked)"></th><th style="text-align:left;">Tarefa</th><th>Responsável</th><th>Data</th></tr>'
+      + L.map((t, i) => '<tr style="border-top:1px solid var(--bd);"><td style="text-align:center;"><input type="checkbox" class="atxTdOk" data-i="' + i + '" checked></td><td style="padding:5px 4px;"><input class="fi atxTdTx" data-i="' + i + '" value="' + E(t.texto) + '" style="width:100%;font-size:11.5px;">' + (t.notas ? '<div style="font-size:9.5px;color:var(--t3);margin-top:2px;">' + E(t.notas) + '</div>' : '') + '</td><td style="width:170px;"><select class="fsel atxTdRe" data-i="' + i + '" style="font-size:11px;width:100%;">' + opts(t.responsavel) + '</select></td><td style="width:130px;"><input type="date" class="fi atxTdDt" data-i="' + i + '" value="' + E(_iso(t.data)) + '" style="font-size:11px;"></td></tr>').join('') + '</table></div>'
+      + '<div style="padding:12px 16px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:center;"><span style="font-size:10px;color:var(--t3);">As tarefas ficam como "Criada pela IA ' + E(origem || '') + '" no To-do do dashboard. Duplicadas (mesmo texto já aberto) não são gravadas de novo.</span><button class="btn btn-gn" id="atxTdBtn" style="margin-left:auto;font-size:11px;">Criar tarefas selecionadas</button></div></div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+    document.getElementById('atxTdBtn').onclick = async () => {
+      const sel = [...document.querySelectorAll('.atxTdOk')].filter(c => c.checked).map(c => +c.dataset.i);
+      const out = sel.map(i => ({ texto: document.querySelector('.atxTdTx[data-i="' + i + '"]').value, responsavel: document.querySelector('.atxTdRe[data-i="' + i + '"]').value, data: document.querySelector('.atxTdDt[data-i="' + i + '"]').value, notas: L[i].notas || '' })).filter(x => x.texto.trim());
+      if (!out.length) return; const b = document.getElementById('atxTdBtn'); b.disabled = true; b.textContent = 'Criando…';
+      try { const r = await api('criar_lote', { itens: out, origem_ia: origem || 'IA', contexto }); document.getElementById('atxTodoModal')?.remove();
+        try { toast(r.criadas.length + ' tarefa(s) criada(s) no To-do' + (r.ignoradas_duplicadas ? ' · ' + r.ignoradas_duplicadas + ' já existia(m)' : ''), 'success'); } catch (_) {}
+        try { if (window.TODO?.carregar) TODO.carregar(true); } catch (_) {} }
+      catch (e) { b.disabled = false; b.textContent = 'Criar tarefas selecionadas'; try { toast('Não criou: ' + e.message, 'error'); } catch (_) {} }
+    };
+  }
+  async function deTexto(texto, origem, contexto, instrucao) {
+    const t = String(texto || '').trim(); if (t.length < 15) { try { toast('Não há conteúdo nesta tela para virar tarefa — gere a análise primeiro', 'error'); } catch (_) {} return; }
+    try { toast('🧠 Lendo e separando as tarefas…', 'info'); } catch (_) {}
+    try { const d = await api('extrair', { texto: t.substring(0, 18000), origem_ia: origem, instrucao }); if (d.equipe) _eq = d.equipe; await revisar(d.tarefas, origem, contexto); }
+    catch (e) { try { toast('Não extraiu: ' + e.message, 'error'); } catch (_) {} }
+  }
+  // botão padrão para colocar embaixo de uma resposta de IA que trouxe tarefas sugeridas
+  const _reg = {}; let _n = 0;
+  function botao(itens, origem, contexto) { if (!itens || !itens.length) return ''; const k = 'td' + (++_n); _reg[k] = { itens, origem, contexto };
+    return '<div style="margin-top:6px;"><button class="btn btn-gn" style="font-size:10.5px;padding:3px 10px;" onclick="ATX_TODO._abrir(\'' + k + '\')">✅ Criar ' + itens.length + ' tarefa(s) no To-do</button></div>'; }
+  function _abrir(k) { const r = _reg[k]; if (r) revisar(r.itens, r.origem, r.contexto); }
+  // texto de uma tela (sem botões, entradas e painéis de chat)
+  function textoDe(el) { if (!el) return ''; const c = el.cloneNode(true); c.querySelectorAll('[id$="Atlas"],script,style,button,input,select,textarea,.atx-td-barra').forEach(x => x.remove()); return (c.innerText || c.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim(); }
+  return { revisar, deTexto, botao, _abrir, textoDe };
+})();
 // v3.84: "Copiar" nunca quebra — se o navegador recusar a área de transferência (aba sem foco, permissão),
 // copia pelo método antigo; se nem assim der, avisa em vez de gerar erro de JavaScript.
 // v3.94: também cobre navegador sem Clipboard API (http, aba embutida) e erro síncrono do writeText, e expõe
@@ -7767,6 +7811,7 @@ async function diagAtlasPerguntar(id, texto) {
     const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha'); if (R) R.conv = d.conversa_id;
     box.querySelector('.diag-pensando')?.remove();
     box.insertAdjacentHTML('beforeend', '<div class="ia-txt" style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:10px 12px;"></div>'); await ATX_IA.fluir(box.lastElementChild, d.resposta);
+    if (d.tarefas_sugeridas?.length) box.insertAdjacentHTML('beforeend', ATX_TODO.botao(d.tarefas_sugeridas, 'ATLAS', document.title)); // v3.410
   } catch (e) { box.querySelector('.diag-pensando')?.remove(); box.insertAdjacentHTML('beforeend', '<div style="color:var(--red);margin:6px 0;">ATLAS: ' + esc(e.message) + '</div>'); }
   if (btn) btn.disabled = false; box.scrollTop = box.scrollHeight;
 }
@@ -7783,7 +7828,14 @@ const ATLAS_TELAS = {
   s3investimentos: { titulo: 'Financeiro · Investimentos e retiradas', fontes: ['invResult'], sugestoes: ['Posso retirar mais do que a análise sugere sem furar a reserva?', 'CDB ainda vale se a Selic cair 3 pontos?', 'Como a carteira muda se o dólar subir 15%?', 'Qual o imposto real de distribuição × pró-labore no meu caso?'] } // v3.400
 };
 window._atlasTela = window._atlasTela || {};
+// v3.410: barra "Criar tarefas desta tela" nas telas de Diagnóstico, Direção, Planejamento e Execução
+const TODO_TELAS = { s1dados: '1.1 Dados reais', s1intel: '1.2 Diagnóstico', s1financeiro: '1.3 Finanças', s1mercado: '1.4 Mercado', s1riscos: '1.5 Riscos', s1cenarios: '2.4 Cenários', s1plano: '3.1 Plano Estratégico', s1analise: '3.3 Analisar Ideia', s1marketing: '4.1 Análise de Marketing', s1metas: '5.1 Visão e Metas', s1acoes: '6.1 Plano de Ação 90 dias', s1relatorio: '6.4 Relatório Executivo', s3investimentos: 'Investimentos & Retiradas' };
+function todoBarraMontar(p) {
+  const nome = TODO_TELAS[p], pg = document.getElementById('page-' + p); if (!nome || !pg || pg.querySelector('.atx-td-barra')) return;
+  pg.insertAdjacentHTML('afterbegin', '<div class="atx-td-barra" style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:6px;"><button class="btn btn-g" style="font-size:10px;padding:3px 9px;" title="A IA lê o que está nesta tela (ações, mitigações, próximos passos) e propõe as tarefas — você revisa responsável e data antes de gravar" onclick="ATX_TODO.deTexto(ATX_TODO.textoDe(document.getElementById(\'page-' + p + '\')), \'' + nome + '\', \'tela ' + nome + '\', \'Extraia as ações concretas desta tela: mitigações de risco, próximos passos, ações do plano, recomendações com dono\')">✅ Criar tarefas desta tela no To-do</button></div>');
+}
 function atlasTelaMontar(p) {
+  try { todoBarraMontar(p); } catch (_) {}
   const cfg = ATLAS_TELAS[p]; if (!cfg) return; const pg = document.getElementById('page-' + p); if (!pg || document.getElementById(p + 'Atlas')) return;
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const sug = cfg.sugestoes.map(q => '<button class="btn btn-g" style="font-size:10px;padding:3px 8px;" onclick="atlasTelaPerguntar(\'' + p + '\',this.textContent)">' + esc(q) + '</button>').join(' ');
@@ -7812,6 +7864,7 @@ async function atlasTelaPerguntar(p, texto) {
     const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha'); S.conv = d.conversa_id;
     box.querySelector('.diag-pensando')?.remove();
     box.insertAdjacentHTML('beforeend', '<div class="ia-txt" style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:10px 12px;"></div>'); await ATX_IA.fluir(box.lastElementChild, d.resposta);
+    if (d.tarefas_sugeridas?.length) box.insertAdjacentHTML('beforeend', ATX_TODO.botao(d.tarefas_sugeridas, 'ATLAS', document.title)); // v3.410
   } catch (e) { box.querySelector('.diag-pensando')?.remove(); box.insertAdjacentHTML('beforeend', '<div style="color:var(--red);margin:6px 0;">ATLAS: ' + esc(e.message) + '</div>'); }
   if (btn) btn.disabled = false; box.scrollTop = box.scrollHeight;
 }
@@ -36570,7 +36623,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.409] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.410] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36586,7 +36639,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.409';
+window.__ATX_BUILD_ID__ = 'ATX-v3.410';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
