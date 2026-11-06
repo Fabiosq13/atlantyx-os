@@ -876,6 +876,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div class="sbi s1" onclick="window._estAbaInicial='trilha';nav('s0estrategia',this)">2.1 &#128506; Trilha · sócios e 11 perguntas</div>
       <div class="sbi s1" onclick="nav('s1proposito',this)">2.2 &#9670; Propósito + metas pessoais</div>
       <div class="sbi s1" onclick="window._estAbaInicial='atlas';nav('s0estrategia',this)">2.3 &#129504; ATLAS · Estrategista <span class="nbx gn">voz</span></div>
+      <div class="sbi s1" onclick="window._estAbaInicial='conselho';nav('s0estrategia',this)">2.3b &#127963;&#65039; Sala do Conselho · todos os agentes <span class="nbx pu">IA</span></div>
       <div class="sbi s1" onclick="nav('s1cenarios',this)">2.4 &#128301; Cenários</div>
     </div>
     <div class="sg-hd sg-fundador" onclick="toggleGrupo('gPlanejamento')" data-g="gPlanejamento">
@@ -7586,7 +7587,7 @@ const S1_HIST = [ // [tipo, id do resultado]
   ['plano_acao', 's1AcoesResult'], ['okr_gerador', 's1OkrGenResult'], ['cenarios_futuro', 's1CenResult'],
   ['status_okr', 's1OkrFull'], ['status_okr', 's1OkrDash'], ['relatorio_executivo', 's1RelatorioFull'], ['diagnostico_completo', 's1DadosDiagResult'],
   ['dados_financeiro_qb', 'qbResult'], ['dados_drive', 'driveResult'], ['dados_contexto', 'contextoResult'] ]; // v3.399: 1.1 Dados reais também fica gravado
-const S1_HIST_NOME = { investimentos: 'Investimentos & Retiradas', dados_financeiro_qb: 'Financeiro QuickBooks (1.1)', dados_drive: 'Resumo do Drive (1.1)', dados_contexto: 'Contexto estratégico QB + Drive (1.1)', analise_marketing: 'Análise de marketing', diagnostico_completo: 'Diagnóstico completo', replanejamento: 'Replanejamento', analise_riscos: 'Análise de riscos', analise_financeira: 'Análise financeira', analise_mercado: 'Análise de mercado', planejamento_estrategico: 'Plano estratégico', plano_acao: 'Plano de ação 90d', okr_gerador: 'OKRs sugeridos', cenarios_futuro: 'Cenários de futuro', status_okr: 'Status dos OKRs', relatorio_executivo: 'Relatório executivo', bp_analise: 'Análise do business plan' };
+const S1_HIST_NOME = { investimentos: 'Investimentos & Retiradas', conselho: 'Sala do Conselho (ata)', dados_financeiro_qb: 'Financeiro QuickBooks (1.1)', dados_drive: 'Resumo do Drive (1.1)', dados_contexto: 'Contexto estratégico QB + Drive (1.1)', analise_marketing: 'Análise de marketing', diagnostico_completo: 'Diagnóstico completo', replanejamento: 'Replanejamento', analise_riscos: 'Análise de riscos', analise_financeira: 'Análise financeira', analise_mercado: 'Análise de mercado', planejamento_estrategico: 'Plano estratégico', plano_acao: 'Plano de ação 90d', okr_gerador: 'OKRs sugeridos', cenarios_futuro: 'Cenários de futuro', status_okr: 'Status dos OKRs', relatorio_executivo: 'Relatório executivo', bp_analise: 'Análise do business plan' };
 function s1HistBotoes() {
   S1_HIST.forEach(([tipo, rid]) => {
     const el = document.getElementById(rid); if (!el || el.dataset.histBtn) return; el.dataset.histBtn = '1';
@@ -36569,7 +36570,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.403] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.404] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36585,7 +36586,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.403';
+window.__ATX_BUILD_ID__ = 'ATX-v3.404';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

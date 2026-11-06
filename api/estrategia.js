@@ -50,12 +50,19 @@ const AGENTES = {
   cro: { nome: 'CRO IA', papel: 'Mercado, Vendas e Marketing', cor: '#FFB547', voz: { pitch: 1.15, rate: 1.05 }, foco: 'mercado, ICP, posicionamento, canais, funil, pipeline, preço e como a escolha vira receita.' },
   cto: { nome: 'CTO IA', papel: 'Produto, Tecnologia e IA', cor: '#7C9CFF', voz: { pitch: 0.95, rate: 1.02 }, foco: 'produto, arquitetura, viabilidade técnica, IA generativa, reuso entre clientes, escala e o que dá para construir com o time atual.' },
   coo: { nome: 'COO IA', papel: 'Operação, Pessoas e Entrega', cor: '#C58CFF', voz: { pitch: 1.05, rate: 1 }, foco: 'capacidade do time, alocação, entrega dos projetos, processos (Método B.P.M., Esteira de Entrega), contratação e execução.' },
-  critico: { nome: 'Advogado do Diabo', papel: 'Riscos e Premissas', cor: '#FF5C7A', voz: { pitch: 0.75, rate: 0.98 }, foco: 'ataca as premissas mais frágeis, aponta o que pode dar errado, vieses e o custo de oportunidade. Discorda com fundamento.' },
+  critico: { nome: 'Conselheiro do Contra', papel: 'Voz contrária · riscos e premissas', cor: '#FF5C7A', voz: { pitch: 0.75, rate: 0.98 }, foco: 'ataca as premissas mais frágeis, aponta o que pode dar errado, vieses e o custo de oportunidade. Discorda com fundamento.' },
   norte: { nome: 'NORTE', papel: 'Mentor de Propósito e Metas', cor: '#F5D76E', voz: { pitch: 1.08, rate: 0.97 },
     foco: 'liga a estratégia ao propósito do fundador e da empresa: o que essa escolha faz pela vida que ele quer, pelo legado e pelas metas pessoais; aponta conflitos entre metas pessoais e da empresa.' },
   cliente: { nome: 'Voz do Cliente', papel: 'CIO de grande empresa', cor: '#9BA8C9', voz: { pitch: 1.1, rate: 0.98 }, foco: 'fala como um CIO/diretor de grande empresa brasileira que compraria da Atlantyx: o que valoriza, o que trava a compra, o que pagaria.' },
 };
+// v3.404: gerentes operacionais de IA do Atlantyx OS também têm cadeira na Sala do Conselho — falam do que operam todo dia
+AGENTES.gmkt = { nome: 'Gerente de Marketing IA', papel: 'Campanhas, leads e conversão', cor: '#FF8A5B', voz: { pitch: 1.1, rate: 1.04 }, foco: 'campanhas orgânicas e pagas, página de captura, funil até o cadastro e a reunião, custo por lead, o que converte e o que não converte — fala com os números das campanhas e dos leads.' };
+AGENTES.gfin = { nome: 'Gerente Financeiro IA', papel: 'Caixa, cobrança e fluxo', cor: '#3DD598', voz: { pitch: 0.9, rate: 1 }, foco: 'caixa de hoje, contas a receber e vencidas, agenda de pagamentos, fluxo futuro 12 meses, conciliação, retiradas e investimentos — o lado operacional do dinheiro.' };
+AGENTES.gcom = { nome: 'Gerente Comercial IA', papel: 'Pipeline, propostas e POCs', cor: '#F7C948', voz: { pitch: 1.0, rate: 1.03 }, foco: 'pipeline do HubSpot, propostas e POCs em andamento, taxa de fechamento, ticket, prazo de decisão dos clientes, SDR de IA (IARA) e reuniões marcadas.' };
+AGENTES.grh = { nome: 'Gerente de Pessoas IA', papel: 'Time, alocação e contratação', cor: '#B388FF', voz: { pitch: 1.05, rate: 1 }, foco: 'capacidade do time, taxa de alocação, custo/hora, contratação e desligamento, clima, rotinas de gestão — se a decisão cabe no time que existe.' };
+AGENTES.pmo = { nome: 'PMO IA (Maestro)', papel: 'Projetos, entregas e prazos', cor: '#64B5F6', voz: { pitch: 0.95, rate: 1.02 }, foco: 'portfólio de projetos, marcos e entregas, atrasos, horas, risco de entrega e sustentação — o que a decisão exige da operação de projetos.' };
 const COMITE_PADRAO = ['cfo', 'cro', 'cto', 'coo', 'critico'];
+const CONSELHO_TODOS = ['cfo', 'cro', 'cto', 'coo', 'gmkt', 'gfin', 'gcom', 'grh', 'pmo', 'norte', 'cliente', 'critico'];
 
 // ── contexto vivo (cache de 10 min) ──
 async function contexto(forcar) {
@@ -359,6 +366,53 @@ async function planoEstrAjusteDecidir({ id, decisao }, usuario) {
   await kv(K_AJUSTES, L); return { ajuste: aj, vigente: novo };
 }
 
+// ═══ v3.404: SALA DO CONSELHO — todos os agentes numa conversa (chat) ou em reunião por rodadas (Sala de Estratégia) ═══
+let _opCache = { em: 0, dados: null };
+async function contextoOperacional() {
+  if (_opCache.dados && Date.now() - _opCache.em < 10 * 60e3) return _opCache.dados;
+  const sql = await getSql(); const o = {};
+  try { const r = await sql`SELECT COUNT(*)::int AS leads_30d, COUNT(reuniao_marcada_em)::int AS reunioes_30d FROM leads WHERE criado_em > NOW() - INTERVAL '30 days' AND COALESCE(status,'') <> 'qa_teste'`; o.leads = r[0]; } catch (_) {}
+  try { const r = await sql`SELECT COALESCE(utm->>'source', origem, '?') AS origem, COUNT(*)::int AS n FROM leads WHERE criado_em > NOW() - INTERVAL '90 days' AND COALESCE(status,'') <> 'qa_teste' GROUP BY 1 ORDER BY 2 DESC LIMIT 6`; o.leads_por_origem_90d = r; } catch (_) {}
+  try { const C = ((await kv('mkt:campanhas')) || {}).lista || []; o.campanhas = C.slice(0, 10).map(c => ({ nome: c.nome, status: c.status, tipo: c.plano?.tipo, acoes: (c.acoes || []).length })); } catch (_) {}
+  try { const Pt = (await kv('mkt:patrocinados')) || {}; const L = Pt.lista || Pt.campanhas || []; o.anuncios_pagos = (Array.isArray(L) ? L : []).slice(0, 8).map(c => ({ nome: c.nome, estado: c.estado_meta || c.status, orcamento_dia: c.orcamento_diario || c.orcamento })); } catch (_) {}
+  try { const r = await sql`SELECT status, COUNT(*)::int AS n, COALESCE(SUM(valor_total),0)::float AS valor FROM projetos_financeiros GROUP BY 1 ORDER BY 2 DESC LIMIT 8`; o.projetos_por_status = r; } catch (_) {}
+  try { const r = await sql`SELECT COUNT(*)::int AS ativos FROM funcionarios WHERE ativo = true`; o.pessoas = r[0]; } catch (_) {}
+  try { const r = await sql`SELECT cliente, titulo, status, valor_total, atualizado_em FROM propostas ORDER BY atualizado_em DESC NULLS LAST LIMIT 10`; o.propostas = r; } catch (_) {}
+  _opCache = { em: Date.now(), dados: o }; return o;
+}
+async function conselhoChat({ conversa_id, mensagem, agentes, _usuario }) {
+  const sql = await getSql(); const m = String(mensagem || '').trim(); if (!m) throw new Error('Escreva a pauta ou a pergunta para o conselho');
+  const ag = (Array.isArray(agentes) && agentes.length ? agentes : CONSELHO_TODOS).filter(a => AGENTES[a] && a !== 'atlas'); if (!ag.includes('critico')) ag.push('critico'); // o Conselheiro do Contra sempre fala
+  let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
+  if (!conv) { const id = novoId('conv'); await sql`INSERT INTO est_conversas (id, titulo) VALUES (${id}, ${'🏛️ ' + m.substring(0, 80)})`; conv = { id, mensagens: [] }; }
+  const [ctx, prem, plano, op, pp] = await Promise.all([contexto(), premissasCtx(), planoVigente(), contextoOperacional().catch(() => ({})), propositoPessoal(_usuario).catch(() => ({}))]);
+  try { ctx.amplo = ctx.amplo || await contextoAmplo(false); } catch (_) {}
+  const hist = (conv.mensagens || []).slice(-10).map(x => ({ role: x.role, content: x.role === 'assistant' && x.falas ? JSON.stringify({ falas: x.falas.map(f => ({ autor: f.autor, texto: f.texto.substring(0, 500) })), atlas: x.atlas }) : x.content }));
+  const cadeiras = ag.map(a => `- ${a} = ${AGENTES[a].nome} (${AGENTES[a].papel}): ${AGENTES[a].foco}`).join('\n');
+  const system = `Você simula a SALA DO CONSELHO da Atlantyx: o fundador e CEO (Fabio) traz uma pauta e cada conselheiro de IA responde pela SUA lente, com os números do contexto. ATLAS conduz e fecha.
+${REGRAS}
+CADEIRAS NESTA SESSÃO:
+${cadeiras}
+- atlas = ATLAS (Estrategista-chefe): abre em 1 frase e FECHA com a síntese.
+Como funciona: cada conselheiro fala UMA vez por pauta (60–110 palavras, posição clara, cita número do contexto, concorda ou discorda nominalmente de outro conselheiro, termina com 1 recomendação). Só falam os conselheiros cuja lente é relevante para a pauta (mínimo 3), mas o Conselheiro do Contra SEMPRE fala por último antes do ATLAS: ataca a premissa mais frágil do que foi dito, aponta o que pode dar errado e o que precisaria ser verdade para a decisão valer. ATLAS fecha: síntese em 3–5 frases, a decisão recomendada, os pontos do Contra que ficaram em pé e os próximos passos com dono e prazo.
+Responda SOMENTE JSON: {"abertura":"1 frase do ATLAS enquadrando a pauta","falas":[{"autor":"cfo|cro|cto|coo|gmkt|gfin|gcom|grh|pmo|norte|cliente|critico","texto":"..."}],"atlas":{"sintese":"...","decisao":"...","contra_ficou_em_pe":["..."],"proximos_passos":[{"acao":"...","dono":"...","prazo":"..."}],"pergunta_ao_fundador":"1 pergunta que destrava a decisão (ou vazio)"}}
+
+PREMISSAS ESTRATÉGICAS: ${prem}
+PLANO VIGENTE: ${plano ? JSON.stringify({ tema: plano.tema, sintese: plano.sintese }).substring(0, 3000) : '(nenhum aprovado)'}
+PROPÓSITO E METAS PESSOAIS DO FUNDADOR (para NORTE): ${JSON.stringify(pp).substring(0, 2500)}
+OPERAÇÃO (marketing, leads, campanhas, projetos, pessoas, propostas): ${JSON.stringify(op).substring(0, 6000)}
+CONTEXTO VIVO (JSON): ${resumoCtx(ctx, 26000)}`;
+  const t = await claude(system, [...hist, { role: 'user', content: m }], 6000);
+  const j = json(t); if (!j || !Array.isArray(j.falas)) throw new Error('O conselho não devolveu a resposta no formato esperado — tente de novo');
+  const falas = j.falas.filter(f => AGENTES[f.autor] && f.autor !== 'atlas').map(f => ({ autor: f.autor, texto: String(f.texto || '').substring(0, 1500) }));
+  const resp = { abertura: String(j.abertura || '').substring(0, 400), falas, atlas: j.atlas || {} };
+  const msgs = [...(conv.mensagens || []), { role: 'user', content: m, em: new Date().toISOString() }, { role: 'assistant', content: resumoConselho(resp), ...resp, em: new Date().toISOString() }].slice(-40);
+  await sql`UPDATE est_conversas SET mensagens=${JSON.stringify(msgs)}, atualizado_em=NOW() WHERE id=${conv.id}`;
+  try { await salvarHistoricoS1('conselho', { conselho: { headline: resp.atlas?.decisao || m.substring(0, 120), pauta: m, ...resp, conversa_id: conv.id } }, _usuario); } catch (_) {}
+  return { conversa_id: conv.id, ...resp };
+}
+function resumoConselho(r) { return (r.abertura ? r.abertura + '\n\n' : '') + r.falas.map(f => '**' + (AGENTES[f.autor]?.nome || f.autor) + ':** ' + f.texto).join('\n\n') + (r.atlas?.sintese ? '\n\n**ATLAS — síntese:** ' + r.atlas.sintese + (r.atlas.decisao ? '\n**Decisão recomendada:** ' + r.atlas.decisao : '') : ''); }
+
 // ── Sala de Estratégia ──
 async function salaAbrir({ tema, objetivo, agentes }) {
   const sql = await getSql(); if (!String(tema || '').trim()) throw new Error('Diga qual é o tema estratégico');
@@ -586,13 +640,14 @@ async function handler(req, res) {
     const usuario = req.sessao?.login || req.usuario || null;
     const acoes = {
       inicio: async () => { const [prem, plano, conv, sess] = await Promise.all([premissas(), planoVigente(), sql`SELECT id, titulo, atualizado_em FROM est_conversas ORDER BY atualizado_em DESC LIMIT 15`, sql`SELECT id, tema, status, agentes, atualizado_em FROM est_sessoes ORDER BY atualizado_em DESC LIMIT 15`]);
-        return { agentes: AGENTES, comite_padrao: COMITE_PADRAO, premissas: prem, premissas_padrao: prem === PREMISSAS_PADRAO, plano, conversas: conv, sessoes: sess }; },
+        return { agentes: AGENTES, comite_padrao: COMITE_PADRAO, conselho_todos: CONSELHO_TODOS, premissas: prem, premissas_padrao: prem === PREMISSAS_PADRAO, plano, conversas: conv, sessoes: sess }; },
       contexto: async () => ({ contexto: await contexto(!!b.forcar) }),
       contexto_amplo: async () => ({ contexto: await contextoAmplo(!!b.forcar) }), // v3.286
       projecao_obter: () => projecaoObter(b), projecao_calcular: async () => ({ projecao: projetar3(b.premissas || {}, await baseProjecao(false)) }),
       projecao_salvar: () => projecaoSalvar(b, usuario), projecao_ia: () => projecaoIA(b), projecao_para_metas: () => projecaoParaMetas(b),
       premissas_salvar: async () => { const t = String(b.texto || '').trim(); if (t.length < 30) throw new Error('Escreva as premissas (pelo menos algumas frases)'); await kv('est:premissas', { texto: t.substring(0, 6000), em: new Date().toISOString(), por: usuario }); return { ok: true }; },
       chat: () => chat({ ...b, _usuario: usuario }),
+      conselho_chat: () => conselhoChat({ ...b, _usuario: usuario }), // v3.404: Sala do Conselho (todos os agentes + Conselheiro do Contra)
       // v3.400: Investimentos e retiradas (tela do Financeiro) — só o fundador
       investimentos_obter: () => (soFundador(req), investimentosObter({ kv })),
       investimentos_params: () => (soFundador(req), investimentosParamsSalvar({ kv }, b)),

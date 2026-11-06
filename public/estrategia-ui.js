@@ -45,13 +45,62 @@
     box.innerHTML = `<div style="background:linear-gradient(135deg,rgba(0,196,204,.12),rgba(124,156,255,.06));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700;">🧠 Estratégia IA</div>
         <div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;"><b>ATLAS</b> é o estrategista-chefe: conversa com você por <b>chat ou voz</b> com os números vivos da empresa. <b>NORTE</b> é o mentor de propósito e metas: alinha as suas metas pessoais ao seu propósito e ao da Atlantyx. Na <b>Sala de Estratégia</b>, o ATLAS conduz um comitê de IAs (CFO, CRO, CTO, COO, Advogado do Diabo, Voz do Cliente e NORTE) e fecha num plano que você aprova e transforma em demandas, ideias ou pauta de reunião.</div></div>
-      <div class="seg" id="estAbas" style="margin-bottom:10px;">${[['atlas', '🧠 ATLAS · Estratégia'], ['norte', '🧭 NORTE · Propósito e metas'], ['trilha', '🗺 Trilha guiada 2027–2031'], ['sala', '🏛 Sala de Estratégia'], ['plano', '📜 Plano vigente e premissas']].map(([k, r]) => `<button data-a="${k}" class="${k === aba ? 'on' : ''}" onclick="EST.aba('${k}')">${r}</button>`).join('')}</div>
+      <div class="seg" id="estAbas" style="margin-bottom:10px;">${[['atlas', '🧠 ATLAS · Estratégia'], ['conselho', '🏛️ Sala do Conselho'], ['norte', '🧭 NORTE · Propósito e metas'], ['trilha', '🗺 Trilha guiada 2027–2031'], ['sala', '🏛 Sala de Estratégia'], ['plano', '📜 Plano vigente e premissas']].map(([k, r]) => `<button data-a="${k}" class="${k === aba ? 'on' : ''}" onclick="EST.aba('${k}')">${r}</button>`).join('')}</div>
       <div id="estCorpo"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando…</div></div>`;
     carregar();
   }
   async function carregar() { try { D = await api('inicio'); render(); } catch (e) { $('estCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">${esc(e.message)}</div>`; } }
   function trocar(k) { aba = k; document.querySelectorAll('#estAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === k)); calar(); render(); }
-  function render() { if (!D) return; if (aba === 'atlas' || aba === 'norte') renderChat(aba); else if (aba === 'trilha') renderTrilha(); else if (aba === 'sala') renderSalas(); else renderPlano(); }
+  function render() { if (!D) return; if (aba === 'atlas' || aba === 'norte') renderChat(aba); else if (aba === 'conselho') renderConselho(); else if (aba === 'trilha') renderTrilha(); else if (aba === 'sala') renderSalas(); else renderPlano(); }
+
+  // ── v3.404: SALA DO CONSELHO — todos os agentes + Conselheiro do Contra, por chat (aqui) ou reunião por rodadas (Sala de Estratégia) ──
+  let CS = { conv: null, msgs: [], agentes: null, enviando: false };
+  function renderConselho() {
+    const L = (D.conversas || []).filter(c => String(c.titulo || '').startsWith('🏛️')); const todos = D.conselho_todos || Object.keys(D.agentes).filter(k => k !== 'atlas');
+    if (!CS.agentes) CS.agentes = [...todos];
+    const sug = ['Devemos focar a Atlantyx em um produto-âncora ou manter os 3 motores?', 'Vale investir mais em anúncios pagos ou parar e trabalhar só o orgânico?', 'Contratar mais um analista agora ou esperar fechar a próxima POC?', 'Qual decisão tomar sobre caixa, retiradas e investimento neste trimestre?'];
+    $('estCorpo').innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:10px;" class="est-grid">
+      <div class="panel"><div class="pb" style="padding:8px;">
+        <button class="btn btn-gn" style="width:100%;font-size:10.5px;margin-bottom:6px;" onclick="EST.conselhoNovo()">＋ Nova pauta no conselho</button>
+        <button class="btn btn-g" style="width:100%;font-size:10.5px;margin-bottom:8px;" onclick="EST.conselhoReuniao()" title="Reunião formal por rodadas: o ATLAS abre, cada conselheiro fala, você intervém, síntese vira plano">🏛 Abrir reunião por rodadas</button>
+        <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">Cadeiras (clique para tirar/pôr):</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">${todos.map(k => `<span onclick="EST.conselhoCadeira('${k}')" style="cursor:pointer;font-size:9.5px;padding:2px 7px;border-radius:10px;border:1px solid ${AG(k).cor};color:${CS.agentes.includes(k) ? '#0B1226' : AG(k).cor};background:${CS.agentes.includes(k) ? AG(k).cor : 'transparent'};${k === 'critico' ? 'font-weight:700;' : ''}" title="${esc(AG(k).papel)}">${esc(AG(k).nome)}</span>`).join('')}</div>
+        <div style="font-size:10px;color:var(--t3);margin-bottom:6px;">O <b>Conselheiro do Contra</b> sempre fala, por último, antes da síntese do ATLAS.</div>
+        ${L.map(c => `<div onclick="EST.conselhoAbrir('${c.id}')" style="cursor:pointer;font-size:11px;padding:6px;border-radius:6px;margin-bottom:2px;${CS.conv === c.id ? 'background:var(--bg3);' : ''}"><div>${esc(c.titulo.replace('🏛️ ', ''))}</div><div style="font-size:9.5px;color:var(--t3);">${quando(c.atualizado_em)}</div></div>`).join('')}
+      </div></div>
+      <div class="panel" style="display:flex;flex-direction:column;min-height:560px;"><div class="pb" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><b style="font-size:13px;">🏛️ Sala do Conselho</b><span style="font-size:10.5px;color:var(--t2);">${CS.agentes.length} cadeiras · cada conselheiro fala pela sua lente com os números vivos; o ATLAS conduz e fecha com decisão e próximos passos</span></div>
+        <div id="estMsgs" style="flex:1;overflow-y:auto;min-height:320px;max-height:60vh;padding:4px 2px;">${CS.msgs.length ? CS.msgs.map(m => conselhoBolha(m)).join('') : `<div style="color:var(--t3);font-size:11.5px;padding:10px;">Traga uma pauta. Sugestões:<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">${sug.map(q => `<button class="btn btn-g" style="font-size:10.5px;text-align:left;" onclick="EST.conselhoEnviar(this.textContent)">${esc(q)}</button>`).join('')}</div></div>`}</div>
+        <div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end;"><textarea class="fta" id="estTxt" style="min-height:52px;font-size:12.5px;flex:1;" placeholder="Pauta ou pergunta para o conselho… (Enter envia, Shift+Enter quebra linha)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();EST.conselhoEnviar();}"></textarea>
+          <div style="display:flex;flex-direction:column;gap:4px;"><button class="btn btn-g estMic" style="font-size:10.5px;" onclick="EST.ouvirConselho()">🎤 Falar</button><button class="btn btn-gn" id="estBtEnv" style="font-size:11px;" onclick="EST.conselhoEnviar()">Convocar</button></div></div>
+      </div></div></div>`;
+    rolar();
+  }
+  function conselhoBolha(m) {
+    if (m.role === 'user') return `<div style="display:flex;justify-content:flex-end;margin:6px 0;"><div style="max-width:78%;background:rgba(79,124,255,.15);border:1px solid rgba(79,124,255,.3);border-radius:10px 10px 2px 10px;padding:8px 11px;font-size:12.5px;line-height:1.55;">${esc(m.content)}</div></div>`;
+    if (m.pensando) return `<div style="color:var(--t3);font-size:11.5px;margin:8px 0;">🏛️ O conselho está lendo os números e deliberando… (até 1 min)</div>`;
+    if (m.erro) return `<div style="color:var(--red);font-size:12px;margin:8px 0;">⚠ ${esc(m.content)}</div>`;
+    const fala = (k, texto, destaque) => { const A = AG(k); return `<div style="display:flex;gap:8px;margin:8px 0;"><span style="width:26px;height:26px;flex-shrink:0;border-radius:50%;background:${A.cor};color:#0B1226;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;" title="${esc(A.papel)}">${esc(A.nome.replace(/ IA.*$/, '').split(' ').map(x => x[0]).join('').substring(0, 3).toUpperCase())}</span><div style="flex:1;max-width:88%;background:${destaque ? 'rgba(0,196,204,.08)' : 'var(--bg4)'};border:1px solid ${destaque ? A.cor : 'var(--bd)'};border-radius:2px 10px 10px 10px;padding:8px 11px;font-size:12.5px;line-height:1.55;"><div style="font-size:10px;font-weight:700;color:${A.cor};margin-bottom:2px;">${esc(A.nome)} <span style="font-weight:400;color:var(--t3);">· ${esc(A.papel)}</span></div><div class="ia-txt" data-ia-txt>${window.ATX_IA ? ATX_IA.md(texto) : md(texto)}</div></div></div>`; };
+    const At = m.atlas || {};
+    const fecho = At.sintese ? '**Síntese:** ' + At.sintese + (At.decisao ? '\n\n**Decisão recomendada:** ' + At.decisao : '') + ((At.contra_ficou_em_pe || []).length ? '\n\n**O que o Contra deixou em pé:**\n' + At.contra_ficou_em_pe.map(x => '- ' + x).join('\n') : '') + ((At.proximos_passos || []).length ? '\n\n**Próximos passos:**\n' + At.proximos_passos.map(p => '- ' + (p.acao || p) + (p.dono ? ' — ' + p.dono : '') + (p.prazo ? ' · ' + p.prazo : '')).join('\n') : '') + (At.pergunta_ao_fundador ? '\n\n**Pergunta para você:** ' + At.pergunta_ao_fundador : '') : '';
+    return (m.abertura ? fala('atlas', m.abertura) : '') + (m.falas || []).map(f => fala(f.autor, f.texto, f.autor === 'critico')).join('') + (fecho ? fala('atlas', fecho, true) : '');
+  }
+  async function conselhoEnviar(texto) {
+    const el = $('estTxt'); const m = String(texto ?? el?.value ?? '').trim(); if (!m || CS.enviando) return; CS.enviando = true; if (el) el.value = '';
+    CS.msgs.push({ role: 'user', content: m }, { role: 'assistant', pensando: true }); renderConselho(); const bt = $('estBtEnv'); if (bt) bt.disabled = true;
+    try { const r = await api('conselho_chat', { conversa_id: CS.conv, mensagem: m, agentes: CS.agentes }); CS.conv = r.conversa_id; CS.msgs.pop(); CS.msgs.push({ role: 'assistant', abertura: r.abertura, falas: r.falas, atlas: r.atlas }); renderConselho();
+      try { if (window.ATX_IA) { const fontes = [r.abertura, ...(r.falas || []).map(f => f.texto)].filter(Boolean); const els = [...document.querySelectorAll('#estMsgs [data-ia-txt]')]; const temFecho = !!(r.atlas && r.atlas.sintese); const alvo = els.slice(-(fontes.length + (temFecho ? 1 : 0)), temFecho ? -1 : undefined);
+        alvo.forEach(e => { e.innerHTML = ''; }); let i = 0; const seq = () => { const e = alvo[i]; if (!e) return; ATX_IA.fluir(e, fontes[i++], { ms: 12 }).then(seq); }; seq(); } } catch (_) {}
+      if (!D.conversas.some(c => c.id === r.conversa_id)) D.conversas.unshift({ id: r.conversa_id, titulo: '🏛️ ' + m.substring(0, 80), atualizado_em: new Date().toISOString() });
+    } catch (e) { CS.msgs.pop(); CS.msgs.push({ role: 'assistant', erro: true, content: e.message }); renderConselho(); }
+    CS.enviando = false;
+  }
+  async function conselhoAbrir(id) { try { const r = await api('conversa', { id }); CS.conv = id; CS.msgs = (r.conversa?.mensagens || []).map(m => m.role === 'user' ? { role: 'user', content: m.content } : { role: 'assistant', abertura: m.abertura, falas: m.falas || [], atlas: m.atlas || {}, content: m.content }); renderConselho(); } catch (e) { nota(e.message, 'error'); } }
+  function conselhoNovo() { CS.conv = null; CS.msgs = []; renderConselho(); }
+  function conselhoCadeira(k) { if (k === 'critico') return nota('O Conselheiro do Contra sempre participa', 'info'); CS.agentes = CS.agentes.includes(k) ? CS.agentes.filter(x => x !== k) : [...CS.agentes, k]; renderConselho(); }
+  function conselhoReuniao() { window._estSalaTodos = CS.agentes.slice(); trocar('sala'); sala = null; renderSalas(); }
+  function ouvirConselho() { ouvir('estTxt', () => conselhoEnviar()); }
+
   // v3.341: trilha guiada (11 perguntas, o que NÃO fazer, calendário de revisão, orçamento semestral) — módulo carregado sob demanda
   function renderTrilha() {
     const el = $('estCorpo'); if (window.ESTT) return ESTT.render(el);
@@ -63,7 +112,7 @@
 
   // ── chat (ATLAS / NORTE) ──
   function renderChat(p) {
-    const A = AG(p), L = (D.conversas || []).filter(c => (p === 'norte') === String(c.titulo || '').startsWith('🧭')), M = msgs[p];
+    const A = AG(p), L = (D.conversas || []).filter(c => (p === 'norte') === String(c.titulo || '').startsWith('🧭') && !String(c.titulo || '').startsWith('🏛️')), M = msgs[p];
     const sug = p === 'atlas' ? ['Qual deve ser o nosso produto-âncora nos próximos 18 meses?', 'Onde estamos perdendo margem e o que fazer?', 'Como chegar a 30% de receita recorrente até 2027?', 'O que os números desta semana dizem sobre o ano?']
       : ['Me ajude a transformar meu propósito em 3 metas para este ano', 'Minhas metas pessoais e as da empresa estão competindo?', 'Monte uma revisão semanal de 15 minutos para mim', 'O que eu deveria parar de fazer para viver meu propósito?'];
     $('estCorpo').innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:10px;" class="est-grid">
@@ -135,7 +184,7 @@
     return `<div style="font-size:13px;font-weight:700;margin-bottom:8px;">Nova sessão — o ATLAS conduz, o comitê debate, você decide</div>
       <div class="fg"><label class="fl">Tema estratégico</label><input class="fi" id="estTema" placeholder="ex.: Qual produto vira o nosso âncora em 18 meses?"/></div>
       <div class="fg"><label class="fl">O que precisa sair desta sessão (opcional)</label><input class="fi" id="estObj" placeholder="ex.: decidir 1 produto, metas de ARR por trimestre e o que deixar de fazer"/></div>
-      <div class="fg"><label class="fl">Comitê</label>${ag.map(([k, a]) => `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:4px 0;cursor:pointer;"><input type="checkbox" class="estAg" value="${k}" ${D.comite_padrao.includes(k) ? 'checked' : ''}/><span><b style="color:${a.cor};">${esc(a.nome)}</b> · ${esc(a.papel)}<br><span style="font-size:10.5px;color:var(--t2);">${esc(a.foco)}</span></span></label>`).join('')}</div>
+      <div class="fg"><label class="fl">Comitê</label>${ag.map(([k, a]) => `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:4px 0;cursor:pointer;"><input type="checkbox" class="estAg" value="${k}" ${(window._estSalaTodos ? window._estSalaTodos.includes(k) : D.comite_padrao.includes(k)) ? 'checked' : ''}/><span><b style="color:${a.cor};">${esc(a.nome)}</b> · ${esc(a.papel)}<br><span style="font-size:10.5px;color:var(--t2);">${esc(a.foco)}</span></span></label>`).join('')}</div>
       <button class="btn btn-gn" id="estBtAbrir" onclick="EST.salaCriar()">🏛 Abrir a sala e rodar a 1ª rodada</button>`;
   }
   async function salaCriar() {
@@ -211,7 +260,7 @@
   function modal(html) { let m = $('estModal'); if (m) m.remove(); m = document.createElement('div'); m.id = 'estModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px;'; m.addEventListener('click', e => { if (e.target === m) m.remove(); }); m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(760px,100%);">${html}</div>`; document.body.appendChild(m); }
   function ler(a) { calar(); falar(a.dataset.t, a.dataset.a); }
   if (!document.getElementById('estCss')) { const st = document.createElement('style'); st.id = 'estCss'; st.textContent = '@media(max-width:820px){.est-grid{grid-template-columns:1fr!important;}}'; document.head.appendChild(st); }
-  window.EST = { abrir, norteVer, aba: trocar, enviar, ouvir: ouvirChat, conversaVoz, voz: v => { vozLigada = v; if (!v) calar(); }, abrirConversa, nova, nortePlano, salaNova, salaCriar, salaAbrir, rodada, ouvirRodada, ouvirSala, sintese, aprovar, acoes, salaExcluir, salvarPrem, atualizarCtx, ler, fechar: () => $('estModal')?.remove(), _estado: () => ({ D, sala, msgs }) };
+  window.EST = { abrir, norteVer, aba: trocar, enviar, conselhoEnviar, conselhoAbrir, conselhoNovo, conselhoCadeira, conselhoReuniao, ouvirConselho, ouvir: ouvirChat, conversaVoz, voz: v => { vozLigada = v; if (!v) calar(); }, abrirConversa, nova, nortePlano, salaNova, salaCriar, salaAbrir, rodada, ouvirRodada, ouvirSala, sintese, aprovar, acoes, salaExcluir, salvarPrem, atualizarCtx, ler, fechar: () => $('estModal')?.remove(), _estado: () => ({ D, sala, msgs }) };
   // carrega a lista de reuniões quando a síntese aparece
   new MutationObserver(() => carregarRitos()).observe(document.body, { childList: true, subtree: true });
 })();
