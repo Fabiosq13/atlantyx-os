@@ -8456,8 +8456,14 @@ async function _rpFaturasQB(desde) {
       texto: [i.CustomerRef?.name, i.CustomerMemo?.value, i.PrivateNote, ...(i.Line || []).map(l => [l.Description, l.SalesItemLineDetail?.ItemRef?.name].join(' '))].filter(Boolean).join(' ') }));
   } catch (_) { return null; }
 }
+// v3.411: entre previsões candidatas a uma fatura, a de valor mais próximo; empate → a de data mais próxima da fatura
+const _rpMaisPerto = f => (a, b) => (Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor)) || (Math.abs(Date.parse(a.data) - Date.parse(f.data || f.emissao)) - Math.abs(Date.parse(b.data) - Date.parse(f.data || f.emissao)));
 async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const N = Math.max(1, Math.min(36, parseInt(meses) || 13)), hoje = _hojeBR(), mesHoje = hoje.substring(0, 7), ultimo = _mesMais(mesHoje, N - 1), fimHor = _rpUltimoDia(ultimo);
+  // v3.411: mensalidades recorrentes (sustentações e avulsas recorrentes) dos 2 meses anteriores entram como "sombra" só para
+  // absorver as faturas desses meses no casamento com o QuickBooks — antes a fatura de OUTUBRO (sem a ocorrência de outubro
+  // na lista) "cobria" a mensalidade de NOVEMBRO, que sumia da agenda como se já estivesse faturada. As sombras saem no fim.
+  const mesSombra = _mesMais(mesHoje, -2);
   const chave = N + '|' + hoje; if (!_forcar && _rpCache.v && _rpCache.chave === chave && Date.now() - _rpCache.em < 60000) return _rpCache.v;
   const sql = await getSql(); const avisos = []; let marcosNoTermo = [];
   const [man, susCfg, ocCfg, prevCfg] = await Promise.all([_kvFin(_RP_MAN).catch(() => null), _kvFin(_RP_SUS).catch(() => null), _kvFin(_RP_OC).catch(() => null), _prevCfg(sql).catch(() => ({}))]);
@@ -8493,9 +8499,10 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
       const c = cfg[s.id] || {}; s.ajuste = c; const ativo = c.ativo !== false; const valor = Number(c.valor_mensal) > 0 ? Number(c.valor_mensal) : s.sugerido;
       const ini = /^\d{4}-\d{2}$/.test(c.inicio || '') ? c.inicio : s.inicio, fim = /^\d{4}-\d{2}$/.test(c.fim || '') ? c.fim : s.fim, dia = parseInt(c.dia) || diaPad;
       s.efetivo = { ativo, valor_mensal: valor, inicio: ini, fim, dia };
+      if (ativo && (!(valor > 0) || !ini || !fim)) avisos.push('Sustentação "' + s.projeto + '" NÃO projetada: falta ' + [!(valor > 0) && 'valor mensal', !ini && 'mês de início', !fim && 'mês de fim'].filter(Boolean).join(', ') + ' (sem contrato com datas) — ajuste na aba Sustentações.'); // v3.411
       if (!ativo || !(valor > 0) || !ini || !fim) continue;
-      for (let mes = ini < mesHoje ? mesHoje : ini; mes <= fim && mes <= ultimo; mes = _mesMais(mes, 1))
-        if (mesComMarco.has(s.id + '|' + mes)) susPuladas++; else oc.push({ id: `sus_${s.id}_${mes}`, origem: 'sustentacao', ref_id: s.id, projeto: s.projeto, cliente: s.cliente, descricao: 'Sustentação ' + _MESES_PT[+mes.substring(5, 7) - 1] + '/' + mes.substring(0, 4), valor: round(valor), data: _rpDia(mes, dia), base_data: Number(c.valor_mensal) > 0 ? 'valor ajustado' : 'valor sugerido (projeto ÷ meses do contrato)' });
+      for (let mes = ini < mesSombra ? mesSombra : ini; mes <= fim && mes <= ultimo; mes = _mesMais(mes, 1)) // v3.411: 2 meses "sombra" antes de hoje
+        if (mesComMarco.has(s.id + '|' + mes)) { if (mes >= mesHoje) susPuladas++; } else oc.push({ ...(mes < mesHoje ? { _sombra: true } : {}), id: `sus_${s.id}_${mes}`, origem: 'sustentacao', ref_id: s.id, projeto: s.projeto, cliente: s.cliente, descricao: 'Sustentação ' + _MESES_PT[+mes.substring(5, 7) - 1] + '/' + mes.substring(0, 4), valor: round(valor), data: _rpDia(mes, dia), base_data: Number(c.valor_mensal) > 0 ? 'valor ajustado' : 'valor sugerido (projeto ÷ meses do contrato)' });
     }
     if (susPuladas) avisos.push(susPuladas + ' mensalidade(s) de sustentação não projetada(s): o projeto já tem marco de faturamento no mesmo mês (o marco é a cobrança).');
   } catch (e) { avisos.push('Sustentações: ' + e.message); }
@@ -8506,8 +8513,8 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     const passo = { unica: 0, mensal: 1, trimestral: 3, semestral: 6, anual: 12 }[r.recorrencia] ?? 0; const dia = r.inicio.substring(8, 10);
     if (!passo) { oc.push({ id: `man_${r.id}_${r.inicio}`, origem: 'manual', ref_id: r.id, projeto: r.projeto || '', cliente: r.cliente || '', descricao: r.descricao || 'Receita avulsa', valor: round(Number(r.valor)), data: r.inicio, recorrencia: 'unica' }); continue; }
     const fimR = /^\d{4}-\d{2}-\d{2}$/.test(r.fim || '') ? r.fim.substring(0, 7) : ultimo;
-    for (let mes = r.inicio.substring(0, 7); mes <= fimR && mes <= ultimo; mes = _mesMais(mes, passo)) { if (mes < mesHoje) continue;
-      oc.push({ id: `man_${r.id}_${mes}`, origem: 'manual', ref_id: r.id, projeto: r.projeto || '', cliente: r.cliente || '', descricao: r.descricao || 'Receita recorrente', valor: round(Number(r.valor)), data: _rpDia(mes, dia), recorrencia: r.recorrencia }); }
+    for (let mes = r.inicio.substring(0, 7); mes <= fimR && mes <= ultimo; mes = _mesMais(mes, passo)) { if (mes < mesSombra) continue;
+      oc.push({ ...(mes < mesHoje ? { _sombra: true } : {}), id: `man_${r.id}_${mes}`, origem: 'manual', ref_id: r.id, projeto: r.projeto || '', cliente: r.cliente || '', descricao: r.descricao || 'Receita recorrente', valor: round(Number(r.valor)), data: _rpDia(mes, dia), recorrencia: r.recorrencia }); }
   }
   // ajustes por ocorrência
   const aj = ocCfg || {};
@@ -8528,16 +8535,18 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     const ord = faturas.filter(f => !f._usada).sort((a, b) => String(a.data).localeCompare(String(b.data)));
     for (const f of ord) {
       const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && janela(o, f, 31) && valorOk(o, f));
-      if (!cand.length) continue; cand.sort((a, b) => Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor)); cobrir(cand[0], f, 'cliente');
+      if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'cliente');
     }
     // v3.221: pelo ASSUNTO — palavra distintiva da previsão (ex.: "anaplan") no texto da fatura, valor compatível, até 60 dias.
     // Cobre a previsão cadastrada com o nome do serviço no lugar do cliente (a fatura sai no nome do cliente real).
     for (const f of ord.filter(x => !x._usada)) {
       const txt = new Set(_rpTokens(f.texto));
       const cand = oc.filter(o => !o.status && !o.coberta_por && janela(o, f, 60) && valorOk(o, f) && _rpTokens([o.cliente, o.projeto, o.descricao].join(' ')).some(t => txt.has(t)));
-      if (!cand.length) continue; cand.sort((a, b) => Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor)); cobrir(cand[0], f, 'assunto');
+      if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'assunto');
     }
   }
+  { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411
+    if (cobSombra) avisos.push(cobSombra + ' fatura(s) dos 2 últimos meses reconhecida(s) como mensalidade do próprio mês (não cobrem mais a do mês seguinte).'); }
   for (const o of oc) if (!o.status) { if (o.data < hoje) { o.status = 'atrasada'; o.data_prevista = o.data; o.data = hoje; } else o.status = 'prevista'; }
   const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
   const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
