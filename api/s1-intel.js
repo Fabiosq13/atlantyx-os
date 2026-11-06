@@ -247,13 +247,54 @@ Cada item precisa de 1 a 3 evidências tiradas LITERALMENTE de fatos_verificados
   return { diagnostico: diag, dados_usados: { fatos_verificados: FV.fatos, fatos_que_faltaram: FV.faltou, dados_reais: ctx.dados_reais || null, plano_estrategico_vigente: ctx.plano_estrategico_vigente || null, data_de_hoje: ctx.data_de_hoje } }; // v3.289: os valores que pautaram a análise
 }
 
+// v3.409: ESTRUTURA REAL DA EQUIPE para a análise de riscos — quem existe (cadastro de Pessoas), quem está alocado em quê
+// (funcionarios_projetos) e quem gerencia cada projeto no Maestro. Sem isto a IA supunha "fundador concentra tudo" (risco
+// de pessoa-chave como hipótese de mercado); agora mede a concentração por pessoa com o dado do sistema.
+async function _pmoS1(action, payload = {}) {
+  const mod = await import('./pmo.js'); let out = null;
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(o) { out = o; return this; }, send(b) { try { out = JSON.parse(b); } catch (_) { out = { raw: b }; } return this; }, setHeader() {}, end() { return this; } };
+  await mod.default({ method: 'POST', body: { action, payload }, query: {}, headers: {} }, res);
+  if (!out?.success) throw new Error(out?.error || 'falha em ' + action); return out;
+}
+async function estruturaEquipe() {
+  const E = { fonte: [], faltou: [] };
+  const [pesR, maeR] = await Promise.allSettled([
+    _comPrazo((async () => { const sql = await _sqlS1(); if (!sql) return null;
+      const f = await sql`SELECT f.id, f.nome, f.cargo, COALESCE(SUM(fp.alocacao_pct),0)::float AS alocacao_total, COUNT(fp.id)::int AS n_projetos,
+        COALESCE(string_agg(DISTINCT pf.nome, ' · '), '') AS projetos
+        FROM funcionarios f LEFT JOIN funcionarios_projetos fp ON fp.funcionario_id = f.id LEFT JOIN projetos_financeiros pf ON pf.id = fp.projeto_id
+        WHERE f.ativo = true GROUP BY f.id, f.nome, f.cargo ORDER BY n_projetos DESC, f.nome LIMIT 80`;
+      return f; })(), 12000),
+    _comPrazo(_pmoS1('maestro_painel', {}), 25000)]);
+  if (pesR.status === 'fulfilled' && pesR.value) { const L = pesR.value; E.fonte.push('Pessoas (cadastro + alocação)');
+    const porCargo = {}; L.forEach(p => { const c = String(p.cargo || 'sem cargo').trim() || 'sem cargo'; porCargo[c] = (porCargo[c] || 0) + 1; });
+    E.pessoas = { ativos: L.length, por_cargo: porCargo,
+      mais_alocados: L.filter(p => p.n_projetos > 0).slice(0, 12).map(p => ({ nome: p.nome, cargo: p.cargo, projetos: p.n_projetos, alocacao_pct: Math.round(p.alocacao_total), quais: String(p.projetos).slice(0, 160) })),
+      sobrealocados: L.filter(p => p.alocacao_total > 100).map(p => ({ nome: p.nome, alocacao_pct: Math.round(p.alocacao_total) })),
+      sem_alocacao: L.filter(p => !p.n_projetos).length };
+    if (!L.length) E.faltou.push('cadastro de pessoas vazio'); }
+  else E.faltou.push('pessoas: ' + (pesR.reason?.message || 'sem banco'));
+  if (maeR.status === 'fulfilled' && maeR.value?.projetos) { const M = maeR.value, at = (M.projetos || []).filter(p => p.ativo); E.fonte.push('Maestro (portfólio de projetos)');
+    const porGP = {}; at.forEach(p => { const g = String(p.gerente || 'sem gerente').trim() || 'sem gerente'; const o = porGP[g] = porGP[g] || { projetos: 0, vermelhos: 0, atrasados: 0, clientes: new Set() }; o.projetos++; if (p.farol === 'vermelho') o.vermelhos++; if (p.dias_atraso > 0) o.atrasados++; if (p.cliente) o.clientes.add(p.cliente); });
+    const tot = at.length || 1;
+    E.projetos_por_gerente = Object.entries(porGP).sort((a, b) => b[1].projetos - a[1].projetos).map(([g, o]) => ({ gerente: g, projetos: o.projetos, pct_do_portfolio: Math.round(o.projetos / tot * 100), vermelhos: o.vermelhos, atrasados: o.atrasados, clientes: [...o.clientes].slice(0, 6) }));
+    const porCli = {}; at.forEach(p => { const c = String(p.cliente || 'sem cliente').trim(); porCli[c] = (porCli[c] || 0) + 1; });
+    E.projetos_por_cliente = Object.entries(porCli).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => ({ cliente: c, projetos: n, pct: Math.round(n / tot * 100) }));
+    E.maestro_resumo = M.resumo; }
+  else E.faltou.push('Maestro: ' + (maeR.reason?.message || 'sem dados'));
+  E.papeis_declarados = 'Cadastrados pelo fundador: CTO (responsável técnico; também cobra clientes e providencia NF/datas dos termos) e Gerentes de Projeto (GPs) que cobram clientes e cuidam dos termos de faturamento. O fundador/CEO decide preço, desconto, retiradas e investimentos e tem os acessos administrativos (QuickBooks, HubSpot, Vercel, banco).';
+  return E;
+}
+
 // ── ANÁLISE DE RISCOS ─────────────────────────────────────────────────────────
 async function analiseRiscos(extra) {
-  const ctx = (await ctxComFatos(extra)).ctx; // v3.292: + fatos verificados
+  const [ctxR, estR] = await Promise.all([ctxComFatos(extra), estruturaEquipe().catch(e => ({ faltou: ['estrutura: ' + e.message] }))]);
+  const ctx = ctxR.ctx; ctx.estrutura_equipe = estR; // v3.409: estrutura real (pessoas, alocação, GPs do Maestro) para riscos de pessoa-chave
 
   const system = `Você é o Agente de Gestão de Riscos da Atlantyx.
 Mapeie TODOS os riscos reais — internos, externos, financeiros, operacionais, de mercado, jurídicos e de pessoas.
 Para cada risco: quantifique o impacto, defina a probabilidade e proponha uma ação de mitigação concreta.
+RISCOS DE PESSOAS / PESSOA-CHAVE (v3.409): use "estrutura_equipe" — pessoas ativas por cargo, quem está mais alocado e sobrealocado, projetos por gerente (GP) no Maestro e concentração por cliente. Meça concentração com números (ex.: "GP X gerencia N de M projetos ativos = P% do portfólio, K vermelhos"). Só cite o fundador como ponto único de falha nos papéis que "papeis_declarados" diz serem só dele (preço/desconto, retiradas/investimentos, acessos administrativos) — NÃO afirme que ele concentra a operação ou a gestão de projetos se o Maestro mostra GPs à frente deles. Se estrutura_equipe.faltou tiver itens, diga que aquele dado faltou.
 Retorne APENAS JSON válido.` + CONCISO + REGRAS_FATOS;
 
   const user = `Analise os riscos completos da Atlantyx:

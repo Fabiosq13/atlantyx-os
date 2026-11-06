@@ -29,3 +29,4 @@ _(nenhuma)_
 | 2026-10-11 | Kit da F1 instalado no repositório e na Esteira (v3.145) | — | — | Escolher a trilha piloto da F2; decidir sobre branch protection (ver README) |
 - 2026-11-05-investimentos-retiradas · T3 · Financeiro → Investimentos & Retiradas (v3.400) · entregue
 - 2026-11-06-sala-do-conselho · T3 · Sala do Conselho (v3.404) · entregue
+- 2026-11-06-riscos-estrutura · T3 · Riscos com estrutura real da equipe (v3.409) · entregue
