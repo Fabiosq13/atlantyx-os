@@ -376,6 +376,8 @@ async function contextoOperacional() {
   try { const C = ((await kv('mkt:campanhas')) || {}).lista || []; o.campanhas = C.slice(0, 10).map(c => ({ nome: c.nome, status: c.status, tipo: c.plano?.tipo, acoes: (c.acoes || []).length })); } catch (_) {}
   try { const Pt = (await kv('mkt:patrocinados')) || {}; const L = Pt.lista || Pt.campanhas || []; o.anuncios_pagos = (Array.isArray(L) ? L : []).slice(0, 8).map(c => ({ nome: c.nome, estado: c.estado_meta || c.status, orcamento_dia: c.orcamento_diario || c.orcamento })); } catch (_) {}
   try { const r = await sql`SELECT status, COUNT(*)::int AS n, COALESCE(SUM(valor_total),0)::float AS valor FROM projetos_financeiros GROUP BY 1 ORDER BY 2 DESC LIMIT 8`; o.projetos_por_status = r; } catch (_) {}
+  // v3.405: base do MAESTRO (módulo de projetos, banco separado) — o PMO IA fala com o portfólio real: farol, avanço × planejado, atraso, marcos
+  try { const M = await _t(chamar('pmo', { action: 'maestro_painel', payload: {} }), 25000); if (M?.projetos) o.maestro = { fonte: M.fonte, em: M.em, resumo: M.resumo, projetos: M.projetos.filter(p => p.ativo).slice(0, 15).map(p => ({ nome: p.nome, cliente: p.cliente, gerente: p.gerente, status: p.status, farol: p.farol, pct: p.pct, planejado: p.planejado, desvio: p.desvio, conclusao: p.conclusao, dias_atraso: p.dias_atraso, motivos: (p.motivos || []).slice(0, 2), ultimo_report: p.ultimo_report })) }; } catch (e) { o.maestro = { erro: 'Maestro não respondeu: ' + String(e.message).substring(0, 100) }; }
   try { const r = await sql`SELECT COUNT(*)::int AS ativos FROM funcionarios WHERE ativo = true`; o.pessoas = r[0]; } catch (_) {}
   try { const r = await sql`SELECT cliente, titulo, status, valor_total, atualizado_em FROM propostas ORDER BY atualizado_em DESC NULLS LAST LIMIT 10`; o.propostas = r; } catch (_) {}
   _opCache = { em: Date.now(), dados: o }; return o;
@@ -400,7 +402,7 @@ Responda SOMENTE JSON: {"abertura":"1 frase do ATLAS enquadrando a pauta","falas
 PREMISSAS ESTRATÉGICAS: ${prem}
 PLANO VIGENTE: ${plano ? JSON.stringify({ tema: plano.tema, sintese: plano.sintese }).substring(0, 3000) : '(nenhum aprovado)'}
 PROPÓSITO E METAS PESSOAIS DO FUNDADOR (para NORTE): ${JSON.stringify(pp).substring(0, 2500)}
-OPERAÇÃO (marketing, leads, campanhas, projetos, pessoas, propostas): ${JSON.stringify(op).substring(0, 6000)}
+OPERAÇÃO (marketing, leads, campanhas, projetos do financeiro, PORTFÓLIO DO MAESTRO em "maestro", pessoas, propostas): ${JSON.stringify(op).substring(0, 9000)}
 CONTEXTO VIVO (JSON): ${resumoCtx(ctx, 26000)}`;
   const t = await claude(system, [...hist, { role: 'user', content: m }], 6000);
   const j = json(t); if (!j || !Array.isArray(j.falas)) throw new Error('O conselho não devolveu a resposta no formato esperado — tente de novo');
