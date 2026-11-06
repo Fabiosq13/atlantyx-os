@@ -8,3 +8,4 @@ BPM-Trilha: T3 · BPM-ID: 2026-11-06-sala-do-conselho
 ## Registro da Batida
 - 2026-11-06 · v3.404 · ✅ entregue · próximo: fundador testa uma pauta real.
 - 2026-11-06 · v3.405 · ✅ PMO IA do conselho lê o portfólio real do Maestro (maestro_painel: farol, avanço × planejado, atrasos, motivos) · próximo: —
+- 2026-11-06 · v3.406 · ✅ Gerente Comercial IA do conselho lê o pipeline do HubSpot ao vivo (funil_vendas: resumo, etapas, negócios abertos nominais, pendências, leads) · próximo: —

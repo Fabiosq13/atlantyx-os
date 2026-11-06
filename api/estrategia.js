@@ -380,6 +380,14 @@ async function contextoOperacional() {
   try { const M = await _t(chamar('pmo', { action: 'maestro_painel', payload: {} }), 25000); if (M?.projetos) o.maestro = { fonte: M.fonte, em: M.em, resumo: M.resumo, projetos: M.projetos.filter(p => p.ativo).slice(0, 15).map(p => ({ nome: p.nome, cliente: p.cliente, gerente: p.gerente, status: p.status, farol: p.farol, pct: p.pct, planejado: p.planejado, desvio: p.desvio, conclusao: p.conclusao, dias_atraso: p.dias_atraso, motivos: (p.motivos || []).slice(0, 2), ultimo_report: p.ultimo_report })) }; } catch (e) { o.maestro = { erro: 'Maestro não respondeu: ' + String(e.message).substring(0, 100) }; }
   try { const r = await sql`SELECT COUNT(*)::int AS ativos FROM funcionarios WHERE ativo = true`; o.pessoas = r[0]; } catch (_) {}
   try { const r = await sql`SELECT cliente, titulo, status, valor_total, atualizado_em FROM propostas ORDER BY atualizado_em DESC NULLS LAST LIMIT 10`; o.propostas = r; } catch (_) {}
+  // v3.406: PIPELINE DO HUBSPOT ao vivo — o Gerente Comercial IA fala dos negócios com nome, valor, etapa e data prevista
+  try { const F = await _t(chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'mes', pipeline: 'todos' } }), 55000); const fv = F?.funil_vendas || F;
+    if (fv?.indisponivel) o.hubspot = { indisponivel: fv.indisponivel };
+    else if (fv?.resumo) { const neg = Object.values(fv.negocios || {}); const abertos = neg.filter(n => !/ganh|perd|fechad/i.test(String(n.etapa || ''))).sort((a, b) => (b.valor || 0) - (a.valor || 0));
+      o.hubspot = { fonte: 'HubSpot (ao vivo)', periodo: fv.periodo?.rotulo, resumo: fv.resumo, etapas: (fv.etapas || []).map(e => ({ etapa: e.nome, qtd: e.qtd ?? e.abertos ?? e.n, valor: e.valor })), por_pipeline: fv.por_pipeline,
+        negocios_abertos: abertos.slice(0, 25).map(n => ({ nome: n.nome, valor: n.valor, etapa: n.etapa, pipeline: n.pipeline, criado: n.criado, fechamento_previsto: n.fechamento })),
+        total_abertos: abertos.length, pendencias: (fv.pendencias || []).slice(0, 10), leads_periodo: fv.leads || null }; } }
+  catch (e) { o.hubspot = { erro: 'HubSpot não respondeu: ' + String(e.message).substring(0, 100) }; }
   _opCache = { em: Date.now(), dados: o }; return o;
 }
 async function conselhoChat({ conversa_id, mensagem, agentes, _usuario }) {
@@ -402,7 +410,7 @@ Responda SOMENTE JSON: {"abertura":"1 frase do ATLAS enquadrando a pauta","falas
 PREMISSAS ESTRATÉGICAS: ${prem}
 PLANO VIGENTE: ${plano ? JSON.stringify({ tema: plano.tema, sintese: plano.sintese }).substring(0, 3000) : '(nenhum aprovado)'}
 PROPÓSITO E METAS PESSOAIS DO FUNDADOR (para NORTE): ${JSON.stringify(pp).substring(0, 2500)}
-OPERAÇÃO (marketing, leads, campanhas, projetos do financeiro, PORTFÓLIO DO MAESTRO em "maestro", pessoas, propostas): ${JSON.stringify(op).substring(0, 9000)}
+OPERAÇÃO (marketing, leads, campanhas, projetos do financeiro, PORTFÓLIO DO MAESTRO em "maestro", PIPELINE DO HUBSPOT ao vivo em "hubspot" — negócios abertos com nome, valor, etapa e previsão; use-os nominalmente —, pessoas, propostas): ${JSON.stringify(op).substring(0, 14000)}
 CONTEXTO VIVO (JSON): ${resumoCtx(ctx, 26000)}`;
   const t = await claude(system, [...hist, { role: 'user', content: m }], 6000);
   const j = json(t); if (!j || !Array.isArray(j.falas)) throw new Error('O conselho não devolveu a resposta no formato esperado — tente de novo');
