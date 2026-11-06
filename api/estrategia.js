@@ -1,7 +1,9 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
-import * as RT from '../lib/estrategia-roteiro.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
+import * as RT from '../lib/estrategia-roteiro.js';
+import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
+import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
@@ -203,6 +205,14 @@ async function claude(system, messages, maxTokens = 1500) {
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }) });
   const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA: ' + (d?.error?.message || r.status));
   return (d.content || []).map(c => c.text || '').join('').trim();
+}
+// v3.400: chamada com ferramentas (busca na web) — devolve só o texto final
+async function claudeTools(system, content, maxTokens = 4000, tools) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content }], ...(tools ? { tools } : {}) }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA [' + r.status + ']: ' + (d.error?.message || 'erro'));
+  return (d.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
 }
 const json = t => { const s = String(t || '').replace(/```json|```/g, ''); const a = s.indexOf('{'), b = s.lastIndexOf('}'); try { return JSON.parse(s.substring(a, b + 1)); } catch (_) { return null; } };
 const REGRAS = `Regras: português do Brasil; use os números do CONTEXTO quando existirem e diga quando um dado falta — nunca invente número, cliente ou fato; seja específico para a Atlantyx (nada de conselho genérico); prefira poucas escolhas claras com o porquê e o próximo passo.`;
@@ -568,6 +578,10 @@ async function handler(req, res) {
       projecao_salvar: () => projecaoSalvar(b, usuario), projecao_ia: () => projecaoIA(b), projecao_para_metas: () => projecaoParaMetas(b),
       premissas_salvar: async () => { const t = String(b.texto || '').trim(); if (t.length < 30) throw new Error('Escreva as premissas (pelo menos algumas frases)'); await kv('est:premissas', { texto: t.substring(0, 6000), em: new Date().toISOString(), por: usuario }); return { ok: true }; },
       chat: () => chat({ ...b, _usuario: usuario }),
+      // v3.400: Investimentos e retiradas (tela do Financeiro) — só o fundador
+      investimentos_obter: () => (soFundador(req), investimentosObter({ kv })),
+      investimentos_params: () => (soFundador(req), investimentosParamsSalvar({ kv }, b)),
+      investimentos_analisar: () => (soFundador(req), investimentosAnalisar({ claude, claudeTools, kv, chamar, contexto, contextoAmplo, propositoPessoal, salvarHistorico: salvarHistoricoS1 }, b, usuario)),
       conversa: async () => ({ conversa: (await sql`SELECT * FROM est_conversas WHERE id=${b.id}`)[0] || null }),
       conversa_excluir: async () => { await sql`DELETE FROM est_conversas WHERE id=${b.id}`; return { ok: true }; },
       norte_plano: () => nortePlano(usuario), norte_obter: async () => ({ plano: await kv('norte:plano'), tem_proposito: !!(await kv('proposito')) }),
