@@ -266,6 +266,7 @@ async function handler(req, res) {
 
       // ── Motor de fluxo futuro mês a mês ──────────────────────────────────
       fluxo_futuro:          () => fluxoFuturo(params),
+      fluxo_analise:         () => fluxoAnalise(params), // v3.412
       projetado_fontes:      () => projetadoFontes(params),   // dem_mv0x0jbvp5sp: colunas Recorrente / Propostas (pond.) da tela Projetado
       // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
       dre_mensal:            () => dreMensal(params),
@@ -4875,7 +4876,8 @@ async function saldoInicialGet({ data_ref } = {}) {
 // 8. Motor de fluxo de caixa futuro mês a mês
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {}) {
+async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null, regime = 'caixa' } = {}) {
+  const COMP = regime === 'competencia'; // v3.412: visão por competência (receita no mês do fato gerador, emissão = recebimento − 35 dias)
   const sql = await getSql();
   const hoje = new Date(_hojeBR() + 'T12:00:00Z'); // v3.113: "hoje" de Brasília (antes UTC: às 21h do último dia já era o mês seguinte)
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
@@ -4964,7 +4966,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   // v3.211: receita prevista = AGENDA DE RECEITAS (marcos e avulsas na linha "Receita Prevista"; sustentações e
   // recorrentes cadastradas na linha "Receita Recorrente (MRR)"). Previsão atrasada (sem fatura) entra no mês corrente.
   try { const rp = await receitasPrevistas({ meses: Math.max(13, meses + 1) }); usouAgenda = true;
-    for (const o of rp.ativas) { const mes = o.data.substring(0, 7); if (mes < mesAtual || !listaMeses.includes(mes)) continue;
+    for (const o of rp.ativas) { const mes = (COMP ? _diasMais(o.data, -35) : o.data).substring(0, 7); if (mes < mesAtual || !listaMeses.includes(mes)) continue;
       if (o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) mrrAgendaPorMes[mes] = round((mrrAgendaPorMes[mes] || 0) + o.valor);
       else previstoMarcosPorMes[mes] = round((previstoMarcosPorMes[mes] || 0) + o.valor); } }
   catch (e) { console.warn('[fluxoFuturo] agenda de receitas:', e.message); }
@@ -4976,10 +4978,11 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
       const data = await qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token);
       const invoices = data?.QueryResponse?.Invoice || [];
       for (const inv of invoices) {
-        const venc = inv.DueDate || inv.TxnDate;
+        const venc = COMP ? (inv.TxnDate || inv.DueDate) : (inv.DueDate || inv.TxnDate);
         const mes = (venc || '').substring(0, 7);
         const valor = parseFloat(inv.Balance || 0);
         if (!mes || !valor) continue;
+        if (COMP && mes < mesAtual) continue; // competência: fatura emitida em mês anterior já é receita daquele mês
         if (mes < mesAtual) { aReceberVencido += valor; continue; }      // já venceu: atrasado, não é projeção
         if (mes > ultimoMes) { aReceberForaHorizonte += valor; continue; } // além do horizonte
         aReceberPorMes[mes] = (aReceberPorMes[mes] || 0) + valor;
@@ -5015,6 +5018,10 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
     }
   } catch (e) { console.warn('[fluxoFuturo] realizado do mês:', e.message); }
   if (saldoPartida == null) saldoPartida = round(saldoAtual - ((realizadoMesCorrente.entradas || 0) - (realizadoMesCorrente.saidas || 0)));
+  // competência: a entrada "realizada" do mês corrente é o FATURADO (notas emitidas no mês), não o recebido
+  if (COMP && qbConfigurado()) try { const tk = await qbToken(); const ini = mesAtual + '-01';
+    const inv = (await qbQuery(`select TotalAmt, TxnDate from Invoice where TxnDate >= '${ini}' maxresults 1000`, tk))?.QueryResponse?.Invoice || [];
+    realizadoMesCorrente.entradas = round(inv.filter(i => String(i.TxnDate) <= _hojeBR()).reduce((a, i) => a + (parseFloat(i.TotalAmt) || 0), 0)); } catch (e) { console.warn('[fluxoFuturo] faturado do mês:', e.message); }
 
   // 5. Simulados futuros
   let simulados = [];
@@ -5180,6 +5187,17 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   //  • o QuickBooks mostra o saldo contábil considerando TUDO que já está LANÇADO até a data,
   //    inclusive despesas futuras já registradas e baixadas
   // A diferença é justamente o que já está lançado mas não aparece como "em aberto".
+  // v3.412: farol por mês. Caixa: vermelho = saldo final negativo; amarelo = mês queima caixa (resultado < 0) ou o saldo
+  // final cobre menos de 1 mês de saídas; verde = resto. Competência: vermelho = prejuízo no mês; amarelo = margem < 10%.
+  const saude = {};
+  for (const m of listaMeses) { const sf = linhas['= Saldo Final'][m], res = linhas['= Resultado do Mês'][m], sai = linhas['= Total Saídas'][m] || 0, ent = linhas['= Total Entradas'][m] || 0;
+    if (COMP) { const mg = ent > 0 ? res / ent * 100 : (res < 0 ? -100 : 0);
+      saude[m] = res < 0 ? { cor: 'vermelho', motivo: 'Prejuízo no mês por competência (' + res.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ')' }
+        : mg < 10 ? { cor: 'amarelo', motivo: 'Margem do mês de ' + mg.toFixed(1) + '% (abaixo de 10%)' } : { cor: 'verde', motivo: 'Margem do mês de ' + mg.toFixed(1) + '%' }; }
+    else saude[m] = sf < 0 ? { cor: 'vermelho', motivo: 'Saldo final negativo (' + sf.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ')' }
+      : res < 0 || (sai > 0 && sf < sai) ? { cor: 'amarelo', motivo: res < 0 ? 'Mês queima caixa (resultado ' + res.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ')' : 'Saldo final cobre menos de 1 mês de saídas' }
+      : { cor: 'verde', motivo: 'Saldo positivo e resultado ≥ 0' }; }
+
   let conferenciaFinal = null;
   try {
     const ultimoMes = listaMeses[listaMeses.length - 1];           // AAAA-MM
@@ -5203,8 +5221,8 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 
   return {
     meses: listaMeses,
-    linhas,
-    conferencia_final: conferenciaFinal,
+    linhas, regime: COMP ? 'competencia' : 'caixa', saude,
+    conferencia_final: COMP ? null : conferenciaFinal,
     saldo_inicial_atual: round(saldoAtual),
     menor_saldo_projetado: round(menorSaldo),
     mes_menor_saldo: listaMeses[indiceMenor],
@@ -5230,6 +5248,39 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 // v3.232: UMA regra de semáforo para runway e para margem, usada em todas as telas (antes eram três de cada)
 //  runway: ≥ 12 meses (ou sem queima e caixa cobrindo ≥ 1 mês de gastos) verde · 6–12 amarelo · < 6 vermelho
 //  margem: ≥ meta verde · até 5 p.p. abaixo amarelo · pior vermelho (sem meta: ≥ 15% verde · ≥ 0% amarelo)
+// v3.412: ANÁLISE DE IA DO FLUXO FUTURO — lê a matriz (caixa e competência), o farol de cada mês, as maiores despesas
+// previstas, a concentração de receita por cliente e o custo do time, e devolve, objetivamente, os meses com problema e as
+// soluções (ajuste de prazo, corte de custo, pessoas, aumento de receita e de lucro) com valor e prazo. Fica gravada.
+const _K_FX_AN = 'fin:fluxo_analise';
+async function fluxoAnalise({ conta_id = null, overrides = {}, regime = 'caixa', so_ler = false } = {}) {
+  if (so_ler) return { analise: await _kvFin(_K_FX_AN).catch(() => null) };
+  const [cx, cp, desp, rec, time] = await Promise.allSettled([
+    fluxoFuturo({ meses: 12, overrides, conta_id, regime: 'caixa' }), fluxoFuturo({ meses: 12, overrides, conta_id, regime: 'competencia' }),
+    (async () => { const h = _hojeBR(); const r = await despOcorrencias({ data_inicio: h.substring(0, 7) + '-01', data_fim: _diasMais(h, 365) }); const ag = {};
+      for (const o of (r.ocorrencias || []).filter(o => o.status === 'prevista' || o.status === 'lancada')) { const k = (o.fornecedor || String(o.descricao || '').split(' · ')[0] || 'sem nome') + ' | ' + (o.categoria || 'sem categoria'); const a = ag[k] = ag[k] || { item: k, total_12m: 0, n: 0 }; a.total_12m += Number(o.valor) || 0; a.n++; }
+      return Object.values(ag).map(a => ({ ...a, total_12m: round(a.total_12m), media_mes: round(a.total_12m / 12) })).sort((a, b) => b.total_12m - a.total_12m).slice(0, 25); })(),
+    (async () => { const r = await receitasPrevistas({ meses: 13 }); const ag = {}; for (const o of r.ativas || []) { const k = o.cliente || o.projeto || 'sem cliente'; ag[k] = round((ag[k] || 0) + o.valor); }
+      const tot = Object.values(ag).reduce((a, b) => a + b, 0) || 1; return { total_12m: round(tot), por_cliente: Object.entries(ag).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([c, v]) => ({ cliente: c, valor: v, pct: Math.round(v / tot * 100) })), avisos: r.avisos }; })(),
+    (async () => { const sql = await getSql(); return await sql`SELECT cargo, COUNT(*)::int AS pessoas, ROUND(AVG(NULLIF(custo_hora,0))::numeric,2)::float AS custo_hora_medio FROM funcionarios WHERE ativo = true GROUP BY cargo ORDER BY 2 DESC LIMIT 20`; })()]);
+  const v = r => r.status === 'fulfilled' ? r.value : { erro: String(r.reason?.message || r.reason).substring(0, 140) };
+  const C = v(cx), P = v(cp); if (C.erro) throw new Error('Fluxo de caixa: ' + C.erro);
+  const tab = F => F && F.meses ? F.meses.map(m => ({ mes: m, farol: F.saude?.[m]?.cor, motivo: F.saude?.[m]?.motivo, entradas: F.linhas['= Total Entradas'][m], saidas: F.linhas['= Total Saídas'][m], resultado: F.linhas['= Resultado do Mês'][m], saldo_final: F.linhas['= Saldo Final'][m] })) : F;
+  const ctx = { hoje: _hojeBR(), regime_em_tela: regime, caixa: { saldo_hoje: C.saldo_inicial_atual, menor_saldo: C.menor_saldo_projetado, mes_menor_saldo: C.mes_menor_saldo, meses: tab(C), alertas: (C.alertas || []).map(a => a.mensagem), a_receber_vencido: C.fontes?.a_receber_vencido },
+    competencia: P.erro ? P : { meses: tab(P) }, maiores_despesas_12m: v(desp), receitas_12m: v(rec), time_por_cargo: v(time),
+    premissas: 'Atlantyx: empresa B2B de dados e IA (alocação de pessoas, projetos e produtos). Regime de caixa é o padrão dos relatórios. Recebimento: 35 dias após emissão da NF/termo. Imposto sobre receita 2026 ≈ 16,33% (Lucro Presumido); 2027 ≈ 25% (reforma). Meta de margem líquida 35%. Há passivo trabalhista em discussão (valor incerto).' };
+  const sys = `Você é o CFO de IA da Atlantyx analisando o FLUXO FUTURO DE 12 MESES (caixa e competência). Seja OBJETIVO: aponte os meses com problema (farol vermelho/amarelo) e, para cada um, a causa com números e as soluções com valor (R$) e prazo. Use SÓ os números do contexto; quando faltar dado, diga qual. Português do Brasil.
+Soluções possíveis (escolha as que os números justificam, em ordem de impacto e facilidade): antecipar/cobrar recebíveis vencidos, renegociar prazo de fornecedor, cortar ou adiar despesa específica (cite o item da lista de maiores despesas), reduzir custo de pessoas (realocar ociosos em projetos faturáveis, rever contratos PJ, e — só se os números mostrarem que é inevitável — desligamentos, dizendo o cargo, quantos, a economia mensal e o custo de rescisão a considerar; nunca cite nomes de pessoas), aumentar receita (antecipar marco, POC → projeto, reajuste de contrato, sustentação nova) e aumentar lucro (preço, mix, horas não faturadas). Diferencie problema de CAIXA (descasamento de prazo) de problema ECONÔMICO (prejuízo por competência).
+Responda SOMENTE JSON: {"resumo":"3-5 frases","saude_geral":"verde|amarelo|vermelho","meses_problema":[{"mes":"AAAA-MM","farol":"vermelho|amarelo","tipo":"caixa|economico|ambos","problema":"...","causa":"com números","solucoes":[{"tipo":"recebimento|prazo|custo|pessoas|receita|lucro|financiamento","acao":"verbo + o quê","impacto_rs":0,"prazo":"AAAA-MM-DD ou 'até <mês>'","dono":"Fundador|CFO|CTO|GP|Comercial"}]}],"reducao_custos":[{"acao":"...","economia_mes_rs":0}],"pessoas":[{"acao":"...","economia_mes_rs":0,"cuidado":"..."}],"aumento_receita":[{"acao":"...","receita_rs":0,"quando":"..."}],"aumento_lucro":[{"acao":"...","impacto_rs":0}],"riscos":["..."],"proximos_passos":["..."],"dados_que_faltaram":["..."]}`;
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 95000);
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: FIN_MODEL, max_tokens: 6000, system: sys, messages: [{ role: 'user', content: JSON.stringify(ctx).substring(0, 60000) }] }) }).finally(() => clearTimeout(tm));
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA [' + r.status + ']: ' + (d.error?.message || 'erro'));
+  const t = (d.content || []).map(c => c.text || '').join(''); const a = t.indexOf('{'), b = t.lastIndexOf('}'); let j = null; try { j = JSON.parse(t.substring(a, b + 1)); } catch (_) {}
+  if (!j) throw new Error('A IA não devolveu a análise no formato esperado — tente de novo');
+  const out = { em: new Date().toISOString(), regime, ...j, farois: { caixa: C.saude, competencia: P.saude || null } };
+  await _kvFinSet(_K_FX_AN, out).catch(() => {}); return { analise: out };
+}
+
 function _runwaySem(rw, cobertura) { if (rw == null || !isFinite(rw)) return 'cinza'; if (rw >= 999) return cobertura != null && cobertura < 1 ? 'amarelo' : 'verde'; return rw >= 12 ? 'verde' : rw >= 6 ? 'amarelo' : 'vermelho'; }
 function _margemSem(mg, meta) { if (mg == null || !isFinite(mg)) return 'cinza'; if (meta != null && isFinite(meta)) return mg >= meta ? 'verde' : mg >= meta - 5 ? 'amarelo' : 'vermelho'; return mg >= 15 ? 'verde' : mg >= 0 ? 'amarelo' : 'vermelho'; }
 async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}) {

@@ -31,3 +31,4 @@ _(nenhuma)_
 - 2026-11-06-sala-do-conselho · T3 · Sala do Conselho (v3.404) · entregue
 - 2026-11-06-riscos-estrutura · T3 · Riscos com estrutura real da equipe (v3.409) · entregue
 - 2026-11-06-ias-todo · T3 · IAs criam tarefas no To-do (v3.410) · entregue
+- 2026-11-07-fluxo-farol-analise · T6 · Fluxo 12m com farol, competência, análise IA e no Dashboard (v3.412) · entregue
