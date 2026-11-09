@@ -5219,7 +5219,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <span id="pcBotoes" style="display:flex;gap:6px;flex-wrap:wrap;"></span>
     </div>
     <div id="pcAviso"></div>
-    <div id="pcStatus" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:11px;color:var(--t2);"></div>
+    <div id="pcStatus" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px;font-size:11px;color:var(--t2);"></div>
     <div class="kg k4" style="margin-bottom:12px;" id="pcKpis"></div>
     <div class="panel"><div class="pb" style="display:block;"><div style="overflow-x:auto;width:100%;" id="pcTabela"><div style="color:var(--t3);padding:24px;text-align:center;font-size:11px;">Carregando…</div></div>
       <div style="font-size:9.5px;color:var(--t3);margin-top:8px;" id="pcRodape"></div></div></div>
@@ -27604,13 +27604,13 @@ function pcRender() {
   const g = d.gravada, T = d.totais;
   document.getElementById('pcBotoes').innerHTML = (g
     ? `<button class="btn" onclick="pcAcao('reabrir')" title="Libera a edição; a versão gravada fica no histórico">&#128275; Reabrir</button>`
-    : `<button class="btn" onclick="pcAcao('recalcular')">&#8635; Recalcular</button><button class="btn btn-p" onclick="pcAcao('gravar')" title="Congela os valores deste mês e registra no histórico">&#128274; Gravar folha</button>`)
+    : `<button class="btn" onclick="pcAcao('copiar_anterior')" title="Traz do mês anterior horas, valor hora, valor e observação de cada colaborador">&#10697; Copiar do mês anterior</button><button class="btn" onclick="pcAcao('recalcular')">&#8635; Recalcular</button><button class="btn btn-p" onclick="pcAcao('gravar')" title="Congela os valores deste mês e registra no histórico">&#128274; Gravar folha</button>`)
     + `<button class="btn" onclick="pcPdf()">&#128196; Exportar PDF</button><button class="btn btn-gn" onclick="pcEmail()">&#9993; Enviar ao financeiro</button>`;
   const pend = (d.historico || []).find(x => x.mes === d.mes_anterior && x.status !== 'gravada');
   document.getElementById('pcAviso').innerHTML = pend && d.mes !== d.mes_anterior ? `<div style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px;display:flex;gap:10px;align-items:center;">&#9888; A folha de <b>${_dsE(d.historico.find(x => x.mes === d.mes_anterior) ? d.mes_anterior.split('-').reverse().join('/') : '')}</b> ainda não foi gravada. <button class="btn" style="font-size:9.5px;padding:3px 9px;" onclick="pcCarregar('${d.mes_anterior}')">Abrir</button></div>` : '';
   const chip = st => { const c = { 'gravada': ['rgba(16,185,129,.14)', 'var(--green)', '&#128274; Gravada'], 'reaberta': ['rgba(245,158,11,.16)', 'var(--gold)', '&#128275; Reaberta'], 'em edição': ['rgba(0,194,228,.14)', 'var(--t1)', '&#9998; Em edição'], 'não gravada': ['rgba(148,163,184,.18)', 'var(--t3)', '&#9675; Não gravada'] }[st] || ['', 'var(--t3)', st];
     return `<span style="font-size:9px;font-weight:700;letter-spacing:.5px;padding:3px 9px;border-radius:10px;background:${c[0]};color:${c[1]};white-space:nowrap;">${c[2]}</span>`; };
-  document.getElementById('pcStatus').innerHTML = chip(d.status) + (g ? `<span>Folha de <b>${_dsE(d.mes_label)}</b> gravada em ${_pcDt(d.snap?.em)}${d.snap?.por ? ' por ' + _dsE(d.snap.por) : ''} · versão ${d.snap?.versao || 1} · valores congelados</span>`
+  document.getElementById('pcStatus').innerHTML = (!g && d.copiado_de ? `<div style="flex-basis:100%;background:rgba(0,196,204,.1);border:1px solid rgba(0,196,204,.35);border-radius:8px;padding:6px 10px;font-size:10.5px;margin-bottom:6px;">&#10697; Dados copiados de <b>${_dsE(d.copiado_de_label)}</b> em ${_pcDt(d.copiado_em)} (horas, valor hora, valor e observações). Confira as horas: a coluna de horas apontadas mostra o que já foi lançado neste mês. <b>&#8635; Recalcular</b> volta tudo ao cálculo pelos apontamentos.</div>` : '') + chip(d.status) + (g ? `<span>Folha de <b>${_dsE(d.mes_label)}</b> gravada em ${_pcDt(d.snap?.em)}${d.snap?.por ? ' por ' + _dsE(d.snap.por) : ''} · versão ${d.snap?.versao || 1} · valores congelados</span>`
     : `<span>Folha de <b>${_dsE(d.mes_label)}</b> em aberto — os valores acompanham os apontamentos e o cadastro do Maestro até você clicar em <b>&#128274; Gravar folha</b>.</span>`);
   document.getElementById('pcKpis').innerHTML = `<div class="kpi gd"><div class="kl">Total a pagar</div><div class="kv">${_pcBRL(T.total)}</div><div class="ks">${_dsE(d.mes_label)}</div></div>
     <div class="kpi bl"><div class="kl">Colaboradores</div><div class="kv">${T.qtd} / ${d.linhas.length}</div><div class="ks">com valor no mês / cadastrados</div></div>
@@ -27645,9 +27645,10 @@ async function pcAcao(op) {
   const d = _pc; if (!d) return;
   const msg = { gravar: `Gravar a folha de ${d.mes_label}?\n\n${d.totais.qtd} colaborador(es) · total ${_pcBRL(d.totais.total)}\n\nOs valores ficam congelados (horas, valor hora, valor a pagar e dados bancários de hoje) e a folha entra no histórico — no Maestro também. Para alterar depois, use Reabrir.`,
     reabrir: `Reabrir a folha de ${d.mes_label} para edição?\n\nA versão gravada continua no histórico; ao gravar de novo, vira uma nova versão.`,
+    copiar_anterior: `Copiar para ${d.mes_label} todos os dados do mês anterior (horas, valor hora, valor e observação de cada colaborador)?\n\nAs edições já feitas nesta folha serão substituídas.`,
     recalcular: `Recalcular ${d.mes_label}?\n\nHoras voltam a vir do apontamento, o valor hora do cadastro e o valor a pagar = horas × valor hora. As edições feitas nesta folha serão descartadas.` }[op];
   if (msg && !confirm(msg)) return;
-  try { await pcCarregar(d.mes, op); toast({ gravar: 'Folha gravada', reabrir: 'Folha reaberta para edição', recalcular: 'Valores recalculados' }[op] || 'ok', 'success'); } catch (_) {}
+  try { await pcCarregar(d.mes, op); toast({ gravar: 'Folha gravada', reabrir: 'Folha reaberta para edição', recalcular: 'Valores recalculados', copiar_anterior: 'Dados do mês anterior copiados' }[op] || 'ok', 'success'); } catch (_) {}
 }
 async function _pcPdfDoc() {
   const JsPDF = await _srCarregarJsPdf();
@@ -36681,7 +36682,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.413] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.414] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36697,7 +36698,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.413';
+window.__ATX_BUILD_ID__ = 'ATX-v3.414';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
