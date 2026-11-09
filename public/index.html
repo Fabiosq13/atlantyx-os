@@ -27823,6 +27823,7 @@ async function gerarTermoDeMarcos() {
     </div></div>`;
   _tmRecalc();
   window._tmMarcosSel = sel;
+  try { const pn = await fatApi('termo_proximo_numero', {}); const e = document.getElementById('tm_numero'); if (e && !e.value) { e.value = pn.numero || ''; e.title = 'Próximo número da sequência (maior já usado: ' + (pn.ultimo_maior || 0) + ') — pode alterar'; } } catch (_) {} // v3.419
 }
 function _tmRecalc(inputPct) {
   // se mexeu no %, recalcula a parcela dessa linha sobre o valor base (total das parcelas informado ou o total atual)
@@ -36697,7 +36698,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.418] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.419] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36713,7 +36714,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.418';
+window.__ATX_BUILD_ID__ = 'ATX-v3.419';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

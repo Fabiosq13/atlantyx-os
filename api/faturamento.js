@@ -187,7 +187,26 @@ const normEmpresa = s => String(s || '').toLowerCase().normalize('NFD').replace(
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. IMPORTAR TERMO (o frontend já leu o XLSX com SheetJS e manda o JSON pronto)
 // ═══════════════════════════════════════════════════════════════════════════
+// v3.419: número do termo — próximo da sequência (maior número já usado + 1), no mesmo formato do último termo
+// ("045/2026" → "046/2026", com o ano corrente quando o sufixo é ano). Termo gerado do Kanban de Marcos sem número
+// recebe o número automaticamente; os que já foram criados sem número são numerados ao abrir o Kanban.
+async function termoProximoNumero() {
+  const sql = await getSql(); const rows = await sql`SELECT numero_termo, criado_em FROM termos_faturamento WHERE TRIM(COALESCE(numero_termo,'')) <> '' ORDER BY criado_em DESC NULLS LAST LIMIT 2000`;
+  let max = 0, pad = 3, suf = null;
+  for (const r of rows) { const m = String(r.numero_termo).trim().match(/^0*(\d+)\s*(?:\/\s*(\d{2,4}))?/); if (!m) continue; const n = parseInt(m[1], 10); if (n > max) max = n; }
+  const ult = rows.map(r => String(r.numero_termo).trim().match(/^(\d+)\s*(?:\/\s*(\d{2,4}))?/)).find(Boolean);
+  if (ult) { pad = ult[1].length; suf = ult[2] || null; }
+  const ano = new Date(Date.now() - 3 * 3600e3).getUTCFullYear();
+  const sufixo = suf ? '/' + (/^\d{4}$/.test(suf) ? ano : suf.length === 2 ? String(ano).slice(2) : suf) : '';
+  return { numero: String(max + 1).padStart(pad, '0') + sufixo, ultimo_maior: max };
+}
+async function termoNumerarSemNumero() {
+  const sql = await getSql(); const L = await sql`SELECT id FROM termos_faturamento WHERE TRIM(COALESCE(numero_termo,'')) = '' AND arquivo_nome = 'gerado-dos-marcos' ORDER BY criado_em`;
+  const out = []; for (const t of L) { const { numero } = await termoProximoNumero(); await sql`UPDATE termos_faturamento SET numero_termo = ${numero} WHERE id = ${t.id} AND TRIM(COALESCE(numero_termo,'')) = ''`; out.push({ id: t.id, numero }); }
+  return { numerados: out };
+}
 async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [], forcar_duplicado = false } = {}) {
+  if (!String(cabecalho.numero_termo || '').trim() && arquivo_nome === 'gerado-dos-marcos') cabecalho = { ...cabecalho, numero_termo: (await termoProximoNumero()).numero }; // v3.419
   // v2.86: bloqueia a criação de um SEGUNDO termo com o mesmo número + projeto — era assim que as notas
   // de uma pessoa iam para um registro e as de outra para o outro. Só cria se o usuário confirmar.
   if (!forcar_duplicado && cabecalho.numero_termo) {
@@ -386,6 +405,7 @@ function _mesReferencia(t) {
 }
 async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf } = {}) {
   const sql = await getSql();
+  try { await termoNumerarSemNumero(); } catch (e) { console.warn('[termos] numerar sem número:', e.message); } // v3.419
   let notasNoPeriodo = {};
   // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
   // Filtra pela criação porque "periodo_medicao" é texto livre ("julho/2026", "07/2026") e não
@@ -1924,6 +1944,7 @@ async function handler(req, res) {
     cpfl_confirmar:    () => cpflConfirmar(payload),
     status_pendencias: () => statusPendencias(payload),
     termo_importar:          () => termoImportar(payload),
+    termo_proximo_numero:    () => termoProximoNumero(), // v3.419
     termo_list:               () => termoList(payload),
     termo_diagnostico:        () => termoDiagnostico(),
     nfse_importar:            () => nfseImportar(payload),
