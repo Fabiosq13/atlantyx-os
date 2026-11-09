@@ -862,7 +862,21 @@ async function maestroPainel({ forcar } = {}) {
     const conclusao = String(c.fim || '').slice(0, 10).match(/^\d{4}-\d{2}-\d{2}$/) ? String(c.fim).slice(0, 10) : (fims[fims.length - 1] || null), pctF = av.fisico ?? null;
     const dias_atraso = conclusao && conclusao < hoje && (pctF == null || pctF < 100) ? dias(conclusao) : 0;
     if (dias_atraso) { mot.unshift('passou da data de conclusão há ' + dias_atraso + ' dia(s)'); if (origem === 'calculado') farol = 'vermelho'; }
-    return { nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, farol_calculado: farolCalc, conclusao, inicio: String(c.inicio || '').slice(0, 10) || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
+    // v3.417: DOIS faróis separados. PRAZO = só cronograma (em atraso / tendendo a atraso / em dia), sem horas nem termos.
+    // STATUS REPORT = o farol que o GP informou no último report (e se está desatualizado).
+    const P = [], ateConc = conclusao ? -dias(conclusao) : null; let farol_prazo = null;
+    if (dias_atraso) P.push('passou da conclusão (' + conclusao.split('-').reverse().join('/') + ') com ' + (pctF ?? '?') + '% feito');
+    if (desvio != null && desvio <= -10) P.push(Math.abs(desvio) + 'pp atrás do planejado');
+    if (atras.some(m => m.dias > 7)) P.push('marco vencido há mais de 7 dias');
+    if (P.length) farol_prazo = 'vermelho';
+    else { if (desvio != null && desvio < -3) P.push(Math.abs(desvio) + 'pp atrás do planejado');
+      if (atras.length) P.push('marco vencido há até 7 dias');
+      if (ateConc != null && ateConc >= 0 && ateConc <= 15 && pctF != null && pctF < 85) P.push('conclusão em ' + ateConc + ' dia(s) com ' + pctF + '% feito');
+      if ((av.tarefas_atrasadas || 0) > 0 && desvio != null && desvio < 0) P.push(av.tarefas_atrasadas + ' tarefa(s) do cronograma vencida(s)');
+      if (P.length) farol_prazo = 'amarelo'; else if (desvio != null || conclusao || atras.length || av.fisico != null) { farol_prazo = 'verde'; P.push(desvio != null ? 'avanço ' + (desvio >= 0 ? '+' : '') + desvio + 'pp vs planejado' : 'sem atraso no cronograma'); } }
+    const farol_sr = r?.farol || null, sr_dias = r?.data ? dias(r.data) : null;
+    return { nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, farol_calculado: farolCalc,
+      farol_prazo, prazo_motivo: P.join(' · '), farol_sr, sr_data: r?.data ? String(r.data).slice(0, 10) : null, sr_dias, sr_desatualizado: sr_dias != null ? sr_dias > 14 : null, conclusao, inicio: String(c.inicio || '').slice(0, 10) || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
   });
   const at = projetos.filter(p => p.ativo);
   const fimMes = hoje.substring(0, 8) + '31', comAv = at.filter(p => p.pct != null), comPl = at.filter(p => p.planejado != null);
@@ -1552,6 +1566,11 @@ async function painelMestre({ semana } = {}) {
       gerente: r?.gerente || M?.gerente || p.gerente || c.gerente || f.gerente || null,
       farol: (localMaisNovo ? r?.farol : null) || M?.farol || (diasSemReport != null && diasSemReport <= 14 ? r?.farol : null) || null, // v3.416: report velho (>14 dias) não define mais o farol
       farol_origem: localMaisNovo && r?.farol ? 'status report (Atlantyx OS)' : M?.farol ? (M.origem === 'status report' ? 'status report (Maestro)' : 'calculado pelo Maestro') : null,
+      // v3.417: farol de PRAZO (só cronograma) e farol do STATUS REPORT (o que o GP informou), separados
+      farol_prazo: M?.farol_prazo ?? (desvio != null ? (desvio <= -10 ? 'vermelho' : desvio < -3 ? 'amarelo' : 'verde') : null),
+      prazo_motivo: M?.prazo_motivo || (desvio != null ? (desvio >= 0 ? '+' : '') + desvio + 'pp vs planejado' : ''),
+      farol_report: (localMaisNovo ? r?.farol : null) || M?.farol_sr || r?.farol || null,
+      report_data: (localMaisNovo ? String(r?.data_report || '').substring(0, 10) : null) || M?.sr_data || (r?.data_report ? String(r.data_report).substring(0, 10) : null),
       motivos: (localMaisNovo && r?.farol && M?.farol_calculado && r.farol !== M.farol_calculado ? ['farol ' + r.farol + ' informado no status report de ' + String(r.data_report).substring(0, 10).split('-').reverse().join('/') + (M.farol_calculado === 'verde' ? ' — pelo cronograma o projeto está em dia' : ' — o cálculo dá ' + M.farol_calculado)] : []).concat(M?.motivos || []), farol_calculado: M?.farol_calculado || null, conclusao: M?.conclusao || f.entrega || null, conclusao_fonte: M?.conclusao ? 'Maestro' : f.entrega ? 'último marco do projeto' : null, dias_atraso: M?.dias_atraso || 0, cliente: M?.cliente || p.cliente || null,
       pct_concluido: pctReal,
       pct_planejado: pctPlan,

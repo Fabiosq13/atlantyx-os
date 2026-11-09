@@ -1,9 +1,9 @@
-# Plano — Farol vermelho em projeto em dia
+# Plano — Faróis dos projetos: prazo × status report
 BPM-Trilha: T3 · BPM-ID: 2026-11-09-farol-projetos
-- [x] maestroPainel: marco/tarefa feito reconhece qualquer grafia de concluído/entregue/finalizado ou 100%; motivo lista os marcos vencidos com data
-- [x] farol_calculado sempre devolvido; quando o status report diverge do cálculo, motivo explícito
-- [x] Painel Mestre: report com mais de 14 dias não define mais o farol; motivo do farol aparece na linha e no tooltip
+- [x] v3.416 maestroPainel: marco feito reconhece qualquer grafia de concluído/entregue/100%; farol_calculado; motivo explícito quando o report diverge
+- [x] v3.417 dois faróis: farol_prazo (só cronograma: conclusão vencida, desvio, marcos vencidos, conclusão próxima com pouco feito, tarefas vencidas) e farol_report (o que o GP informou, com data e desatualizado >14 dias)
+- [x] Painel Mestre e Dashboard: colunas Prazo e Status report; cartões contam pelo prazo (Em dia / Tendendo a atraso / Em atraso)
 ## Interseções
-- T4: células de farol em public/index.html.
+- T4: tabelas do Dashboard e do Painel Mestre em public/index.html.
 ## Registro da Batida
-- 2026-11-09 · v3.416 · ✅ entregue · próximo: fundador confere os projetos que estavam vermelhos.
+- 2026-11-09 · v3.417 · ✅ entregue · próximo: fundador confere os projetos.
