@@ -1097,7 +1097,7 @@ async function pagColab({ op = 'ler', mes, id, campo, valor, para, pdf } = {}, r
   mes = /^\d{4}-\d{2}$/.test(String(mes || '')) ? String(mes) : PAG.mesAnterior(hoje);
   const crono = await getSqlCrono();
   // v3.414: mês recente aberto pela 1ª vez (sem folha) → copia do mês anterior todos os dados; "copiar_anterior" força
-  if (op === 'ler' && mes >= PAG.mesAnterior(hoje)) { const D0 = await _pagLer(crono); if (PAG.vazia(D0.st, mes) && !PAG.gravada(D0.st, mes))
+  if (op === 'ler' && mes >= hoje.slice(0, 7)) { // só o mês corrente (ou futuro): o mês anterior segue os apontamentos const D0 = await _pagLer(crono); if (PAG.vazia(D0.st, mes) && !PAG.gravada(D0.st, mes))
     try { await _pagMudar(crono, D => PAG.copiarDoAnterior(D.st, D.ana, D.apts, mes, quem).st); } catch (e) { console.warn('[pag_colab] copiar do mês anterior:', e.message); } }
   if (op === 'copiar_anterior') await _pagMudar(crono, D => PAG.copiarDoAnterior(D.st, D.ana, D.apts, mes, quem, true).st);
   else if (op === 'editar') await _pagMudar(crono, D => PAG.editarCampo(D.st, mes, String(id || ''), campo, valor, quem));
