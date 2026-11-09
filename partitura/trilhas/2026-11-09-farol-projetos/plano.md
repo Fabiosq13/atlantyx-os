@@ -7,3 +7,4 @@ BPM-Trilha: T3 · BPM-ID: 2026-11-09-farol-projetos
 - T4: tabelas do Dashboard e do Painel Mestre em public/index.html.
 ## Registro da Batida
 - 2026-11-09 · v3.417 · ✅ entregue · próximo: fundador confere os projetos.
+- 2026-11-09 · v3.418 · ✅ alinhado ao Maestro: prazo = início/fim do cronograma (cadastro só sem cronograma, mostrado no tooltip quando difere); sem cronograma = ⚪; coluna Status report = 🟢 report na semana / 🔴 sem report na semana (farol do GP embaixo); IA lê prazo e farol de prazo do cronograma.

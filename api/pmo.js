@@ -859,24 +859,31 @@ async function maestroPainel({ forcar } = {}) {
     if (!farol) farol = farolCalc;
     else if (farol !== farolCalc) mot.unshift('farol ' + farol + ' informado pelo GP no status report de ' + String(r.data).slice(0, 10).split('-').reverse().join('/') + (farolCalc === 'verde' ? ' — pelo cronograma o projeto está em dia' : ' — o cálculo dá ' + farolCalc));
     const ts = Array.isArray(wbs[nome]) ? wbs[nome] : [], fims = [c.fim, ...ts.map(t => t.fim), ...marcos.filter(m => m.proj === nome).map(m => m.fim)].map(x => String(x || '').slice(0, 10)).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
-    const conclusao = String(c.fim || '').slice(0, 10).match(/^\d{4}-\d{2}-\d{2}$/) ? String(c.fim).slice(0, 10) : (fims[fims.length - 1] || null), pctF = av.fisico ?? null;
+    // v3.418: PRAZO = início e fim do CRONOGRAMA (mesma regra do Maestro); a data do cadastro só vale sem cronograma
+    const _iso = x => { const v = String(x || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
+    const cronFims = ts.map(t => _iso(t.fim)).filter(Boolean).sort(), cronInis = ts.map(t => _iso(t.inicio)).filter(Boolean).sort();
+    const fimCad = _iso(c.fim), iniCad = _iso(c.inicio), temCron = av.fonte === 'cronograma' && (cronFims.length > 0);
+    const conclusao = temCron ? cronFims[cronFims.length - 1] : (fimCad || fims[fims.length - 1] || null), pctF = av.fisico ?? null;
+    const inicioPrazo = temCron && cronInis.length ? cronInis[0] : iniCad;
     const dias_atraso = conclusao && conclusao < hoje && (pctF == null || pctF < 100) ? dias(conclusao) : 0;
     if (dias_atraso) { mot.unshift('passou da data de conclusão há ' + dias_atraso + ' dia(s)'); if (origem === 'calculado') farol = 'vermelho'; }
+    if (origem === 'calculado' && av.fonte !== 'cronograma') farol = null; // v3.418: sem cronograma = ⚪ (sem dado), nunca 🔴
     // v3.417: DOIS faróis separados. PRAZO = só cronograma (em atraso / tendendo a atraso / em dia), sem horas nem termos.
     // STATUS REPORT = o farol que o GP informou no último report (e se está desatualizado).
     const P = [], ateConc = conclusao ? -dias(conclusao) : null; let farol_prazo = null;
     if (dias_atraso) P.push('passou da conclusão (' + conclusao.split('-').reverse().join('/') + ') com ' + (pctF ?? '?') + '% feito');
     if (desvio != null && desvio <= -10) P.push(Math.abs(desvio) + 'pp atrás do planejado');
     if (atras.some(m => m.dias > 7)) P.push('marco vencido há mais de 7 dias');
-    if (P.length) farol_prazo = 'vermelho';
-    else { if (desvio != null && desvio < -3) P.push(Math.abs(desvio) + 'pp atrás do planejado');
+    if (av.fonte !== 'cronograma') { P.length = 0; P.push('sem cronograma no Maestro'); } // v3.418: farol de prazo só com cronograma
+    else if (P.length) farol_prazo = 'vermelho';
+    if (av.fonte === 'cronograma' && !farol_prazo) { if (desvio != null && desvio < -3) P.push(Math.abs(desvio) + 'pp atrás do planejado');
       if (atras.length) P.push('marco vencido há até 7 dias');
       if (ateConc != null && ateConc >= 0 && ateConc <= 15 && pctF != null && pctF < 85) P.push('conclusão em ' + ateConc + ' dia(s) com ' + pctF + '% feito');
       if ((av.tarefas_atrasadas || 0) > 0 && desvio != null && desvio < 0) P.push(av.tarefas_atrasadas + ' tarefa(s) do cronograma vencida(s)');
       if (P.length) farol_prazo = 'amarelo'; else if (desvio != null || conclusao || atras.length || av.fisico != null) { farol_prazo = 'verde'; P.push(desvio != null ? 'avanço ' + (desvio >= 0 ? '+' : '') + desvio + 'pp vs planejado' : 'sem atraso no cronograma'); } }
     const farol_sr = r?.farol || null, sr_dias = r?.data ? dias(r.data) : null;
     return { nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, farol_calculado: farolCalc,
-      farol_prazo, prazo_motivo: P.join(' · '), farol_sr, sr_data: r?.data ? String(r.data).slice(0, 10) : null, sr_dias, sr_desatualizado: sr_dias != null ? sr_dias > 14 : null, conclusao, inicio: String(c.inicio || '').slice(0, 10) || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
+      farol_prazo, prazo_motivo: P.join(' · '), tem_cronograma: av.fonte === 'cronograma', prazo_inicio: inicioPrazo, prazo_fonte: temCron ? 'cronograma' : (fimCad ? 'cadastro' : (conclusao ? 'marcos' : null)), conclusao_cadastro: fimCad && fimCad !== conclusao ? fimCad : null, farol_sr, sr_data: r?.data ? String(r.data).slice(0, 10) : null, sr_dias, sr_desatualizado: sr_dias != null ? sr_dias > 14 : null, conclusao, inicio: inicioPrazo || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
   });
   const at = projetos.filter(p => p.ativo);
   const fimMes = hoje.substring(0, 8) + '31', comAv = at.filter(p => p.pct != null), comPl = at.filter(p => p.planejado != null);
@@ -1567,11 +1574,11 @@ async function painelMestre({ semana } = {}) {
       farol: (localMaisNovo ? r?.farol : null) || M?.farol || (diasSemReport != null && diasSemReport <= 14 ? r?.farol : null) || null, // v3.416: report velho (>14 dias) não define mais o farol
       farol_origem: localMaisNovo && r?.farol ? 'status report (Atlantyx OS)' : M?.farol ? (M.origem === 'status report' ? 'status report (Maestro)' : 'calculado pelo Maestro') : null,
       // v3.417: farol de PRAZO (só cronograma) e farol do STATUS REPORT (o que o GP informou), separados
-      farol_prazo: M?.farol_prazo ?? (desvio != null ? (desvio <= -10 ? 'vermelho' : desvio < -3 ? 'amarelo' : 'verde') : null),
+      farol_prazo: M ? (M.farol_prazo || null) : null, tem_cronograma: M?.tem_cronograma ?? false, prazo_inicio: M?.prazo_inicio || null, prazo_fonte: M?.prazo_fonte || null, conclusao_cadastro: M?.conclusao_cadastro || null, // v3.418: só com cronograma
       prazo_motivo: M?.prazo_motivo || (desvio != null ? (desvio >= 0 ? '+' : '') + desvio + 'pp vs planejado' : ''),
       farol_report: (localMaisNovo ? r?.farol : null) || M?.farol_sr || r?.farol || null,
       report_data: (localMaisNovo ? String(r?.data_report || '').substring(0, 10) : null) || M?.sr_data || (r?.data_report ? String(r.data_report).substring(0, 10) : null),
-      motivos: (localMaisNovo && r?.farol && M?.farol_calculado && r.farol !== M.farol_calculado ? ['farol ' + r.farol + ' informado no status report de ' + String(r.data_report).substring(0, 10).split('-').reverse().join('/') + (M.farol_calculado === 'verde' ? ' — pelo cronograma o projeto está em dia' : ' — o cálculo dá ' + M.farol_calculado)] : []).concat(M?.motivos || []), farol_calculado: M?.farol_calculado || null, conclusao: M?.conclusao || f.entrega || null, conclusao_fonte: M?.conclusao ? 'Maestro' : f.entrega ? 'último marco do projeto' : null, dias_atraso: M?.dias_atraso || 0, cliente: M?.cliente || p.cliente || null,
+      motivos: (localMaisNovo && r?.farol && M?.farol_calculado && r.farol !== M.farol_calculado ? ['farol ' + r.farol + ' informado no status report de ' + String(r.data_report).substring(0, 10).split('-').reverse().join('/') + (M.farol_calculado === 'verde' ? ' — pelo cronograma o projeto está em dia' : ' — o cálculo dá ' + M.farol_calculado)] : []).concat(M?.motivos || []), farol_calculado: M?.farol_calculado || null, conclusao: M?.conclusao || f.entrega || null, conclusao_fonte: M?.conclusao ? (M.prazo_fonte === 'cronograma' ? 'fim do cronograma (Maestro)' : M.prazo_fonte === 'cadastro' ? 'data do cadastro (sem cronograma)' : 'último marco (Maestro)') + (M.conclusao_cadastro ? ' · cadastro: ' + M.conclusao_cadastro.split('-').reverse().join('/') : '') : f.entrega ? 'último marco do projeto' : null, dias_atraso: M?.dias_atraso || 0, cliente: M?.cliente || p.cliente || null,
       pct_concluido: pctReal,
       pct_planejado: pctPlan,
       desvio_pct: desvio,

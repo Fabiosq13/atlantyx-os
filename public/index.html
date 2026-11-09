@@ -27644,12 +27644,15 @@ async function pcEditar(id, campo, valor) { try { await pcCarregar(_pc?.mes, 'ed
 // v3.417: dois faróis por projeto — PRAZO (só cronograma: em dia / tendendo a atraso / em atraso) e STATUS REPORT (o que o GP informou)
 function _farolPrazoTd(l) {
   const f = l.farol_prazo, c = { verde: ['🟢', 'em dia', 'var(--green,#22d3a3)'], amarelo: ['🟡', 'tendendo a atraso', 'var(--gold)'], vermelho: ['🔴', 'em atraso', 'var(--red)'] }[f] || ['⚪', 'sem cronograma', 'var(--t3)'];
-  return '<td style="padding:6px;white-space:nowrap;color:' + c[2] + ';" title="' + _dsE(l.prazo_motivo || '') + '">' + c[0] + ' ' + c[1] + (l.prazo_motivo ? '<div style="font-size:9px;color:var(--t3);white-space:normal;max-width:200px;">' + _dsE(l.prazo_motivo) + '</div>' : '') + '</td>';
+  const br = x => x ? String(x).substring(0, 10).split('-').reverse().join('/') : '?';
+  const tip = (l.prazo_motivo || '') + (l.conclusao ? '\nPrazo: ' + br(l.prazo_inicio) + ' → ' + br(l.conclusao) + (l.prazo_fonte === 'cronograma' ? ' (cronograma)' : l.prazo_fonte === 'cadastro' ? ' (cadastro — sem cronograma)' : '') : '') + (l.conclusao_cadastro ? '\nData do cadastro: ' + br(l.conclusao_cadastro) : '');
+  return '<td style="padding:6px;white-space:nowrap;color:' + c[2] + ';" title="' + _dsE(tip) + '">' + c[0] + ' ' + c[1] + (l.prazo_motivo ? '<div style="font-size:9px;color:var(--t3);white-space:normal;max-width:200px;">' + _dsE(l.prazo_motivo) + '</div>' : '') + '</td>';
 }
-function _farolReportTd(l) {
-  const f = l.farol_report, dt = l.report_data, d = dt ? Math.round((Date.parse(new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })) - Date.parse(dt)) / 864e5) : null, vel = d != null && d > 14;
-  const c = { verde: ['🟢', 'var(--green,#22d3a3)'], amarelo: ['🟡', 'var(--gold)'], vermelho: ['🔴', 'var(--red)'] }[f] || ['⚪', 'var(--t3)'];
-  return '<td style="padding:6px;white-space:nowrap;color:' + (vel ? 'var(--t3)' : c[1]) + ';" title="Farol informado pelo GP no status report">' + c[0] + ' ' + (f ? _dsE(f) : 'sem report') + (dt ? '<div style="font-size:9px;color:' + (vel ? 'var(--gold)' : 'var(--t3)') + ';">' + dt.split('-').reverse().join('/') + (vel ? ' · desatualizado' : '') + '</div>' : '') + '</td>';
+function _farolReportTd(l) { // v3.418: farol do STATUS REPORT = cadência — 🟢 tem report nesta semana · 🔴 não tem (o farol do GP vai embaixo)
+  const naSemana = !!l.atualizado_na_semana, dt = l.ultimo_report || l.report_data, gp = l.farol_report;
+  const gpIco = { verde: '🟢', amarelo: '🟡', vermelho: '🔴' }[gp] || '';
+  return '<td style="padding:6px;white-space:nowrap;color:' + (naSemana ? 'var(--green,#22d3a3)' : 'var(--red)') + ';" title="' + (naSemana ? 'Status report entregue nesta semana' : 'Sem status report nesta semana') + (gp ? ' · farol informado pelo GP: ' + gp : '') + '">' + (naSemana ? '🟢 na semana' : '🔴 sem report na semana')
+    + '<div style="font-size:9px;color:var(--t3);">' + (dt ? 'último: ' + String(dt).substring(0, 10).split('-').reverse().join('/') : 'nunca enviado') + (gp ? ' · GP: ' + gpIco + ' ' + _dsE(gp) : '') + '</div></td>';
 }
 async function pcAcao(op) {
   const d = _pc; if (!d) return;
@@ -36694,7 +36697,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.417] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.418] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36710,7 +36713,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.417';
+window.__ATX_BUILD_ID__ = 'ATX-v3.418';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
