@@ -552,9 +552,9 @@ Não invente nada que não esteja na transcrição. Se algo ficou sem conclusão
 // GERENTE DE RH IA (chat com contexto real: funcionários, custo/hora, alocação)
 // ═══════════════════════════════════════════════════════════════════════════
 const RH_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-async function claudeRh(system, messages, maxTokens = 1400) {
+async function claudeRh(system, messages, maxTokens = 1400, timeoutMs = 40000) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
-  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 40000);
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), timeoutMs);
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({ model: RH_MODEL, max_tokens: maxTokens, system, messages }) });
@@ -582,6 +582,78 @@ ${JSON.stringify(ctx).substring(0, 8000)}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// v3.424: PAPÉIS & RESPONSABILIDADES — descrição de cada cargo (organograma + cargos da equipe) pré-gerada por IA,
+// alinhada à Atlantyx, editável; mais a matriz RACI dos processos-chave. Guardado em kv (rh:papeis, rh:raci).
+// Nada de salário nem dado pessoal no prompt: só título, área, hierarquia e o par de IA do cargo.
+// ═══════════════════════════════════════════════════════════════════════════
+const K_PAPEIS = 'rh:papeis', K_RACI = 'rh:raci';
+async function kvRh(k, v) { const sql = await getSql();
+  if (v === undefined) { const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const x = r[0]?.value; return typeof x === 'string' ? JSON.parse(x) : (x ?? null); }
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v; }
+const ATLANTYX_CTX = `A Atlantyx (antiga Atlanteam) é uma empresa brasileira B2B com 17 anos, de IA, analytics, engenharia de dados e planejamento corporativo (ex.: Anaplan), com escritórios no Rio de Janeiro e em São Paulo, atendendo grandes empresas de setores como energia, financeiro e varejo/automotivo.
+Três motores de negócio: (1) alocação de profissionais especializados em clientes, (2) projetos sob medida (dados, IA, planejamento) com marcos, termos de aceite e faturamento por marco, além de contratos de sustentação mensal com SLA, e (3) suíte própria de produtos de IA vendidos por assinatura (Atlantyx OS, Maestro de gestão de portfólio de projetos).
+Modelo IA-first: cada cargo tem um par humano + agente de IA; os agentes fazem o trabalho repetitivo e de análise, o humano decide, se relaciona e responde pelo resultado.
+Método de desenvolvimento B.P.M. (Batida = cadência semanal de sincronização, Partitura = specs e contratos, Mixagem = revisão antes de publicar), trilhas de trabalho com dono, status report semanal dos projetos, rituais semanais de gestão.
+Cultura: empresa enxuta, dono acessível, foco em entrega com qualidade, margem e crescimento de receita recorrente.`;
+const _slug = s => String(s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+async function _papeisCargos() {
+  const org = await organograma(); const sql = await getSql();
+  const L = org.cargos.map(c => ({ id: c.id, titulo: c.titulo, sigla: c.sigla, nivel: c.nivel, area: c.area, reporta_para: c.reporta_para, fonte: 'organograma', ocupado: !!c.funcionario_id, ocupante: c.funcionario_nome || null, agente_nome: c.agente_nome, agente_especialidade: c.agente_especialidade }));
+  const tit = new Set(L.map(c => _slug(c.titulo)));
+  try { const fs = await sql`SELECT cargo, COUNT(*)::int AS n, string_agg(nome, ', ' ORDER BY nome) AS nomes FROM funcionarios WHERE ativo = true AND COALESCE(cargo,'') <> '' GROUP BY cargo ORDER BY cargo`;
+    fs.forEach(f => { const s = _slug(f.cargo); if (!s || tit.has(s)) return; tit.add(s); L.push({ id: 'func:' + s, titulo: f.cargo, sigla: null, nivel: 3, area: null, reporta_para: null, fonte: 'equipe', ocupado: true, ocupante: f.nomes, qtd: f.n }); }); } catch (_) {}
+  const porId = Object.fromEntries(L.map(c => [c.id, c]));
+  L.forEach(c => { c.reporta_titulo = c.reporta_para ? porId[c.reporta_para]?.titulo || null : null; c.liderados = L.filter(x => x.reporta_para === c.id).map(x => x.titulo); });
+  return L;
+}
+async function papeisListar() {
+  const cargos = await _papeisCargos(); const P = (await kvRh(K_PAPEIS)) || {}; const raci = await kvRh(K_RACI);
+  cargos.forEach(c => { c.papel = P[c.id] || null; });
+  return { cargos, raci, resumo: { total: cargos.length, descritos: cargos.filter(c => c.papel).length, editados: cargos.filter(c => c.papel?.editado_em).length } };
+}
+const _CAMPOS_LISTA = ['responsabilidades', 'entregas', 'kpis', 'decide', 'escala', 'interfaces', 'rituais', 'humano', 'agente_ia', 'competencias_tecnicas', 'competencias_comportamentais', 'requisitos', 'onboarding_30', 'onboarding_60', 'onboarding_90', 'riscos'];
+const _CAMPOS_TEXTO = ['missao', 'alinhamento', 'carreira', 'vaga'];
+function _papelLimpo(o) { const p = {};
+  _CAMPOS_TEXTO.forEach(k => { p[k] = String(o?.[k] || '').trim().substring(0, 3000); });
+  _CAMPOS_LISTA.forEach(k => { const v = o?.[k]; p[k] = (Array.isArray(v) ? v : String(v || '').split('\n')).map(x => String(typeof x === 'object' ? Object.values(x).join(' — ') : x).replace(/^\s*[-•*]\s*/, '').trim()).filter(Boolean).slice(0, 20).map(x => x.substring(0, 400)); });
+  return p; }
+async function papelGerar({ id, orientacao } = {}) {
+  const cargos = await _papeisCargos(); const c = cargos.find(x => x.id === id); if (!c) throw new Error('Cargo não encontrado');
+  const outros = cargos.filter(x => x.id !== id).map(x => x.titulo + (x.sigla ? ' (' + x.sigla + ')' : '') + (x.area ? ' · ' + x.area : '')).slice(0, 40);
+  const sys = `Você é o Gerente de RH IA da Atlantyx e especialista em desenho organizacional. Escreva a descrição de PAPÉIS E RESPONSABILIDADES de um cargo, específica para a Atlantyx (nada genérico de manual de RH), em português do Brasil.
+CONTEXTO DA ATLANTYX:
+${ATLANTYX_CTX}
+Regras: use o organograma (quem reporta a quem, demais cargos) para evitar sobreposição e deixar claras as interfaces; separe o que é do HUMANO e o que é do AGENTE DE IA par do cargo; KPIs com meta sugerida e frequência; responsabilidades com verbo no infinitivo e resultado; nada de nomes de clientes; nada de salário.
+Responda SOMENTE JSON válido com estas chaves (listas = arrays de strings curtas, 4 a 8 itens cada, salvo indicação):
+{"missao":"1-2 frases: por que o cargo existe","alinhamento":"como o cargo move os 3 motores e as metas da Atlantyx (2-3 frases)","responsabilidades":[],"entregas":["entregáveis concretos e cadência"],"kpis":["KPI — meta sugerida — frequência"],"decide":["o que decide sozinho"],"escala":["o que precisa escalar e para quem"],"interfaces":["Cargo X — sobre o quê"],"rituais":["ritual/cadência de que participa ou conduz (Batida, status report, comitês)"],"humano":["o que só o humano faz"],"agente_ia":["o que o agente de IA par faz/automatiza"],"competencias_tecnicas":[],"competencias_comportamentais":[],"requisitos":["formação, experiência, certificações"],"onboarding_30":[],"onboarding_60":[],"onboarding_90":[],"carreira":"próximo passo de carreira e como chegar lá (2 frases)","riscos":["riscos se o cargo falhar ou ficar vago e como mitigar (3-4)"],"vaga":"texto curto de anúncio de vaga (até 120 palavras) com o cargo, missão, 4 responsabilidades e requisitos"}`;
+  const user = JSON.stringify({ cargo: c.titulo, sigla: c.sigla, area: c.area, nivel: c.nivel, reporta_para: c.reporta_titulo, liderados: c.liderados, ocupado: c.ocupado, pessoas_no_cargo: c.qtd || (c.ocupado ? 1 : 0), agente_ia_par: c.agente_nome ? c.agente_nome + ' — ' + (c.agente_especialidade || '') : null, demais_cargos: outros, orientacao_do_fundador: orientacao ? String(orientacao).substring(0, 800) : null });
+  const t = await claudeRh(sys, [{ role: 'user', content: user }], 3500, 55000);
+  const a = t.indexOf('{'), b = t.lastIndexOf('}'); let j; try { j = JSON.parse(t.substring(a, b + 1)); } catch (_) { throw new Error('A IA não devolveu JSON válido — tente de novo'); }
+  const P = (await kvRh(K_PAPEIS)) || {}; const papel = { ..._papelLimpo(j), gerado_em: new Date().toISOString(), cargo_titulo: c.titulo, orientacao: orientacao || null };
+  P[id] = papel; await kvRh(K_PAPEIS, P); return { id, papel };
+}
+async function papelSalvar({ id, papel } = {}) {
+  if (!id || !papel) throw new Error('id e papel obrigatórios');
+  const P = (await kvRh(K_PAPEIS)) || {}; P[id] = { ...(P[id] || {}), ..._papelLimpo(papel), editado_em: new Date().toISOString() }; await kvRh(K_PAPEIS, P); return { id, papel: P[id] };
+}
+async function papelExcluir({ id } = {}) { const P = (await kvRh(K_PAPEIS)) || {}; delete P[id]; await kvRh(K_PAPEIS, P); return { id }; }
+async function papeisRaci() {
+  const cargos = await _papeisCargos(); const P = (await kvRh(K_PAPEIS)) || {};
+  const col = cargos.map(c => ({ id: c.id, titulo: c.titulo, sigla: c.sigla || c.titulo.split(/\s+/).map(w => w[0]).join('').toUpperCase().substring(0, 4), missao: P[c.id]?.missao || null, agente: c.agente_nome || null })).slice(0, 18);
+  const sys = `Você é especialista em desenho organizacional da Atlantyx. CONTEXTO:
+${ATLANTYX_CTX}
+Monte a MATRIZ RACI dos processos-chave da Atlantyx usando SOMENTE as siglas dos cargos informados (R = executa, A = responde pelo resultado — exatamente 1 A por processo, C = consultado, I = informado). Processos (12 a 16), cobrindo: geração de demanda/marketing, prospecção e SDR, proposta comercial e precificação, fechamento de contrato, kickoff e planejamento de projeto, execução e status report, termo de aceite e faturamento por marco, sustentação mensal/SLA, cobrança e contas a receber, contas a pagar e fluxo de caixa, recrutamento e alocação de profissionais, avaliação de desempenho, produto Atlantyx OS/Maestro (roadmap e versões), segurança e LGPD, governança dos agentes de IA.
+Depois aponte LACUNAS (processo sem A claro, cargo sobrecarregado, função sem dono, cargo crítico vago) e SOBREPOSIÇÕES, com recomendação objetiva.
+Responda SOMENTE JSON: {"processos":[{"processo":"...","raci":{"SIGLA":"R|A|C|I"}}],"lacunas":["..."],"sobreposicoes":["..."],"recomendacoes":["..."]}`;
+  const t = await claudeRh(sys, [{ role: 'user', content: JSON.stringify({ cargos: col }) }], 4000, 55000);
+  const a = t.indexOf('{'), b = t.lastIndexOf('}'); let j; try { j = JSON.parse(t.substring(a, b + 1)); } catch (_) { throw new Error('A IA não devolveu JSON válido — tente de novo'); }
+  const sig = new Set(col.map(c => c.sigla));
+  const raci = { colunas: col.map(c => ({ id: c.id, sigla: c.sigla, titulo: c.titulo })), processos: (j.processos || []).map(p => ({ processo: String(p.processo || '').substring(0, 160), raci: Object.fromEntries(Object.entries(p.raci || {}).filter(([k, v]) => sig.has(k) && /^[RACI]$/.test(String(v).trim().toUpperCase())).map(([k, v]) => [k, String(v).trim().toUpperCase()])) })).slice(0, 20),
+    lacunas: (j.lacunas || []).slice(0, 10), sobreposicoes: (j.sobreposicoes || []).slice(0, 10), recomendacoes: (j.recomendacoes || []).slice(0, 10), gerado_em: new Date().toISOString() };
+  await kvRh(K_RACI, raci); return { raci };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -604,6 +676,11 @@ async function handler(req, res) {
     organograma:                () => organograma(),
     cargo_save:                 () => cargoSave(payload),
     cargo_delete:               () => cargoDelete(payload),
+    papeis_listar:              () => papeisListar(),   // v3.424
+    papel_gerar:                () => papelGerar(payload),
+    papel_salvar:               () => papelSalvar(payload),
+    papel_excluir:              () => papelExcluir(payload),
+    papeis_raci:                () => papeisRaci(),
     conselho_list:              () => conselhoList(),
     conselho_membro_save:       () => conselhoMembroSave(payload),
     conselho_sessao_abrir:      () => conselhoSessaoAbrir(payload),
