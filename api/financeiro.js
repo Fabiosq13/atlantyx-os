@@ -8585,6 +8585,20 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
         valor: round(t.valor), data: t.data || _diasMais(hoje, 35), base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status,
         _txt: [t.projeto, t.fase, t.parcela, t.marco_projeto, t.periodo_medicao].filter(Boolean).join(' '), _sus: num(t.valor_mensal_sustentacao) > 0 || /sustenta/i.test([t.projeto, t.fase, t.parcela, t.marco_projeto].join(' ')) }); } }
   catch (e) { avisos.push('Termos: ' + e.message); }
+  // v3.430: MARCO JÁ VIROU TERMO — termo do Kanban de Faturamento do mesmo projeto e mesmo valor (±1%) é a cobrança do marco:
+  // o marco sai (o termo fica, com a data dele). Antes, termo criado à mão (sem vínculo com o Kanban de Marcos) somava junto
+  // com o marco — ex.: MP5 de R$ 40 mil previsto em novembro pelo marco e em dezembro pelo termo 38.
+  { const usados = new Set(); let n = 0;
+    for (const m of oc.filter(o => o.origem === 'marco').sort((a, b) => a.data.localeCompare(b.data))) {
+      const mesmo = t => (_rpNc(t.projeto) && _rpNc(t.projeto) === _rpNc(m.projeto)) || (_rpNc(t.projeto) && _rpNc(t.projeto) === _rpNc(m.cliente)) || (_rpNc(t.cliente) && _rpNc(t.cliente) === _rpNc(m.projeto));
+      const t = oc.filter(o => o.origem === 'termo' && !usados.has(o.id) && mesmo(o) && Math.abs(o.valor - m.valor) <= Math.max(1, m.valor * 0.01))
+        .sort((a, b) => Math.abs(Date.parse(a.data) - Date.parse(m.data)) - Math.abs(Date.parse(b.data) - Date.parse(m.data)))[0];
+      if (!t) continue; usados.add(t.id); n++;
+      m.status = 'coberta'; m.coberta_por = { termo: t.termo || t.descricao, casou_por: 'marco_no_termo', substituida_por: 'Termo ' + (t.termo || ''), regra: 'mesmo projeto e valor', valor: t.valor, data: t.data };
+      t.substitui = 'marco ' + String(m.descricao || '').substring(0, 60);
+    }
+    if (n) avisos.push(n + ' marco(s) do Kanban de Marcos não somado(s): já têm termo no Kanban de Faturamento (mesmo projeto e valor) — vale a data do termo.');
+  }
   // 2) sustentações
   let sustentacoes = [];
   try {

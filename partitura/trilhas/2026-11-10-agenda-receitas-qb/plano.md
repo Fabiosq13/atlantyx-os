@@ -17,3 +17,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.428 · ✅ entregue · caso fatura 217 (MP3+MP4) recebida em novembro
 - [x] v3.429: rateio do termo por NF/empresa aberto embaixo da fatura na agenda; botão 🗓 corrige o vencimento da fatura no QuickBooks (sparse, só DueDate) e a emissão das NFs do termo (termos_empresas.nf_data)
 - 2026-11-10 · v3.429 · ✅ entregue · caso termo 3 / fatura 217 (emissão 23/10, vencimento 23/11)
+- [x] v3.430: marco que já virou termo (mesmo projeto e valor ±1%) sai da agenda; vale a data do termo (caso MP5 / termo 38)
+- 2026-11-10 · v3.430 · ✅ entregue
