@@ -27642,17 +27642,20 @@ function pcRender() {
 }
 async function pcEditar(id, campo, valor) { try { await pcCarregar(_pc?.mes, 'editar', { id, campo, valor }); } catch (_) {} }
 // v3.417: dois faróis por projeto — PRAZO (só cronograma: em dia / tendendo a atraso / em atraso) e STATUS REPORT (o que o GP informou)
-function _farolPrazoTd(l) {
-  const f = l.farol_prazo, c = { verde: ['🟢', 'em dia', 'var(--green,#22d3a3)'], amarelo: ['🟡', 'tendendo a atraso', 'var(--gold)'], vermelho: ['🔴', 'em atraso', 'var(--red)'] }[f] || ['⚪', 'sem cronograma', 'var(--t3)'];
+function _farolPrazoTd(l) { // v3.420: mesmas regras do Maestro — farol do cronograma pelo desvio + tendência pela previsão de fim
+  const f = l.farol_prazo, c = { verde: ['🟢', 'em dia', 'var(--green,#22d3a3)'], amarelo: ['🟡', 'atenção', 'var(--gold)'], vermelho: ['🔴', 'atrasado', 'var(--red)'] }[f] || ['⚪', 'sem dados', 'var(--t3)'];
   const br = x => x ? String(x).substring(0, 10).split('-').reverse().join('/') : '?';
-  const tip = (l.prazo_motivo || '') + (l.conclusao ? '\nPrazo: ' + br(l.prazo_inicio) + ' → ' + br(l.conclusao) + (l.prazo_fonte === 'cronograma' ? ' (cronograma)' : l.prazo_fonte === 'cadastro' ? ' (cadastro — sem cronograma)' : '') : '') + (l.conclusao_cadastro ? '\nData do cadastro: ' + br(l.conclusao_cadastro) : '');
-  return '<td style="padding:6px;white-space:nowrap;color:' + c[2] + ';" title="' + _dsE(tip) + '">' + c[0] + ' ' + c[1] + (l.prazo_motivo ? '<div style="font-size:9px;color:var(--t3);white-space:normal;max-width:200px;">' + _dsE(l.prazo_motivo) + '</div>' : '') + '</td>';
+  const t = l.tendencia, tc = t === 'no ritmo' ? 'var(--green,#22d3a3)' : t === 'no limite' ? 'var(--gold)' : t === 'sem dados' || !t ? 'var(--t3)' : 'var(--red)';
+  const tip = (l.prazo_motivo || '') + (l.conclusao ? '\nPrazo: ' + br(l.prazo_inicio) + ' → ' + br(l.conclusao) + (l.prazo_fonte === 'cronograma' ? ' (cronograma)' : l.prazo_fonte === 'cadastro' ? ' (cadastro — sem cronograma)' : '') : '') + (l.conclusao_cadastro ? '\nData do cadastro: ' + br(l.conclusao_cadastro) + ' (não usada)' : '') + (l.previsao_fim ? '\nPrevisão de fim pelo ritmo: ' + br(l.previsao_fim) : '');
+  return '<td style="padding:6px;white-space:nowrap;color:' + c[2] + ';" title="' + _dsE(tip) + '">' + c[0] + ' ' + c[1]
+    + (t ? '<div style="font-size:9.5px;font-weight:600;color:' + tc + ';">' + _dsE(t) + (l.atraso_projetado > 0 ? ' (+' + l.atraso_projetado + 'd)' : '') + '</div>' : '')
+    + (l.previsao_fim ? '<div style="font-size:9px;color:var(--t3);">previsão ' + br(l.previsao_fim) + '</div>' : '') + '</td>';
 }
-function _farolReportTd(l) { // v3.418: farol do STATUS REPORT = cadência — 🟢 tem report nesta semana · 🔴 não tem (o farol do GP vai embaixo)
-  const naSemana = !!l.atualizado_na_semana, dt = l.ultimo_report || l.report_data, gp = l.farol_report;
-  const gpIco = { verde: '🟢', amarelo: '🟡', vermelho: '🔴' }[gp] || '';
-  return '<td style="padding:6px;white-space:nowrap;color:' + (naSemana ? 'var(--green,#22d3a3)' : 'var(--red)') + ';" title="' + (naSemana ? 'Status report entregue nesta semana' : 'Sem status report nesta semana') + (gp ? ' · farol informado pelo GP: ' + gp : '') + '">' + (naSemana ? '🟢 na semana' : '🔴 sem report na semana')
-    + '<div style="font-size:9px;color:var(--t3);">' + (dt ? 'último: ' + String(dt).substring(0, 10).split('-').reverse().join('/') : 'nunca enviado') + (gp ? ' · GP: ' + gpIco + ' ' + _dsE(gp) : '') + '</div></td>';
+function _farolReportTd(l) { // v3.420: como no Maestro — o farol que o GP informou no último status report (— se nunca enviou) + se está em dia na semana
+  const gp = l.farol_report, dt = l.ultimo_report || l.report_data, naSemana = !!l.atualizado_na_semana;
+  const ic = { verde: '🟢', amarelo: '🟡', vermelho: '🔴' }[gp], cor = { verde: 'var(--green,#22d3a3)', amarelo: 'var(--gold)', vermelho: 'var(--red)' }[gp] || 'var(--t3)';
+  return '<td style="padding:6px;white-space:nowrap;color:' + cor + ';" title="' + (gp ? 'farol informado no último status report (' + String(dt || '').substring(0, 10).split('-').reverse().join('/') + ')' : 'sem status report') + '">' + (gp ? ic + ' ' + _dsE(gp) : '<span style="color:var(--t3)">—</span>')
+    + '<div style="font-size:9px;color:' + (naSemana ? 'var(--green,#22d3a3)' : 'var(--t3)') + ';">' + (dt ? String(dt).substring(0, 10).split('-').reverse().join('/') + (naSemana ? ' · na semana' : ' · fora da semana') : 'nunca enviado') + '</div></td>';
 }
 async function pcAcao(op) {
   const d = _pc; if (!d) return;
@@ -32872,7 +32875,7 @@ function dashProjRender() {
   const bad = document.getElementById('dashBadgeProj'); if (bad) bad.textContent = (r.vermelho || 0) ? String(r.vermelho) : '';
   const m = document.getElementById('dpjMeta'); if (m) m.textContent = (r.total || L.length) + ' projeto(s) · ' + (r.atualizados_na_semana ?? 0) + ' com report na semana';
   const kpi = (rot, v, cor) => '<div style="flex:1;min-width:110px;background:var(--bg4);border-radius:8px;padding:9px 11px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + rot + '</div><div style="font-size:20px;font-weight:700;color:' + cor + ';">' + v + '</div></div>';
-  c.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' + kpi('Em dia', r.verde ?? 0, 'var(--green,#22d3a3)') + kpi('Tendendo a atraso', r.amarelo ?? 0, 'var(--gold)') + kpi('Em atraso', r.vermelho ?? 0, 'var(--red)') + kpi('Com bloqueio', r.com_bloqueio ?? 0, 'var(--red)') + kpi('Sem report na semana', (r.pendentes_de_atualizacao || []).length, 'var(--gold)') + '</div>'
+  c.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' + kpi('Em dia', r.verde ?? 0, 'var(--green,#22d3a3)') + kpi('Atenção', r.amarelo ?? 0, 'var(--gold)') + kpi('Atrasado', r.vermelho ?? 0, 'var(--red)') + kpi('Com bloqueio', r.com_bloqueio ?? 0, 'var(--red)') + kpi('Sem report na semana', (r.pendentes_de_atualizacao || []).length, 'var(--gold)') + '</div>'
     + (d.aviso ? '<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;">⚠ ' + _dsE(d.aviso) + '</div>' : '')
     + (lista.length ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:860px;"><thead><tr style="border-bottom:1px solid var(--bd);">'
       + ['Projeto', 'Gerente', 'Prazo', 'Status report', 'Entrega', 'Avanço / planejado', 'Desvio', 'Próximo marco', 'Último report'].map(h => '<th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">' + h.toUpperCase() + '</th>').join('') + '</tr></thead><tbody>'
@@ -36698,7 +36701,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.419] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.420] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36714,7 +36717,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.419';
+window.__ATX_BUILD_ID__ = 'ATX-v3.420';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

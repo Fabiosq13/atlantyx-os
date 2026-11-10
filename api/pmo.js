@@ -868,22 +868,22 @@ async function maestroPainel({ forcar } = {}) {
     const dias_atraso = conclusao && conclusao < hoje && (pctF == null || pctF < 100) ? dias(conclusao) : 0;
     if (dias_atraso) { mot.unshift('passou da data de conclusão há ' + dias_atraso + ' dia(s)'); if (origem === 'calculado') farol = 'vermelho'; }
     if (origem === 'calculado' && av.fonte !== 'cronograma') farol = null; // v3.418: sem cronograma = ⚪ (sem dado), nunca 🔴
-    // v3.417: DOIS faróis separados. PRAZO = só cronograma (em atraso / tendendo a atraso / em dia), sem horas nem termos.
-    // STATUS REPORT = o farol que o GP informou no último report (e se está desatualizado).
-    const P = [], ateConc = conclusao ? -dias(conclusao) : null; let farol_prazo = null;
-    if (dias_atraso) P.push('passou da conclusão (' + conclusao.split('-').reverse().join('/') + ') com ' + (pctF ?? '?') + '% feito');
-    if (desvio != null && desvio <= -10) P.push(Math.abs(desvio) + 'pp atrás do planejado');
-    if (atras.some(m => m.dias > 7)) P.push('marco vencido há mais de 7 dias');
-    if (av.fonte !== 'cronograma') { P.length = 0; P.push('sem cronograma no Maestro'); } // v3.418: farol de prazo só com cronograma
-    else if (P.length) farol_prazo = 'vermelho';
-    if (av.fonte === 'cronograma' && !farol_prazo) { if (desvio != null && desvio < -3) P.push(Math.abs(desvio) + 'pp atrás do planejado');
-      if (atras.length) P.push('marco vencido há até 7 dias');
-      if (ateConc != null && ateConc >= 0 && ateConc <= 15 && pctF != null && pctF < 85) P.push('conclusão em ' + ateConc + ' dia(s) com ' + pctF + '% feito');
-      if ((av.tarefas_atrasadas || 0) > 0 && desvio != null && desvio < 0) P.push(av.tarefas_atrasadas + ' tarefa(s) do cronograma vencida(s)');
-      if (P.length) farol_prazo = 'amarelo'; else if (desvio != null || conclusao || atras.length || av.fisico != null) { farol_prazo = 'verde'; P.push(desvio != null ? 'avanço ' + (desvio >= 0 ? '+' : '') + desvio + 'pp vs planejado' : 'sem atraso no cronograma'); } }
+    // v3.420: MESMAS REGRAS DO MAESTRO (atlantyx-dashboard · _p18Linhas e _ceoDados):
+    //  • farol do CRONOGRAMA = só o desvio (avanço real − planejado): < −10pp 🔴 · < −5pp 🟡 · senão 🟢 · sem avanço ⚪
+    //  • TENDÊNCIA = previsão de fim pela duração do cronograma ÷ ritmo (real ÷ previsto): prazo vencido · tendência de atraso (>7d) · no limite · no ritmo
+    const pctM = pctF != null ? pctF : (r && r.pct != null ? parseFloat(r.pct) : null), planM = av.planejado != null ? av.planejado : (r && r.pctPlan != null ? parseFloat(r.pctPlan) : null);
+    const farol_prazo = desvio == null ? null : desvio < -10 ? 'vermelho' : desvio < -5 ? 'amarelo' : 'verde';
+    const _add = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }, _dd = (a2, b2) => Math.round((Date.parse(a2) - Date.parse(b2)) / 864e5);
+    const iniT = inicioPrazo, fimT = conclusao; let prevFim = null, atrasoProj = null, tend = 'sem dados';
+    if (fimT && fimT < hoje && (pctM == null || pctM < 100)) { tend = 'prazo vencido'; atrasoProj = _dd(hoje, fimT); }
+    else if (iniT && fimT && fimT > iniT && pctM != null && planM != null && planM >= 5 && iniT < hoje) { const spi = Math.max(0.25, Math.min(2, pctM / planM)); prevFim = _add(iniT, Math.round(_dd(fimT, iniT) / spi)); atrasoProj = _dd(prevFim, fimT); tend = atrasoProj > 7 ? 'tendência de atraso' : atrasoProj > 0 ? 'no limite' : 'no ritmo'; }
+    else if (iniT && pctM != null && pctM >= 5 && iniT < hoje) { prevFim = _add(iniT, Math.round(_dd(hoje, iniT) * 100 / pctM)); if (fimT) { atrasoProj = _dd(prevFim, fimT); tend = atrasoProj > 7 ? 'tendência de atraso' : atrasoProj > 0 ? 'no limite' : 'no ritmo'; } }
+    else if (desvio != null) tend = desvio < -10 ? 'tendência de atraso' : desvio < -5 ? 'no limite' : 'no ritmo';
+    if (tend === 'no ritmo' && desvio != null && desvio < -10) tend = 'tendência de atraso';
+    const P = [desvio != null ? 'desvio ' + (desvio > 0 ? '+' : '') + desvio + 'pp (real ' + pctM + '% × previsto ' + planM + '%)' : 'sem avanço do cronograma'];
     const farol_sr = r?.farol || null, sr_dias = r?.data ? dias(r.data) : null;
     return { nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, farol_calculado: farolCalc,
-      farol_prazo, prazo_motivo: P.join(' · '), tem_cronograma: av.fonte === 'cronograma', prazo_inicio: inicioPrazo, prazo_fonte: temCron ? 'cronograma' : (fimCad ? 'cadastro' : (conclusao ? 'marcos' : null)), conclusao_cadastro: fimCad && fimCad !== conclusao ? fimCad : null, farol_sr, sr_data: r?.data ? String(r.data).slice(0, 10) : null, sr_dias, sr_desatualizado: sr_dias != null ? sr_dias > 14 : null, conclusao, inicio: inicioPrazo || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
+      farol_prazo, prazo_motivo: P.join(' · '), tendencia: tend, atraso_projetado: atrasoProj, previsao_fim: prevFim, dias_restantes: fimT ? _dd(fimT, hoje) : null, tem_cronograma: av.fonte === 'cronograma', prazo_inicio: inicioPrazo, prazo_fonte: temCron ? 'cronograma' : (fimCad ? 'cadastro' : (conclusao ? 'marcos' : null)), conclusao_cadastro: fimCad && fimCad !== conclusao ? fimCad : null, farol_sr, sr_data: r?.data ? String(r.data).slice(0, 10) : null, sr_dias, sr_desatualizado: sr_dias != null ? sr_dias > 14 : null, conclusao, inicio: inicioPrazo || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
   });
   const at = projetos.filter(p => p.ativo);
   const fimMes = hoje.substring(0, 8) + '31', comAv = at.filter(p => p.pct != null), comPl = at.filter(p => p.planejado != null);
@@ -1574,7 +1574,7 @@ async function painelMestre({ semana } = {}) {
       farol: (localMaisNovo ? r?.farol : null) || M?.farol || (diasSemReport != null && diasSemReport <= 14 ? r?.farol : null) || null, // v3.416: report velho (>14 dias) não define mais o farol
       farol_origem: localMaisNovo && r?.farol ? 'status report (Atlantyx OS)' : M?.farol ? (M.origem === 'status report' ? 'status report (Maestro)' : 'calculado pelo Maestro') : null,
       // v3.417: farol de PRAZO (só cronograma) e farol do STATUS REPORT (o que o GP informou), separados
-      farol_prazo: M ? (M.farol_prazo || null) : null, tem_cronograma: M?.tem_cronograma ?? false, prazo_inicio: M?.prazo_inicio || null, prazo_fonte: M?.prazo_fonte || null, conclusao_cadastro: M?.conclusao_cadastro || null, // v3.418: só com cronograma
+      farol_prazo: M ? (M.farol_prazo || null) : null, tendencia: M?.tendencia || null, atraso_projetado: M?.atraso_projetado ?? null, previsao_fim: M?.previsao_fim || null, dias_restantes: M?.dias_restantes ?? null, farol_report_gp: M?.farol_sr || null, tem_cronograma: M?.tem_cronograma ?? false, prazo_inicio: M?.prazo_inicio || null, prazo_fonte: M?.prazo_fonte || null, conclusao_cadastro: M?.conclusao_cadastro || null, // v3.418: só com cronograma
       prazo_motivo: M?.prazo_motivo || (desvio != null ? (desvio >= 0 ? '+' : '') + desvio + 'pp vs planejado' : ''),
       farol_report: (localMaisNovo ? r?.farol : null) || M?.farol_sr || r?.farol || null,
       report_data: (localMaisNovo ? String(r?.data_report || '').substring(0, 10) : null) || M?.sr_data || (r?.data_report ? String(r.data_report).substring(0, 10) : null),
