@@ -15,3 +15,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.427 · ✅ entregue
 - [x] v3.428: previsão de recebimento por fatura do QuickBooks (kv fin:inv_prev_receb) — vale no extrato futuro, fluxo, projetado e agenda; botão 📅 na aba Todas
 - 2026-11-10 · v3.428 · ✅ entregue · caso fatura 217 (MP3+MP4) recebida em novembro
+- [x] v3.429: rateio do termo por NF/empresa aberto embaixo da fatura na agenda; botão 🗓 corrige o vencimento da fatura no QuickBooks (sparse, só DueDate) e a emissão das NFs do termo (termos_empresas.nf_data)
+- 2026-11-10 · v3.429 · ✅ entregue · caso termo 3 / fatura 217 (emissão 23/10, vencimento 23/11)

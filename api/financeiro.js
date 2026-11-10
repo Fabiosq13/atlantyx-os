@@ -199,6 +199,7 @@ async function handler(req, res) {
       qb_rec_receitas_cfg:        () => qbRecReceitasCfg(params),   // v3.426
       rp_regras_salvar:           () => rpRegrasSalvar(params),     // v3.427
       inv_prev_receb:             () => invPrevReceb(params),       // v3.428
+      qb_fatura_datas:            () => qbFaturaDatas(params),      // v3.429
       receita_manual_salvar:      () => receitaManualSalvar(params),
       receita_manual_excluir:     () => receitaManualExcluir(params),
       receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
@@ -8527,6 +8528,21 @@ async function invPrevReceb({ id, data } = {}) {
   const m = (await _kvFin2('fin:inv_prev_receb')) || {}; const k = String(id).replace(/^inv_/, ''); if (data) m[k] = data; else delete m[k];
   await _kvFin2('fin:inv_prev_receb', m); _ipCache = { em: 0, v: {} }; _rpCache.v = null; return { id: k, data: data || null };
 }
+// v3.429: corrige no QuickBooks o VENCIMENTO da fatura (só DueDate, sparse — valor e linhas não mudam) e, se informado, a data de
+// emissão das notas fiscais do termo (termos_empresas.nf_data). Remove o ajuste de previsão (📅), que deixa de ser necessário.
+async function qbFaturaDatas({ id, vencimento, termo_id, nf_emissao } = {}) {
+  const k = String(id || '').replace(/^inv_/, '').replace(/[^0-9]/g, ''); if (!k) throw Object.assign(new Error('fatura obrigatória'), { status: 400 });
+  const ok = d => /^\d{4}-\d{2}-\d{2}$/.test(d || ''); if (vencimento && !ok(vencimento)) throw Object.assign(new Error('vencimento inválido (AAAA-MM-DD)'), { status: 400 });
+  if (nf_emissao && !ok(nf_emissao)) throw Object.assign(new Error('emissão inválida (AAAA-MM-DD)'), { status: 400 });
+  const out = { id: k };
+  if (vencimento) { const token = await qbToken();
+    const atual = (await qbQuery(`select * from Invoice where Id = '${k}'`, token))?.QueryResponse?.Invoice?.[0]; if (!atual) throw new Error('Fatura não encontrada no QuickBooks');
+    const r = await qbFetch('/invoice?minorversion=65', token, 'POST', { Id: atual.Id, SyncToken: atual.SyncToken, sparse: true, DueDate: vencimento });
+    out.qb = { doc: atual.DocNumber || atual.Id, vencimento_antes: atual.DueDate || null, vencimento: r?.Invoice?.DueDate || vencimento };
+    const m = (await _kvFin2('fin:inv_prev_receb')) || {}; if (m[k]) { delete m[k]; await _kvFin2('fin:inv_prev_receb', m); } _ipCache = { em: 0, v: {} }; }
+  if (termo_id && nf_emissao) { const sql = await getSql(); const r = await sql`UPDATE termos_empresas SET nf_data = ${nf_emissao} WHERE termo_id = ${String(termo_id)} RETURNING id`; out.notas_atualizadas = r.length; }
+  _rpCache.v = null; return out;
+}
 async function _rpFaturasQB(desde) {
   if (!qbConfigurado()) return null;
   try { const token = await qbToken();
@@ -8724,10 +8740,14 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const mesM1 = _mesMais(mesHoje, -1); let faturasQB = [];
   if (faturas) {
     const cobre = {}; oc.forEach(o => { const ids = o.coberta_por?.ids || (o.coberta_por?.id ? [o.coberta_por.id] : []); ids.forEach(id => { (cobre[id] = cobre[id] || []).push({ origem: o.origem, descricao: o.descricao, termo: o.termo || null }); }); });
+    // v3.429: RATEIO do termo por nota fiscal/empresa (termos_empresas) — aberto dentro da linha da fatura
+    const rateioPorTermo = {}; try { (await sql`SELECT t.id AS termo_id, t.numero_termo, e.id, e.ordem, e.empresa, e.nf_numero, e.nf_valor, e.valor_parcela, e.nf_data, e.qb_invoice_id, e.qb_invoice_doc, e.pagamento_status, e.pagamento_data
+        FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE t.numero_termo IS NOT NULL AND COALESCE(t.status,'') <> 'cancelado' ORDER BY t.numero_termo, e.ordem`)
+      .forEach(r => { const n = String(r.numero_termo); (rateioPorTermo[n] = rateioPorTermo[n] || { termo_id: r.termo_id, itens: [] }).itens.push({ id: r.id, empresa: r.empresa, nf: r.nf_numero, valor: round(num(r.nf_valor) > 0 ? num(r.nf_valor) : num(r.valor_parcela)), nf_data: r.nf_data || null, qb_invoice_id: r.qb_invoice_id || null, qb_doc: r.qb_invoice_doc || null, pagamento: r.pagamento_status || null, pagamento_data: r.pagamento_data || null }); }); } catch (_) {}
     faturasQB = faturas.filter(f => String(f.emissao || f.data || '') >= mesM1 + '-01' || f.saldo > 0).map(f => {
       const tx = String(f.texto || '').match(/termo\s*(?:n[º°o.]*\s*)?([0-9][0-9./-]*)/i);
       const termo = termoDe['id:' + f.id] || termoDe['doc:' + f.doc] || (cobre[f.id] || []).map(c => c.termo).find(Boolean) || (tx ? tx[1].replace(/[./-]$/, '') : null);
-      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [] };
+      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [], rateio: termo && rateioPorTermo[termo] ? rateioPorTermo[termo].itens : null, termo_id: termo && rateioPorTermo[termo] ? rateioPorTermo[termo].termo_id : null };
     }).sort((a, b) => String(a.vencimento || a.emissao).localeCompare(String(b.vencimento || b.emissao)));
   }
   { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411

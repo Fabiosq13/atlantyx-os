@@ -33011,7 +33011,7 @@ function arRender() {
 function _arTodas(D) {
   const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
   const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
-    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb }; });
+    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb, rateio: f.rateio, termo_id: f.termo_id, doc: f.doc }; });
   const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
   let L = F.concat(P);
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
@@ -33034,7 +33034,7 @@ function _arTodas(D) {
           + '<td><b>' + _arE(x.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(x.desc) + '</div></td><td style="white-space:nowrap;">' + (x.termo ? '<span class="nbx bl" style="font-size:9px;">Termo ' + _arE(x.termo) + '</span>' : '') + '</td>'
           + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + '</td>'
-          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>'; }).join('') + '</table></div>'; }).join('');
+          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
   return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
 }
 // v3.426: modelos recorrentes de RECEITA do QuickBooks — fora por padrão (valem os recorrentes do sistema); liga/desliga um a um
@@ -33065,6 +33065,31 @@ async function arRegrasSalvar() {
 async function arQbRec(id, usar) {
   try { await finApi('qb_rec_receitas_cfg', { id, usar }); toast(usar ? 'Modelo do QuickBooks passa a contar' : 'Modelo do QuickBooks eliminado da agenda', 'success'); await arCarregar(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+// v3.429: rateio do termo por nota fiscal/empresa, aberto embaixo da fatura
+function _arRateio(x) {
+  const R = x.rateio; if (!R || !R.length) return '';
+  const tot = R.reduce((t, r) => t + (Number(r.valor) || 0), 0);
+  return R.map(r => '<tr style="background:var(--bg3);"><td style="padding:3px 4px 3px 14px;font-size:9.5px;color:var(--t3);white-space:nowrap;">' + (r.nf_data ? 'NF de ' + _arDt(r.nf_data) : '') + '</td><td style="font-size:10px;padding-left:12px;">↳ ' + _arE(r.empresa || '—') + '</td><td style="font-size:9.5px;">' + (r.nf ? 'NF ' + _arE(r.nf) : '<span style="color:var(--gold);">sem NF</span>') + '</td>'
+    + '<td style="font-size:9.5px;color:var(--t3);">' + (r.qb_doc ? 'fatura ' + _arE(r.qb_doc) : '') + '</td><td style="font-size:9.5px;color:' + (r.pagamento === 'pago' ? 'var(--green)' : 'var(--t3)') + ';">' + _arE(r.pagamento || '') + (r.pagamento_data ? ' ' + _arDt(r.pagamento_data) : '') + '</td><td style="text-align:right;font-size:10px;">' + _arR(r.valor) + '</td><td></td></tr>').join('')
+    + '<tr style="background:var(--bg3);"><td></td><td colspan="4" style="font-size:9.5px;color:var(--t3);padding:3px 0 5px 12px;">Rateio do termo ' + _arE(x.termo) + ': ' + R.length + ' nota(s)' + (Math.abs(tot - x.valor) > 1 ? ' · <span style="color:var(--gold);">soma ' + _arR(tot) + ' ≠ fatura ' + _arR(x.valor) + '</span>' : '') + '</td><td style="text-align:right;font-size:10px;font-weight:600;">' + _arR(tot) + '</td><td></td></tr>';
+}
+function arInvDatas(id) {
+  const f = (_ar.d?.faturas_qb || []).find(z => String(z.id) === String(id)); if (!f) return; document.getElementById('arDatasModal')?.remove();
+  const emi = (f.rateio || []).map(r => r.nf_data).find(Boolean) || '';
+  const m = document.createElement('div'); m.id = 'arDatasModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;'; m.onclick = e => { if (e.target === m) m.remove(); };
+  m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(460px,100%);padding:16px;font-size:11px;"><div style="font-family:var(--H);font-weight:700;margin-bottom:4px;">Fatura ' + _arE(f.doc) + ' · ' + _arE(f.cliente) + '</div><div style="color:var(--t3);margin-bottom:10px;">' + (f.termo ? 'Termo ' + _arE(f.termo) + ' · ' : '') + _arR(f.valor) + ' · emitida no QuickBooks em ' + _arDt(f.emissao) + '</div>'
+    + '<label style="color:var(--t3);">Vencimento no QuickBooks</label><input class="fi" type="date" id="arDtVenc" value="' + _arE(f.venc_qb || f.vencimento || '') + '"/>'
+    + (f.termo_id ? '<label style="color:var(--t3);display:block;margin-top:8px;">Data de emissão das notas fiscais do termo (todas as ' + (f.rateio || []).length + ')</label><input class="fi" type="date" id="arDtEmi" value="' + _arE(emi) + '"/>' : '')
+    + '<div style="font-size:9.5px;color:var(--t3);margin-top:8px;">Muda só o vencimento da fatura no QuickBooks (valor e linhas ficam iguais) e a data das NFs no termo. A data de emissão da fatura no QuickBooks não muda.</div>'
+    + '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;"><button class="btn btn-g" onclick="document.getElementById(\'arDatasModal\').remove()">Cancelar</button><button class="btn btn-gn" id="arDtSalvar">Salvar</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('#arDtSalvar').onclick = async ev => { const venc = m.querySelector('#arDtVenc').value, emiN = m.querySelector('#arDtEmi')?.value || '';
+    const body = { id: f.id }; if (venc && venc !== (f.venc_qb || f.vencimento)) body.vencimento = venc; if (emiN && emiN !== emi) { body.termo_id = f.termo_id; body.nf_emissao = emiN; }
+    if (!body.vencimento && !body.nf_emissao) { m.remove(); return; }
+    ev.target.disabled = true; ev.target.textContent = 'Salvando…';
+    try { const r = await finApi('qb_fatura_datas', body); m.remove(); toast((r.qb ? 'Vencimento no QuickBooks: ' + _arDt(r.qb.vencimento) : '') + (r.notas_atualizadas != null ? (r.qb ? ' · ' : '') + r.notas_atualizadas + ' nota(s) com emissão ' + _arDt(emiN) : ''), 'success'); await arCarregar(); }
+    catch (e) { ev.target.disabled = false; ev.target.textContent = 'Salvar'; toast('Erro: ' + e.message, 'error'); } };
 }
 async function arInvPrev(id, atual, venc) {
   const v = prompt('Previsão de recebimento desta fatura (AAAA-MM-DD).\nVencimento no QuickBooks: ' + (venc || '—') + '\nDeixe em branco para voltar ao vencimento do QuickBooks.', atual || '');
@@ -36975,7 +37000,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.428] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.429] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36991,7 +37016,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.428';
+window.__ATX_BUILD_ID__ = 'ATX-v3.429';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
