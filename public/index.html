@@ -32860,11 +32860,11 @@ const _qpEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
 const _QP_SEV = { critica: ['Crítica', 'var(--fv2-crit)'], alta: ['Alta', '#e0662f'], media: ['Média', 'var(--fv2-warn)'], baixa: ['Baixa', 'var(--t3)'] };
 const _QP_ST = { aberto: 'Aberto', em_correcao: 'Em correção', corrigido: 'Corrigido · retestar', validado: 'Validado no reteste', falso_positivo: 'Falso positivo', aceito: 'Risco aceito' };
 // ═══ v3.211 · AGENDA DE RECEITAS ═══
-let _ar = { d: null, aba: 'proximas' };
+let _ar = { d: null, aba: 'todas', fMes: '', fTermo: '' };
 const _arE = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const _arR = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const _arDt = d => d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—';
-const _arOri = { marco: ['Marco', 'var(--blue)'], termo: ['Termo (faturamento)', 'var(--gold)'], sustentacao: ['Sustentação', 'var(--green)'], manual: ['Avulsa/recorrente', 'var(--pu)'] };
+const _arOri = { marco: ['Marco', 'var(--blue)'], termo: ['Termo (faturamento)', 'var(--gold)'], sustentacao: ['Sustentação', 'var(--green)'], manual: ['Avulsa/recorrente', 'var(--pu)'], qb_recorrente: ['Recorrente QuickBooks', 'var(--cyan,#00C4CC)'] };
 const _arSt = { prevista: ['prevista', 'var(--t2)'], atrasada: ['⚠ atrasada (sem fatura)', 'var(--red)'], coberta: ['✓ faturada no QuickBooks', 'var(--green)'], recebida: ['✓ marcada recebida', 'var(--green)'], cancelada: ['✕ cancelada', 'var(--t3)'] };
 async function arCarregar() {
   const box = document.getElementById('arApp'); if (!box) return; if (!_ar.d) box.innerHTML = '<div class="fv2-load">Lendo marcos, sustentações e faturas do QuickBooks…</div>';
@@ -32878,9 +32878,10 @@ function arRender() {
   const soma = l => l.reduce((t, o) => t + (Number(o.valor) || 0), 0), por = k => A.filter(o => o.origem === k);
   const atr = A.filter(o => o.status === 'atrasada'), cob = O.filter(o => o.status === 'coberta');
   const card = (t, v, sub, cor) => '<div style="flex:1;min-width:150px;border:1px solid var(--bd);border-radius:8px;padding:8px 11px;"><div style="font-size:10px;color:var(--t3);">' + t + '</div><div style="font-size:17px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + v + '</div><div style="font-size:9.5px;color:var(--t3);">' + sub + '</div></div>';
-  const abas = [['proximas', 'Próximos meses (' + A.length + ')'], ['sustentacoes', 'Sustentações (' + (D.sustentacoes || []).length + ')'], ['manuais', 'Avulsas e recorrentes (' + (D.manuais || []).length + ')'], ['faturadas', 'Já faturadas / encerradas (' + O.filter(o => !['prevista', 'atrasada'].includes(o.status)).length + ')']];
+  const abas = [['todas', 'Todas · M-1, M0 e futuro'], ['proximas', 'Só previsões (' + A.length + ')'], ['sustentacoes', 'Sustentações (' + (D.sustentacoes || []).length + ')'], ['manuais', 'Avulsas e recorrentes (' + (D.manuais || []).length + ')'], ['faturadas', 'Já faturadas / encerradas (' + O.filter(o => !['prevista', 'atrasada'].includes(o.status)).length + ')']];
   let corpo = '';
-  if (_ar.aba === 'proximas' || _ar.aba === 'faturadas') {
+  if (_ar.aba === 'todas') corpo = _arTodas(D);
+  else if (_ar.aba === 'proximas' || _ar.aba === 'faturadas') {
     const L = _ar.aba === 'proximas' ? A : O.filter(o => !['prevista', 'atrasada'].includes(o.status));
     const meses = {}; L.forEach(o => (meses[o.data.slice(0, 7)] = meses[o.data.slice(0, 7)] || []).push(o));
     const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -32888,7 +32889,7 @@ function arRender() {
       + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;">' + meses[m].map(o => { const [on, oc] = _arOri[o.origem] || [o.origem, 'var(--t2)'], [sn, sc] = _arSt[o.status] || [o.status, 'var(--t2)'];
         return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(o.data) + (o.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(o.data_prevista) + '</div>' : '') + (o.data_original ? '<div style="font-size:9px;color:var(--t3);">era ' + _arDt(o.data_original) + '</div>' : '') + '</td>'
           + '<td><b>' + _arE(o.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(o.descricao) + (o.projeto && o.projeto !== o.cliente ? ' · ' + _arE(o.projeto) : '') + (o.base_data ? ' · ' + _arE(o.base_data) : '') + '</div></td>'
-          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? ' · fatura ' + _arE(o.coberta_por.fatura) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
+          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? (o.coberta_por.recorrente ? ' · modelo recorrente do QuickBooks ' + _arE(o.coberta_por.recorrente) : ' · fatura ' + _arE(o.coberta_por.fatura)) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : o.coberta_por.casou_por === 'varias_notas' ? ' · mês faturado em várias notas' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(o.valor) + (o.valor_original ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">era ' + _arR(o.valor_original) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;">' + (['prevista', 'atrasada'].includes(o.status) ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(o.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Marcar como recebida (sai da previsão)" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'recebida\')">✓</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks (sai da previsão)" onclick="arOcFatura(\'' + _arE(o.id) + '\')">🧾</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Cancelar esta previsão" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'cancelada\')">✕</button>' : (o.status_manual || o.valor_original || o.data_original ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Desfazer o ajuste" onclick="arOcLimpar(\'' + _arE(o.id) + '\')">↺</button>' : '')) + '</td></tr>'; }).join('') + '</table></div>').join('') || '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11.5px;">Nada aqui.</div>';
   } else if (_ar.aba === 'sustentacoes') {
@@ -32911,6 +32912,39 @@ function arRender() {
     + ((D.avisos || []).length ? '<div style="font-size:10px;color:var(--gold);margin-bottom:8px;">' + D.avisos.map(_arE).join('<br>') + '</div>' : '')
     + '<div class="fv2-abas">' + abas.map(([k, t]) => '<button class="fv2-aba' + (_ar.aba === k ? ' on' : '') + '" onclick="arAba(\'' + k + '\')">' + t + '</button>').join('') + '</div>' + corpo;
 }
+// v3.423: visão única — faturas reais do QuickBooks (M-1 em diante, mais as em aberto antigas) + previsões da agenda, mês a mês,
+// com filtro de mês e de termo. Sustentação faturada no QuickBooks (uma ou várias notas, ou modelo recorrente) não aparece de novo.
+function _arTodas(D) {
+  const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
+  const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
+    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks' }; });
+  const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
+  let L = F.concat(P);
+  const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
+  const mesesTodos = [...new Set(L.map(x => x.mes))].sort((a, b) => a === 'antes' ? -1 : b === 'antes' ? 1 : a.localeCompare(b));
+  const nomeMes = m => m === 'antes' ? 'Em aberto de antes de ' + M[+m1.slice(5, 7) - 1] + '/' + m1.slice(0, 4) : M[+m.slice(5, 7) - 1] + '/' + m.slice(0, 4) + (m === m1 ? ' · M-1' : m === (D.hoje || '').slice(0, 7) ? ' · M0 (mês atual)' : '');
+  if (_ar.fMes) L = L.filter(x => x.mes === _ar.fMes);
+  if (_ar.fTermo === '__com') L = L.filter(x => x.termo); else if (_ar.fTermo === '__sem') L = L.filter(x => !x.termo); else if (_ar.fTermo) L = L.filter(x => String(x.termo) === _ar.fTermo);
+  const sel = (id, v, ops, fn) => '<select class="fsel" style="font-size:10.5px;width:auto;min-width:170px;display:inline-block;" onchange="' + fn + '(this.value)">' + ops.map(([k, t]) => '<option value="' + _arE(k) + '"' + (String(v) === String(k) ? ' selected' : '') + '>' + _arE(t) + '</option>').join('') + '</select>';
+  const filtros = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 4px;font-size:10.5px;color:var(--t3);">Mês ' + sel('m', _ar.fMes, [['', 'Todos (M-1 em diante)']].concat(mesesTodos.map(m => [m, nomeMes(m)])), 'arFiltroMes')
+    + ' Termo ' + sel('t', _ar.fTermo, [['', 'Todos'], ['__com', 'Só com termo'], ['__sem', 'Sem termo']].concat(termos.map(t => [t, 'Termo ' + t])), 'arFiltroTermo')
+    + '<span>QuickBooks = faturado (vale sempre); agenda = previsão ainda sem fatura.</span></div>';
+  const g = {}; L.forEach(x => (g[x.mes] = g[x.mes] || []).push(x));
+  const sit = x => x.tipo === 'qb' ? (x.situacao === 'recebida' ? ['✓ recebida', 'var(--green)'] : x.situacao === 'vencida' ? ['⚠ vencida em aberto', 'var(--red)'] : ['faturada · a receber', 'var(--blue)']) : (_arSt[x.situacao] || [x.situacao, 'var(--t2)']);
+  const soma = (l, f) => l.filter(f).reduce((t, x) => t + (Number(x.tipo === 'qb' && x.situacao !== 'recebida' ? x.saldo : x.valor) || 0), 0);
+  const corpo = Object.keys(g).sort((a, b) => a === 'antes' ? -1 : b === 'antes' ? 1 : a.localeCompare(b)).map(m => { const l = g[m].sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    const rec = soma(l, x => x.tipo === 'qb' && x.situacao === 'recebida'), abr = soma(l, x => x.tipo === 'qb' && x.situacao !== 'recebida'), prv = soma(l, x => x.tipo === 'prev');
+    return '<div style="margin-top:12px;"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:11.5px;font-weight:700;border-bottom:1px solid var(--bd);padding-bottom:4px;"><span>' + nomeMes(m) + '</span><span style="font-weight:500;font-size:10.5px;"><span style="color:var(--green);">recebido ' + _arR(rec) + '</span> · <span style="color:var(--blue);">a receber QB ' + _arR(abr) + '</span> · <span style="color:var(--t2);">previsto ' + _arR(prv) + '</span> · <b>' + _arR(rec + abr + prv) + '</b></span></div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed;"><colgroup><col style="width:92px"><col><col style="width:110px"><col style="width:140px"><col style="width:150px"><col style="width:120px"><col style="width:70px"></colgroup>' + l.map(x => { const [on, oc] = x.tipo === 'qb' ? ['QuickBooks', 'var(--green)'] : (_arOri[x.origem] || [x.origem, 'var(--t2)']), [sn, sc] = sit(x);
+        return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(x.data) + (x.tipo === 'qb' && x.emissao ? '<div style="font-size:9px;color:var(--t3);">emitida ' + _arDt(x.emissao) + '</div>' : '') + (x.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(x.data_prevista) + '</div>' : '') + '</td>'
+          + '<td><b>' + _arE(x.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(x.desc) + '</div></td><td style="white-space:nowrap;">' + (x.termo ? '<span class="nbx bl" style="font-size:9px;">Termo ' + _arE(x.termo) + '</span>' : '') + '</td>'
+          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
+          + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + '</td>'
+          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>'; }).join('') + '</table></div>'; }).join('');
+  return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
+}
+function arFiltroMes(v) { _ar.fMes = v; arRender(); }
+function arFiltroTermo(v) { _ar.fTermo = v; arRender(); }
 async function _arAj(body, msg) { try { await finApi('receita_ocorrencia_ajustar', body); toast(msg, 'success'); await arCarregar(); } catch (e) { toast(e.message, 'error'); } }
 function arOcStatus(id, st) { const nota = st === 'cancelada' ? prompt('Motivo do cancelamento (opcional):', '') : ''; if (nota === null) return; _arAj({ id, status: st, nota }, st === 'recebida' ? 'Marcada como recebida' : 'Previsão cancelada'); }
 // v3.221: previsão que já virou fatura no QuickBooks — liga ao nº da fatura e sai da previsão (o QuickBooks passa a valer)
@@ -36813,7 +36847,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.422] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.423] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36829,7 +36863,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.422';
+window.__ATX_BUILD_ID__ = 'ATX-v3.423';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

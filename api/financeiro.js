@@ -4967,7 +4967,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null, regime
   // recorrentes cadastradas na linha "Receita Recorrente (MRR)"). Previsão atrasada (sem fatura) entra no mês corrente.
   try { const rp = await receitasPrevistas({ meses: Math.max(13, meses + 1) }); usouAgenda = true;
     for (const o of rp.ativas) { const mes = (COMP ? _diasMais(o.data, -35) : o.data).substring(0, 7); if (mes < mesAtual || !listaMeses.includes(mes)) continue;
-      if (o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) mrrAgendaPorMes[mes] = round((mrrAgendaPorMes[mes] || 0) + o.valor);
+      if (o.origem === 'sustentacao' || o.origem === 'qb_recorrente' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) mrrAgendaPorMes[mes] = round((mrrAgendaPorMes[mes] || 0) + o.valor);
       else previstoMarcosPorMes[mes] = round((previstoMarcosPorMes[mes] || 0) + o.valor); } }
   catch (e) { console.warn('[fluxoFuturo] agenda de receitas:', e.message); }
   let aReceberVencido = 0, aReceberForaHorizonte = 0;
@@ -8535,7 +8535,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   } catch (e) { avisos.push('Marcos: ' + e.message); }
   // 1b) v3.273: termos no Kanban de Faturamento sem fatura no QuickBooks (marco que já gerou termo entra por aqui)
   try { for (const t of await _termosParaReceita(sql)) {
-      oc.push({ id: 'trm_' + t.emp_id, origem: 'termo', ref_id: String(t.id), projeto: t.projeto || '', cliente: t.empresa || t.contratante || t.projeto || '', descricao: 'Termo ' + (t.numero_termo || '') + (t.marco_projeto ? ' · ' + t.marco_projeto : t.parcela ? ' · ' + t.parcela : '') + (t.nf_numero ? ' · NF ' + t.nf_numero : ''),
+      oc.push({ id: 'trm_' + t.emp_id, origem: 'termo', termo: t.numero_termo ? String(t.numero_termo) : null, ref_id: String(t.id), projeto: t.projeto || '', cliente: t.empresa || t.contratante || t.projeto || '', descricao: 'Termo ' + (t.numero_termo || '') + (t.marco_projeto ? ' · ' + t.marco_projeto : t.parcela ? ' · ' + t.parcela : '') + (t.nf_numero ? ' · NF ' + t.nf_numero : ''),
         valor: round(t.valor), data: t.data || _diasMais(hoje, 35), base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status }); } }
   catch (e) { avisos.push('Termos: ' + e.message); }
   // 2) sustentações
@@ -8596,18 +8596,73 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
       if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'assunto');
     }
   }
+  // v3.423: SUSTENTAÇÃO — o QuickBooks vence também quando o mês foi faturado em VÁRIAS notas (ou numa só de valor bem
+  // diferente): toda fatura ainda livre do mesmo cliente (ou do mesmo assunto) emitida no mês da mensalidade (exceto nota de termo/marco)
+  // cobre a mensalidade daquele mês, qualquer valor. A previsão da agenda sai; valem as faturas.
+  let termoDe = {}; try { (await sql`SELECT t.numero_termo, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
+    .forEach(r => { if (!r.numero_termo) return; if (r.qb_invoice_id) termoDe['id:' + r.qb_invoice_id] = String(r.numero_termo); if (r.nf_numero) termoDe['doc:' + r.nf_numero] = String(r.numero_termo); }); } catch (_) {}
+  if (faturas) {
+    // nota de TERMO/MARCO (ligada a termo do Kanban de Faturamento ou com "termo"/"marco" no texto) não é mensalidade de sustentação
+    const deTermo = f => !!(termoDe['id:' + f.id] || termoDe['doc:' + f.doc]) || /\b(termo|marco)\b/i.test(f.texto || '');
+    const livres = faturas.filter(f => !f._usada && !deTermo(f));
+    const casa = (o, f) => _rpMesmoCliente(o.cliente, f.cliente) || _rpTokens(f.texto).some(t => _rpTokens([o.cliente, o.projeto].join(' ')).includes(t));
+    // mensalidade já coberta por uma nota: as outras notas do mesmo cliente emitidas no mesmo mês também são dela (mês faturado em partes)
+    for (const o of oc.filter(x => x.origem === 'sustentacao' && x.coberta_por?.id && !x.coberta_por.manual)) {
+      const mes = o.data.substring(0, 7), extra = livres.filter(f => !f._usada && String(f.emissao || f.data || '').substring(0, 7) === mes && casa(o, f));
+      if (!extra.length) continue; extra.forEach(f => { f._usada = true; });
+      o.coberta_por.ids = [o.coberta_por.id, ...extra.map(f => f.id)]; o.coberta_por.fatura = [o.coberta_por.fatura, ...extra.map(f => f.doc)].join(' + ');
+      o.coberta_por.valor = round(o.coberta_por.valor + extra.reduce((t, f) => t + f.valor, 0)); o.coberta_por.casou_por = 'varias_notas';
+    }
+    for (const o of oc.filter(x => x.origem === 'sustentacao' && !x.status && !x.coberta_por).sort((a, b) => a.data.localeCompare(b.data))) {
+      const mes = o.data.substring(0, 7), tk = _rpTokens([o.cliente, o.projeto].join(' '));
+      const fs = livres.filter(f => !f._usada && String(f.emissao || f.data || '').substring(0, 7) === mes // mês de emissão (competência) da nota
+        && (_rpMesmoCliente(o.cliente, f.cliente) || (tk.length && _rpTokens(f.texto).some(t => tk.includes(t)))));
+      if (!fs.length) continue; fs.forEach(f => { f._usada = true; });
+      const tot = round(fs.reduce((t, f) => t + f.valor, 0));
+      o.coberta_por = { fatura: fs.map(f => f.doc).join(' + '), id: fs[0].id, ids: fs.map(f => f.id), valor: tot, data: fs[0].data, em_aberto: fs.some(f => f.saldo > 0), casou_por: fs.length > 1 ? 'varias_notas' : 'mes' }; o.status = 'coberta';
+    }
+  }
+  // v3.423: RECORRÊNCIA NO QUICKBOOKS — sustentação com modelo recorrente de fatura ativo no QuickBooks (mesmo cliente ou assunto):
+  // a partir da próxima data do modelo, vale o modelo do QuickBooks (valor e data dele) e a mensalidade da agenda sai.
+  let recQB = []; try { if (qbConfigurado()) recQB = ((await qbRecorrentesProjecao({ ate: fimHor, receitas: true })).itens || []).filter(l => l.tipo === 'entrada'); }
+  catch (e) { avisos.push('Recorrentes do QuickBooks: ' + e.message); }
+  if (recQB.length) {
+    const modelos = {}; recQB.forEach(l => { const k = l.id.replace(/_\d{4}-\d{2}-\d{2}$/, ''); (modelos[k] = modelos[k] || []).push(l); });
+    const semSus = [];
+    for (const [k, L] of Object.entries(modelos)) {
+      const m0 = L[0], tk = _rpTokens(m0.descricao);
+      const s = sustentacoes.find(x => _rpMesmoCliente(x.cliente, m0.cliente) || _rpMesmoCliente(x.projeto, m0.cliente) || _rpTokens([x.cliente, x.projeto].join(' ')).some(t => tk.includes(t)));
+      if (!s) { semSus.push(m0.cliente); continue; }
+      const desdeMes = L.map(l => l.data.substring(0, 7)).sort()[0];
+      for (const o of oc) if (o.origem === 'sustentacao' && o.ref_id === s.id && !o.status && !o.coberta_por && o.data.substring(0, 7) >= desdeMes) { o.status = 'coberta'; o.coberta_por = { recorrente: m0.descricao.replace(/^.*\(recorrente: /, '').replace(/\)$/, ''), casou_por: 'recorrente_qb' }; }
+      const mesesCobertos = new Set(oc.filter(o => o.origem === 'sustentacao' && o.ref_id === s.id && o.coberta_por?.fatura).map(o => o.data.substring(0, 7)));
+      for (const l of L) { if (mesesCobertos.has(l.data.substring(0, 7))) continue; // mês já faturado: a fatura real é que vale
+        oc.push({ id: 'qbr_' + l.id, origem: 'qb_recorrente', ref_id: s.id, projeto: s.projeto, cliente: l.cliente || s.cliente, descricao: 'Recorrente QuickBooks · ' + _MESES_PT[+l.data.substring(5, 7) - 1] + '/' + l.data.substring(0, 4), valor: round(l.valor), data: l.data, base_data: 'modelo recorrente do QuickBooks (substitui a sustentação da agenda)' }); }
+    }
+    if (semSus.length) avisos.push('Modelo(s) recorrente(s) de receita no QuickBooks sem sustentação correspondente (não somados, para não duplicar com termos): ' + [...new Set(semSus)].slice(0, 5).join(', ') + '.');
+  }
+  // v3.423: faturas reais do QuickBooks de M-1 em diante — para a agenda mostrar passado (M-1, M0) e futuro numa linha só
+  const mesM1 = _mesMais(mesHoje, -1); let faturasQB = [];
+  if (faturas) {
+    const cobre = {}; oc.forEach(o => { const ids = o.coberta_por?.ids || (o.coberta_por?.id ? [o.coberta_por.id] : []); ids.forEach(id => { (cobre[id] = cobre[id] || []).push({ origem: o.origem, descricao: o.descricao, termo: o.termo || null }); }); });
+    faturasQB = faturas.filter(f => String(f.emissao || f.data || '') >= mesM1 + '-01' || f.saldo > 0).map(f => {
+      const tx = String(f.texto || '').match(/termo\s*(?:n[º°o.]*\s*)?([0-9][0-9./-]*)/i);
+      const termo = termoDe['id:' + f.id] || termoDe['doc:' + f.doc] || (cobre[f.id] || []).map(c => c.termo).find(Boolean) || (tx ? tx[1].replace(/[./-]$/, '') : null);
+      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [] };
+    }).sort((a, b) => String(a.vencimento || a.emissao).localeCompare(String(b.vencimento || b.emissao)));
+  }
   { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411
     if (cobSombra) avisos.push(cobSombra + ' fatura(s) dos 2 últimos meses reconhecida(s) como mensalidade do próprio mês (não cobrem mais a do mês seguinte).'); }
   for (const o of oc) if (!o.status) { if (o.data < hoje) { o.status = 'atrasada'; o.data_prevista = o.data; o.data = hoje; } else o.status = 'prevista'; }
   const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
-  const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
+  const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0, qb_recorrente: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
   const v = { hoje, ate: fimHor, ocorrencias: oc.sort((a, b) => a.data.localeCompare(b.data)), ativas, por_mes: Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes)),
-    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
+    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
   _rpCache = { em: Date.now(), chave, v }; return v;
 }
 // itens no formato dos recebíveis do fluxo (para o Fluxo Detalhado, extratos, painel e KPIs)
 function _rpComoRecebiveis(rp, data_inicio, data_fim) {
-  const cat = { marco: 'Receita prevista (marco)', sustentacao: 'Receita prevista (sustentação)', manual: 'Receita prevista (agenda)' };
+  const cat = { marco: 'Receita prevista (marco)', termo: 'Receita prevista (termo)', sustentacao: 'Receita prevista (sustentação)', manual: 'Receita prevista (agenda)', qb_recorrente: 'Recorrente QB (receita)' };
   return (rp?.ativas || []).map(o => ({ id: 'rp_' + o.id, data: o.data, descricao: (o.cliente ? o.cliente + ' · ' : '') + o.descricao + ' (previsão)', categoria: cat[o.origem] || 'Receita prevista',
     valor: o.valor, valor_total: o.valor, tipo: 'entrada', origem: 'agenda_receitas', origem_detalhe: o.origem, previsao: true, vencida: false, atrasada: o.status === 'atrasada', emissao: o.data,
     cliente: o.cliente, no_periodo: (!data_inicio || o.data >= data_inicio) && (!data_fim || o.data <= data_fim) }));
