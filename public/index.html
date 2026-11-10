@@ -32981,7 +32981,7 @@ function arRender() {
       + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;">' + meses[m].map(o => { const [on, oc] = _arOri[o.origem] || [o.origem, 'var(--t2)'], [sn, sc] = _arSt[o.status] || [o.status, 'var(--t2)'];
         return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(o.data) + (o.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(o.data_prevista) + '</div>' : '') + (o.data_original ? '<div style="font-size:9px;color:var(--t3);">era ' + _arDt(o.data_original) + '</div>' : '') + '</td>'
           + '<td><b>' + _arE(o.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(o.descricao) + (o.projeto && o.projeto !== o.cliente ? ' · ' + _arE(o.projeto) : '') + (o.base_data ? ' · ' + _arE(o.base_data) : '') + '</div></td>'
-          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? (o.coberta_por.recorrente ? ' · modelo recorrente do QuickBooks ' + _arE(o.coberta_por.recorrente) : ' · fatura ' + _arE(o.coberta_por.fatura)) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : o.coberta_por.casou_por === 'varias_notas' ? ' · mês faturado em várias notas' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
+          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? (o.coberta_por.termo ? ' · substituída pelo Termo ' + _arE(String(o.coberta_por.termo).replace(/^Termo\s*/i, '')) : o.coberta_por.recorrente ? ' · modelo recorrente do QuickBooks ' + _arE(o.coberta_por.recorrente) : ' · fatura ' + _arE(o.coberta_por.fatura)) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : o.coberta_por.casou_por === 'varias_notas' ? ' · mês faturado em várias notas' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(o.valor) + (o.valor_original ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">era ' + _arR(o.valor_original) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;">' + (['prevista', 'atrasada'].includes(o.status) ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(o.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Marcar como recebida (sai da previsão)" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'recebida\')">✓</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks (sai da previsão)" onclick="arOcFatura(\'' + _arE(o.id) + '\')">🧾</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Cancelar esta previsão" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'cancelada\')">✕</button>' : (o.status_manual || o.valor_original || o.data_original ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Desfazer o ajuste" onclick="arOcLimpar(\'' + _arE(o.id) + '\')">↺</button>' : '')) + '</td></tr>'; }).join('') + '</table></div>').join('') || '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11.5px;">Nada aqui.</div>';
   } else if (_ar.aba === 'sustentacoes') {
@@ -33010,7 +33010,7 @@ function _arTodas(D) {
   const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
   const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
     return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks' }; });
-  const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
+  const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
   let L = F.concat(P);
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
   const mesesTodos = [...new Set(L.map(x => x.mes))].sort((a, b) => a === 'antes' ? -1 : b === 'antes' ? 1 : a.localeCompare(b));
@@ -36939,7 +36939,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.424] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.425] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36955,7 +36955,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.424';
+window.__ATX_BUILD_ID__ = 'ATX-v3.425';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

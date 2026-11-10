@@ -7,3 +7,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - [x] Agenda de Receitas: aba "Todas · M-1, M0 e futuro" com filtros de mês e termo
 ## Registro da Batida
 - 2026-11-10 · v3.423 · ✅ entregue · próximo: Fabio conferir novembro (Sustentação Anaplan/Xplann) na aba Todas.
+- [x] v3.425: termo de sustentação (Kanban de Faturamento) substitui a mensalidade da agenda do mês mais próximo (até 45 dias); nota de termo de sustentação no QuickBooks também cobre a mensalidade; casamento por assunto compacto ("Big Data" = "BigData")
+- 2026-11-10 · v3.425 · ✅ entregue · caso do Termo 35 (sustentação Big Data)

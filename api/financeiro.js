@@ -8475,6 +8475,10 @@ const _rpNc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-�
 const _RP_GENERICAS = new Set(['sustentacao', 'alocacao', 'horas', 'servicos', 'servico', 'projeto', 'projetos', 'desenvolvimento', 'receita', 'mensal', 'mensalidade', 'previsao', 'consultoria', 'evolutivas', 'evolutiva', 'analytics', 'dados', 'fatura', 'termo', 'parcela', 'marco', 'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro', 'atlanteam', 'atlantyx', 'energia', 'brasil', 'ltda', 'licenca', 'suporte']);
 const _rpTokens = s => [...new Set(String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 5 && !/^\d+$/.test(w) && !_RP_GENERICAS.has(w)))];
 const _rpMesmoCliente = (a, b) => { const x = _rpNc(a), y = _rpNc(b); if (x.length < 3 || y.length < 3) return false; return x.startsWith(y.substring(0, 6)) || y.startsWith(x.substring(0, 6)); };
+// v3.425: assunto compacto — "Sustentação Big Data" e "Sustentação BigData" viram "bigdata" (os tokens de 5+ letras perdiam "big"/"data")
+const _RP_STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'a', 'o', 'em', 'para', 'com', 'n', 'no', 'na', 'nf']);
+const _rpAssunto = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w && !_RP_STOP.has(w) && !_RP_GENERICAS.has(w) && !/^\d+$/.test(w)).join('');
+const _rpCasaAssunto = (projetoSus, texto) => { const a = _rpAssunto(projetoSus), b = _rpAssunto(texto); return a.length >= 4 && b.includes(a); };
 const _rpUltimoDia = ym => { const [a, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, '0')}`; };
 const _rpDia = (ym, dia) => { const [a, m] = ym.split('-').map(Number); const ult = new Date(a, m, 0).getDate(); return `${ym}-${String(Math.max(1, Math.min(ult, parseInt(dia) || 25))).padStart(2, '0')}`; };
 let _rpCache = { em: 0, chave: '', v: null };
@@ -8536,7 +8540,8 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // 1b) v3.273: termos no Kanban de Faturamento sem fatura no QuickBooks (marco que já gerou termo entra por aqui)
   try { for (const t of await _termosParaReceita(sql)) {
       oc.push({ id: 'trm_' + t.emp_id, origem: 'termo', termo: t.numero_termo ? String(t.numero_termo) : null, ref_id: String(t.id), projeto: t.projeto || '', cliente: t.empresa || t.contratante || t.projeto || '', descricao: 'Termo ' + (t.numero_termo || '') + (t.marco_projeto ? ' · ' + t.marco_projeto : t.parcela ? ' · ' + t.parcela : '') + (t.nf_numero ? ' · NF ' + t.nf_numero : ''),
-        valor: round(t.valor), data: t.data || _diasMais(hoje, 35), base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status }); } }
+        valor: round(t.valor), data: t.data || _diasMais(hoje, 35), base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status,
+        _txt: [t.projeto, t.fase, t.parcela, t.marco_projeto, t.periodo_medicao].filter(Boolean).join(' '), _sus: num(t.valor_mensal_sustentacao) > 0 || /sustenta/i.test([t.projeto, t.fase, t.parcela, t.marco_projeto].join(' ')) }); } }
   catch (e) { avisos.push('Termos: ' + e.message); }
   // 2) sustentações
   let sustentacoes = [];
@@ -8557,6 +8562,19 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     }
     if (susPuladas) avisos.push(susPuladas + ' mensalidade(s) de sustentação não projetada(s): o projeto já tem marco de faturamento no mesmo mês (o marco é a cobrança).');
   } catch (e) { avisos.push('Sustentações: ' + e.message); }
+  // v3.425: TERMO DE SUSTENTAÇÃO substitui a mensalidade — termo no Kanban de Faturamento do mesmo projeto de sustentação
+  // (assunto do projeto no termo, ou termo de sustentação do mesmo cliente) é a cobrança daquele mês: a mensalidade mais
+  // próxima da data do termo (até 45 dias) sai da agenda. Antes as duas ficavam e a receita saía em dobro.
+  for (const t of oc.filter(o => o.origem === 'termo')) {
+    // mesmo projeto (nome igual) sempre; senão só termo de sustentação: primeiro pelo assunto, depois pelo cliente
+    let alvo = sustentacoes.filter(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(t.projeto));
+    if (!alvo.length && t._sus) { alvo = sustentacoes.filter(x => _rpCasaAssunto(x.projeto, t._txt + ' ' + t.cliente)); if (!alvo.length) alvo = sustentacoes.filter(x => _rpMesmoCliente(x.cliente, t.cliente)); }
+    if (!alvo.length) continue; const ids = new Set(alvo.map(x => x.id)), td = Date.parse(t.data);
+    const cand = oc.filter(o => o.origem === 'sustentacao' && !o._sombra && !o.coberta_por && ids.has(o.ref_id) && Math.abs(Date.parse(o.data) - td) <= 45 * 86400000)
+      .sort((a, b) => Math.abs(Date.parse(a.data) - td) - Math.abs(Date.parse(b.data) - td));
+    if (!cand.length) continue; const o = cand[0];
+    o.status = 'coberta'; o.coberta_por = { termo: t.termo || t.descricao, casou_por: 'termo_sustentacao', valor: t.valor, data: t.data }; t.substitui = o.descricao + ' · ' + o.projeto;
+  }
   // 3) avulsas / recorrentes manuais
   const manuais = Array.isArray(man) ? man : [];
   for (const r of manuais) {
@@ -8599,13 +8617,17 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // v3.423: SUSTENTAÇÃO — o QuickBooks vence também quando o mês foi faturado em VÁRIAS notas (ou numa só de valor bem
   // diferente): toda fatura ainda livre do mesmo cliente (ou do mesmo assunto) emitida no mês da mensalidade (exceto nota de termo/marco)
   // cobre a mensalidade daquele mês, qualquer valor. A previsão da agenda sai; valem as faturas.
-  let termoDe = {}; try { (await sql`SELECT t.numero_termo, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
-    .forEach(r => { if (!r.numero_termo) return; if (r.qb_invoice_id) termoDe['id:' + r.qb_invoice_id] = String(r.numero_termo); if (r.nf_numero) termoDe['doc:' + r.nf_numero] = String(r.numero_termo); }); } catch (_) {}
+  let termoDe = {}; const termoSusTxt = {}; try { (await sql`SELECT t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
+    .forEach(r => { if (!r.numero_termo) return; const n = String(r.numero_termo); if (r.qb_invoice_id) termoDe['id:' + r.qb_invoice_id] = n; if (r.nf_numero) termoDe['doc:' + r.nf_numero] = n;
+      const txt = [r.projeto, r.fase, r.parcela, r.marco_projeto].filter(Boolean).join(' '); if (num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test(txt) || sustentacoes.some(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(r.projeto))) termoSusTxt[n] = txt || 'sustentação'; }); } catch (_) {}
   if (faturas) {
     // nota de TERMO/MARCO (ligada a termo do Kanban de Faturamento ou com "termo"/"marco" no texto) não é mensalidade de sustentação
-    const deTermo = f => !!(termoDe['id:' + f.id] || termoDe['doc:' + f.doc]) || /\b(termo|marco)\b/i.test(f.texto || '');
+    // v3.425: nota de termo DE SUSTENTAÇÃO (termo 35 · sustentação Big Data) cobre a mensalidade — só termo de projeto/marco fica de fora
+    const nTermo = f => termoDe['id:' + f.id] || termoDe['doc:' + f.doc];
+    const deTermo = f => { const n = nTermo(f); if (n) return !termoSusTxt[n]; return /\bmarco\b/i.test(f.texto || '') || (/\btermo\b/i.test(f.texto || '') && !/sustenta/i.test(f.texto || '')); };
+    const txtF = f => (f.texto || '') + ' ' + (termoSusTxt[nTermo(f)] || '');
     const livres = faturas.filter(f => !f._usada && !deTermo(f));
-    const casa = (o, f) => _rpMesmoCliente(o.cliente, f.cliente) || _rpTokens(f.texto).some(t => _rpTokens([o.cliente, o.projeto].join(' ')).includes(t));
+    const casa = (o, f) => _rpMesmoCliente(o.cliente, f.cliente) || _rpCasaAssunto(o.projeto, txtF(f)) || _rpTokens(f.texto).some(t => _rpTokens([o.cliente, o.projeto].join(' ')).includes(t));
     // mensalidade já coberta por uma nota: as outras notas do mesmo cliente emitidas no mesmo mês também são dela (mês faturado em partes)
     for (const o of oc.filter(x => x.origem === 'sustentacao' && x.coberta_por?.id && !x.coberta_por.manual)) {
       const mes = o.data.substring(0, 7), extra = livres.filter(f => !f._usada && String(f.emissao || f.data || '').substring(0, 7) === mes && casa(o, f));
@@ -8616,7 +8638,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     for (const o of oc.filter(x => x.origem === 'sustentacao' && !x.status && !x.coberta_por).sort((a, b) => a.data.localeCompare(b.data))) {
       const mes = o.data.substring(0, 7), tk = _rpTokens([o.cliente, o.projeto].join(' '));
       const fs = livres.filter(f => !f._usada && String(f.emissao || f.data || '').substring(0, 7) === mes // mês de emissão (competência) da nota
-        && (_rpMesmoCliente(o.cliente, f.cliente) || (tk.length && _rpTokens(f.texto).some(t => tk.includes(t)))));
+        && (_rpMesmoCliente(o.cliente, f.cliente) || _rpCasaAssunto(o.projeto, txtF(f)) || (tk.length && _rpTokens(f.texto).some(t => tk.includes(t)))));
       if (!fs.length) continue; fs.forEach(f => { f._usada = true; });
       const tot = round(fs.reduce((t, f) => t + f.valor, 0));
       o.coberta_por = { fatura: fs.map(f => f.doc).join(' + '), id: fs[0].id, ids: fs.map(f => f.id), valor: tot, data: fs[0].data, em_aberto: fs.some(f => f.saldo > 0), casou_por: fs.length > 1 ? 'varias_notas' : 'mes' }; o.status = 'coberta';
