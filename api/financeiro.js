@@ -196,6 +196,7 @@ async function handler(req, res) {
       crm_etapas:            () => crmEtapas(),
       // v3.211: Agenda de Receitas (marcos + sustentações + avulsas, sem lançar no QuickBooks)
       receitas_agenda:            () => receitasAgenda(params),
+      qb_rec_receitas_cfg:        () => qbRecReceitasCfg(params),   // v3.426
       receita_manual_salvar:      () => receitaManualSalvar(params),
       receita_manual_excluir:     () => receitaManualExcluir(params),
       receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
@@ -3474,7 +3475,10 @@ async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // rece
   const hojeS = _hojeBR();
   const lim = ate || _diasMais(hojeS, 366);
   const ENT = { Invoice: 'entrada', SalesReceipt: 'entrada', Deposit: 'entrada', Estimate: null, Bill: 'saida', Purchase: 'saida', Check: 'saida', CreditCardCredit: null, JournalEntry: null, Transfer: null, VendorCredit: null, CreditMemo: null, RefundReceipt: 'saida', PurchaseOrder: null };
-  const itens = [];
+  const itens = [], modelosReceita = [];
+  // v3.426: recorrentes de RECEITA do QuickBooks ficam FORA por padrão (valem os do sistema: sustentações e recorrentes da agenda).
+  // Na Agenda de Receitas → "Recorrentes QuickBooks" o fundador liga, um a um, o modelo que quiser usar (kv fin:qb_rec_receitas).
+  const recCfg = receitas ? ((await _kvFin2('fin:qb_rec_receitas')) || {}) : {}; const usar = new Set((recCfg.usar || []).map(String));
   for (const w of lista) {
     const tipoEnt = Object.keys(w).find(k => w[k] && typeof w[k] === 'object' && w[k].RecurringInfo);
     if (!tipoEnt) continue;
@@ -3491,6 +3495,9 @@ async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // rece
     const fimModelo = si.EndDate || '9999-12-31';
     const nome = t.CustomerRef?.name || t.VendorRef?.name || t.EntityRef?.name || ri.Name || tipoEnt;
     const desc = tipoEnt === 'Invoice' || tipoEnt === 'SalesReceipt' ? _descLinhasFatura(t) : (t.PrivateNote ? ' · ' + String(t.PrivateNote).substring(0, 80) : '');
+    if (dir === 'entrada') { const mid = String(t.Id || ri.Name); const on = usar.has(mid);
+      modelosReceita.push({ id: mid, nome: ri.Name || tipoEnt, cliente: nome, descricao: String(desc || '').replace(/^ · /, ''), valor, proxima: prox, intervalo: n + ' ' + tipo, usado: on });
+      if (!on) continue; }
     for (let k = 0; k < 400 && restantes > 0 && prox <= lim && prox <= fimModelo; k++) {
       if (prox > hojeS) itens.push({ id: `rec_${t.Id || ri.Name}_${prox}`, data: prox, descricao: `${nome}${desc} (recorrente: ${ri.Name || tipoEnt})`,
         categoria: 'Recorrente QB (' + tipoEnt + ')', valor, tipo: dir, origem: 'quickbooks_recorrente', no_periodo: true, cliente: nome });
@@ -3501,7 +3508,13 @@ async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // rece
       else prox = _addMesesData(prox, n);   // Monthly (padrão)
     }
   }
-  return { itens, modelos: lista.length };
+  return { itens, modelos: lista.length, modelos_receita: modelosReceita };
+}
+// v3.426: liga/desliga um modelo recorrente de receita do QuickBooks (padrão: desligado — valem os recorrentes do sistema)
+async function qbRecReceitasCfg({ id, usar } = {}) {
+  if (!id) throw Object.assign(new Error('id obrigatório'), { status: 400 });
+  const c = (await _kvFin2('fin:qb_rec_receitas')) || {}; const s = new Set((c.usar || []).map(String)); usar ? s.add(String(id)) : s.delete(String(id));
+  await _kvFin2('fin:qb_rec_receitas', { usar: [...s], em: new Date().toISOString() }); _rpCache.v = null; return { usar: [...s] };
 }
 async function qbFuturosDetalhado(args = {}) {
   // v3.211: receita prevista vem da AGENDA DE RECEITAS (marcos + sustentações + avulsas, sem Estimate no QuickBooks).
@@ -8646,7 +8659,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   }
   // v3.423: RECORRÊNCIA NO QUICKBOOKS — sustentação com modelo recorrente de fatura ativo no QuickBooks (mesmo cliente ou assunto):
   // a partir da próxima data do modelo, vale o modelo do QuickBooks (valor e data dele) e a mensalidade da agenda sai.
-  let recQB = []; try { if (qbConfigurado()) recQB = ((await qbRecorrentesProjecao({ ate: fimHor, receitas: true })).itens || []).filter(l => l.tipo === 'entrada'); }
+  let recQB = [], qbRecModelos = []; try { if (qbConfigurado()) { const rq = await qbRecorrentesProjecao({ ate: fimHor, receitas: true }); qbRecModelos = rq.modelos_receita || []; recQB = (rq.itens || []).filter(l => l.tipo === 'entrada'); } }
   catch (e) { avisos.push('Recorrentes do QuickBooks: ' + e.message); }
   if (recQB.length) {
     const modelos = {}; recQB.forEach(l => { const k = l.id.replace(/_\d{4}-\d{2}-\d{2}$/, ''); (modelos[k] = modelos[k] || []).push(l); });
@@ -8654,7 +8667,9 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     for (const [k, L] of Object.entries(modelos)) {
       const m0 = L[0], tk = _rpTokens(m0.descricao);
       const s = sustentacoes.find(x => _rpMesmoCliente(x.cliente, m0.cliente) || _rpMesmoCliente(x.projeto, m0.cliente) || _rpTokens([x.cliente, x.projeto].join(' ')).some(t => tk.includes(t)));
-      if (!s) { semSus.push(m0.cliente); continue; }
+      if (!s) { // v3.426: modelo ligado pelo fundador sem sustentação correspondente → entra sozinho
+        for (const l of L) oc.push({ id: 'qbr_' + l.id, origem: 'qb_recorrente', ref_id: null, projeto: '', cliente: l.cliente, descricao: 'Recorrente QuickBooks · ' + _MESES_PT[+l.data.substring(5, 7) - 1] + '/' + l.data.substring(0, 4), valor: round(l.valor), data: l.data, base_data: 'modelo recorrente do QuickBooks ligado na agenda' });
+        continue; }
       const desdeMes = L.map(l => l.data.substring(0, 7)).sort()[0];
       for (const o of oc) if (o.origem === 'sustentacao' && o.ref_id === s.id && !o.status && !o.coberta_por && o.data.substring(0, 7) >= desdeMes) { o.status = 'coberta'; o.coberta_por = { recorrente: m0.descricao.replace(/^.*\(recorrente: /, '').replace(/\)$/, ''), casou_por: 'recorrente_qb' }; }
       const mesesCobertos = new Set(oc.filter(o => o.origem === 'sustentacao' && o.ref_id === s.id && o.coberta_por?.fatura).map(o => o.data.substring(0, 7)));
@@ -8679,7 +8694,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
   const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0, qb_recorrente: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
   const v = { hoje, ate: fimHor, ocorrencias: oc.sort((a, b) => a.data.localeCompare(b.data)), ativas, por_mes: Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes)),
-    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
+    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, qb_rec_modelos: qbRecModelos, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
   _rpCache = { em: Date.now(), chave, v }; return v;
 }
 // itens no formato dos recebíveis do fluxo (para o Fluxo Detalhado, extratos, painel e KPIs)

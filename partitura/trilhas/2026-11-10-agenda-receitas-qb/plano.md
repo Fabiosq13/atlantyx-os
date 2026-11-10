@@ -9,3 +9,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.423 · ✅ entregue · próximo: Fabio conferir novembro (Sustentação Anaplan/Xplann) na aba Todas.
 - [x] v3.425: termo de sustentação (Kanban de Faturamento) substitui a mensalidade da agenda do mês mais próximo (até 45 dias); nota de termo de sustentação no QuickBooks também cobre a mensalidade; casamento por assunto compacto ("Big Data" = "BigData")
 - 2026-11-10 · v3.425 · ✅ entregue · caso do Termo 35 (sustentação Big Data)
+- [x] v3.426: recorrentes de receita do QuickBooks fora por padrão em todas as telas (valem os do sistema); aba "Recorrentes QuickBooks" na agenda liga/elimina modelo a modelo (kv fin:qb_rec_receitas)
+- 2026-11-10 · v3.426 · ✅ entregue
