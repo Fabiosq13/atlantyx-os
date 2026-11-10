@@ -33011,7 +33011,7 @@ function arRender() {
 function _arTodas(D) {
   const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
   const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
-    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks' }; });
+    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb }; });
   const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
   let L = F.concat(P);
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
@@ -33030,11 +33030,11 @@ function _arTodas(D) {
     const rec = soma(l, x => x.tipo === 'qb' && x.situacao === 'recebida'), abr = soma(l, x => x.tipo === 'qb' && x.situacao !== 'recebida'), prv = soma(l, x => x.tipo === 'prev');
     return '<div style="margin-top:12px;"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:11.5px;font-weight:700;border-bottom:1px solid var(--bd);padding-bottom:4px;"><span>' + nomeMes(m) + '</span><span style="font-weight:500;font-size:10.5px;"><span style="color:var(--green);">recebido ' + _arR(rec) + '</span> · <span style="color:var(--blue);">a receber QB ' + _arR(abr) + '</span> · <span style="color:var(--t2);">previsto ' + _arR(prv) + '</span> · <b>' + _arR(rec + abr + prv) + '</b></span></div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed;"><colgroup><col style="width:92px"><col><col style="width:110px"><col style="width:140px"><col style="width:150px"><col style="width:120px"><col style="width:70px"></colgroup>' + l.map(x => { const [on, oc] = x.tipo === 'qb' ? ['QuickBooks', 'var(--green)'] : (_arOri[x.origem] || [x.origem, 'var(--t2)']), [sn, sc] = sit(x);
-        return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(x.data) + (x.tipo === 'qb' && x.emissao ? '<div style="font-size:9px;color:var(--t3);">emitida ' + _arDt(x.emissao) + '</div>' : '') + (x.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(x.data_prevista) + '</div>' : '') + '</td>'
+        return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(x.data) + (x.tipo === 'qb' && x.emissao ? '<div style="font-size:9px;color:var(--t3);">emitida ' + _arDt(x.emissao) + '</div>' : '') + (x.prev_receb ? '<div style="font-size:9px;color:var(--gold);" title="Previsão de recebimento ajustada por você; o vencimento no QuickBooks não mudou">venc. QB ' + _arDt(x.venc_qb) + '</div>' : '') + (x.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(x.data_prevista) + '</div>' : '') + '</td>'
           + '<td><b>' + _arE(x.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(x.desc) + '</div></td><td style="white-space:nowrap;">' + (x.termo ? '<span class="nbx bl" style="font-size:9px;">Termo ' + _arE(x.termo) + '</span>' : '') + '</td>'
           + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + '</td>'
-          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>'; }).join('') + '</table></div>'; }).join('');
+          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>'; }).join('') + '</table></div>'; }).join('');
   return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
 }
 // v3.426: modelos recorrentes de RECEITA do QuickBooks — fora por padrão (valem os recorrentes do sistema); liga/desliga um a um
@@ -33065,6 +33065,11 @@ async function arRegrasSalvar() {
 async function arQbRec(id, usar) {
   try { await finApi('qb_rec_receitas_cfg', { id, usar }); toast(usar ? 'Modelo do QuickBooks passa a contar' : 'Modelo do QuickBooks eliminado da agenda', 'success'); await arCarregar(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function arInvPrev(id, atual, venc) {
+  const v = prompt('Previsão de recebimento desta fatura (AAAA-MM-DD).\nVencimento no QuickBooks: ' + (venc || '—') + '\nDeixe em branco para voltar ao vencimento do QuickBooks.', atual || '');
+  if (v === null) return; const d = v.trim(); if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('Use o formato AAAA-MM-DD', 'error'); return; }
+  try { await finApi('inv_prev_receb', { id, data: d || null }); toast(d ? 'Previsão ajustada — vale no fluxo, extrato e projetado' : 'Voltou ao vencimento do QuickBooks', 'success'); await arCarregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 function arFiltroMes(v) { _ar.fMes = v; arRender(); }
 function arFiltroTermo(v) { _ar.fTermo = v; arRender(); }
@@ -36970,7 +36975,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.427] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.428] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36986,7 +36991,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.427';
+window.__ATX_BUILD_ID__ = 'ATX-v3.428';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

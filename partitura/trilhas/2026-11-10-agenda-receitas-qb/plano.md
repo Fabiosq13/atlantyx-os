@@ -13,3 +13,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.426 · ✅ entregue
 - [x] v3.427: regras de substituição (termo/fatura contém X → elimina recorrência Y do mês mais próximo, ±25 dias), para sustentação e avulsa recorrente; padrão: "sustentação e evolutivas"→bigdata, "xplann"→xplann; aba de regras editável na agenda
 - 2026-11-10 · v3.427 · ✅ entregue
+- [x] v3.428: previsão de recebimento por fatura do QuickBooks (kv fin:inv_prev_receb) — vale no extrato futuro, fluxo, projetado e agenda; botão 📅 na aba Todas
+- 2026-11-10 · v3.428 · ✅ entregue · caso fatura 217 (MP3+MP4) recebida em novembro

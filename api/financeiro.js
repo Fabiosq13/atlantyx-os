@@ -198,6 +198,7 @@ async function handler(req, res) {
       receitas_agenda:            () => receitasAgenda(params),
       qb_rec_receitas_cfg:        () => qbRecReceitasCfg(params),   // v3.426
       rp_regras_salvar:           () => rpRegrasSalvar(params),     // v3.427
+      inv_prev_receb:             () => invPrevReceb(params),       // v3.428
       receita_manual_salvar:      () => receitaManualSalvar(params),
       receita_manual_excluir:     () => receitaManualExcluir(params),
       receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
@@ -3633,13 +3634,14 @@ async function _qbFuturosDetalhadoQB({ data_inicio, data_fim, sem_estimativas = 
       qbQuery(`select * from Bill where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
       sem_estimativas ? Promise.resolve([]) : _qbEstimativasPrevisao(token).catch(e => ({ _erro: e.message })),   // v2.95 (v3.211: substituído pela Agenda de Receitas)
     ]);
+    const _pv = await _invPrevMap(); const _dt = i => _pv[String(i.Id)] || i.DueDate || i.TxnDate;   // v3.428
     if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
-      id: 'inv_' + i.Id, data: i.DueDate || i.TxnDate, descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : '') + _descLinhasFatura(i),
+      id: 'inv_' + i.Id, data: _dt(i), vencimento_qb: i.DueDate || null, previsao_ajustada: !!_pv[String(i.Id)], descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : '') + _descLinhasFatura(i),
       categoria: 'A Receber (Invoice)', valor: parseFloat(i.Balance || 0), valor_total: parseFloat(i.TotalAmt || 0), tipo: 'entrada', origem: 'quickbooks_futuro',
       vencida: i.DueDate ? i.DueDate < _hojeBR() : false,
       // v2.04: diz se cai no período consultado, sem excluir o que está fora
-      no_periodo: (!data_inicio || (i.DueDate || i.TxnDate) >= data_inicio) && (!data_fim || (i.DueDate || i.TxnDate) <= data_fim),
+      no_periodo: (!data_inicio || _dt(i) >= data_inicio) && (!data_fim || _dt(i) <= data_fim),
       emissao: i.TxnDate,
       cliente: i.CustomerRef?.name || '', doc: i.DocNumber || '',   // v3.85: alerta de vencimento / cobrança por WhatsApp
     }));
@@ -4990,9 +4992,9 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null, regime
     try {
       const token = await qbToken();
       const data = await qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token);
-      const invoices = data?.QueryResponse?.Invoice || [];
+      const invoices = data?.QueryResponse?.Invoice || []; const _pv = await _invPrevMap();
       for (const inv of invoices) {
-        const venc = COMP ? (inv.TxnDate || inv.DueDate) : (inv.DueDate || inv.TxnDate);
+        const venc = COMP ? (inv.TxnDate || inv.DueDate) : (_pv[String(inv.Id)] || inv.DueDate || inv.TxnDate);   // v3.428
         const mes = (venc || '').substring(0, 7);
         const valor = parseFloat(inv.Balance || 0);
         if (!mes || !valor) continue;
@@ -8515,12 +8517,22 @@ async function _rpSustentacoesBase(sql) {
   }
   return out;
 }
+// v3.428: PREVISÃO DE RECEBIMENTO DA FATURA — o cliente paga antes/depois do vencimento do QuickBooks (ex.: fatura emitida
+// em 10/11 com vencimento 10/12 que entra em novembro). O fundador ajusta na Agenda de Receitas; vale no extrato futuro,
+// fluxo, projetado e agenda. O vencimento no QuickBooks não muda. kv fin:inv_prev_receb = { <Invoice.Id>: 'YYYY-MM-DD' }.
+let _ipCache = { em: 0, v: {} };
+async function _invPrevMap() { if (Date.now() - _ipCache.em < 30000) return _ipCache.v; let v = {}; try { v = (await _kvFin2('fin:inv_prev_receb')) || {}; } catch (_) {} _ipCache = { em: Date.now(), v }; return v; }
+async function invPrevReceb({ id, data } = {}) {
+  if (!id) throw Object.assign(new Error('id obrigatório'), { status: 400 }); if (data && !/^\d{4}-\d{2}-\d{2}$/.test(data)) throw Object.assign(new Error('data inválida (AAAA-MM-DD)'), { status: 400 });
+  const m = (await _kvFin2('fin:inv_prev_receb')) || {}; const k = String(id).replace(/^inv_/, ''); if (data) m[k] = data; else delete m[k];
+  await _kvFin2('fin:inv_prev_receb', m); _ipCache = { em: 0, v: {} }; _rpCache.v = null; return { id: k, data: data || null };
+}
 async function _rpFaturasQB(desde) {
   if (!qbConfigurado()) return null;
   try { const token = await qbToken();
     const [a, b] = await Promise.all([qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token), qbQuery(`select * from Invoice where TxnDate >= '${desde}' maxresults 1000`, token)]);
-    const m = new Map(); [...(a?.QueryResponse?.Invoice || []), ...(b?.QueryResponse?.Invoice || [])].forEach(i => m.set(i.Id, i));
-    return [...m.values()].map(i => ({ id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: i.DueDate || i.TxnDate, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+    const m = new Map(); [...(a?.QueryResponse?.Invoice || []), ...(b?.QueryResponse?.Invoice || [])].forEach(i => m.set(i.Id, i)); const pv = await _invPrevMap();
+    return [...m.values()].map(i => ({ id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: (num(i.Balance) > 0 && pv[String(i.Id)]) || i.DueDate || i.TxnDate, venc_qb: i.DueDate || i.TxnDate, prev_receb: num(i.Balance) > 0 ? pv[String(i.Id)] || null : null, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
       // v3.221: texto da fatura (linhas, memorando) — casa a previsão pelo assunto quando o cliente foi cadastrado com outro nome
       texto: [i.CustomerRef?.name, i.CustomerMemo?.value, i.PrivateNote, ...(i.Line || []).map(l => [l.Description, l.SalesItemLineDetail?.ItemRef?.name].join(' '))].filter(Boolean).join(' ') }));
   } catch (_) { return null; }
@@ -8715,7 +8727,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     faturasQB = faturas.filter(f => String(f.emissao || f.data || '') >= mesM1 + '-01' || f.saldo > 0).map(f => {
       const tx = String(f.texto || '').match(/termo\s*(?:n[º°o.]*\s*)?([0-9][0-9./-]*)/i);
       const termo = termoDe['id:' + f.id] || termoDe['doc:' + f.doc] || (cobre[f.id] || []).map(c => c.termo).find(Boolean) || (tx ? tx[1].replace(/[./-]$/, '') : null);
-      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [] };
+      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [] };
     }).sort((a, b) => String(a.vencimento || a.emissao).localeCompare(String(b.vencimento || b.emissao)));
   }
   { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411
