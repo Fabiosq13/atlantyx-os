@@ -773,6 +773,69 @@ async function oportVozCriar(p = {}, usuario) {
   return feito;
 }
 
+// v3.422: LEADS ESQUECIDOS — contatos do HubSpot + leads do sistema parados há mais tempo, do mais antigo ao mais recente.
+// Nada é enviado daqui: a tela só sugere a mensagem (Fabio copia/abre no WhatsApp) e cria tarefas no To-do.
+const _DECISOR = /\b(ceo|cfo|cio|cto|coo|cdo|cmo|diretor|diretora|director|head|presidente|vp|vice|s[oó]cio|owner|founder|fundador|gerente geral|superintendente|chief)\b/i;
+async function leadsEsquecidos({ dias = 90, limite = 300 } = {}) {
+  dias = Math.max(15, Math.min(1000, Number(dias) || 90)); limite = Math.max(50, Math.min(600, Number(limite) || 300));
+  const corte = Date.now() - dias * 86400000; const avisos = []; const L = [];
+  const props = ['firstname', 'lastname', 'email', 'phone', 'mobilephone', 'company', 'jobtitle', 'createdate', 'notes_last_contacted', 'notes_last_updated', 'lifecyclestage', 'hs_lead_status', 'hs_analytics_source', 'num_contacted_notes'];
+  let portal = null;
+  if (process.env.HUBSPOT_TOKEN) {
+    try {
+      try { portal = (await _hs('/account-info/v3/details')).portalId; } catch (_) {}
+      const fora = { propertyName: 'lifecyclestage', operator: 'NEQ', value: 'customer' };
+      const grupos = [
+        { filters: [{ propertyName: 'notes_last_contacted', operator: 'LT', value: String(corte) }, fora] },
+        { filters: [{ propertyName: 'notes_last_contacted', operator: 'NOT_HAS_PROPERTY' }, { propertyName: 'createdate', operator: 'LT', value: String(corte) }, fora] },
+      ];
+      let after; let n = 0;
+      do {
+        const d = await _hs('/crm/v3/objects/contacts/search', 'POST', { filterGroups: grupos, properties: props, sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }], limit: 100, ...(after ? { after } : {}) });
+        (d.results || []).forEach(c => { const p = c.properties || {};
+          const ult = p.notes_last_contacted ? Date.parse(p.notes_last_contacted) : null; const cri = p.createdate ? Date.parse(p.createdate) : null; const ref = ult || cri;
+          L.push({ fonte: 'HubSpot', id: 'hs:' + c.id, hubspot_id: c.id, nome: [p.firstname, p.lastname].filter(Boolean).join(' ') || p.email || '(sem nome)', email: p.email || '', telefone: p.mobilephone || p.phone || '',
+            empresa: p.company || '', cargo: p.jobtitle || '', origem: p.hs_analytics_source || '', etapa: p.hs_lead_status || p.lifecyclestage || '', criado_em: cri ? new Date(cri).toISOString() : null,
+            ultimo_contato: ult ? new Date(ult).toISOString() : null, nunca_abordado: !ult, dias_parado: ref ? Math.floor((Date.now() - ref) / 86400000) : null,
+            link: portal ? `https://app.hubspot.com/contacts/${portal}/record/0-1/${c.id}` : null }); });
+        after = d.paging?.next?.after; n += (d.results || []).length;
+      } while (after && n < limite);
+      if (after) avisos.push('Mostrando os ' + n + ' contatos mais antigos do HubSpot (há mais).');
+    } catch (e) { avisos.push('HubSpot: ' + e.message); }
+  } else avisos.push('HUBSPOT_TOKEN não configurado — mostrando só a base de leads do sistema.');
+  try {
+    const sql = await getSql();
+    const R = await sql`SELECT id, nome, empresa, cargo, email, telefone, origem, campanha, status, etapas, criado_em, hubspot_contact FROM leads
+      WHERE COALESCE(status,'') NOT IN ('qa_teste','cliente','ganho','descartado') AND reuniao_marcada_em IS NULL AND criado_em < ${new Date(corte).toISOString()} ORDER BY criado_em ASC LIMIT ${limite}`;
+    const ja = new Set(); L.forEach(x => { if (x.email) ja.add(x.email.toLowerCase()); if (x.hubspot_id) ja.add('hs:' + x.hubspot_id); const t = String(x.telefone || '').replace(/\D/g, '').slice(-9); if (t.length >= 8) ja.add('t:' + t); });
+    R.forEach(r => {
+      const t = String(r.telefone || '').replace(/\D/g, '').slice(-9);
+      if ((r.email && ja.has(String(r.email).toLowerCase())) || (r.hubspot_contact && ja.has('hs:' + r.hubspot_contact)) || (t.length >= 8 && ja.has('t:' + t))) return;
+      let ult = null; const et = r.etapas && typeof r.etapas === 'object' ? r.etapas : {};
+      Object.values(et).forEach(v => { const s = v && typeof v === 'object' ? (v.em || v.data || v.quando) : null; const ms = s ? Date.parse(s) : NaN; if (!isNaN(ms) && (!ult || ms > ult)) ult = ms; });
+      if (ult && ult >= corte) return;
+      const ref = ult || Date.parse(r.criado_em);
+      L.push({ fonte: 'Sistema', id: 'ld:' + r.id, nome: r.nome || r.email || '(sem nome)', email: r.email || '', telefone: r.telefone || '', empresa: r.empresa || '', cargo: r.cargo || '',
+        origem: [r.origem, r.campanha].filter(Boolean).join(' · '), etapa: r.status || '', criado_em: r.criado_em ? new Date(r.criado_em).toISOString() : null, ultimo_contato: ult ? new Date(ult).toISOString() : null,
+        nunca_abordado: !ult && et.whatsapp !== 'ok', dias_parado: Math.floor((Date.now() - ref) / 86400000), link: null });
+    });
+  } catch (e) { avisos.push('Base de leads: ' + e.message); }
+  L.forEach(x => { x.decisor = _DECISOR.test(x.cargo || ''); });
+  L.sort((a, b) => (b.dias_parado ?? -1) - (a.dias_parado ?? -1));
+  const resumo = { total: L.length, decisores: L.filter(x => x.decisor).length, nunca_abordados: L.filter(x => x.nunca_abordado).length, hubspot: L.filter(x => x.fonte === 'HubSpot').length, sistema: L.filter(x => x.fonte === 'Sistema').length,
+    mais_6m: L.filter(x => (x.dias_parado || 0) >= 180).length, mais_1a: L.filter(x => (x.dias_parado || 0) >= 365).length };
+  return { leads: L, resumo, dias, avisos, gerado_em: new Date().toISOString() };
+}
+// mensagem de reabordagem curta (rascunho) — vai para a tela, nunca é enviada daqui
+async function leadsEsquecidosMensagem({ lead = {}, canal = 'whatsapp' }) {
+  const sys = `Você é o SDR da Atlantyx (dados, IA e planejamento — Anaplan, Maestro, Atlantyx OS — para empresas B2B médias e grandes). Escreva UMA mensagem de reabordagem para um contato que ficou meses sem conversa.
+Regras: português do Brasil, tom humano e direto, sem bajulação, sem "espero que esteja bem"; reconheça o tempo sem contato em meia frase; traga 1 gancho de valor ligado ao cargo/empresa (se não souber, use um tema geral de planejamento e dados); termine com UMA pergunta fácil de responder (sim/não ou escolha de horário). ${canal === 'email' ? 'E-mail: assunto + corpo de até 90 palavras.' : 'WhatsApp: até 55 palavras, sem assunto.'} Não invente fatos sobre a empresa nem cite clientes.
+Responda SOMENTE JSON: {"assunto":"${canal === 'email' ? '...' : ''}","mensagem":"..."}`;
+  const ctx = { primeiro_nome: String(lead.nome || '').split(' ')[0], cargo: lead.cargo, empresa: lead.empresa, origem: lead.origem, meses_parado: lead.dias_parado ? Math.round(lead.dias_parado / 30) : null, nunca_abordado: !!lead.nunca_abordado };
+  const r = json(await claude(sys, [{ type: 'text', text: JSON.stringify(ctx) }], 600, 40000));
+  return { assunto: r.assunto || '', mensagem: r.mensagem || '' };
+}
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -837,6 +900,8 @@ async function handler(req, res) {
     oport_voz_extrair: () => oportVozExtrair(payload),
     oport_voz_criar: () => oportVozCriar(payload, req.usuario || null),
     oport_voz_buscar: async () => ({ empresas: await _hsBuscarEmpresa(payload.nome, payload.dominio), contatos: await _hsBuscarContato(payload.contato || {}) }),
+    leads_esquecidos: () => leadsEsquecidos(payload), // v3.422
+    leads_esquecidos_msg: () => leadsEsquecidosMensagem(payload),
     estrategia_excluir: () => sqlRun(async sql => { await sql`DELETE FROM vendas_estrategias WHERE id = ${payload.id}`; return { ok: true }; }),
   };
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida. Disponíveis: ' + Object.keys(acoes).join(', ') });
