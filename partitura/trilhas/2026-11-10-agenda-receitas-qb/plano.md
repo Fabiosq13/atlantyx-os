@@ -29,3 +29,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.434 · ✅ entregue · aguardando o fundador buscar "xplann"
 - [x] v3.435: termo ligado à fatura errada (valor da fatura ≠ valor do termo ±5%, nº de termo repetido) volta como previsto, com aviso para corrigir no Kanban de Faturamento (caso Termo 11 Xplann × Transmissão)
 - 2026-11-10 · v3.435 · ✅ entregue
+- [x] v3.436: termo casado por texto não leva mais TODOS os marcos de mesmo texto (mensalidades) — só o(s) que fecha(m) o valor; busca mostra marcos fora da agenda com motivo; "Desligar do termo" / "Não é deste termo" (kv fin:marco_termo_nao) — caso Servipla
+- 2026-11-10 · v3.436 · ✅ entregue

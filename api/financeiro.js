@@ -201,6 +201,7 @@ async function handler(req, res) {
       inv_prev_receb:             () => invPrevReceb(params),       // v3.428
       qb_fatura_datas:            () => qbFaturaDatas(params),      // v3.429
       marco_ligar_termo:          () => marcoLigarTermo(params),    // v3.432
+      marco_desligar_termo:       () => marcoDesligarTermo(params), // v3.436
       receita_manual_salvar:      () => receitaManualSalvar(params),
       receita_manual_excluir:     () => receitaManualExcluir(params),
       receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
@@ -6664,9 +6665,10 @@ async function _termosParaCasar(sql, vinc) {
     WHERE COALESCE(t.status, '') <> 'cancelado' GROUP BY t.id ORDER BY 6`; } catch (_) { return []; }
   return rows.filter(t => !ligados.has(String(t.id))).map(t => ({ id: String(t.id), numero: t.numero_termo || t.id, p: _normDesp(t.projeto), txt: _normDesp((t.marco_projeto || '') + ' ' + (t.parcela || '')), em: _dStr(t.em), total: num(t.total) }));
 }
-function casarMarcosTermos(marcos, termos) {
+function casarMarcosTermos(marcos, termos, nao = {}) {
+  const _ok = (m, t) => !(nao[String(m.id)] || []).includes(String(t.id));   // v3.436: "não é deste termo"
   const usados = new Map(), mesmoProj = (a, b) => a && b && (a.includes(b) || b.includes(a)), perto = (v, alvo) => alvo > 0 && Math.abs(v - alvo) <= Math.max(1, alvo * 0.02);
-  const pega = (m, t, motivo) => usados.set(String(m.id), { marco_id: String(m.id), marco: m.descricao || 'Marco', projeto: m.projeto_nome, valor: num(m.valor), termo_id: t.id, termo: t.numero, motivo });
+  const pega = (m, t, motivo) => _ok(m, t) && usados.set(String(m.id), { marco_id: String(m.id), marco: m.descricao || 'Marco', projeto: m.projeto_nome, valor: num(m.valor), termo_id: t.id, termo: t.numero, motivo });
   const sobra = [];
   // v3.432: CÓDIGO DO MARCO no termo ("MP3 e MP4", "MP3/MP4", "MP5 - Classe…") casa direto, inclusive quando o nome do projeto
   // no termo é diferente do Kanban de Marcos ("Projeto Cadastro" × "Oficial_Cadastro") — basta uma palavra forte em comum.
@@ -6677,15 +6679,19 @@ function casarMarcosTermos(marcos, termos) {
   const codMarco = m => { const r = /^\s*mp\s*(\d{1,2})\b/.exec(_normDesp(m.descricao)); return r ? String(+r[1]) : null; };
   for (const t of termos) {
     const cs = codigos(t.txt); if (!cs.size) continue;
-    const L = marcos.filter(m => !usados.has(String(m.id)) && cs.has(codMarco(m)) && (mesmoProj(_normDesp(m.projeto_nome), t.p) || projFraco(_normDesp(m.projeto_nome), t.p)));
+    const L = marcos.filter(m => !usados.has(String(m.id)) && _ok(m, t) && cs.has(codMarco(m)) && (mesmoProj(_normDesp(m.projeto_nome), t.p) || projFraco(_normDesp(m.projeto_nome), t.p)));
     L.forEach(m => pega(m, t, 'código do marco (MP' + codMarco(m) + ') no termo'));
   }
   for (const t of termos) {
     const lim = t.em ? _diasMais(t.em, 60) : null;
-    const cand = marcos.filter(m => !usados.has(String(m.id)) && mesmoProj(_normDesp(m.projeto_nome), t.p) && (!lim || !m.data_entrega || _dStr(m.data_entrega) <= lim))
+    const cand = marcos.filter(m => !usados.has(String(m.id)) && _ok(m, t) && mesmoProj(_normDesp(m.projeto_nome), t.p) && (!lim || !m.data_entrega || _dStr(m.data_entrega) <= lim))
       .sort((x, y) => Math.abs(_diasEntre(_dStr(x.data_entrega) || t.em, t.em)) - Math.abs(_diasEntre(_dStr(y.data_entrega) || t.em, t.em)));
     const porTexto = t.txt.length >= 4 ? cand.filter(m => { const d = _normDesp(m.descricao); return d.length >= 4 && (t.txt.includes(d) || d.includes(t.txt)); }) : [];
-    if (porTexto.length) { porTexto.forEach(m => pega(m, t, 'texto do marco no termo')); continue; }
+    // v3.436: vários marcos com o MESMO texto (mensalidades "Mensalidade IA Sales…" mês a mês) — antes um termo levava TODOS;
+    // agora leva só o(s) que fecha(m) o valor do termo: um de valor igual (o mais perto na data), ou todos se a soma bate.
+    if (porTexto.length) { let esc = porTexto;
+      if (porTexto.length > 1) { const tot = porTexto.reduce((v, m) => v + num(m.valor), 0); if (!perto(tot, t.total)) { const um = porTexto.find(m => perto(num(m.valor), t.total)); esc = [um || porTexto[0]]; } }
+      esc.forEach(m => pega(m, t, 'texto do marco no termo')); continue; }
     const um = cand.find(m => perto(num(m.valor), t.total)); if (um) { pega(um, t, 'mesmo valor'); continue; }
     const c = cand.slice(0, 12); let achou = null;
     for (let mask = 1; mask < (1 << c.length) && !achou; mask++) { let n = 0, v = 0; for (let i = 0; i < c.length; i++) if (mask & (1 << i)) { n++; v += num(c[i].valor); } if (n >= 2 && n <= 4 && perto(v, t.total)) achou = c.filter((_, i) => mask & (1 << i)); }
@@ -6716,19 +6722,21 @@ async function _marcosParaReceita(sql) {
   // Ligação explícita (Gerar termo) resolve direto; termos sem ligação são casados com os marcos do mesmo projeto
   // por (1) texto do marco no termo, (2) valor igual (±2%), (3) soma de até 4 marcos = valor do termo,
   // (4) marco concluído + termo do projeto emitido depois da conclusão e ainda sem marco.
-  const noTermo = casarMarcosTermos(rows, await _termosParaCasar(sql, vinc));
+  let nao = {}; try { nao = (await _kvFin2('fin:marco_termo_nao')) || {}; } catch (_) {}
+  const noTermo = casarMarcosTermos(rows, await _termosParaCasar(sql, vinc), nao); const fora = [];   // v3.436: o que saiu e por quê
+  const sai = (m, motivo, extra = {}) => fora.push({ id: String(m.id), projeto: m.projeto_nome, cliente: m.projeto_cliente, descricao: m.descricao || 'Marco', valor: num(m.valor), data: _dStr(m.data_entrega) || _dStr(m.previsao_recebimento) || null, motivo, ...extra });
   for (const m of rows) {
     const tid = vinc[m.id]?.termo_id ? String(vinc[m.id].termo_id) : null, f = tid ? faturado[tid] : null;
-    if (tid) continue;                                                   // virou termo → entra pelo TERMO (Kanban de Faturamento)
+    if (tid) { sai(m, 'ligado ao termo ' + (vinc[m.id].numero || tid), { termo_id: tid, ligado: true }); continue; }   // virou termo → entra pelo TERMO
     if (f && (f.fat || f.pago)) continue;
-    if (noTermo.has(String(m.id))) continue;                             // v3.274
-    if (m.data_pagamento && _dStr(m.data_pagamento) <= hoje) continue;  // já pago: casado com termo sem ligação explícita
-    if (String(m.nota_fiscal || '').trim()) continue;                    // nota fiscal emitida no marco → entra pela fatura
-    if (m.status_kanban === 'concluido') { const ref = _dStr(m.concluido_em) || _dStr(m.data_entrega); if (ref && ref < seisMeses) continue; }
+    if (noTermo.has(String(m.id))) { const x = noTermo.get(String(m.id)); sai(m, 'casado com o termo ' + x.termo + ' (' + x.motivo + ')', { termo_id: x.termo_id, automatico: true }); continue; }   // v3.274
+    if (m.data_pagamento && _dStr(m.data_pagamento) <= hoje) { sai(m, 'data de pagamento ' + _dStr(m.data_pagamento) + ' já passou (marco dado como pago)'); continue; }
+    if (String(m.nota_fiscal || '').trim()) { sai(m, 'nota fiscal ' + m.nota_fiscal + ' informada no marco (entra pela fatura)'); continue; }
+    if (m.status_kanban === 'concluido') { const ref = _dStr(m.concluido_em) || _dStr(m.data_entrega); if (ref && ref < seisMeses) { sai(m, 'concluído há mais de 6 meses'); continue; } }
     m._situacao = m.status_kanban === 'concluido' ? 'concluído no Kanban de Marcos, ainda sem termo' : null;
     out.push(m);
   }
-  out.no_termo = [...noTermo.values()];
+  out.no_termo = [...noTermo.values()]; out.fora = fora; out.nao = nao;
   return out;
 }
 // v3.273: TERMOS NO KANBAN DE FATURAMENTO que ainda não viraram fatura no QuickBooks — receita prevista por empresa do termo.
@@ -8578,13 +8586,14 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // na lista) "cobria" a mensalidade de NOVEMBRO, que sumia da agenda como se já estivesse faturada. As sombras saem no fim.
   const mesSombra = _mesMais(mesHoje, -2);
   const chave = N + '|' + hoje; if (!_forcar && _rpCache.v && _rpCache.chave === chave && Date.now() - _rpCache.em < 60000) return _rpCache.v;
-  const sql = await getSql(); const avisos = []; let marcosNoTermo = [];
+  const sql = await getSql(); const avisos = []; let marcosNoTermo = [], marcosFora = [], marcosNao = {};
   const [man, susCfg, ocCfg, prevCfg, regrasCfg] = await Promise.all([_kvFin(_RP_MAN).catch(() => null), _kvFin(_RP_SUS).catch(() => null), _kvFin(_RP_OC).catch(() => null), _prevCfg(sql).catch(() => ({})), _kvFin('fin:rp_regras').catch(() => null)]);
   const diaPad = Math.max(1, Math.min(28, parseInt(prevCfg.dia_recebimento) || 25)), diasAd = Math.max(0, parseInt(prevCfg.dias_adicionais) || 0);
   const oc = [];
   // 1) marcos
   try {
     const marcos = await _marcosParaReceita(sql); const seq = {}; // v3.272
+    marcosFora = marcos.fora || []; marcosNao = marcos.nao || {};
     if (marcos.no_termo?.length) { marcosNoTermo = marcos.no_termo; avisos.push(marcos.no_termo.length + ' marco(s) do Kanban de Marcos não somado(s) de novo: já estão em termo do Kanban de Faturamento (' + marcos.no_termo.slice(0, 4).map(x => x.marco + ' → termo ' + x.termo).join('; ') + (marcos.no_termo.length > 4 ? '; …' : '') + ').'); }
     for (const m of marcos) {
       const i = (seq[m.projeto_id] = (seq[m.projeto_id] || 0) + 1) - 1;
@@ -8607,10 +8616,10 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   { const usados = new Set(); let n = 0;
     for (const m of oc.filter(o => o.origem === 'marco').sort((a, b) => a.data.localeCompare(b.data))) {
       const mesmo = t => (_rpNc(t.projeto) && _rpNc(t.projeto) === _rpNc(m.projeto)) || (_rpNc(t.projeto) && _rpNc(t.projeto) === _rpNc(m.cliente)) || (_rpNc(t.cliente) && _rpNc(t.cliente) === _rpNc(m.projeto));
-      const t = oc.filter(o => o.origem === 'termo' && !usados.has(o.id) && mesmo(o) && Math.abs(o.valor - m.valor) <= Math.max(1, m.valor * 0.01))
+      const t = oc.filter(o => o.origem === 'termo' && !usados.has(o.id) && !(marcosNao[String(m.ref_id)] || []).includes(String(o.ref_id)) && mesmo(o) && Math.abs(o.valor - m.valor) <= Math.max(1, m.valor * 0.01))
         .sort((a, b) => Math.abs(Date.parse(a.data) - Date.parse(m.data)) - Math.abs(Date.parse(b.data) - Date.parse(m.data)))[0];
       if (!t) continue; usados.add(t.id); n++;
-      m.status = 'coberta'; m.coberta_por = { termo: t.termo || t.descricao, casou_por: 'marco_no_termo', substituida_por: 'Termo ' + (t.termo || ''), regra: 'mesmo projeto e valor', valor: t.valor, data: t.data };
+      m.status = 'coberta'; m.coberta_por = { termo_id: t.ref_id, termo: t.termo || t.descricao, casou_por: 'marco_no_termo', substituida_por: 'Termo ' + (t.termo || ''), regra: 'mesmo projeto e valor', valor: t.valor, data: t.data };
       t.substitui = 'marco ' + String(m.descricao || '').substring(0, 60);
     }
     if (n) avisos.push(n + ' marco(s) do Kanban de Marcos não somado(s): já têm termo no Kanban de Faturamento (mesmo projeto e valor) — vale a data do termo.');
@@ -8816,7 +8825,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
   const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0, qb_recorrente: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
   const v = { hoje, ate: fimHor, ocorrencias: oc.sort((a, b) => a.data.localeCompare(b.data)), ativas, por_mes: Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes)),
-    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, qb_rec_modelos: qbRecModelos, regras_subst: regrasSubst, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
+    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, qb_rec_modelos: qbRecModelos, regras_subst: regrasSubst, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo, marcos_fora: marcosFora };
   _rpCache = { em: Date.now(), chave, v }; return v;
 }
 // itens no formato dos recebíveis do fluxo (para o Fluxo Detalhado, extratos, painel e KPIs)
@@ -9876,6 +9885,14 @@ async function marcoLigarTermo({ marco_id, numero } = {}) {
   const sql = await getSql(); const t = (await sql`SELECT id, numero_termo FROM termos_faturamento WHERE TRIM(numero_termo) = ${n} AND COALESCE(status,'') <> 'cancelado' ORDER BY criado_em DESC LIMIT 1`)[0];
   if (!t) throw new Error('Termo ' + n + ' não encontrado no Kanban de Faturamento');
   const r = await marcosVincularTermo({ ids: [mid], termo_id: t.id, numero: t.numero_termo }); _rpCache.v = null; return { ...r, termo_id: t.id, numero: t.numero_termo };
+}
+// v3.436: desfaz a saída de um marco — ligação manual (→ Termo) ou casamento automático errado ("não é deste termo")
+async function marcoDesligarTermo({ marco_id, termo_id } = {}) {
+  const mid = String(marco_id || '').replace(/^mrc_/, ''); if (!mid) throw Object.assign(new Error('marco obrigatório'), { status: 400 });
+  const sql = await getSql(); let m = {}; try { const kv = await sql`SELECT value FROM kv_store WHERE key = 'fin:marco_termo'`; m = (typeof kv[0]?.value === 'string' ? JSON.parse(kv[0].value) : kv[0]?.value) || {}; } catch (_) {}
+  let desligou = false; if (m[mid]) { delete m[mid]; desligou = true; await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('fin:marco_termo', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+  if (termo_id) { const n = (await _kvFin2('fin:marco_termo_nao')) || {}; n[mid] = [...new Set([...(n[mid] || []), String(termo_id)])]; await _kvFin2('fin:marco_termo_nao', n); }
+  _rpCache.v = null; return { marco_id: mid, desligou, nao_casar_com: termo_id || null };
 }
 async function marcosKanban({ projeto_id } = {}) {
   const sql = await getSql();
