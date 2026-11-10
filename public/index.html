@@ -33072,10 +33072,10 @@ function _arRateio(x) {
   // v3.431: mostra só a(s) nota(s) DESTA fatura; o termo inteiro abre no clique
   const minhas = T.filter(r => r.esta), aberto = (_ar.rtAberto || {})[x.id], R = aberto || !minhas.length ? T : minhas;
   const tot = R.reduce((t, r) => t + (Number(r.valor) || 0), 0), todo = R === T;
-  const rodape = '<tr style="background:var(--bg3);"><td></td><td colspan="4" style="font-size:9.5px;color:var(--t3);padding:3px 0 5px 12px;">' + (todo ? 'Rateio do termo ' + _arE(x.termo) + ': ' + T.length + ' nota(s)' + (Math.abs(tot - x.valor) > 1 && !minhas.length ? ' · <span style="color:var(--gold);">soma ' + _arR(tot) + ' ≠ fatura ' + _arR(x.valor) + '</span>' : '') : 'Nota desta fatura no termo ' + _arE(x.termo))
+  const rodape = '<tr style="background:var(--bg3);"><td></td><td colspan="4" style="font-size:9.5px;color:var(--t3);padding:3px 0 5px 12px;">' + (T.every(r => r.de_nota) ? 'Notas fiscais do termo ' + _arE(x.termo) + ': ' + T.length + ' nota(s)' + (Math.abs(tot - x.valor) > 1 ? ' · <span style="color:var(--gold);">soma ' + _arR(tot) + ' ≠ fatura ' + _arR(x.valor) + '</span>' : ' · soma confere com a fatura') : todo ? 'Rateio do termo ' + _arE(x.termo) + ': ' + T.length + ' nota(s)' + (Math.abs(tot - x.valor) > 1 && !minhas.length ? ' · <span style="color:var(--gold);">soma ' + _arR(tot) + ' ≠ fatura ' + _arR(x.valor) + '</span>' : '') : 'Nota desta fatura no termo ' + _arE(x.termo))
     + (minhas.length && T.length > minhas.length ? ' · <a href="#" style="color:var(--blue);" onclick="event.preventDefault();_ar.rtAberto=_ar.rtAberto||{};_ar.rtAberto[\'' + _arE(x.id) + '\']=' + (aberto ? 'false' : 'true') + ';arRender();">' + (aberto ? 'mostrar só esta fatura' : 'ver as ' + T.length + ' notas do termo') + '</a>' : '') + '</td><td style="text-align:right;font-size:10px;font-weight:600;">' + _arR(tot) + '</td><td></td></tr>';
   return R.map(r => '<tr style="background:var(--bg3);"><td style="padding:3px 4px 3px 14px;font-size:9.5px;color:var(--t3);white-space:nowrap;">' + (r.nf_data ? 'NF de ' + _arDt(r.nf_data) : '') + '</td><td style="font-size:10px;padding-left:12px;">↳ ' + _arE(r.empresa || '—') + '</td><td style="font-size:9.5px;">' + (r.nf ? 'NF ' + _arE(r.nf) : '<span style="color:var(--gold);">sem NF</span>') + '</td>'
-    + '<td style="font-size:9.5px;color:var(--t3);">' + (r.qb_doc ? 'fatura ' + _arE(r.qb_doc) : '') + '</td><td style="font-size:9.5px;color:' + (r.pagamento === 'pago' ? 'var(--green)' : 'var(--t3)') + ';">' + _arE(r.pagamento || '') + (r.pagamento_data ? ' ' + _arDt(r.pagamento_data) : '') + '</td><td style="text-align:right;font-size:10px;">' + _arR(r.valor) + '</td><td></td></tr>').join('') + rodape;
+    + '<td style="font-size:9.5px;color:var(--t3);">' + (r.qb_doc ? 'fatura ' + _arE(r.qb_doc) : '') + (r.anexo ? '<div style="font-size:9px;">📎 ' + _arE(r.anexo) + '</div>' : '') + '</td><td style="font-size:9.5px;color:' + (r.pagamento === 'pago' ? 'var(--green)' : 'var(--t3)') + ';">' + _arE(r.pagamento || '') + (r.pagamento_data ? ' ' + _arDt(r.pagamento_data) : '') + '</td><td style="text-align:right;font-size:10px;">' + _arR(r.valor) + '</td><td></td></tr>').join('') + rodape;
 }
 function arInvDatas(id) {
   const f = (_ar.d?.faturas_qb || []).find(z => String(z.id) === String(id)); if (!f) return; document.getElementById('arDatasModal')?.remove();
@@ -37005,7 +37005,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.432] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.433] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37021,7 +37021,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.432';
+window.__ATX_BUILD_ID__ = 'ATX-v3.433';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
