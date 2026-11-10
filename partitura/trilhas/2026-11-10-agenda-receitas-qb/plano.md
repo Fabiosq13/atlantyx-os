@@ -31,3 +31,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.435 · ✅ entregue
 - [x] v3.436: termo casado por texto não leva mais TODOS os marcos de mesmo texto (mensalidades) — só o(s) que fecha(m) o valor; busca mostra marcos fora da agenda com motivo; "Desligar do termo" / "Não é deste termo" (kv fin:marco_termo_nao) — caso Servipla
 - 2026-11-10 · v3.436 · ✅ entregue
+- [x] v3.437: fatura ligada a termo só cobre previsão do mesmo termo/projeto (fatura 204 Transmissão não cobre mais o marco MC4 Cativo x Livre); linha da fatura mostra o projeto do termo
+- 2026-11-10 · v3.437 · ✅ entregue

@@ -8694,6 +8694,14 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   } catch (e) { avisos.push('Conferência termo × fatura: ' + e.message); }
   // v3.434: não zera o que os passos anteriores já cobriram (termo de sustentação, marco que virou termo) — antes a linha
   // abaixo apagava o status e a previsão voltava a contar mesmo com coberta_por preenchido
+  let termoDe = {}; const termoSusTxt = {}, termoTxtTodos = {}, termoIdDe = {}, termoProjDe = {}; try { (await sql`SELECT e.id AS emp_id, t.id AS termo_id, t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
+    .forEach(r => { if (!r.numero_termo || ligErrada.has(String(r.emp_id))) return; const n = String(r.numero_termo); if (r.qb_invoice_id) { termoDe['id:' + r.qb_invoice_id] = n; termoIdDe['id:' + r.qb_invoice_id] = String(r.termo_id); termoProjDe['id:' + r.qb_invoice_id] = r.projeto || ''; } if (r.nf_numero) { termoDe['doc:' + r.nf_numero] = n; termoIdDe['doc:' + r.nf_numero] = String(r.termo_id); termoProjDe['doc:' + r.nf_numero] = r.projeto || ''; }
+      const txt = [r.projeto, r.fase, r.parcela, r.marco_projeto].filter(Boolean).join(' '); termoTxtTodos[n] = 'Termo ' + n + ' ' + txt; if (num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test(txt) || sustentacoes.some(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(r.projeto))) termoSusTxt[n] = txt || 'sustentação'; }); } catch (_) {}
+  // v3.437: fatura LIGADA A UM TERMO só cobre previsão do mesmo termo/projeto — antes, pelo cliente (CPFL tem vários projetos),
+  // a fatura 204 da Transmissão "cobria" o marco MC4 Cativo x Livre, que sumia da agenda.
+  const podeCobrir = (o, f) => { const tp = termoProjDe['id:' + f.id] ?? termoProjDe['doc:' + f.doc]; if (tp == null) return true; const tid = termoIdDe['id:' + f.id] || termoIdDe['doc:' + f.doc];
+    if (o.origem === 'termo' && String(o.ref_id) === String(tid)) return true; const a = _rpNc(o.projeto), b = _rpNc(tp); if (!a || !b) return false;
+    return a.includes(b) || b.includes(a) || _rpCasaAssunto(o.projeto, tp) || _rpCasaAssunto(tp, o.projeto); };
   for (const o of oc) o.status = o.status_manual === 'recebida' ? 'recebida' : o.status_manual === 'cancelada' ? 'cancelada' : o.coberta_por ? 'coberta' : null;
   // v3.221: previsão ligada à mão a uma fatura ("já faturada → fatura nº") — o QuickBooks manda, a previsão sai
   for (const o of oc) { const a = aj[o.id]; if (!a?.fatura) continue;
@@ -8706,23 +8714,20 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     const cobrir = (o, f, como) => { o.coberta_por = { fatura: f.doc, id: f.id, valor: f.valor, data: f.data, em_aberto: f.saldo > 0, casou_por: como }; o.status = 'coberta'; f._usada = true; };
     const ord = faturas.filter(f => !f._usada).sort((a, b) => String(a.data).localeCompare(String(b.data)));
     for (const f of ord) {
-      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && janela(o, f, 31) && valorOk(o, f));
+      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && janela(o, f, 31) && valorOk(o, f) && podeCobrir(o, f));
       if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'cliente');
     }
     // v3.221: pelo ASSUNTO — palavra distintiva da previsão (ex.: "anaplan") no texto da fatura, valor compatível, até 60 dias.
     // Cobre a previsão cadastrada com o nome do serviço no lugar do cliente (a fatura sai no nome do cliente real).
     for (const f of ord.filter(x => !x._usada)) {
       const txt = new Set(_rpTokens(f.texto));
-      const cand = oc.filter(o => !o.status && !o.coberta_por && janela(o, f, 60) && valorOk(o, f) && _rpTokens([o.cliente, o.projeto, o.descricao].join(' ')).some(t => txt.has(t)));
+      const cand = oc.filter(o => !o.status && !o.coberta_por && janela(o, f, 60) && valorOk(o, f) && podeCobrir(o, f) && _rpTokens([o.cliente, o.projeto, o.descricao].join(' ')).some(t => txt.has(t)));
       if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'assunto');
     }
   }
   // v3.423: SUSTENTAÇÃO — o QuickBooks vence também quando o mês foi faturado em VÁRIAS notas (ou numa só de valor bem
   // diferente): toda fatura ainda livre do mesmo cliente (ou do mesmo assunto) emitida no mês da mensalidade (exceto nota de termo/marco)
   // cobre a mensalidade daquele mês, qualquer valor. A previsão da agenda sai; valem as faturas.
-  let termoDe = {}; const termoSusTxt = {}, termoTxtTodos = {}, termoIdDe = {}; try { (await sql`SELECT e.id AS emp_id, t.id AS termo_id, t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
-    .forEach(r => { if (!r.numero_termo || ligErrada.has(String(r.emp_id))) return; const n = String(r.numero_termo); if (r.qb_invoice_id) { termoDe['id:' + r.qb_invoice_id] = n; termoIdDe['id:' + r.qb_invoice_id] = String(r.termo_id); } if (r.nf_numero) { termoDe['doc:' + r.nf_numero] = n; termoIdDe['doc:' + r.nf_numero] = String(r.termo_id); }
-      const txt = [r.projeto, r.fase, r.parcela, r.marco_projeto].filter(Boolean).join(' '); termoTxtTodos[n] = 'Termo ' + n + ' ' + txt; if (num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test(txt) || sustentacoes.some(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(r.projeto))) termoSusTxt[n] = txt || 'sustentação'; }); } catch (_) {}
   // v3.427: REGRAS DE SUBSTITUIÇÃO — "o termo/fatura que fala de X elimina a recorrência Y do mesmo mês". Vale para sustentação
   // e para avulsa recorrente. Regras do fundador (kv fin:rp_regras, editáveis na agenda) + regra automática pelo assunto
   // (fatura/termo com "xplann" elimina a recorrência "Sustentação Xplann"). Casa pela data mais próxima (venc./emissão, ±25 dias),
@@ -8816,7 +8821,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     faturasQB = faturas.filter(f => String(f.emissao || f.data || '') >= mesM1 + '-01' || f.saldo > 0).map(f => {
       const tx = String(f.texto || '').match(/termo\s*(?:n[º°o.]*\s*)?([0-9][0-9./-]*)/i);
       const termo = termoDe['id:' + f.id] || termoDe['doc:' + f.doc] || (cobre[f.id] || []).map(c => c.termo).find(Boolean) || (tx ? tx[1].replace(/[./-]$/, '') : null);
-      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [], retencao: f.retencao || null, ...(() => { const tid = termoIdDe['id:' + f.id] || termoIdDe['doc:' + f.doc]; const R = tid ? rateioPorTermoId[tid] : null; return { termo_id: tid || null, rateio: R && R.length ? R.map(r => ({ ...r, esta: r.de_nota || String(r.qb_invoice_id || '') === String(f.id) || (!!r.qb_doc && String(r.qb_doc) === String(f.doc)) || (!!r.nf && String(r.nf) === String(f.doc)) })) : null }; })() };
+      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [], retencao: f.retencao || null, ...(() => { const tid = termoIdDe['id:' + f.id] || termoIdDe['doc:' + f.doc]; const R = tid ? rateioPorTermoId[tid] : null; return { termo_id: tid || null, termo_projeto: (termoProjDe['id:' + f.id] ?? termoProjDe['doc:' + f.doc]) || null, rateio: R && R.length ? R.map(r => ({ ...r, esta: r.de_nota || String(r.qb_invoice_id || '') === String(f.id) || (!!r.qb_doc && String(r.qb_doc) === String(f.doc)) || (!!r.nf && String(r.nf) === String(f.doc)) })) : null }; })() };
     }).sort((a, b) => String(a.vencimento || a.emissao).localeCompare(String(b.vencimento || b.emissao)));
   }
   { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411

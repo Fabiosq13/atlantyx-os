@@ -33011,7 +33011,7 @@ function arRender() {
 function _arTodas(D) {
   const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
   const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
-    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb, rateio: f.rateio, termo_id: f.termo_id, doc: f.doc, retencao: f.retencao }; });
+    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.termo_projeto ? ' · ' + f.termo_projeto : '') + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb, rateio: f.rateio, termo_id: f.termo_id, doc: f.doc, retencao: f.retencao }; });
   const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
   let L = F.concat(P);
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
@@ -37018,7 +37018,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.436] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.437] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37034,7 +37034,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.436';
+window.__ATX_BUILD_ID__ = 'ATX-v3.437';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
