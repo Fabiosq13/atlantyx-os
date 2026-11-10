@@ -33035,7 +33035,7 @@ function _arTodas(D) {
   const mfHtml = mf.length ? '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:700;border-bottom:1px solid var(--bd);padding-bottom:4px;">Marcos do Kanban de Marcos fora da agenda com "' + _arE(qB) + '" (' + mf.length + ')</div>' + mf.map(m => '<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);">' + (m.data ? _arDt(m.data) + ' · ' : '') + '<b>' + _arE(m.projeto) + '</b> · ' + _arE(String(m.descricao).substring(0, 90)) + ' · ' + _arR(m.valor) + ' <span style="color:var(--t3);">→ ' + _arE(m.motivo) + '</span>'
       + (m.ligado ? ' <button class="btn btn-g" style="font-size:9px;padding:1px 6px;" onclick="arMarcoDesligar(\'' + _arE(m.id) + '\',\'\')">Desligar do termo</button>' : m.automatico ? ' <button class="btn btn-g" style="font-size:9px;padding:1px 6px;" onclick="arMarcoDesligar(\'' + _arE(m.id) + '\',\'' + _arE(m.termo_id || '') + '\')">Não é deste termo</button>' : '') + '</div>').join('') + '</div>' : '';
   const g = {}; L.forEach(x => (g[x.mes] = g[x.mes] || []).push(x));
-  const sit = x => x.tipo === 'qb' ? (x.situacao === 'recebida' ? ['✓ recebida', 'var(--green)'] : x.situacao === 'vencida' ? ['⚠ vencida em aberto', 'var(--red)'] : ['faturada · a receber', 'var(--blue)']) : (_arSt[x.situacao] || [x.situacao, 'var(--t2)']);
+  const sit = x => x.tipo === 'qb' ? (x.situacao === 'recebida' && (x.rateio || []).some(r => r.esta && r.pagamento && r.pagamento !== 'pago') ? ['✓ paga no QuickBooks · ⚠ termo ainda diz pendente', 'var(--gold)'] : x.situacao === 'recebida' ? ['✓ recebida', 'var(--green)'] : x.situacao === 'vencida' ? ['⚠ vencida em aberto', 'var(--red)'] : ['faturada · a receber', 'var(--blue)']) : (_arSt[x.situacao] || [x.situacao, 'var(--t2)']);
   const soma = (l, f) => l.filter(f).reduce((t, x) => t + (Number(x.tipo === 'qb' && x.situacao !== 'recebida' ? x.saldo : x.valor) || 0), 0);
   const corpo = Object.keys(g).sort((a, b) => a === 'antes' ? -1 : b === 'antes' ? 1 : a.localeCompare(b)).map(m => { const l = g[m].sort((a, b) => String(a.data).localeCompare(String(b.data)));
     const rec = soma(l, x => x.tipo === 'qb' && x.situacao === 'recebida'), abr = soma(l, x => x.tipo === 'qb' && x.situacao !== 'recebida'), prv = soma(l, x => x.tipo === 'prev');
@@ -37018,7 +37018,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.437] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.438] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37034,7 +37034,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.437';
+window.__ATX_BUILD_ID__ = 'ATX-v3.438';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
