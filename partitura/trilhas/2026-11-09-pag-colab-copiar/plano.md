@@ -8,3 +8,4 @@ BPM-Trilha: T6 · BPM-ID: 2026-11-09-pag-colab-copiar
 ## Registro da Batida
 - 2026-11-09 · v3.414 · ✅ entregue · próximo: fundador abre a folha de novembro.
 - 2026-11-09 · v3.415 · ✅ cópia automática só no mês corrente (o mês anterior continua seguindo os apontamentos).
+- 2026-11-10 · v3.421 · ✅ confirmação de pagamento por colaborador (data, observação, quem confirmou; vale com folha gravada), confirmar todos, KPI pagos/falta; corrigido comentário que engolia a checagem da cópia automática.

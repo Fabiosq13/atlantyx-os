@@ -27594,6 +27594,32 @@ async function pcCarregar(mes, op, extra) {
     throw e;
   }
 }
+// v3.421: confirmação de pagamento por colaborador (vale com a folha gravada)
+function _pcPagCel(l) {
+  const P = (_pc && _pc.pagamentos) || {}, p = P[l.id];
+  if (p) return `<span style="color:var(--green);font-weight:700;font-size:11px;">&#10003; pago ${_dsE(String(p.data).split('-').reverse().join('/'))}</span><div style="font-size:9px;color:var(--t3);">${_dsE(p.por || '')}${p.obs ? ' · ' + _dsE(p.obs) : ''} <a href="#" onclick="pcPagar('${_dsE(l.id)}',false);return false;" style="color:var(--t3);">desfazer</a></div>`;
+  if (!(Number(l.valor) > 0)) return '<span style="font-size:10px;color:var(--t3);">—</span>';
+  return `<button class="btn" style="font-size:10px;padding:3px 9px;border-color:var(--green);color:var(--green);" onclick="pcPagar('${_dsE(l.id)}',true)">&#10003; Confirmar pagamento</button>`;
+}
+async function pcPagar(id, pago) {
+  const l = (_pc.linhas || []).find(x => String(x.id) === String(id)); if (!l) return;
+  let v = { pago: false };
+  if (pago) { const hj = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const dt = prompt(`Confirmar pagamento de ${l.nome} — ${_pcBRL(l.valor)}\n\nData do pagamento (DD/MM/AAAA):`, hj.split('-').reverse().join('/')); if (dt === null) return;
+    const m = String(dt).trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) { toast('Data inválida — use DD/MM/AAAA', 'error'); return; }
+    const obs = prompt('Observação (opcional — ex.: PIX, TED, nº do comprovante):', '') ?? '';
+    v = { pago: true, data: m[3] + '-' + m[2] + '-' + m[1], obs }; }
+  else if (!confirm(`Desfazer a confirmação de pagamento de ${l.nome}?`)) return;
+  try { _pc = await pmoApi('pag_colab', { op: 'pagar', mes: _pc.mes, id, valor: v }); pcRender(); toast(pago ? 'Pagamento confirmado' : 'Confirmação desfeita', 'success'); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function pcPagarTodos() {
+  const p = _pc.pagos || {}; const hj = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const dt = prompt(`Confirmar o pagamento de ${p.de - p.qtd} colaborador(es) — ${_pcBRL(p.falta)}\n\nData do pagamento (DD/MM/AAAA):`, hj.split('-').reverse().join('/')); if (dt === null) return;
+  const m = String(dt).trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) { toast('Data inválida — use DD/MM/AAAA', 'error'); return; }
+  try { _pc = await pmoApi('pag_colab', { op: 'pagar_todos', mes: _pc.mes, valor: { data: m[3] + '-' + m[2] + '-' + m[1] } }); pcRender(); toast('Pagamentos confirmados', 'success'); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 function pcRender() {
   const d = _pc; if (!d) return;
   const sel = document.getElementById('pcMes');
@@ -27605,6 +27631,7 @@ function pcRender() {
   document.getElementById('pcBotoes').innerHTML = (g
     ? `<button class="btn" onclick="pcAcao('reabrir')" title="Libera a edição; a versão gravada fica no histórico">&#128275; Reabrir</button>`
     : `<button class="btn" onclick="pcAcao('copiar_anterior')" title="Traz do mês anterior horas, valor hora, valor e observação de cada colaborador">&#10697; Copiar do mês anterior</button><button class="btn" onclick="pcAcao('recalcular')">&#8635; Recalcular</button><button class="btn btn-p" onclick="pcAcao('gravar')" title="Congela os valores deste mês e registra no histórico">&#128274; Gravar folha</button>`)
+    + ((d.pagos || {}).de && d.pagos.qtd < d.pagos.de ? `<button class="btn btn-gn" onclick="pcPagarTodos()" title="Confirma o pagamento de todos os colaboradores com valor ainda não confirmados">&#10003; Confirmar todos os pagamentos</button>` : '')
     + `<button class="btn" onclick="pcPdf()">&#128196; Exportar PDF</button><button class="btn btn-gn" onclick="pcEmail()">&#9993; Enviar ao financeiro</button>`;
   const pend = (d.historico || []).find(x => x.mes === d.mes_anterior && x.status !== 'gravada');
   document.getElementById('pcAviso').innerHTML = pend && d.mes !== d.mes_anterior ? `<div style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px;display:flex;gap:10px;align-items:center;">&#9888; A folha de <b>${_dsE(d.historico.find(x => x.mes === d.mes_anterior) ? d.mes_anterior.split('-').reverse().join('/') : '')}</b> ainda não foi gravada. <button class="btn" style="font-size:9.5px;padding:3px 9px;" onclick="pcCarregar('${d.mes_anterior}')">Abrir</button></div>` : '';
@@ -27615,21 +27642,23 @@ function pcRender() {
   document.getElementById('pcKpis').innerHTML = `<div class="kpi gd"><div class="kl">Total a pagar</div><div class="kv">${_pcBRL(T.total)}</div><div class="ks">${_dsE(d.mes_label)}</div></div>
     <div class="kpi bl"><div class="kl">Colaboradores</div><div class="kv">${T.qtd} / ${d.linhas.length}</div><div class="ks">com valor no mês / cadastrados</div></div>
     <div class="kpi pu"><div class="kl">Horas no mês</div><div class="kv">${_pcNf(T.horas).replace(/,00$/, '')}h</div><div class="ks">apontamentos do Maestro</div></div>
+    <div class="kpi ${(d.pagos || {}).de && d.pagos.qtd === d.pagos.de ? 'gn' : 'gd'}"><div class="kl">Pagamento confirmado</div><div class="kv">${(d.pagos || {}).qtd || 0} / ${(d.pagos || {}).de || 0}</div><div class="ks">${_pcBRL((d.pagos || {}).valor || 0)} pago · falta ${_pcBRL((d.pagos || {}).falta || 0)}</div></div>
     <div class="kpi ${T.sem_vh || T.sem_banco ? 'rd' : 'gn'}"><div class="kl">Pendências</div><div class="kv">${T.sem_vh + T.sem_banco}</div><div class="ks">${T.sem_vh} sem valor hora · ${T.sem_banco} sem dados bancários</div></div>`;
   const ro = g ? ' disabled' : '';
   const inp = (l, campo, v, w, manual) => `<input class="fi" value="${_pcNf(v)}"${ro} style="width:${w}px;font-size:11.5px;text-align:right;${g ? 'opacity:.85;cursor:not-allowed;' : ''}${manual ? 'border:1.5px solid var(--gold);background:rgba(245,185,75,.08);' : ''}" onchange="pcEditar('${_dsE(l.id)}','${campo}',this.value)"/>`;
   const dif = (a, b) => Math.abs((a || 0) - (b || 0)) > 0.001;
   document.getElementById('pcTabela').innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:1000px;"><thead><tr style="text-align:left;color:var(--t3);font-size:9px;letter-spacing:1px;">
-    <th style="padding:8px;">COLABORADOR</th><th style="padding:8px;text-align:right;">HORAS (MÊS)</th><th style="padding:8px;text-align:right;">VALOR HORA CUSTO (R$)</th><th style="padding:8px;text-align:right;">VALOR A PAGAR (R$)</th><th style="padding:8px;">DADOS BANCÁRIOS</th><th style="padding:8px;">OBS.</th></tr></thead><tbody>
+    <th style="padding:8px;">COLABORADOR</th><th style="padding:8px;text-align:right;">HORAS (MÊS)</th><th style="padding:8px;text-align:right;">VALOR HORA CUSTO (R$)</th><th style="padding:8px;text-align:right;">VALOR A PAGAR (R$)</th><th style="padding:8px;">DADOS BANCÁRIOS</th><th style="padding:8px;">OBS.</th><th style="padding:8px;">PAGAMENTO</th></tr></thead><tbody>
     ${d.linhas.length ? d.linhas.map(l => `<tr style="border-top:1px solid var(--bd);">
       <td style="padding:7px 8px;"><b>${_dsE(l.nome)}</b><div style="font-size:9.5px;color:var(--t3);">${_dsE(l.cargo)}${l.editado ? ' · <span style="color:var(--gold);">editado</span>' : ''}</div></td>
       <td style="padding:7px 8px;text-align:right;">${inp(l, 'horas', l.horas, 80, dif(l.horas, l.horasApt))}${dif(l.horas, l.horasApt) ? `<div style="font-size:9px;color:var(--t3);">apontado ${_pcNf(l.horasApt)}h</div>` : ''}</td>
       <td style="padding:7px 8px;text-align:right;">${inp(l, 'vh', l.vh, 90, dif(l.vh, l.vhCad))}${!l.vh && l.horas ? '<div style="font-size:9px;color:var(--red);">sem valor hora no cadastro</div>' : dif(l.vh, l.vhCad) ? `<div style="font-size:9px;color:var(--t3);">cadastro ${_pcNf(l.vhCad)}</div>` : ''}</td>
       <td style="padding:7px 8px;text-align:right;">${inp(l, 'valor', l.valor, 110, l.manualValor)}${l.manualValor && dif(l.valor, l.calc) ? `<div style="font-size:9px;color:var(--t3);">calculado ${_pcNf(l.calc)}</div>` : ''}</td>
       <td style="padding:7px 8px;font-size:10.5px;${l.banco ? '' : 'color:var(--gold);'}">${l.banco ? _dsE(l.banco) : '&#9888; cadastrar no Maestro (Cadastros → Analistas)'}</td>
-      <td style="padding:7px 8px;"><input class="fi" value="${_dsE(l.obs)}"${ro} style="width:150px;font-size:11px;" onchange="pcEditar('${_dsE(l.id)}','obs',this.value)"/></td></tr>`).join('')
-      : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--t3);">Nenhum colaborador no cadastro de analistas do Maestro.</td></tr>'}
-    </tbody><tfoot><tr style="border-top:2px solid var(--bd);font-weight:800;"><td style="padding:9px 8px;">TOTAL</td><td style="padding:9px 8px;text-align:right;">${_pcNf(T.horas)}h</td><td></td><td style="padding:9px 8px;text-align:right;color:var(--gold);font-size:13px;">${_pcBRL(T.total)}</td><td colspan="2"></td></tr></tfoot></table>`;
+      <td style="padding:7px 8px;"><input class="fi" value="${_dsE(l.obs)}"${ro} style="width:150px;font-size:11px;" onchange="pcEditar('${_dsE(l.id)}','obs',this.value)"/></td>
+      <td style="padding:7px 8px;white-space:nowrap;">${_pcPagCel(l)}</td></tr>`).join('')
+      : '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--t3);">Nenhum colaborador no cadastro de analistas do Maestro.</td></tr>'}
+    </tbody><tfoot><tr style="border-top:2px solid var(--bd);font-weight:800;"><td style="padding:9px 8px;">TOTAL</td><td style="padding:9px 8px;text-align:right;">${_pcNf(T.horas)}h</td><td></td><td style="padding:9px 8px;text-align:right;color:var(--gold);font-size:13px;">${_pcBRL(T.total)}</td><td colspan="2"></td><td style="padding:9px 8px;font-size:10.5px;color:${(d.pagos || {}).qtd && d.pagos.qtd === d.pagos.de ? 'var(--green)' : 'var(--t2)'};">${(d.pagos || {}).de ? d.pagos.qtd + '/' + d.pagos.de + ' pagos' : ''}</td></tr></tfoot></table>`;
   document.getElementById('pcRodape').innerHTML = (d.atualizado_em ? 'Última edição em ' + _pcDt(d.atualizado_em) + (d.por ? ' por ' + _dsE(d.por) : '') + ' · ' : '') + 'Campos com borda dourada foram editados na folha e não alteram o cadastro. Mudar horas ou valor hora recalcula o valor a pagar.';
   document.getElementById('pcHist').innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:860px;"><thead><tr style="text-align:left;color:var(--t3);font-size:9px;letter-spacing:1px;">
     <th style="padding:8px;">COMPETÊNCIA</th><th style="padding:8px;">STATUS</th><th style="padding:8px;text-align:right;">COLABORADORES</th><th style="padding:8px;text-align:right;">HORAS</th><th style="padding:8px;text-align:right;">TOTAL</th><th style="padding:8px;">GRAVADA EM</th><th style="padding:8px;">ENVIADA AO FINANCEIRO</th></tr></thead><tbody>
@@ -36701,7 +36730,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.420] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.421] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36717,7 +36746,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.420';
+window.__ATX_BUILD_ID__ = 'ATX-v3.421';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

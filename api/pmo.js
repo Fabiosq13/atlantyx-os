@@ -1115,7 +1115,7 @@ function _pagResposta(D, mes, hoje) {
   return { mes, mes_label: PAG.mesLabel(mes), mes_anterior: PAG.mesAnterior(hoje), gravada: PAG.gravada(D.st, mes), status: (H.find(x => x.mes === mes) || { status: 'não gravada' }).status,
     snap: fo.snap ? { em: fo.snap.em, por: fo.snap.por, versao: fo.snap.versao } : null, atualizado_em: fo.atualizadoEm || null, por: fo.por || '',
     copiado_de: fo.copiado_de || null, copiado_de_label: fo.copiado_de ? PAG.mesLabel(fo.copiado_de) : null, copiado_em: fo.copiado_em || null,
-    linhas: L, totais: PAG.totais(L), historico: H, analistas: D.ana.length };
+    linhas: L, totais: PAG.totais(L), historico: H, analistas: D.ana.length, pagamentos: fo.pagamentos || {}, pagos: PAG.resumoPagos(L, fo.pagamentos) };
 }
 async function pagColab({ op = 'ler', mes, id, campo, valor, para, pdf } = {}, req) {
   const s = await _pagAdmin(req), quem = s?.nome || s?.login || '';
@@ -1123,13 +1123,16 @@ async function pagColab({ op = 'ler', mes, id, campo, valor, para, pdf } = {}, r
   mes = /^\d{4}-\d{2}$/.test(String(mes || '')) ? String(mes) : PAG.mesAnterior(hoje);
   const crono = await getSqlCrono();
   // v3.414: mês recente aberto pela 1ª vez (sem folha) → copia do mês anterior todos os dados; "copiar_anterior" força
-  if (op === 'ler' && mes >= hoje.slice(0, 7)) { // só o mês corrente (ou futuro): o mês anterior segue os apontamentos const D0 = await _pagLer(crono); if (PAG.vazia(D0.st, mes) && !PAG.gravada(D0.st, mes))
+  // só o mês corrente (ou futuro): o mês anterior segue os apontamentos
+  if (op === 'ler' && mes >= hoje.slice(0, 7)) { const D0 = await _pagLer(crono); if (PAG.vazia(D0.st, mes) && !PAG.gravada(D0.st, mes))
     try { await _pagMudar(crono, D => PAG.copiarDoAnterior(D.st, D.ana, D.apts, mes, quem).st); } catch (e) { console.warn('[pag_colab] copiar do mês anterior:', e.message); } }
   if (op === 'copiar_anterior') await _pagMudar(crono, D => PAG.copiarDoAnterior(D.st, D.ana, D.apts, mes, quem, true).st);
   else if (op === 'editar') await _pagMudar(crono, D => PAG.editarCampo(D.st, mes, String(id || ''), campo, valor, quem));
   else if (op === 'recalcular') await _pagMudar(crono, D => PAG.recalcular(D.st, mes, quem));
   else if (op === 'gravar') await _pagMudar(crono, D => PAG.gravar(D.st, mes, PAG.linhasVivas(D.ana, D.apts, D.st, mes), quem));
   else if (op === 'reabrir') await _pagMudar(crono, D => PAG.reabrir(D.st, mes, quem));
+  else if (op === 'pagar') await _pagMudar(crono, D => PAG.marcarPago(D.st, D.ana, D.apts, mes, String(id || ''), valor, quem)); // v3.421: confirmação de pagamento
+  else if (op === 'pagar_todos') await _pagMudar(crono, D => PAG.marcarTodosPagos(D.st, D.ana, D.apts, mes, valor, quem));
   else if (op === 'email') {
     const dest = String(para || '').split(/[;,\s]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
     if (!dest.length || dest.length > 5) { const e = new Error('Informe de 1 a 5 destinatários.'); e.status = 400; throw e; }
@@ -1150,7 +1153,7 @@ async function pagColab({ op = 'ler', mes, id, campo, valor, para, pdf } = {}, r
     await enviarEmailGmail({ para: dest, assunto: `Pagamento colaboradores — ${lab} — ${brl(T.total)}`, html, remetente: 'Atlantyx OS Financeiro',
       anexos: buf ? [{ filename: `pagamento_colaboradores_${mes}.pdf`, content: buf, contentType: 'application/pdf' }] : [] });
     await _pagMudar(crono, X => PAG.registrarEnvio(X.st, mes, dest.join(', '), quem, T.total));
-  } else if (op !== 'ler' && op !== 'copiar_anterior') { const e = new Error('op inválida'); e.status = 400; throw e; }
+  } else if (!['ler', 'copiar_anterior', 'pagar', 'pagar_todos'].includes(op)) { const e = new Error('op inválida'); e.status = 400; throw e; }
   return _pagResposta(await _pagLer(crono), mes, hoje);
 }
 
