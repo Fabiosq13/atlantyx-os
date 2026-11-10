@@ -8663,7 +8663,9 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // QuickBooks vence
   const desde = _diasMais(mesHoje + '-01', -75), faturas = await _rpFaturasQB(desde);
   if (!faturas) avisos.push('QuickBooks indisponível: a agenda não pôde ser conferida com as faturas reais (nada foi descartado).');
-  for (const o of oc) o.status = o.status_manual === 'recebida' ? 'recebida' : o.status_manual === 'cancelada' ? 'cancelada' : null;
+  // v3.434: não zera o que os passos anteriores já cobriram (termo de sustentação, marco que virou termo) — antes a linha
+  // abaixo apagava o status e a previsão voltava a contar mesmo com coberta_por preenchido
+  for (const o of oc) o.status = o.status_manual === 'recebida' ? 'recebida' : o.status_manual === 'cancelada' ? 'cancelada' : o.coberta_por ? 'coberta' : null;
   // v3.221: previsão ligada à mão a uma fatura ("já faturada → fatura nº") — o QuickBooks manda, a previsão sai
   for (const o of oc) { const a = aj[o.id]; if (!a?.fatura) continue;
     const f = (faturas || []).find(x => String(x.doc) === String(a.fatura) || String(x.id) === String(a.fatura));

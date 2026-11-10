@@ -33017,12 +33017,19 @@ function _arTodas(D) {
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
   const mesesTodos = [...new Set(L.map(x => x.mes))].sort((a, b) => a === 'antes' ? -1 : b === 'antes' ? 1 : a.localeCompare(b));
   const nomeMes = m => m === 'antes' ? 'Em aberto de antes de ' + M[+m1.slice(5, 7) - 1] + '/' + m1.slice(0, 4) : M[+m.slice(5, 7) - 1] + '/' + m.slice(0, 4) + (m === m1 ? ' · M-1' : m === (D.hoje || '').slice(0, 7) ? ' · M0 (mês atual)' : '');
+  const qB = (_ar.busca || '').toLowerCase().trim(); if (qB) L = L.filter(x => [x.cliente, x.desc, x.termo].join(' ').toLowerCase().includes(qB));
   if (_ar.fMes) L = L.filter(x => x.mes === _ar.fMes);
   if (_ar.fTermo === '__com') L = L.filter(x => x.termo); else if (_ar.fTermo === '__sem') L = L.filter(x => !x.termo); else if (_ar.fTermo) L = L.filter(x => String(x.termo) === _ar.fTermo);
   const sel = (id, v, ops, fn) => '<select class="fsel" style="font-size:10.5px;width:auto;min-width:170px;display:inline-block;" onchange="' + fn + '(this.value)">' + ops.map(([k, t]) => '<option value="' + _arE(k) + '"' + (String(v) === String(k) ? ' selected' : '') + '>' + _arE(t) + '</option>').join('') + '</select>';
   const filtros = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 4px;font-size:10.5px;color:var(--t3);">Mês ' + sel('m', _ar.fMes, [['', 'Todos (M-1 em diante)']].concat(mesesTodos.map(m => [m, nomeMes(m)])), 'arFiltroMes')
     + ' Termo ' + sel('t', _ar.fTermo, [['', 'Todos'], ['__com', 'Só com termo'], ['__sem', 'Sem termo']].concat(termos.map(t => [t, 'Termo ' + t])), 'arFiltroTermo')
+    + ' Buscar <input class="fi" style="width:170px;font-size:10.5px;display:inline-block;" placeholder="ex.: xplann" value="' + _arE(_ar.busca || '') + '" onchange="_ar.busca=this.value;arRender()"/>'
     + '<span>QuickBooks = faturado (vale sempre); agenda = previsão ainda sem fatura.</span></div>';
+  // v3.434: na busca, mostra também o que saiu da conta e POR QUÊ (substituído por termo/fatura/regra, cancelado…)
+  const fora = qB ? (D.ocorrencias || []).filter(o => !['prevista', 'atrasada'].includes(o.status) && [o.cliente, o.projeto, o.descricao, o.termo].join(' ').toLowerCase().includes(qB)).sort((a, b) => a.data.localeCompare(b.data)) : [];
+  const foraHtml = fora.length ? '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:700;border-bottom:1px solid var(--bd);padding-bottom:4px;">Fora da conta com "' + _arE(qB) + '" (' + fora.length + ')</div>' + fora.map(o => { const c = o.coberta_por || {};
+      return '<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);">' + _arDt(o.data) + ' · <b>' + _arE(o.cliente || o.projeto) + '</b> · ' + _arE(o.descricao) + ' · ' + _arR(o.valor) + ' <span style="color:var(--t3);">→ ' + _arE(o.status) + (c.substituida_por ? ' por ' + _arE(c.substituida_por) + (c.regra ? ' (' + _arE(c.regra) + ')' : '') : c.fatura ? ' pela fatura ' + _arE(c.fatura) + (c.casou_por ? ' (' + _arE(c.casou_por) + ')' : '') : c.termo ? ' pelo termo ' + _arE(c.termo) : c.recorrente ? ' pelo recorrente QuickBooks' : '') + (o._sombra ? ' · mês anterior' : '') + '</span>'
+        + (o.status === 'coberta' && !o._sombra ? ' <button class="btn btn-g" style="font-size:9px;padding:1px 6px;" title="Desfazer ajuste manual desta previsão" onclick="arOcLimpar(\'' + _arE(o.id) + '\')">↺</button>' : '') + '</div>'; }).join('') + '</div>' : '';
   const g = {}; L.forEach(x => (g[x.mes] = g[x.mes] || []).push(x));
   const sit = x => x.tipo === 'qb' ? (x.situacao === 'recebida' ? ['✓ recebida', 'var(--green)'] : x.situacao === 'vencida' ? ['⚠ vencida em aberto', 'var(--red)'] : ['faturada · a receber', 'var(--blue)']) : (_arSt[x.situacao] || [x.situacao, 'var(--t2)']);
   const soma = (l, f) => l.filter(f).reduce((t, x) => t + (Number(x.tipo === 'qb' && x.situacao !== 'recebida' ? x.saldo : x.valor) || 0), 0);
@@ -33035,7 +33042,7 @@ function _arTodas(D) {
           + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + (x.retencao ? '<div style="font-size:9px;color:var(--t3);font-weight:400;" title="O saldo aberto no QuickBooks é a retenção de impostos — a fatura foi paga pelo líquido">retenção ' + _arR(x.retencao.valor) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' + (x.origem === 'marco' ? ' <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Este marco já está num termo do Kanban de Faturamento: vale o termo" onclick="arMarcoTermo(\'' + _arE(x.id) + '\')">→ Termo</button>' : '') : '') + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
-  return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
+  return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + foraHtml + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
 }
 // v3.426: modelos recorrentes de RECEITA do QuickBooks — fora por padrão (valem os recorrentes do sistema); liga/desliga um a um
 function _arQbRec(D) {
@@ -37005,7 +37012,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.433] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.434] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37021,7 +37028,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.433';
+window.__ATX_BUILD_ID__ = 'ATX-v3.434';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

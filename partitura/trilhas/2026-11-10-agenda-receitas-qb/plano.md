@@ -25,3 +25,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.432 · ✅ entregue · caso MP4 Oficial_Cadastro no termo 3
 - [x] v3.433: rateio da fatura vem do termo DELA (pelo id da fatura/NF no termo, não pelo nº do termo, que se repete entre projetos) e mostra as notas carregadas no termo (PDF/XML) com valor
 - 2026-11-10 · v3.433 · ✅ entregue · caso termo 3 Projeto Cadastro (NF 217, 218, 219, 222, 223)
+- [x] v3.434: status "coberta" dos passos de termo (sustentação e marco→termo) não é mais zerado; busca na aba Todas mostra também o que saiu da conta e por quê (diagnóstico do caso Xplann)
+- 2026-11-10 · v3.434 · ✅ entregue · aguardando o fundador buscar "xplann"
