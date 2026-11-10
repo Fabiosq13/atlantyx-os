@@ -33034,7 +33034,7 @@ function _arTodas(D) {
           + '<td><b>' + _arE(x.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(x.desc) + '</div></td><td style="white-space:nowrap;">' + (x.termo ? '<span class="nbx bl" style="font-size:9px;">Termo ' + _arE(x.termo) + '</span>' : '') + '</td>'
           + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + (x.retencao ? '<div style="font-size:9px;color:var(--t3);font-weight:400;" title="O saldo aberto no QuickBooks é a retenção de impostos — a fatura foi paga pelo líquido">retenção ' + _arR(x.retencao.valor) + '</div>' : '') + '</td>'
-          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
+          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' + (x.origem === 'marco' ? ' <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Este marco já está num termo do Kanban de Faturamento: vale o termo" onclick="arMarcoTermo(\'' + _arE(x.id) + '\')">→ Termo</button>' : '') : '') + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
   return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
 }
 // v3.426: modelos recorrentes de RECEITA do QuickBooks — fora por padrão (valem os recorrentes do sistema); liga/desliga um a um
@@ -33105,6 +33105,8 @@ async function _arAj(body, msg) { try { await finApi('receita_ocorrencia_ajustar
 function arOcStatus(id, st) { const nota = st === 'cancelada' ? prompt('Motivo do cancelamento (opcional):', '') : ''; if (nota === null) return; _arAj({ id, status: st, nota }, st === 'recebida' ? 'Marcada como recebida' : 'Previsão cancelada'); }
 // v3.221: previsão que já virou fatura no QuickBooks — liga ao nº da fatura e sai da previsão (o QuickBooks passa a valer)
 function arOcFatura(id) { const n = prompt('Esta previsão já foi faturada? Informe o nº da fatura no QuickBooks (ex.: 202):', ''); if (!n || !n.trim()) return; _arAj({ id, fatura: n.trim() }, 'Ligada à fatura ' + n.trim() + ' — a previsão sai e vale o QuickBooks'); }
+async function arMarcoTermo(id) { const n = prompt('Este marco já foi para qual termo do Kanban de Faturamento? Informe o nº do termo (ex.: 3):', ''); if (!n || !n.trim()) return;
+  try { const r = await finApi('marco_ligar_termo', { marco_id: id, numero: n.trim() }); toast('Marco ligado ao termo ' + r.numero + ' — o marco sai e vale o termo', 'success'); await arCarregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 function arOcLimpar(id) { _arAj({ id, limpar: true }, 'Ajuste desfeito'); }
 function arOcAjustar(id) { const o = (_ar.d?.ocorrencias || []).find(x => x.id === id); if (!o) return;
   const v = prompt('Valor previsto (R$) para ' + o.cliente + ' — ' + o.descricao + ':', String(o.valor).replace('.', ',')); if (v === null) return;
@@ -37003,7 +37005,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.431] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.432] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37019,7 +37021,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.431';
+window.__ATX_BUILD_ID__ = 'ATX-v3.432';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

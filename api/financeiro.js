@@ -200,6 +200,7 @@ async function handler(req, res) {
       rp_regras_salvar:           () => rpRegrasSalvar(params),     // v3.427
       inv_prev_receb:             () => invPrevReceb(params),       // v3.428
       qb_fatura_datas:            () => qbFaturaDatas(params),      // v3.429
+      marco_ligar_termo:          () => marcoLigarTermo(params),    // v3.432
       receita_manual_salvar:      () => receitaManualSalvar(params),
       receita_manual_excluir:     () => receitaManualExcluir(params),
       receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
@@ -6667,6 +6668,18 @@ function casarMarcosTermos(marcos, termos) {
   const usados = new Map(), mesmoProj = (a, b) => a && b && (a.includes(b) || b.includes(a)), perto = (v, alvo) => alvo > 0 && Math.abs(v - alvo) <= Math.max(1, alvo * 0.02);
   const pega = (m, t, motivo) => usados.set(String(m.id), { marco_id: String(m.id), marco: m.descricao || 'Marco', projeto: m.projeto_nome, valor: num(m.valor), termo_id: t.id, termo: t.numero, motivo });
   const sobra = [];
+  // v3.432: CÓDIGO DO MARCO no termo ("MP3 e MP4", "MP3/MP4", "MP5 - Classe…") casa direto, inclusive quando o nome do projeto
+  // no termo é diferente do Kanban de Marcos ("Projeto Cadastro" × "Oficial_Cadastro") — basta uma palavra forte em comum.
+  const _GEN = new Set(['projeto', 'projetos', 'oficial', 'fase', 'sustentacao', 'implantacao', 'servicos', 'servico', 'consultoria', 'desenvolvimento']);
+  const fortes = x => String(x || '').split(' ').filter(w => w.length >= 5 && !_GEN.has(w));
+  const projFraco = (a, b) => { const A = fortes(a), B = new Set(fortes(b)); return A.some(w => B.has(w)); };
+  const codigos = txt => { const out = new Set(); const re = /\bmp\s*(\d{1,2}(?:\s*(?:e|,|\/|-|a)\s*(?:mp\s*)?\d{1,2})*)/g; let r; while ((r = re.exec(txt))) (r[1].match(/\d{1,2}/g) || []).forEach(n => out.add(String(+n))); return out; };
+  const codMarco = m => { const r = /^\s*mp\s*(\d{1,2})\b/.exec(_normDesp(m.descricao)); return r ? String(+r[1]) : null; };
+  for (const t of termos) {
+    const cs = codigos(t.txt); if (!cs.size) continue;
+    const L = marcos.filter(m => !usados.has(String(m.id)) && cs.has(codMarco(m)) && (mesmoProj(_normDesp(m.projeto_nome), t.p) || projFraco(_normDesp(m.projeto_nome), t.p)));
+    L.forEach(m => pega(m, t, 'código do marco (MP' + codMarco(m) + ') no termo'));
+  }
   for (const t of termos) {
     const lim = t.em ? _diasMais(t.em, 60) : null;
     const cand = marcos.filter(m => !usados.has(String(m.id)) && mesmoProj(_normDesp(m.projeto_nome), t.p) && (!lim || !m.data_entrega || _dStr(m.data_entrega) <= lim))
@@ -9827,6 +9840,13 @@ async function marcosVincularTermo({ ids = [], termo_id, numero } = {}) {
   return { vinculados: ids.length };
 }
 
+// v3.432: na Agenda de Receitas — "este marco já está no termo N": liga à mão; o marco sai e vale o termo (ou a fatura dele)
+async function marcoLigarTermo({ marco_id, numero } = {}) {
+  const mid = String(marco_id || '').replace(/^mrc_/, ''), n = String(numero || '').trim(); if (!mid || !n) throw Object.assign(new Error('marco e nº do termo obrigatórios'), { status: 400 });
+  const sql = await getSql(); const t = (await sql`SELECT id, numero_termo FROM termos_faturamento WHERE TRIM(numero_termo) = ${n} AND COALESCE(status,'') <> 'cancelado' ORDER BY criado_em DESC LIMIT 1`)[0];
+  if (!t) throw new Error('Termo ' + n + ' não encontrado no Kanban de Faturamento');
+  const r = await marcosVincularTermo({ ids: [mid], termo_id: t.id, numero: t.numero_termo }); _rpCache.v = null; return { ...r, termo_id: t.id, numero: t.numero_termo };
+}
 async function marcosKanban({ projeto_id } = {}) {
   const sql = await getSql();
   const rows = projeto_id

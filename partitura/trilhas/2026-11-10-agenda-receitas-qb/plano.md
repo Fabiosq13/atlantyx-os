@@ -21,3 +21,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.430 · ✅ entregue
 - [x] v3.431: fatura com saldo = retenção de impostos conta como recebida na agenda (2ª consulta trazia de volta como vencida); rateio mostra só a nota da própria fatura, com link para o termo inteiro
 - 2026-11-10 · v3.431 · ✅ entregue
+- [x] v3.432: marco virou termo → vale o termo: casamento pelo código do marco no termo (MP3 e MP4…) mesmo com nome de projeto diferente; botão "→ Termo" no marco da agenda liga à mão (kv fin:marco_termo)
+- 2026-11-10 · v3.432 · ✅ entregue · caso MP4 Oficial_Cadastro no termo 3
