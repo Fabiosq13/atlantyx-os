@@ -8548,9 +8548,12 @@ async function _rpFaturasQB(desde) {
   try { const token = await qbToken();
     const [a, b] = await Promise.all([qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token), qbQuery(`select * from Invoice where TxnDate >= '${desde}' maxresults 1000`, token)]);
     const m = new Map(); [...(a?.QueryResponse?.Invoice || []), ...(b?.QueryResponse?.Invoice || [])].forEach(i => m.set(i.Id, i)); const pv = await _invPrevMap();
-    return [...m.values()].map(i => ({ id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: (num(i.Balance) > 0 && pv[String(i.Id)]) || i.DueDate || i.TxnDate, venc_qb: i.DueDate || i.TxnDate, prev_receb: num(i.Balance) > 0 ? pv[String(i.Id)] || null : null, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+    // v3.431: saldo que é só a RETENÇÃO de impostos (cliente pagou o líquido, ex.: 6,15%) = fatura paga — antes a 2ª consulta
+    // (sem filtro de saldo) trazia de volta essas faturas como "vencida em aberto" na agenda
+    return [...m.values()].map(i => { const bal = num(i.Balance), ret = bal > 0 ? _retencaoProvavel(bal, num(i.TotalAmt)) : null, saldo = ret ? 0 : bal; return {
+      id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: (saldo > 0 && pv[String(i.Id)]) || i.DueDate || i.TxnDate, venc_qb: i.DueDate || i.TxnDate, prev_receb: saldo > 0 ? pv[String(i.Id)] || null : null, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo, retencao: ret ? { valor: round(bal), tipo: ret } : null,
       // v3.221: texto da fatura (linhas, memorando) — casa a previsão pelo assunto quando o cliente foi cadastrado com outro nome
-      texto: [i.CustomerRef?.name, i.CustomerMemo?.value, i.PrivateNote, ...(i.Line || []).map(l => [l.Description, l.SalesItemLineDetail?.ItemRef?.name].join(' '))].filter(Boolean).join(' ') }));
+      texto: [i.CustomerRef?.name, i.CustomerMemo?.value, i.PrivateNote, ...(i.Line || []).map(l => [l.Description, l.SalesItemLineDetail?.ItemRef?.name].join(' '))].filter(Boolean).join(' ') }; });
   } catch (_) { return null; }
 }
 // v3.411: entre previsões candidatas a uma fatura, a de valor mais próximo; empate → a de data mais próxima da fatura
@@ -8761,7 +8764,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     faturasQB = faturas.filter(f => String(f.emissao || f.data || '') >= mesM1 + '-01' || f.saldo > 0).map(f => {
       const tx = String(f.texto || '').match(/termo\s*(?:n[º°o.]*\s*)?([0-9][0-9./-]*)/i);
       const termo = termoDe['id:' + f.id] || termoDe['doc:' + f.doc] || (cobre[f.id] || []).map(c => c.termo).find(Boolean) || (tx ? tx[1].replace(/[./-]$/, '') : null);
-      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [], rateio: termo && rateioPorTermo[termo] ? rateioPorTermo[termo].itens : null, termo_id: termo && rateioPorTermo[termo] ? rateioPorTermo[termo].termo_id : null };
+      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, venc_qb: f.venc_qb, prev_receb: f.prev_receb, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [], retencao: f.retencao || null, rateio: termo && rateioPorTermo[termo] ? rateioPorTermo[termo].itens.map(r => ({ ...r, esta: String(r.qb_invoice_id || '') === String(f.id) || (!!r.qb_doc && String(r.qb_doc) === String(f.doc)) || (!!r.nf && String(r.nf) === String(f.doc)) })) : null, termo_id: termo && rateioPorTermo[termo] ? rateioPorTermo[termo].termo_id : null };
     }).sort((a, b) => String(a.vencimento || a.emissao).localeCompare(String(b.vencimento || b.emissao)));
   }
   { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411

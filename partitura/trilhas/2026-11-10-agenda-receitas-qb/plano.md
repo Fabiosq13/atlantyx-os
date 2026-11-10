@@ -19,3 +19,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.429 · ✅ entregue · caso termo 3 / fatura 217 (emissão 23/10, vencimento 23/11)
 - [x] v3.430: marco que já virou termo (mesmo projeto e valor ±1%) sai da agenda; vale a data do termo (caso MP5 / termo 38)
 - 2026-11-10 · v3.430 · ✅ entregue
+- [x] v3.431: fatura com saldo = retenção de impostos conta como recebida na agenda (2ª consulta trazia de volta como vencida); rateio mostra só a nota da própria fatura, com link para o termo inteiro
+- 2026-11-10 · v3.431 · ✅ entregue

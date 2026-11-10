@@ -33011,7 +33011,7 @@ function arRender() {
 function _arTodas(D) {
   const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
   const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
-    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb, rateio: f.rateio, termo_id: f.termo_id, doc: f.doc }; });
+    return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb, rateio: f.rateio, termo_id: f.termo_id, doc: f.doc, retencao: f.retencao }; });
   const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
   let L = F.concat(P);
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
@@ -33033,7 +33033,7 @@ function _arTodas(D) {
         return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(x.data) + (x.tipo === 'qb' && x.emissao ? '<div style="font-size:9px;color:var(--t3);">emitida ' + _arDt(x.emissao) + '</div>' : '') + (x.prev_receb ? '<div style="font-size:9px;color:var(--gold);" title="Previsão de recebimento ajustada por você; o vencimento no QuickBooks não mudou">venc. QB ' + _arDt(x.venc_qb) + '</div>' : '') + (x.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(x.data_prevista) + '</div>' : '') + '</td>'
           + '<td><b>' + _arE(x.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(x.desc) + '</div></td><td style="white-space:nowrap;">' + (x.termo ? '<span class="nbx bl" style="font-size:9px;">Termo ' + _arE(x.termo) + '</span>' : '') + '</td>'
           + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
-          + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + '</td>'
+          + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + (x.retencao ? '<div style="font-size:9px;color:var(--t3);font-weight:400;" title="O saldo aberto no QuickBooks é a retenção de impostos — a fatura foi paga pelo líquido">retenção ' + _arR(x.retencao.valor) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' : '') + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
   return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
 }
@@ -33068,11 +33068,14 @@ async function arQbRec(id, usar) {
 }
 // v3.429: rateio do termo por nota fiscal/empresa, aberto embaixo da fatura
 function _arRateio(x) {
-  const R = x.rateio; if (!R || !R.length) return '';
-  const tot = R.reduce((t, r) => t + (Number(r.valor) || 0), 0);
+  const T = x.rateio; if (!T || !T.length) return '';
+  // v3.431: mostra só a(s) nota(s) DESTA fatura; o termo inteiro abre no clique
+  const minhas = T.filter(r => r.esta), aberto = (_ar.rtAberto || {})[x.id], R = aberto || !minhas.length ? T : minhas;
+  const tot = R.reduce((t, r) => t + (Number(r.valor) || 0), 0), todo = R === T;
+  const rodape = '<tr style="background:var(--bg3);"><td></td><td colspan="4" style="font-size:9.5px;color:var(--t3);padding:3px 0 5px 12px;">' + (todo ? 'Rateio do termo ' + _arE(x.termo) + ': ' + T.length + ' nota(s)' + (Math.abs(tot - x.valor) > 1 && !minhas.length ? ' · <span style="color:var(--gold);">soma ' + _arR(tot) + ' ≠ fatura ' + _arR(x.valor) + '</span>' : '') : 'Nota desta fatura no termo ' + _arE(x.termo))
+    + (minhas.length && T.length > minhas.length ? ' · <a href="#" style="color:var(--blue);" onclick="event.preventDefault();_ar.rtAberto=_ar.rtAberto||{};_ar.rtAberto[\'' + _arE(x.id) + '\']=' + (aberto ? 'false' : 'true') + ';arRender();">' + (aberto ? 'mostrar só esta fatura' : 'ver as ' + T.length + ' notas do termo') + '</a>' : '') + '</td><td style="text-align:right;font-size:10px;font-weight:600;">' + _arR(tot) + '</td><td></td></tr>';
   return R.map(r => '<tr style="background:var(--bg3);"><td style="padding:3px 4px 3px 14px;font-size:9.5px;color:var(--t3);white-space:nowrap;">' + (r.nf_data ? 'NF de ' + _arDt(r.nf_data) : '') + '</td><td style="font-size:10px;padding-left:12px;">↳ ' + _arE(r.empresa || '—') + '</td><td style="font-size:9.5px;">' + (r.nf ? 'NF ' + _arE(r.nf) : '<span style="color:var(--gold);">sem NF</span>') + '</td>'
-    + '<td style="font-size:9.5px;color:var(--t3);">' + (r.qb_doc ? 'fatura ' + _arE(r.qb_doc) : '') + '</td><td style="font-size:9.5px;color:' + (r.pagamento === 'pago' ? 'var(--green)' : 'var(--t3)') + ';">' + _arE(r.pagamento || '') + (r.pagamento_data ? ' ' + _arDt(r.pagamento_data) : '') + '</td><td style="text-align:right;font-size:10px;">' + _arR(r.valor) + '</td><td></td></tr>').join('')
-    + '<tr style="background:var(--bg3);"><td></td><td colspan="4" style="font-size:9.5px;color:var(--t3);padding:3px 0 5px 12px;">Rateio do termo ' + _arE(x.termo) + ': ' + R.length + ' nota(s)' + (Math.abs(tot - x.valor) > 1 ? ' · <span style="color:var(--gold);">soma ' + _arR(tot) + ' ≠ fatura ' + _arR(x.valor) + '</span>' : '') + '</td><td style="text-align:right;font-size:10px;font-weight:600;">' + _arR(tot) + '</td><td></td></tr>';
+    + '<td style="font-size:9.5px;color:var(--t3);">' + (r.qb_doc ? 'fatura ' + _arE(r.qb_doc) : '') + '</td><td style="font-size:9.5px;color:' + (r.pagamento === 'pago' ? 'var(--green)' : 'var(--t3)') + ';">' + _arE(r.pagamento || '') + (r.pagamento_data ? ' ' + _arDt(r.pagamento_data) : '') + '</td><td style="text-align:right;font-size:10px;">' + _arR(r.valor) + '</td><td></td></tr>').join('') + rodape;
 }
 function arInvDatas(id) {
   const f = (_ar.d?.faturas_qb || []).find(z => String(z.id) === String(id)); if (!f) return; document.getElementById('arDatasModal')?.remove();
@@ -37000,7 +37003,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.430] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.431] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37016,7 +37019,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.430';
+window.__ATX_BUILD_ID__ = 'ATX-v3.431';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
