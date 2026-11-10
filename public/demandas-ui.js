@@ -8,6 +8,7 @@
   const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const nota = (m, t) => { try { toast(m, t || 'success'); } catch (_) {} };
   let D = { demandas: [], config: {}, ultimo_ciclo: null, ultima_noite: null, github: true }, filtro = 'todas';
+  const SEL = new Set();   // v3.424: cards marcados para a especificação única
 
   async function api(action, body = {}) {
     const r = await fetch('/api/agente-ideias', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) });
@@ -18,7 +19,7 @@
     ['sugerida', '💡 Sugeridas — aguardando você', 'var(--gold)'],
     ['aprovada', '✅ Aprovadas', 'var(--green)'],
     ['em_execucao', '⚙ Em implementação', 'var(--blue)'],
-    ['implementada', '🚀 Implementadas / corrigidas', 'var(--green)'],
+    ['implementada', '🚀 Concluídas / implementadas', 'var(--green)'],
     ['recusada', '✕ Recusadas e arquivadas', 'var(--t3)'],
   ];
   const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
@@ -119,6 +120,7 @@
         <button class="btn btn-g" style="font-size:10.5px;" onclick="DEM.carregar(true)">↻ Atualizar</button>
         <button class="btn btn-p" style="font-size:10.5px;" id="demBtnPensar" onclick="DEM.pensar()">🧠 Pensar agora</button>
       </div>
+      <div id="demSelBar" style="display:none;"></div>
       <div id="demKanban" style="display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:10px;overflow-x:auto;"></div>`;
     carregar();
   }
@@ -155,7 +157,32 @@
         ${itens.map(card).join('') || '<div style="font-size:10px;color:var(--t3);text-align:center;padding:14px 0;">—</div>'}</div>`;
     }).join('');
     const n = (D.demandas || []).filter(d => d.status === 'sugerida').length; const b = $('demCnt'); if (b) b.textContent = n || '';
-    renderBatida();
+    renderBatida(); selBar();
+  }
+  // v3.424 · SPEC PARA O CLAUDE: 1 clique no card copia a especificação; marcando vários, gera uma só com todos. Gerado → Concluídas.
+  function marcar(id, on) { on ? SEL.add(id) : SEL.delete(id); selBar(); }
+  function limparSel() { SEL.clear(); render(); }
+  function selBar() {
+    const b = $('demSelBar'); if (!b) return; [...SEL].forEach(id => { if (!(D.demandas || []).some(d => d.id === id)) SEL.delete(id); });
+    if (!SEL.size) { b.style.display = 'none'; b.innerHTML = ''; return; }
+    b.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:rgba(79,124,255,.1);border:1px solid rgba(79,124,255,.35);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;';
+    b.innerHTML = `<b>${SEL.size} card(s) marcado(s)</b><span style="color:var(--t2);">a especificação junta todos, na ordem em que foram marcados</span><span style="flex:1;"></span>
+      <button class="btn btn-p" style="font-size:10.5px;" onclick="DEM.spec()">📋 Gerar especificação única para o Claude</button><button class="btn btn-g" style="font-size:10.5px;" onclick="DEM.limparSel()">Limpar</button>`;
+  }
+  async function spec(ids) {
+    ids = ids && ids.length ? ids : [...SEL]; if (!ids.length) return nota('Marque ao menos um card', 'error');
+    const tit = ids.length === 1 ? ((D.demandas || []).find(d => d.id === ids[0])?.titulo || '') : ids.length + ' demandas';
+    let r; try { r = await api('spec_claude', { ids }); } catch (e) { return nota(e.message, 'error'); }
+    let copiou = false; try { await navigator.clipboard.writeText(r.texto); copiou = true; } catch (_) {}
+    ids.forEach(id => SEL.delete(id));
+    const m = modal(`<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--bd);"><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">📋 Especificação para o Claude — ${esc(tit)}</div>
+        <div style="font-size:10.5px;color:var(--t2);">${copiou ? '<b style="color:var(--green);">Copiada.</b> ' : ''}Cole no Claude Code (no repositório atlantyx-os) ou numa conversa do Claude. ${r.qtd} card(s) movido(s) para <b>Concluídas</b>.</div></div>
+        <button class="btn btn-gn" id="demSpecCopiar">Copiar</button><button class="btn btn-g" id="demSpecBaixar">Baixar .md</button><button class="btn btn-g" onclick="document.getElementById('demModal').remove()">✕</button></div>
+      <div style="padding:12px 18px;"><textarea class="fta" id="demSpecTxt" style="min-height:55vh;font-family:var(--M);font-size:11px;line-height:1.5;" readonly></textarea></div>`);
+    const ta = m.querySelector('#demSpecTxt'); ta.value = r.texto;
+    m.querySelector('#demSpecCopiar').onclick = () => { navigator.clipboard?.writeText(ta.value).then(() => nota('Copiada')).catch(() => { ta.select(); document.execCommand('copy'); nota('Copiada'); }); };
+    m.querySelector('#demSpecBaixar').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ta.value], { type: 'text/markdown' })); a.download = 'spec-claude-' + new Date().toISOString().slice(0, 10) + '.md'; a.click(); };
+    await carregar();
   }
   // ── v3.145 · 🥁 BATIDA — trilhas ativas, bloqueios, paralelismo, métricas e fases da implantação ──
   const NAIPE_COR = { T1: '#4f7cff', T2: '#f5a623', T3: '#22d3a3', T4: '#b98cff', T5: '#ff7aa8', T6: '#00c4cc' };
@@ -210,13 +237,14 @@
     const x = d.dados || {}; const qa = d.squad === 'qa';
     const n = qa ? (x.achados_qa || []).length + (x.achados_seguranca || []).length : 0;
     return `<div onclick="DEM.detalhe('${d.id}')" style="background:var(--bg3);border:1px solid ${d.status === 'sugerida' ? 'rgba(245,166,35,.45)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer;">
-      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:${qa ? 'rgba(156,109,255,.18);color:#b9a0ff' : x.origem === 'fundador' ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(79,124,255,.15);color:var(--blue)'};">${qa ? '🌙 QA madrugada' : x.origem === 'fundador' ? '✍ Fundador' : x.origem === 'fabrica' ? '🏭 ' + esc(x.fabrica?.nome || 'Fábrica') : '💡 Produto'}</span>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><input type="checkbox" title="Marcar para uma especificação única com vários cards" ${SEL.has(d.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="DEM.marcar('${d.id}',this.checked)" style="margin:0;cursor:pointer;"/><span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:${qa ? 'rgba(156,109,255,.18);color:#b9a0ff' : x.origem === 'fundador' ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(79,124,255,.15);color:var(--blue)'};">${qa ? '🌙 QA madrugada' : x.origem === 'fundador' ? '✍ Fundador' : x.origem === 'fabrica' ? '🏭 ' + esc(x.fabrica?.nome || 'Fábrica') : '💡 Produto'}</span>
         ${camposAlterados(d).length ? '<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(245,166,35,.18);color:var(--gold);" title="Há uma versão alterada aguardando sua aprovação — abra para ver o que mudou">⚠ alterado</span>' : ''}
         ${qa ? '' : chipTrilha(x.bpm?.trilha, true)}${x.area ? `<span style="font-size:8.5px;color:var(--t3);">${esc(x.area)}</span>` : ''}<span style="flex:1;"></span><span style="font-size:8.5px;color:var(--t3);">${quando(d.criado_em)}</span></div>
       <div style="font-size:11px;font-weight:600;line-height:1.35;">${esc(d.titulo)}</div>
       <div style="font-size:9.5px;color:var(--t2);margin-top:3px;">${qa ? n + ' erro(s)' : `<span style="color:var(--gold);" title="impacto">${estrelas(x.impacto || d.prioridade)}</span> · esforço ${esc(x.esforco || '?')} · risco ${esc(x.risco || '?')}`}</div>
       ${d.issue_numero ? `<div style="font-size:9.5px;margin-top:3px;"><a href="${esc(d.issue_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">tarefa #${d.issue_numero}</a>${x.pr ? ` · <a href="${esc(x.pr.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">PR #${x.pr.numero}${x.pr.merged ? ' ✓ no ar' : ''}</a>` : ''}</div>` : ''}
       ${andamento(d)}
+      <div style="display:flex;gap:4px;align-items:center;margin-top:5px;"><button class="btn btn-g" style="font-size:9px;padding:2px 7px;" title="Gera a especificação deste card para rodar no Claude e move para Concluídas" onclick="event.stopPropagation();DEM.spec(['${d.id}'])">📋 Spec p/ Claude</button>${x.spec_claude ? `<span style="font-size:8.5px;color:var(--green);">spec gerada ${quando(x.spec_claude.em)}</span>` : ''}</div>
       ${d.status === 'em_execucao' ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${botoesTarefa(d, true)}</div>` : ''}
       ${x.aviso ? `<div style="font-size:9.5px;color:var(--red);margin-top:3px;">${esc(x.aviso).substring(0, 140)}</div>` : ''}
     </div>`;
@@ -245,12 +273,12 @@
       : d.status === 'aprovada' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-gn" onclick="DEM.decidir('${d.id}','enviar')">⚙ Enviar para implementação (GitHub)</button><button class="btn btn-g" onclick="DEM.editar('${d.id}')">✎ Editar</button><button class="btn btn-g" onclick="DEM.mover('${d.id}','arquivada')">Arquivar</button></div>`
       : d.status === 'em_execucao' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;">${d.issue_url ? `<a class="btn btn-g" href="${esc(d.issue_url)}" target="_blank" rel="noopener">Abrir tarefa #${d.issue_numero}</a>` : ''}${x.pr ? `<a class="btn btn-g" href="${esc(x.pr.url)}" target="_blank" rel="noopener">${qa ? 'Ver' : 'Revisar'} o PR #${x.pr.numero} no GitHub</a>` : x.branch ? `<a class="btn btn-g" href="https://github.com/${esc((d.issue_url || '').split('/').slice(3, 5).join('/'))}/compare/main...${esc(x.branch)}" target="_blank" rel="noopener">Ver as mudanças da branch</a>` : '<span style="color:var(--t2);">O Claude está trabalhando — o PR aparece aqui quando estiver pronto.</span>'}${botoesTarefa(d)}<span style="flex:1;"></span><button class="btn btn-g" onclick="DEM.mover('${d.id}','implementada')">Marcar como implementada</button></div>
         <div style="margin-top:6px;">${andamento(d)}</div>`
-      : `<div style="display:flex;gap:8px;flex-wrap:wrap;">${d.issue_url ? `<a class="btn btn-g" href="${esc(d.issue_url)}" target="_blank" rel="noopener">Tarefa #${d.issue_numero}</a>` : ''}${x.pr ? `<a class="btn btn-g" href="${esc(x.pr.url)}" target="_blank" rel="noopener">PR #${x.pr.numero}</a>` : ''}${['recusada', 'arquivada'].includes(d.status) ? `<button class="btn btn-g" onclick="DEM.mover('${d.id}','sugerida')">↩ Voltar para sugeridas</button>` : ''}<span style="flex:1;"></span><button class="btn btn-g" style="color:var(--red);" onclick="DEM.excluir('${d.id}')">🗑 Excluir</button></div>`;
+      : `<div style="display:flex;gap:8px;flex-wrap:wrap;">${d.issue_url ? `<a class="btn btn-g" href="${esc(d.issue_url)}" target="_blank" rel="noopener">Tarefa #${d.issue_numero}</a>` : ''}${x.pr ? `<a class="btn btn-g" href="${esc(x.pr.url)}" target="_blank" rel="noopener">PR #${x.pr.numero}</a>` : ''}${['recusada', 'arquivada'].includes(d.status) || (d.status === 'implementada' && x.spec_claude) ? `<button class="btn btn-g" onclick="DEM.mover('${d.id}','sugerida')">↩ Voltar para sugeridas</button>` : ''}<span style="flex:1;"></span><button class="btn btn-g" style="color:var(--red);" onclick="DEM.excluir('${d.id}')">🗑 Excluir</button></div>`;
     const achados = qa ? `${(x.achados_qa || []).length ? '<div style="margin-top:10px;font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Erros nas telas</div>' + x.achados_qa.map(a => `<div style="font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--bd);"><b>[${esc(a.sev)}] ${esc(a.titulo)}</b> — ${esc(a.rotulo || a.tela || '')}<div style="color:var(--t2);font-size:10.5px;">${esc(a.evidencia || '')}</div></div>`).join('') : ''}
         ${(x.achados_seguranca || []).length ? '<div style="margin-top:10px;font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Segurança</div>' + x.achados_seguranca.map(a => `<div style="font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--bd);"><b>[${esc(a.severidade)}] ${esc(a.titulo)}</b> — ${esc(a.arquivo || '')}${a.linha ? ':' + a.linha : ''}<div style="color:var(--t2);font-size:10.5px;">${esc(a.evidencia || '')}</div></div>`).join('') : ''}` : '';
     modal(`<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--bd);"><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">${esc(d.titulo)}</div>
         <div style="font-size:10.5px;color:var(--t2);">${qa ? '🌙 Correção autônoma da madrugada' : x.origem === 'fundador' ? '✍ Demanda criada por você' : '💡 Sugerida pelo Agente de Produto'} · ${quando(d.criado_em)} · status: <b>${esc(d.status.replace('_', ' '))}</b>${d.decisao_obs ? ' · obs.: ' + esc(d.decisao_obs) : ''}</div></div>
-        <button class="btn btn-g" onclick="document.getElementById('demModal').remove()">✕</button></div>
+        <button class="btn btn-p" style="font-size:10.5px;" onclick="DEM.spec(['${d.id}'])">📋 Spec p/ Claude</button><button class="btn btn-g" onclick="document.getElementById('demModal').remove()">✕</button></div>
       <div style="padding:6px 18px 14px;">
         ${qa ? '' : `<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--t2);margin-top:6px;"><span>Impacto <b style="color:var(--gold);">${estrelas(x.impacto || d.prioridade)}</b></span><span>Esforço <b>${esc(x.esforco || '?')}</b></span><span>Risco <b>${esc(x.risco || '?')}</b></span><span>Área <b>${esc(x.area || '-')}</b></span>${(x.telas_afetadas || []).length ? `<span>Telas: <b>${esc(x.telas_afetadas.join(', '))}</b></span>` : ''}</div>`}
         ${qa ? '' : blocoPartitura(d)}${qa ? '' : `<div id="demNaoFazer_${esc(d.id)}"></div>`}
@@ -399,5 +427,5 @@
       if (el) el.innerHTML = txt + (falhas.length ? '<br><b style="color:var(--gold);">Como resolver:</b> em github.com → Settings → Developer settings → Fine-grained tokens, edite o token do Atlantyx OS (repositório ' + esc(r.repo) + ') e marque <b>Issues: Read and write</b>' + (r.teste.pull_requests_escrever?.ok === false ? ', <b>Pull requests: Read and write</b> e <b>Contents: Read</b>' : '') + '. Se o erro for 401, gere um token novo e troque o <b>GITHUB_TOKEN</b> no Vercel (e faça Redeploy). Enquanto isso, o merge funciona pelo robô do GitHub desde que "tarefas" esteja ✅.' : ''); }
     catch (e) { if (el) el.innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; }
   }
-  window.DEM = { trilha, bpmSalvar, _mixAtualizar, _mixConfirmar, abrir, tarefa, testarGithub, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
+  window.DEM = { marcar, limparSel, spec, trilha, bpmSalvar, _mixAtualizar, _mixConfirmar, abrir, tarefa, testarGithub, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
 })();

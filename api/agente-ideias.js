@@ -517,6 +517,22 @@ async function acaoTarefa(sql, b, req) {
   }
 }
 
+// v3.424: "Spec para o Claude" — texto pronto para rodar a demanda (ou várias) por fora, no Claude Code local, com o mesmo
+// conteúdo da tarefa do GitHub (Partitura B.P.M., critérios de aceite, regras). Ao gerar, os cards vão para Concluídas.
+function _specSlug(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40); }
+function specClaude(rows) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const corpo = r => { const d = { ...(r.dados || {}) }; const b = { ...(d.bpm || {}) }; if (b.trilha && !b.id) b.id = hoje + '-' + _specSlug(r.titulo); d.bpm = b;
+    let t = corpoIssue({ ...r, dados: d }).split('\n').slice(1).join('\n').replace(/\n---\nDemanda [^\n]*$/, '');
+    const qa = [...(d.achados_qa || []).map(a => `- [${a.sev || ''}] ${a.titulo} — ${a.rotulo || a.tela || ''}: ${a.evidencia || ''}`), ...(d.achados_seguranca || []).map(a => `- [${a.severidade || ''}] ${a.titulo} — ${a.arquivo || ''}${a.linha ? ':' + a.linha : ''}: ${a.evidencia || ''}`)];
+    if (qa.length) t += '\n\n### Erros encontrados (QA)\n' + qa.join('\n');
+    return t.trim() + `\n\n_Demanda ${r.id} da Esteira de Demandas IA._`; };
+  const um = rows.length === 1;
+  const cab = `Implemente ${um ? 'esta demanda aprovada' : 'as ' + rows.length + ' demandas aprovadas abaixo'} da Esteira de Demandas do Atlantyx OS no repositório atlantyx-os (Claude Code, local).
+Leia o CLAUDE.md e siga o Método B.P.M.: crie spec.md e plano.md de cada demanda em partitura/trilhas/<BPM-ID>/ antes de mexer no código, altere só os arquivos da trilha indicada, registre interseções em vez de editar arquivos de outra trilha, nunca crie tabela/coluna (peça ao subagent afinador) e não altere a versão ATX-vX.YY.
+${um ? '' : 'Faça uma demanda por vez, na ordem listada, com um commit (ou PR) por demanda contendo as linhas BPM-Trilha e BPM-ID. Se duas demandas mexerem na mesma tela ou arquivo, implemente juntas e diga isso no plano.md de ambas.\n'}Ao terminar cada uma: marque o plano.md, preencha o mixagem.md e rode \`node scripts/validar.mjs --sem-navegador\` e \`node scripts/bpm-gates.mjs --local\`. No final, liste o que foi feito, o que ficou pendente e como testar.`;
+  return cab + '\n\n' + rows.map((r, i) => (um ? '' : `\n==================== DEMANDA ${i + 1} de ${rows.length} ====================\n`) + corpo(r)).join('\n\n');
+}
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   try {
@@ -560,6 +576,15 @@ async function handler(req, res) {
         await sql`UPDATE agente_demandas SET status = ${b.status}, atualizado_em = NOW() WHERE id = ${b.id}`; return { ok: true };
       },
       excluir: async () => { await sql`DELETE FROM agente_demandas WHERE id = ${b.id}`; return { ok: true }; },
+      spec_claude: async () => {   // v3.424
+        const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).filter(Boolean).map(String).slice(0, 30); if (!ids.length) throw new Error('Marque ao menos um card');
+        const rows = await sql`SELECT * FROM agente_demandas WHERE id = ANY(${ids})`; if (!rows.length) throw new Error('Demandas não encontradas');
+        rows.sort((x, y) => ids.indexOf(x.id) - ids.indexOf(y.id));
+        const texto = specClaude(rows), em = new Date().toISOString();
+        if (b.concluir !== false) for (const r of rows) { const dados = { ...(r.dados || {}), spec_claude: { em, lote: ids.length > 1 ? ids : null, status_anterior: r.status } };
+          await sql`UPDATE agente_demandas SET status = 'implementada', dados = ${JSON.stringify(dados)}, atualizado_em = NOW() WHERE id = ${r.id}`; }
+        return { texto, qtd: rows.length };
+      },
       nova: async () => {
         const d = b.dados || {}; if (!d.titulo || !d.proposta) throw new Error('Informe título e proposta');
         const id = novoId();
