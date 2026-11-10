@@ -27,3 +27,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.433 · ✅ entregue · caso termo 3 Projeto Cadastro (NF 217, 218, 219, 222, 223)
 - [x] v3.434: status "coberta" dos passos de termo (sustentação e marco→termo) não é mais zerado; busca na aba Todas mostra também o que saiu da conta e por quê (diagnóstico do caso Xplann)
 - 2026-11-10 · v3.434 · ✅ entregue · aguardando o fundador buscar "xplann"
+- [x] v3.435: termo ligado à fatura errada (valor da fatura ≠ valor do termo ±5%, nº de termo repetido) volta como previsto, com aviso para corrigir no Kanban de Faturamento (caso Termo 11 Xplann × Transmissão)
+- 2026-11-10 · v3.435 · ✅ entregue

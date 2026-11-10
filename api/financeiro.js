@@ -8663,6 +8663,26 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // QuickBooks vence
   const desde = _diasMais(mesHoje + '-01', -75), faturas = await _rpFaturasQB(desde);
   if (!faturas) avisos.push('QuickBooks indisponível: a agenda não pôde ser conferida com as faturas reais (nada foi descartado).');
+  // v3.435: TERMO LIGADO À FATURA ERRADA — nº de termo repetido (ex.: dois "Termo 11": Transmissão e Sustentação Xplann) fazia um
+  // termo apontar para a fatura do outro; o termo saía da agenda como "já faturado" e só aparecia a fatura do outro. Se o valor da
+  // fatura ligada não bate com o do termo (±5%), a ligação é ignorada aqui e o termo volta como previsto (o QuickBooks ainda casa
+  // com a fatura certa, se houver).
+  const ligErrada = new Set();
+  if (faturas) try {
+    const L = await sql`SELECT t.*, e.id AS emp_id, e.empresa, e.valor_parcela, e.nf_valor, e.nf_numero, e.qb_invoice_id, e.qb_invoice_doc
+      FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id
+      WHERE e.qb_invoice_id IS NOT NULL AND COALESCE(t.status, '') NOT IN ('pago', 'cancelado', 'concluido') AND COALESCE(e.pagamento_status, 'pendente') <> 'pago'`;
+    for (const r of L) {
+      const f = faturas.find(x => String(x.id) === String(r.qb_invoice_id)); if (!f) continue;
+      const v = num(r.nf_valor) > 0 ? num(r.nf_valor) : num(r.valor_parcela); if (!(v > 0) || Math.abs(f.valor - v) <= Math.max(5, v * 0.05)) continue;
+      ligErrada.add(String(r.emp_id)); const base = _dStr(r.data_termo) || _dStr(r.criado_em), prev = _dStr(r.cpfl_previsao_pagamento);
+      oc.push({ id: 'trm_' + r.emp_id, origem: 'termo', termo: r.numero_termo ? String(r.numero_termo) : null, ref_id: String(r.id), projeto: r.projeto || '', cliente: r.empresa || r.contratante || r.projeto || '',
+        descricao: 'Termo ' + (r.numero_termo || '') + (r.marco_projeto ? ' · ' + r.marco_projeto : r.parcela ? ' · ' + r.parcela : '') + (r.nf_numero ? ' · NF ' + r.nf_numero : ''), valor: round(v),
+        data: prev || (base ? _diasMais(base, 35) : _diasMais(hoje, 35)), base_data: (prev ? 'previsão de pagamento confirmada' : 'termo + 35 dias') + ' · ligação com a fatura ' + (r.qb_invoice_doc || f.doc) + ' ignorada (valor não bate)', status_termo: r.status,
+        _txt: [r.projeto, r.fase, r.parcela, r.marco_projeto, r.periodo_medicao].filter(Boolean).join(' '), _sus: num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test([r.projeto, r.fase, r.parcela, r.marco_projeto].join(' ')) });
+      avisos.push('Termo ' + (r.numero_termo || '?') + ' (' + (r.projeto || r.empresa || '') + ', ' + ('R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ') está ligado à fatura ' + (r.qb_invoice_doc || f.doc) + ' do QuickBooks (' + ('R$ ' + Number(f.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ', ' + (f.cliente || '') + ') — valor não bate; provavelmente nº de termo repetido. Corrija a ligação no Kanban de Faturamento; enquanto isso o termo conta como previsto.');
+    }
+  } catch (e) { avisos.push('Conferência termo × fatura: ' + e.message); }
   // v3.434: não zera o que os passos anteriores já cobriram (termo de sustentação, marco que virou termo) — antes a linha
   // abaixo apagava o status e a previsão voltava a contar mesmo com coberta_por preenchido
   for (const o of oc) o.status = o.status_manual === 'recebida' ? 'recebida' : o.status_manual === 'cancelada' ? 'cancelada' : o.coberta_por ? 'coberta' : null;
@@ -8691,8 +8711,8 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // v3.423: SUSTENTAÇÃO — o QuickBooks vence também quando o mês foi faturado em VÁRIAS notas (ou numa só de valor bem
   // diferente): toda fatura ainda livre do mesmo cliente (ou do mesmo assunto) emitida no mês da mensalidade (exceto nota de termo/marco)
   // cobre a mensalidade daquele mês, qualquer valor. A previsão da agenda sai; valem as faturas.
-  let termoDe = {}; const termoSusTxt = {}, termoTxtTodos = {}, termoIdDe = {}; try { (await sql`SELECT t.id AS termo_id, t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
-    .forEach(r => { if (!r.numero_termo) return; const n = String(r.numero_termo); if (r.qb_invoice_id) { termoDe['id:' + r.qb_invoice_id] = n; termoIdDe['id:' + r.qb_invoice_id] = String(r.termo_id); } if (r.nf_numero) { termoDe['doc:' + r.nf_numero] = n; termoIdDe['doc:' + r.nf_numero] = String(r.termo_id); }
+  let termoDe = {}; const termoSusTxt = {}, termoTxtTodos = {}, termoIdDe = {}; try { (await sql`SELECT e.id AS emp_id, t.id AS termo_id, t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
+    .forEach(r => { if (!r.numero_termo || ligErrada.has(String(r.emp_id))) return; const n = String(r.numero_termo); if (r.qb_invoice_id) { termoDe['id:' + r.qb_invoice_id] = n; termoIdDe['id:' + r.qb_invoice_id] = String(r.termo_id); } if (r.nf_numero) { termoDe['doc:' + r.nf_numero] = n; termoIdDe['doc:' + r.nf_numero] = String(r.termo_id); }
       const txt = [r.projeto, r.fase, r.parcela, r.marco_projeto].filter(Boolean).join(' '); termoTxtTodos[n] = 'Termo ' + n + ' ' + txt; if (num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test(txt) || sustentacoes.some(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(r.projeto))) termoSusTxt[n] = txt || 'sustentação'; }); } catch (_) {}
   // v3.427: REGRAS DE SUBSTITUIÇÃO — "o termo/fatura que fala de X elimina a recorrência Y do mesmo mês". Vale para sustentação
   // e para avulsa recorrente. Regras do fundador (kv fin:rp_regras, editáveis na agenda) + regra automática pelo assunto
