@@ -11,3 +11,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.425 · ✅ entregue · caso do Termo 35 (sustentação Big Data)
 - [x] v3.426: recorrentes de receita do QuickBooks fora por padrão em todas as telas (valem os do sistema); aba "Recorrentes QuickBooks" na agenda liga/elimina modelo a modelo (kv fin:qb_rec_receitas)
 - 2026-11-10 · v3.426 · ✅ entregue
+- [x] v3.427: regras de substituição (termo/fatura contém X → elimina recorrência Y do mês mais próximo, ±25 dias), para sustentação e avulsa recorrente; padrão: "sustentação e evolutivas"→bigdata, "xplann"→xplann; aba de regras editável na agenda
+- 2026-11-10 · v3.427 · ✅ entregue

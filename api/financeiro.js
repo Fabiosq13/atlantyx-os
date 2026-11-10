@@ -197,6 +197,7 @@ async function handler(req, res) {
       // v3.211: Agenda de Receitas (marcos + sustentações + avulsas, sem lançar no QuickBooks)
       receitas_agenda:            () => receitasAgenda(params),
       qb_rec_receitas_cfg:        () => qbRecReceitasCfg(params),   // v3.426
+      rp_regras_salvar:           () => rpRegrasSalvar(params),     // v3.427
       receita_manual_salvar:      () => receitaManualSalvar(params),
       receita_manual_excluir:     () => receitaManualExcluir(params),
       receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
@@ -8534,7 +8535,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const mesSombra = _mesMais(mesHoje, -2);
   const chave = N + '|' + hoje; if (!_forcar && _rpCache.v && _rpCache.chave === chave && Date.now() - _rpCache.em < 60000) return _rpCache.v;
   const sql = await getSql(); const avisos = []; let marcosNoTermo = [];
-  const [man, susCfg, ocCfg, prevCfg] = await Promise.all([_kvFin(_RP_MAN).catch(() => null), _kvFin(_RP_SUS).catch(() => null), _kvFin(_RP_OC).catch(() => null), _prevCfg(sql).catch(() => ({}))]);
+  const [man, susCfg, ocCfg, prevCfg, regrasCfg] = await Promise.all([_kvFin(_RP_MAN).catch(() => null), _kvFin(_RP_SUS).catch(() => null), _kvFin(_RP_OC).catch(() => null), _prevCfg(sql).catch(() => ({})), _kvFin('fin:rp_regras').catch(() => null)]);
   const diaPad = Math.max(1, Math.min(28, parseInt(prevCfg.dia_recebimento) || 25)), diasAd = Math.max(0, parseInt(prevCfg.dias_adicionais) || 0);
   const oc = [];
   // 1) marcos
@@ -8630,9 +8631,38 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // v3.423: SUSTENTAÇÃO — o QuickBooks vence também quando o mês foi faturado em VÁRIAS notas (ou numa só de valor bem
   // diferente): toda fatura ainda livre do mesmo cliente (ou do mesmo assunto) emitida no mês da mensalidade (exceto nota de termo/marco)
   // cobre a mensalidade daquele mês, qualquer valor. A previsão da agenda sai; valem as faturas.
-  let termoDe = {}; const termoSusTxt = {}; try { (await sql`SELECT t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
+  let termoDe = {}; const termoSusTxt = {}, termoTxtTodos = {}; try { (await sql`SELECT t.numero_termo, t.valor_mensal_sustentacao, t.projeto, t.fase, t.parcela, t.marco_projeto, e.qb_invoice_id, e.nf_numero FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id WHERE e.qb_invoice_id IS NOT NULL OR e.nf_numero IS NOT NULL`)
     .forEach(r => { if (!r.numero_termo) return; const n = String(r.numero_termo); if (r.qb_invoice_id) termoDe['id:' + r.qb_invoice_id] = n; if (r.nf_numero) termoDe['doc:' + r.nf_numero] = n;
-      const txt = [r.projeto, r.fase, r.parcela, r.marco_projeto].filter(Boolean).join(' '); if (num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test(txt) || sustentacoes.some(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(r.projeto))) termoSusTxt[n] = txt || 'sustentação'; }); } catch (_) {}
+      const txt = [r.projeto, r.fase, r.parcela, r.marco_projeto].filter(Boolean).join(' '); termoTxtTodos[n] = 'Termo ' + n + ' ' + txt; if (num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test(txt) || sustentacoes.some(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(r.projeto))) termoSusTxt[n] = txt || 'sustentação'; }); } catch (_) {}
+  // v3.427: REGRAS DE SUBSTITUIÇÃO — "o termo/fatura que fala de X elimina a recorrência Y do mesmo mês". Vale para sustentação
+  // e para avulsa recorrente. Regras do fundador (kv fin:rp_regras, editáveis na agenda) + regra automática pelo assunto
+  // (fatura/termo com "xplann" elimina a recorrência "Sustentação Xplann"). Casa pela data mais próxima (venc./emissão, ±25 dias),
+  // uma recorrência por documento; a fatura continua valendo (é ela a receita), a recorrência sai.
+  const regrasSubst = Array.isArray(regrasCfg) ? regrasCfg : _RP_REGRAS_PADRAO;
+  {
+    const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    const cmp = x => nrm(x).replace(/ /g, '');
+    const contem = (txt, frag) => { const f = nrm(frag); return f.length >= 3 && (nrm(txt).includes(f) || cmp(txt).includes(f.replace(/ /g, ''))); };
+    const docs = [];
+    (faturas || []).forEach(f => { const n = termoDe['id:' + f.id] || termoDe['doc:' + f.doc]; docs.push({ tipo: 'fatura', ref: f, rotulo: 'fatura ' + f.doc + (n ? ' (Termo ' + n + ')' : ''), txt: [f.texto, n ? termoTxtTodos[n] : ''].join(' '), datas: [f.data, f.emissao].filter(Boolean) }); });
+    oc.filter(o => o.origem === 'termo' && !o.coberta_por).forEach(t => docs.push({ tipo: 'termo', ref: t, rotulo: 'Termo ' + (t.termo || ''), txt: [t.descricao, t._txt, t.cliente].join(' '), datas: [t.data] }));
+    const recs = oc.filter(o => (o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) && !o.coberta_por && !o.status);
+    const textoRec = o => [o.cliente, o.projeto, o.descricao].join(' ');
+    const casaDoc = (o, d) => { const tr = textoRec(o);
+      for (const r of regrasSubst) if (r && r.recorrente && r.documento && contem(tr, r.recorrente) && contem(d.txt, r.documento)) return 'regra: "' + r.documento + '" → "' + r.recorrente + '"';
+      const chave = _rpAssunto([o.projeto, o.cliente].join(' ')); if (chave.length >= 5 && cmp(d.txt).includes(chave)) return 'assunto "' + chave + '"';
+      return null; };
+    const dist = (o, d) => Math.min(...d.datas.map(x => Math.abs(Date.parse(o.data) - Date.parse(x))));
+    for (const o of recs.sort((a, b) => a.data.localeCompare(b.data))) {
+      let best = null;
+      for (const d of docs) { if (d._subst) continue; const por = casaDoc(o, d); if (!por) continue; const dd = dist(o, d); if (dd > 25 * 86400000) continue; if (!best || dd < best.dd) best = { d, dd, por }; }
+      if (!best) continue; best.d._subst = true; o.status = 'coberta';
+      o.coberta_por = best.d.tipo === 'fatura' ? { fatura: best.d.ref.doc, id: best.d.ref.id, valor: best.d.ref.valor, data: best.d.ref.data, em_aberto: best.d.ref.saldo > 0, casou_por: 'regra', regra: best.por, substituida_por: best.d.rotulo }
+        : { termo: best.d.ref.termo || best.d.ref.descricao, casou_por: 'regra', regra: best.por, substituida_por: best.d.rotulo };
+      if (best.d.tipo === 'termo') best.d.ref.substitui = o.descricao + ' · ' + (o.cliente || o.projeto);
+      else (best.d.ref._substitui = best.d.ref._substitui || []).push(o.descricao + ' · ' + (o.cliente || o.projeto));
+    }
+  }
   if (faturas) {
     // nota de TERMO/MARCO (ligada a termo do Kanban de Faturamento ou com "termo"/"marco" no texto) não é mensalidade de sustentação
     // v3.425: nota de termo DE SUSTENTAÇÃO (termo 35 · sustentação Big Data) cobre a mensalidade — só termo de projeto/marco fica de fora
@@ -8685,7 +8715,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     faturasQB = faturas.filter(f => String(f.emissao || f.data || '') >= mesM1 + '-01' || f.saldo > 0).map(f => {
       const tx = String(f.texto || '').match(/termo\s*(?:n[º°o.]*\s*)?([0-9][0-9./-]*)/i);
       const termo = termoDe['id:' + f.id] || termoDe['doc:' + f.doc] || (cobre[f.id] || []).map(c => c.termo).find(Boolean) || (tx ? tx[1].replace(/[./-]$/, '') : null);
-      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [] };
+      return { id: f.id, doc: f.doc, cliente: f.cliente, emissao: f.emissao, vencimento: f.data, valor: f.valor, saldo: f.saldo, situacao: f.saldo <= 0 ? 'recebida' : (f.data && f.data < hoje ? 'vencida' : 'em_aberto'), termo, cobre: cobre[f.id] || [], substitui: f._substitui || [] };
     }).sort((a, b) => String(a.vencimento || a.emissao).localeCompare(String(b.vencimento || b.emissao)));
   }
   { const cobSombra = oc.filter(o => o._sombra && o.coberta_por).length; for (let i = oc.length - 1; i >= 0; i--) if (oc[i]._sombra) oc.splice(i, 1); // v3.411
@@ -8694,7 +8724,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
   const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0, qb_recorrente: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
   const v = { hoje, ate: fimHor, ocorrencias: oc.sort((a, b) => a.data.localeCompare(b.data)), ativas, por_mes: Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes)),
-    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, qb_rec_modelos: qbRecModelos, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
+    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, faturas_qb: faturasQB, mes_m1: mesM1, qb_rec_modelos: qbRecModelos, regras_subst: regrasSubst, dia_padrao: diaPad, qb_conferido: !!faturas, avisos, marcos_no_termo: marcosNoTermo };
   _rpCache = { em: Date.now(), chave, v }; return v;
 }
 // itens no formato dos recebíveis do fluxo (para o Fluxo Detalhado, extratos, painel e KPIs)
@@ -8703,6 +8733,14 @@ function _rpComoRecebiveis(rp, data_inicio, data_fim) {
   return (rp?.ativas || []).map(o => ({ id: 'rp_' + o.id, data: o.data, descricao: (o.cliente ? o.cliente + ' · ' : '') + o.descricao + ' (previsão)', categoria: cat[o.origem] || 'Receita prevista',
     valor: o.valor, valor_total: o.valor, tipo: 'entrada', origem: 'agenda_receitas', origem_detalhe: o.origem, previsao: true, vencida: false, atrasada: o.status === 'atrasada', emissao: o.data,
     cliente: o.cliente, no_periodo: (!data_inicio || o.data >= data_inicio) && (!data_fim || o.data <= data_fim) }));
+}
+// v3.427: regras de substituição padrão (ditas pelo fundador em 10/11/2026) — editáveis na Agenda de Receitas
+const _RP_REGRAS_PADRAO = [{ documento: 'sustentação e evolutivas', recorrente: 'bigdata' }, { documento: 'xplann', recorrente: 'xplann' }];
+async function rpRegrasSalvar({ regras } = {}) {
+  if (!Array.isArray(regras)) throw Object.assign(new Error('regras: lista obrigatória'), { status: 400 });
+  const L = regras.map(r => ({ documento: String(r?.documento || '').trim().substring(0, 120), recorrente: String(r?.recorrente || '').trim().substring(0, 120) })).filter(r => r.documento.length >= 3 && r.recorrente.length >= 3).slice(0, 50);
+  const sql = await getSql(); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('fin:rp_regras', ${JSON.stringify(L)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  _rpCache.v = null; return { regras: L };
 }
 async function receitasAgenda({ meses = 13 } = {}) { const r = await receitasPrevistas({ meses, _forcar: true }); return { agenda: r }; }
 async function receitaManualSalvar({ item } = {}) {

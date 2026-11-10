@@ -32970,10 +32970,11 @@ function arRender() {
   const soma = l => l.reduce((t, o) => t + (Number(o.valor) || 0), 0), por = k => A.filter(o => o.origem === k);
   const atr = A.filter(o => o.status === 'atrasada'), cob = O.filter(o => o.status === 'coberta');
   const card = (t, v, sub, cor) => '<div style="flex:1;min-width:150px;border:1px solid var(--bd);border-radius:8px;padding:8px 11px;"><div style="font-size:10px;color:var(--t3);">' + t + '</div><div style="font-size:17px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + v + '</div><div style="font-size:9.5px;color:var(--t3);">' + sub + '</div></div>';
-  const abas = [['todas', 'Todas · M-1, M0 e futuro'], ['proximas', 'Só previsões (' + A.length + ')'], ['sustentacoes', 'Sustentações (' + (D.sustentacoes || []).length + ')'], ['manuais', 'Avulsas e recorrentes (' + (D.manuais || []).length + ')'], ['faturadas', 'Já faturadas / encerradas (' + O.filter(o => !['prevista', 'atrasada'].includes(o.status)).length + ')'], ['qbrec', 'Recorrentes QuickBooks (' + (D.qb_rec_modelos || []).filter(m => m.usado).length + '/' + (D.qb_rec_modelos || []).length + ' em uso)']];
+  const abas = [['todas', 'Todas · M-1, M0 e futuro'], ['proximas', 'Só previsões (' + A.length + ')'], ['sustentacoes', 'Sustentações (' + (D.sustentacoes || []).length + ')'], ['manuais', 'Avulsas e recorrentes (' + (D.manuais || []).length + ')'], ['faturadas', 'Já faturadas / encerradas (' + O.filter(o => !['prevista', 'atrasada'].includes(o.status)).length + ')'], ['regras', 'Regras de substituição (' + (D.regras_subst || []).length + ')'], ['qbrec', 'Recorrentes QuickBooks (' + (D.qb_rec_modelos || []).filter(m => m.usado).length + '/' + (D.qb_rec_modelos || []).length + ' em uso)']];
   let corpo = '';
   if (_ar.aba === 'todas') corpo = _arTodas(D);
   else if (_ar.aba === 'qbrec') corpo = _arQbRec(D);
+  else if (_ar.aba === 'regras') corpo = _arRegras(D);
   else if (_ar.aba === 'proximas' || _ar.aba === 'faturadas') {
     const L = _ar.aba === 'proximas' ? A : O.filter(o => !['prevista', 'atrasada'].includes(o.status));
     const meses = {}; L.forEach(o => (meses[o.data.slice(0, 7)] = meses[o.data.slice(0, 7)] || []).push(o));
@@ -32982,7 +32983,7 @@ function arRender() {
       + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;">' + meses[m].map(o => { const [on, oc] = _arOri[o.origem] || [o.origem, 'var(--t2)'], [sn, sc] = _arSt[o.status] || [o.status, 'var(--t2)'];
         return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(o.data) + (o.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(o.data_prevista) + '</div>' : '') + (o.data_original ? '<div style="font-size:9px;color:var(--t3);">era ' + _arDt(o.data_original) + '</div>' : '') + '</td>'
           + '<td><b>' + _arE(o.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(o.descricao) + (o.projeto && o.projeto !== o.cliente ? ' · ' + _arE(o.projeto) : '') + (o.base_data ? ' · ' + _arE(o.base_data) : '') + '</div></td>'
-          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? (o.coberta_por.termo ? ' · substituída pelo Termo ' + _arE(String(o.coberta_por.termo).replace(/^Termo\s*/i, '')) : o.coberta_por.recorrente ? ' · modelo recorrente do QuickBooks ' + _arE(o.coberta_por.recorrente) : ' · fatura ' + _arE(o.coberta_por.fatura)) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : o.coberta_por.casou_por === 'varias_notas' ? ' · mês faturado em várias notas' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
+          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? (o.coberta_por.substituida_por ? ' · substituída por ' + _arE(o.coberta_por.substituida_por) + ' (' + _arE(o.coberta_por.regra || '') + ')' : o.coberta_por.termo ? ' · substituída pelo Termo ' + _arE(String(o.coberta_por.termo).replace(/^Termo\s*/i, '')) : o.coberta_por.recorrente ? ' · modelo recorrente do QuickBooks ' + _arE(o.coberta_por.recorrente) : ' · fatura ' + _arE(o.coberta_por.fatura)) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : o.coberta_por.casou_por === 'varias_notas' ? ' · mês faturado em várias notas' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(o.valor) + (o.valor_original ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">era ' + _arR(o.valor_original) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;">' + (['prevista', 'atrasada'].includes(o.status) ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(o.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Marcar como recebida (sai da previsão)" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'recebida\')">✓</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks (sai da previsão)" onclick="arOcFatura(\'' + _arE(o.id) + '\')">🧾</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Cancelar esta previsão" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'cancelada\')">✕</button>' : (o.status_manual || o.valor_original || o.data_original ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Desfazer o ajuste" onclick="arOcLimpar(\'' + _arE(o.id) + '\')">↺</button>' : '')) + '</td></tr>'; }).join('') + '</table></div>').join('') || '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11.5px;">Nada aqui.</div>';
   } else if (_ar.aba === 'sustentacoes') {
@@ -33044,6 +33045,22 @@ function _arQbRec(D) {
   return intro + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><thead><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;text-align:left;"><th style="padding:5px;">Modelo</th><th>Cliente</th><th>Próxima</th><th>Intervalo</th><th style="text-align:right;">Valor</th><th style="text-align:right;">No sistema</th></tr></thead><tbody>'
     + L.map(m => '<tr style="border-top:1px solid var(--bd);"><td style="padding:6px 5px;"><b>' + _arE(m.nome) + '</b>' + (m.descricao ? '<div style="font-size:9.5px;color:var(--t3);">' + _arE(m.descricao).substring(0, 140) + '</div>' : '') + '</td><td>' + _arE(m.cliente) + '</td><td>' + _arDt(m.proxima) + '</td><td>' + _arE(m.intervalo) + '</td><td style="text-align:right;font-weight:600;">' + _arR(m.valor) + '</td>'
       + '<td style="text-align:right;white-space:nowrap;"><span style="font-size:9.5px;color:' + (m.usado ? 'var(--green)' : 'var(--t3)') + ';margin-right:6px;">' + (m.usado ? 'em uso' : 'ignorado') + '</span><button class="btn ' + (m.usado ? 'btn-g' : 'btn-gn') + '" style="font-size:9.5px;padding:2px 8px;" onclick="arQbRec(\'' + _arE(m.id) + '\',' + (m.usado ? 'false' : 'true') + ')">' + (m.usado ? '✕ Eliminar da agenda' : 'Usar') + '</button></td></tr>').join('') + '</tbody></table>';
+}
+// v3.427: regras "termo/fatura com X elimina a recorrência Y do mesmo mês"
+function _arRegras(D) {
+  const L = (D.regras_subst || []).concat([{ documento: '', recorrente: '' }]);
+  const subst = (D.ocorrencias || []).filter(o => o.coberta_por?.casou_por === 'regra' && !o._sombra);
+  return '<div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin:10px 0;">Quando um <b>termo ou fatura do QuickBooks</b> contém o texto da 1ª coluna, ele <b>elimina a recorrência</b> (sustentação ou avulsa recorrente) que contém o texto da 2ª coluna, no mês mais próximo (até 25 dias). Maiúsculas, acentos e espaços não importam ("Big Data" = "bigdata"). Além das regras, o sistema já casa sozinho pelo assunto (ex.: "xplann" no termo elimina "Sustentação Xplann").</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:11px;" id="arRegrasTab"><thead><tr style="color:var(--t3);font-size:9.5px;text-transform:uppercase;text-align:left;"><th style="padding:5px;">Termo/fatura contém</th><th style="padding:5px;">Elimina a recorrência que contém</th><th></th></tr></thead><tbody>'
+    + L.map(r => '<tr><td style="padding:4px;"><input class="fi" data-c="documento" value="' + _arE(r.documento) + '" placeholder="ex.: sustentação e evolutivas"/></td><td style="padding:4px;"><input class="fi" data-c="recorrente" value="' + _arE(r.recorrente) + '" placeholder="ex.: bigdata"/></td><td style="padding:4px;"><button class="btn btn-g" style="font-size:10px;" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>').join('')
+    + '</tbody></table><div style="display:flex;gap:6px;margin-top:8px;"><button class="btn btn-g" style="font-size:10.5px;" onclick="arRegraNova()">＋ Regra</button><button class="btn btn-gn" style="font-size:10.5px;" onclick="arRegrasSalvar()">💾 Salvar regras</button></div>'
+    + '<div style="margin-top:14px;font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:700;">Recorrências eliminadas agora (' + subst.length + ')</div>'
+    + (subst.length ? subst.map(o => '<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);">' + _arDt(o.data) + ' · <b>' + _arE(o.cliente || o.projeto) + '</b> · ' + _arE(o.descricao) + ' <span style="color:var(--t3);">→ ' + _arE(o.coberta_por.substituida_por) + ' · ' + _arE(o.coberta_por.regra) + '</span></div>').join('') : '<div style="font-size:10.5px;color:var(--t3);padding:6px 0;">Nenhuma no período.</div>');
+}
+function arRegraNova() { const tb = document.querySelector('#arRegrasTab tbody'); if (!tb) return; const tr = tb.lastElementChild.cloneNode(true); tr.querySelectorAll('input').forEach(i => { i.value = ''; }); tb.appendChild(tr); }
+async function arRegrasSalvar() {
+  const regras = [...document.querySelectorAll('#arRegrasTab tbody tr')].map(tr => ({ documento: tr.querySelector('[data-c=documento]').value, recorrente: tr.querySelector('[data-c=recorrente]').value })).filter(r => r.documento.trim() && r.recorrente.trim());
+  try { await finApi('rp_regras_salvar', { regras }); toast('Regras salvas — agenda recalculada', 'success'); await arCarregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function arQbRec(id, usar) {
   try { await finApi('qb_rec_receitas_cfg', { id, usar }); toast(usar ? 'Modelo do QuickBooks passa a contar' : 'Modelo do QuickBooks eliminado da agenda', 'success'); await arCarregar(); }
@@ -36953,7 +36970,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.426] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.427] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -36969,7 +36986,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.426';
+window.__ATX_BUILD_ID__ = 'ATX-v3.427';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
