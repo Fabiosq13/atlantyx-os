@@ -5,6 +5,7 @@ import * as RT from '../lib/estrategia-roteiro.js';
 import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
 import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
+import { moatObter, moatAnalisar, moatTeseSalvar, moatResumoTexto, K_MOAT } from '../lib/moat.js';   // v3.439
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
 //   projetos, ideias, Esteira de Demandas), as premissas estratégicas e o plano vigente.
@@ -90,6 +91,7 @@ async function premissasCtx() {
   try { const v = await kv(K_VIGENTE); if (v?.plano) out += '\n\n' + planoResumoTexto(v.plano, v); } catch (_) {}
   try { const [r, nf, so, ca] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER), kv(RT.K_SOCIOS), kv(RT.K_CADEIRAS)]);
     for (const t of [RT.roteiroResumoTexto(r), RT.naoFazerResumoTexto(nf?.itens), RT.sociosResumoTexto(so || {}), RT.cadeirasResumoTexto(ca || {})]) if (t) out += '\n\n' + t; } catch (_) {} // v3.341 · v3.342: sócios e cadeiras
+  try { const t = moatResumoTexto(await kv(K_MOAT)); if (t) out += '\n\n' + t; } catch (_) {} // v3.439: o moat guia as recomendações
   return out;
 }
 async function planoVigente() { return await kv('est:plano'); }
@@ -698,6 +700,10 @@ async function handler(req, res) {
       investimentos_analisar: () => (soFundador(req), investimentosAnalisar({ claude, claudeTools, kv, chamar, contexto, contextoAmplo, propositoPessoal, salvarHistorico: salvarHistoricoS1 }, b, usuario)),
       conversa: async () => ({ conversa: (await sql`SELECT * FROM est_conversas WHERE id=${b.id}`)[0] || null }),
       conversa_excluir: async () => { await sql`DELETE FROM est_conversas WHERE id=${b.id}`; return { ok: true }; },
+      moat_obter: async () => moatObter({ kv, sql: await getSql() }),   // v3.439: MOAT no planejamento
+      moat_analisar: async () => { const prem = await premissas().catch(() => ''); const pc = await premissasCtx().catch(() => prem); let ctxT = ''; try { ctxT = resumoCtx(await contexto(false), 22000); } catch (e) { ctxT = 'contexto indisponível: ' + e.message; }
+        return moatAnalisar({ claude, kv, sql: await getSql(), contextoTxt: ctxT, premissasTxt: pc.replace(/MOAT \(vantagem[\s\S]*$/, '') }, b, usuario); },
+      moat_tese_salvar: () => (soFundador(req), moatTeseSalvar({ kv }, b, usuario)),
       norte_plano: () => nortePlano(usuario), norte_obter: async () => ({ plano: await kv('norte:plano'), tem_proposito: !!(await kv('proposito')) }),
       sala_abrir: () => salaAbrir(b), sala_rodada: () => salaRodada(b), sala_sintese: () => salaSintese(b), sala_aprovar: () => salaAprovar(b, usuario), sala_acoes: () => salaAcoes(b),
       sala_obter: async () => ({ sessao: (await sql`SELECT * FROM est_sessoes WHERE id=${b.id}`)[0] || null }),
