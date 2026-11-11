@@ -305,7 +305,8 @@ async function handler(req, res) {
       conc_razao:            () => conferirComRazao(params),
       qb_cliente_criar:      () => qbClienteCriar(params),
       desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
-      impostos_recorrentes:  () => impostosRecorrentes(params), impostos_cadastrar: () => impostosCadastrar(params), // v3.266
+      impostos_recorrentes:  () => impostosRecorrentes(params), despesas_repetidas: () => despesasRepetidasSugerir(params), // v3.452
+      impostos_cadastrar: () => impostosCadastrar(params), // v3.266
       desp_criar_replicar:   () => despesaCriarReplicar(params),
       desp_ajustar_replicar: () => despesaAjustarReplicar(params),
       conc_excluir_invoice:  () => qbExcluirInvoice(params),
@@ -7106,6 +7107,56 @@ async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
 }
 
 // ═══ v3.266: IMPOSTOS RECORRENTES — parcelamentos, trimestrais e mensais (Prefeitura e federais) a partir dos pagamentos do último ano ═══
+// v3.452: situação da recorrência das despesas da Agenda — quantas ocorrências futuras e até quando
+async function _despRecInfo(sql, ids) {
+  const out = {}; if (!ids.length) return out; const hoje = _hojeBR();
+  try { (await sql`SELECT despesa_id, COUNT(*) FILTER (WHERE data_prevista >= ${hoje} AND COALESCE(status, '') NOT IN ('cancelada', 'paga'))::int AS futuras,
+      MAX(data_prevista) AS ate, MAX(data_prevista) FILTER (WHERE status = 'paga' OR data_pagamento IS NOT NULL) AS ultima_paga
+      FROM despesas_ocorrencias WHERE despesa_id = ANY(${ids}) GROUP BY despesa_id`)
+    .forEach(r => { out[r.despesa_id] = { futuras: r.futuras, ate: _dStr(r.ate), ultima_paga: _dStr(r.ultima_paga) }; }); } catch (_) {}
+  ids.forEach(id => { out[id] = out[id] || { futuras: 0, ate: null }; }); return out;
+}
+// ═══ v3.452: OUTROS LANÇAMENTOS QUE SE REPETEM no QuickBooks (fornecedores, softwares, aluguel, serviços…) e não estão
+// recorrentes na Agenda — mesma leitura do último ano dos impostos (Purchase + Bill), sem os impostos e viagens (têm análise própria)
+async function despesasRepetidasSugerir({ meses = 13 } = {}) {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const token = await qbToken(), hoje = _hojeBR(), ini = _addMesesData(hoje, -Math.min(24, Math.max(6, parseInt(meses) || 13)));
+  const ler = async (ent, q) => { const out = []; for (let pag = 0, pos = 1; pag < 10; pag++, pos += 500) { const d = await qbQuery(`${q} startposition ${pos} maxresults 500`, token); const L = d?.QueryResponse?.[ent] || []; out.push(...L); if (L.length < 500) break; await qbEsperar(150); } return out; };
+  const [compras, contas] = [await ler('Purchase', `select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${hoje}'`), await ler('Bill', `select * from Bill where TxnDate >= '${ini}' and TxnDate <= '${hoje}'`)];
+  const conta = x => (x.Line || []).map(l => l.AccountBasedExpenseLineDetail?.AccountRef?.name || l.ItemBasedExpenseLineDetail?.ItemRef?.name).filter(Boolean)[0] || '';
+  const txt = x => [x.EntityRef?.name, x.VendorRef?.name, x.PrivateNote, ...(x.Line || []).flatMap(l => [l.Description, l.AccountBasedExpenseLineDetail?.AccountRef?.name])].filter(Boolean).join(' · ');
+  const P = [...compras.filter(x => x.Credit !== true).map(x => ({ nome: x.EntityRef?.name || '', data: x.TxnDate, valor: round(parseFloat(x.TotalAmt || 0)), conta: conta(x), texto: txt(x), ref: (x.PaymentType === 'Check' ? 'cheque:' : 'despesa:') + x.Id })),
+    ...contas.map(x => ({ nome: x.VendorRef?.name || '', data: x.DueDate || x.TxnDate, valor: round(parseFloat(x.TotalAmt || 0)), conta: conta(x), texto: txt(x), ref: 'conta:' + x.Id }))]
+    .filter(p => p.data && p.valor >= 50 && !impClassificar(p.texto) && !/transfer|aplica|resgate|emprestimo|empréstimo|retirada|pro.?labore|distribui/i.test(p.texto));
+  const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\b(ltda|s ?a|me|eireli|epp|cia)\b/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const grupos = {}; P.forEach(p => { const k = nrm(p.nome) || ('conta ' + nrm(p.conta)); if (k.length < 3) return; (grupos[k] = grupos[k] || []).push(p); });
+  const mesHoje = hoje.substring(0, 7), ult4 = [0, 1, 2, 3, 4].map(i => _addMesesData(hoje, -i).substring(0, 7));
+  const med = L => { const a = L.slice().sort((x, y) => x - y); return a.length ? (a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : 0; };
+  const sql = await getSql(); const desp = await sql`SELECT id, descricao, categoria, fornecedor, valor, recorrencia, dia_vencimento FROM despesas_programadas WHERE ativa = true`;
+  const chave = s => nrm(s).split(' ').filter(w => w.length >= 4);
+  const sug = [];
+  for (const [k, L] of Object.entries(grupos)) {
+    const porMes = {}; L.forEach(p => { const m = p.data.substring(0, 7); porMes[m] = round((porMes[m] || 0) + p.valor); });
+    const ms = Object.keys(porMes).sort(); if (ms.length < 3) continue;
+    const recentes = ms.filter(m => ult4.includes(m)).length; if (!recentes) continue; // parou de pagar
+    const gaps = ms.slice(1).map((m, i) => { const [a1, b1] = ms[i].split('-').map(Number), [a2, b2] = m.split('-').map(Number); return (a2 - a1) * 12 + (b2 - b1); });
+    const gm = med(gaps), rec = gm >= 2.5 && gm <= 3.5 ? 'trimestral' : gm <= 1.5 ? 'mensal' : null; if (!rec) continue;
+    const vals = ms.slice(-3).map(m => porMes[m]), valor = round(med(vals)), media = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const cv = media ? Math.sqrt(vals.reduce((a, v) => a + (v - media) ** 2, 0) / vals.length) / media : 1;
+    const dia = Math.min(28, Math.max(1, Math.round(med(L.map(p => +p.data.substring(8, 10))))));
+    const ult = L.slice().sort((a, b) => b.data.localeCompare(a.data))[0];
+    const nomeV = L.find(p => p.nome)?.nome || ult.conta || k;
+    // na Agenda? pelo fornecedor/descrição (palavras de 4+ letras) e valor até ±40%
+    const kt = chave(nomeV); const ag = desp.find(d => { const t = chave([d.fornecedor, d.descricao].join(' ')); return kt.length && kt.some(w => t.includes(w)) && Math.abs(num(d.valor) - valor) <= Math.max(valor * 0.4, 20); });
+    sug.push({ chave: k, nome: nomeV, conta: ult.conta, recorrencia: rec, valor, dia, meses_com_pagamento: ms.length, pagamentos: L.length, variacao: round(cv * 100), confianca: ms.length >= 6 && cv < 0.1 ? 'alta' : ms.length >= 4 && cv < 0.3 ? 'media' : 'baixa',
+      ultimo: { data: ult.data, valor: ult.valor, qb_url: _qbUrlTxn(ult.ref) }, por_mes: porMes, agenda: ag ? { id: ag.id, descricao: ag.descricao, valor: num(ag.valor), recorrencia: ag.recorrencia || 'mensal' } : null });
+  }
+  const info = await _despRecInfo(sql, sug.filter(x => x.agenda).map(x => x.agenda.id));
+  sug.forEach(x => { if (x.agenda) Object.assign(x.agenda, info[x.agenda.id] || {});
+    x.situacao = !x.agenda ? 'fora_da_agenda' : !['mensal', 'trimestral', 'semestral', 'anual'].includes(x.agenda.recorrencia) ? 'na_agenda_sem_recorrencia' : !(x.agenda.futuras > 0) ? 'recorrencia_acabou' : 'recorrente'; });
+  sug.sort((a, b) => (a.situacao === 'recorrente') - (b.situacao === 'recorrente') || b.valor - a.valor);
+  return { periodo: { de: ini, ate: hoje }, analisados: P.length, sugestoes: sug.slice(0, 80), resumo: { fora: sug.filter(x => x.situacao !== 'recorrente').length, recorrentes: sug.filter(x => x.situacao === 'recorrente').length, valor_mensal_fora: round(sug.filter(x => x.situacao !== 'recorrente').reduce((a, x) => a + (x.recorrencia === 'trimestral' ? x.valor / 3 : x.valor), 0)) } };
+}
 async function impostosRecorrentes({ meses = 13 } = {}) {
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
   const token = await qbToken(), hoje = _hojeBR(), ini = _addMesesData(hoje, -Math.min(24, Math.max(6, parseInt(meses) || 13)));
@@ -7119,7 +7170,8 @@ async function impostosRecorrentes({ meses = 13 } = {}) {
   const sugestoes = impAnalisar(pagamentos, hoje);
   const sql = await getSql(); const desp = await sql`SELECT id, descricao, categoria, fornecedor, valor, recorrencia, dia_vencimento FROM despesas_programadas WHERE ativa = true`;
   const _cad = impCasarCad(sugestoes, desp); // v3.451: um-para-um
-  const lista = sugestoes.map((s, _i) => { const j = _cad[_i]; return { ...s, cadastrada: j ? { id: j.id, descricao: j.descricao, valor: num(j.valor) } : null, proximo: impProxVenc(s.recorrencia, s.dia, hoje),
+  const recInfo = await _despRecInfo(sql, _cad.filter(Boolean).map(d => d.id));
+  const lista = sugestoes.map((s, _i) => { const j = _cad[_i]; return { ...s, cadastrada: j ? { id: j.id, descricao: j.descricao, valor: num(j.valor), ...(recInfo[j.id] || {}), recorrencia: j.recorrencia || 'mensal' } : null, proximo: impProxVenc(s.recorrencia, s.dia, hoje),
     ultimo: s.ultimo ? { data: s.ultimo.data, valor: s.ultimo.valor, texto: String(s.ultimo.texto || '').substring(0, 160), qb_url: _qbUrlTxn(s.ultimo.ref) } : null }; });
   const rec = lista.filter(x => ['mensal', 'trimestral'].includes(x.recorrencia));
   return { periodo: { de: ini, ate: hoje }, analisados: pagamentos.length, sugestoes: lista,

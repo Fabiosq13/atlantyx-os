@@ -20,3 +20,5 @@
 - 11/11/2026 · v3.449 · ok · — · conferir Pendências após o deploy
 - [x] v3.451 · Impostos recorrentes: "já na Agenda" passa a ser um-para-um (nome exato primeiro) — incluir "DARF trimestral (IRPJ/CSLL)" não trava mais a inclusão do "IRPJ" trimestral (e vice-versa)
 - 11/11/2026 · v3.451 · ok · — · —
+- [x] v3.452 · Impostos recorrentes: coluna Agenda mostra se a despesa é recorrente (🔁 mensal/trimestral · N futuras até mm/aaaa), ⚠ não recorrente (lançamento único) ou ⚠ recorrência acabou. Novo quadro "Outros pagamentos que se repetem" (QB Purchase+Bill do último ano, sem impostos/viagens/transferências): repete em 3+ meses e pago nos últimos 4 → sugere recorrência mensal/trimestral, valor (mediana dos 3 últimos) e dia; situação na Agenda; cria a recorrência dos marcados
+- 11/11/2026 · v3.452 · ok · — · fundador revisar as sugestões
