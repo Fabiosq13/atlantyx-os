@@ -15,7 +15,7 @@
   }
   let D = null, vista = 'kanban', filtro = { q: '', tipo: '', atrasados: false, decisores: false, dono: '' }, painel = 'fila', arrastando = null, carregando = false;
   const SEL = new Set();   // v3.441: cards marcados para a IARA
-  const FLUXO = ['frio', 'iara', 'abordado', 'engajado', 'qualificado', 'reuniao', 'proposta', 'negociacao', 'cliente', 'congelado', 'perdido'];
+  const FLUXO = ['frio', 'iara', 'abordado', 'engajado', 'qualificado', 'reuniao', 'proposta', 'negociacao', 'cliente', 'remarketing', 'congelado', 'perdido'];
   const corTemp = t => t >= 70 ? '#ff5d5d' : t >= 45 ? '#ffaa3c' : t >= 25 ? '#ffd166' : '#5aa9ff';
   const corSla = c => c.sla == null ? 'var(--t3)' : c.atrasado ? 'var(--red)' : c.dias >= c.sla * 0.75 ? 'var(--gold)' : 'var(--green)';
 
@@ -81,7 +81,7 @@
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.sla()">⏱ Tempos limite</button>
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.carregar(true)">↻ Atualizar</button>
     </div>
-    ${SEL.size ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:rgba(156,109,255,.1);border:1px solid rgba(156,109,255,.35);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;"><b>${SEL.size} marcado(s)</b><span style="color:var(--t2);">a IARA escreve a 1ª mensagem de cada um; você revisa e aprova o envio</span><span style="flex:1;"></span><button class="btn btn-p" style="font-size:10.5px;" onclick="FLORESTA.iara()">🤖 Abordar com a IARA (${SEL.size})</button><button class="btn btn-g" style="font-size:10.5px;" onclick="FLORESTA.limpar()">Limpar</button></div>` : ''}
+    ${SEL.size ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:rgba(156,109,255,.1);border:1px solid rgba(156,109,255,.35);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;"><b>${SEL.size} marcado(s)</b><span style="flex:1;"></span><button class="btn btn-p" style="font-size:10.5px;" onclick="FLORESTA.iara()">🤖 Abordar com a IARA</button><button class="btn" style="font-size:10.5px;color:#ffaa3c;border-color:#ffaa3c;" onclick="FLORESTA.lote('remarketing')">📣 Remarketing</button>${[...SEL].some(id => D.cards.find(c => c.id === id)?.etapa === 'remarketing') ? `<button class="btn" style="font-size:10.5px;" onclick="FLORESTA.lote('tirar_remarketing')">↩ Tirar do remarketing</button>` : ''}<button class="btn" style="font-size:10.5px;color:var(--red);border-color:var(--red);" onclick="FLORESTA.lote('excluir')">🗑 Excluir</button><button class="btn btn-g" style="font-size:10.5px;" onclick="FLORESTA.limpar()">Limpar</button></div>` : ''}
     ${(D.avisos || []).map(a => `<div style="font-size:10.5px;color:var(--gold);margin-bottom:6px;">⚠ ${esc(a)}</div>`).join('')}
     <div class="fl-wrap"><div>${vista === 'kanban' ? kanban(L) : vista === 'floresta' ? forest(L) : lista(L)}</div>${lado()}</div>
     <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Atualizado ${new Date(D.gerado_em).toLocaleString('pt-BR')} · arraste um card para outra coluna para movê-lo no HubSpot · 🧊 congelar = esperar até uma data e voltar à etapa · a IA nunca envia mensagens: você aprova e envia.</div>`;
@@ -99,7 +99,7 @@
   function kanban(L) {
     return `<div class="fl-kb">${FLUXO.map(id => { const e = D.etapas.find(x => x.id === id), C = L.filter(c => c.etapa === id).sort((a, b) => (b.atrasado - a.atrasado) || (b.temperatura - a.temperatura)), v = C.reduce((t, c) => t + (c.valor || 0), 0);
       return `<div class="fl-col" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="this.classList.remove('drop');FLORESTA.soltar('${id}')">
-        <div class="fl-ch"><div class="fl-cn">${C.length && !['cliente', 'perdido'].includes(id) ? `<input type="checkbox" title="Marcar todos desta coluna" onchange="FLORESTA.marcarCol('${id}',this.checked)" style="margin:0 4px 0 0;vertical-align:-1px;"/>` : ''}${e.icone} ${esc(e.nome)} <span style="color:var(--t3);font-weight:500;">${C.length}</span></div><div class="fl-cs">${e.sla ? 'limite ' + e.sla + ' dias' : esc(e.dica)}${v ? ' · ' + brl(v) : ''}${C.filter(c => c.atrasado).length ? ` · <span style="color:var(--red);">${C.filter(c => c.atrasado).length} estourados</span>` : ''}</div></div>
+        <div class="fl-ch"><div class="fl-cn">${C.length && !['cliente', 'perdido'].includes(id) ? `<input type="checkbox" title="Marcar todos desta coluna" onchange="FLORESTA.marcarCol('${id}',this.checked)" style="margin:0 4px 0 0;vertical-align:-1px;"/>` : ''}${e.icone} ${esc(e.nome)} <span style="color:var(--t3);font-weight:500;">${C.length}</span></div><div class="fl-cs">${id === 'remarketing' && C.length ? `<a href="#" onclick="event.preventDefault();FLORESTA.csvRmk()" style="color:#ffaa3c;">⬇ baixar público (CSV)</a> · ` : ''}${e.sla ? 'limite ' + e.sla + ' dias' : esc(e.dica)}${v ? ' · ' + brl(v) : ''}${C.filter(c => c.atrasado).length ? ` · <span style="color:var(--red);">${C.filter(c => c.atrasado).length} estourados</span>` : ''}</div></div>
         <div class="fl-cb">${C.slice(0, 80).map(cardHtml).join('')}${C.length > 80 ? `<div style="font-size:9.5px;color:var(--t3);text-align:center;">+${C.length - 80} (use a busca)</div>` : ''}</div></div>`; }).join('')}</div>`;
   }
   function forest(L) { // cada etapa é uma clareira; cada árvore um lead/negócio (tamanho = temperatura/valor, cor = tempo na etapa)
@@ -241,7 +241,21 @@
         if (SEL.size) nota(SEL.size + ' novo(s) marcado(s) — clique em "Abordar com a IARA" para a IARA falar com eles (os sem telefone ficam de fora)'); }
       catch (e) { b.disabled = false; b.textContent = '🌱 Plantar na floresta'; nota('Erro: ' + e.message, 'error'); } };
   }
-  window.FLORESTA = { marcar: (id, on) => { on ? SEL.add(id) : SEL.delete(id); render(); }, marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); render(); }, limpar: () => { SEL.clear(); render(); }, iara, apollo,
+  // ══ v3.442: ações em lote — remarketing / tirar / excluir (arquiva no HubSpot; restaurável lá por 90 dias)
+  async function lote(acao) {
+    const ids = [...SEL]; if (!ids.length) return;
+    if (acao === 'excluir' && !confirm('Excluir ' + ids.length + ' card(s)? Contatos e negócios são arquivados no HubSpot (dá para restaurar lá por 90 dias).')) return;
+    try { const r = await api('floresta_lote', { acao, card_ids: ids }); const falhas = (r.resultados || []).filter(x => !x.ok);
+      nota({ remarketing: r.ok + ' no remarketing', tirar_remarketing: r.ok + ' fora do remarketing', excluir: r.ok + ' excluído(s)' }[acao] + (falhas.length ? ' · ' + falhas.length + ' com erro: ' + falhas.map(x => x.nome + ' (' + x.motivo + ')').join('; ') : ''), falhas.length ? 'error' : 'success');
+      SEL.clear(); await carregar(true); } catch (e) { nota('Erro: ' + e.message, 'error'); }
+  }
+  async function csvRmk() {
+    try { const r = await api('floresta_remarketing_lista'); const L = r.pessoas || []; if (!L.length) return nota('Remarketing vazio', 'error');
+      const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"'; const csv = ['nome,empresa,cargo,email,telefone'].concat(L.map(p => [p.nome, p.empresa, p.cargo, p.email, p.telefone].map(q).join(','))).join('\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })); a.download = 'remarketing-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+      nota(L.length + ' pessoa(s) — suba no Meta, LinkedIn ou na campanha de e-mail'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
+  }
+  window.FLORESTA = { lote, csvRmk, marcar: (id, on) => { on ? SEL.add(id) : SEL.delete(id); render(); }, marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); render(); }, limpar: () => { SEL.clear(); render(); }, iara, apollo,
     abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
     painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, ver, congelar, ia, iaUm, decidir, wa, mail, sla, _d: () => D };
 })();

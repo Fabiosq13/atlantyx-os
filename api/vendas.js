@@ -931,6 +931,8 @@ async function handler(req, res) {
     floresta_iara_enviar: () => floresta().iaraEnviar(payload, req.sessao?.login),
     floresta_apollo: () => floresta().apolloBuscar(payload),                 // v3.441: leads frios do Apollo
     floresta_importar: () => floresta().importar(payload),
+    floresta_lote: () => floresta().lote(payload, req.sessao?.login),        // v3.442: remarketing / excluir em lote
+    floresta_remarketing_lista: () => floresta().remarketingLista(),
     leads_esquecidos_msg: () => leadsEsquecidosMensagem(payload),
     estrategia_excluir: () => sqlRun(async sql => { await sql`DELETE FROM vendas_estrategias WHERE id = ${payload.id}`; return { ok: true }; }),
   };

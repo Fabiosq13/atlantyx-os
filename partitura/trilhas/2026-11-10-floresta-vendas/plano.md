@@ -14,3 +14,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 ## Interseções (v3.441)
 - T2: envio de WhatsApp pela Z-API (aprovação explícita do fundador por lote) e escrita no HubSpot (contatos, notas).
 - 2026-11-10 · v3.441 · ✅ entregue
+- [x] v3.442: ações em lote nos marcados — 📣 Remarketing (nova etapa, kv vendas:floresta:remarketing, CSV do público), ↩ tirar do remarketing, 🗑 excluir (arquiva contato/negócio no HubSpot, restaurável por 90 dias); arrastar para/da coluna Remarketing também funciona
+- 2026-11-11 · v3.442 · ✅ entregue
