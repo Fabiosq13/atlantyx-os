@@ -39,6 +39,7 @@ Manual completo: `partitura/README.md`.
 | T6 Financeiro | Teclado | `api/financeiro.js`, faturamento, termos, CNAB, e-mail das 8h |
 
 ## Referências
+- **Contexto de trabalho (backup das sessões, regras de negócio já decididas, pendências):** `partitura/contexto.md`
 - Stack, padrões e variáveis de ambiente: `partitura/stack.md`
 - Produto, ICP e glossário: `partitura/produto.md`
 - Contratos: `partitura/contratos/` (api, banco, eventos — inventário: `node scripts/bpm-inventario.mjs`)
