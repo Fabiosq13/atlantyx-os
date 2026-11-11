@@ -18,3 +18,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 2026-11-11 · v3.442 · ✅ entregue
 - [x] v3.445: campos da IARA no HubSpot (achados pelo rótulo): "Fluxo IA" = IA → etapa Atendimento IARA; "Atendido pela IA" → chip 💬; "Resumo SDR Atlantyx" → conversa no card; "Abordagem" → tag no card, filtro e edição gravando no HubSpot. Botão da seleção agora grava Fluxo IA = IA (a IARA é externa; o envio pela Z-API saiu da tela)
 - 2026-11-11 · v3.445 · ✅ entregue
+- [x] v3.446 · marcar leads para a IARA: checkbox maior e fora do arrasto, marcar sem perder a rolagem, "Marcar os N frios", seleção na Lista e na Floresta (Ctrl/Shift+clique), botão individual no card; gravação em lote (batch) do Fluxo IA = IA; Apollo com coluna 🤖 IARA (todos ou parte) que já planta com Fluxo IA = IA
+- 11/11/2026 · v3.446 · ok · — · aguardar teste do fundador com leads reais
