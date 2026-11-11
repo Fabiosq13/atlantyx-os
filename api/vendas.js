@@ -13,6 +13,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 //   estrategia_salvar / estrategia_listar / estrategia_sugerir / premissas / premissas_salvar
 import { calcularFormatos, PARAMS_PADRAO, FORMATOS } from '../lib/proposta-calc.js';
 import { lerPlanoVigente, planoInicial } from '../lib/plano-estrategico.js';
+import { criarFloresta } from '../lib/floresta.js';   // v3.440: Floresta de Vendas
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 let _sql = null;
@@ -836,9 +837,22 @@ Responda SOMENTE JSON: {"assunto":"${canal === 'email' ? '...' : ''}","mensagem"
   return { assunto: r.assunto || '', mensagem: r.mensagem || '' };
 }
 
+// v3.440: FLORESTA DE VENDAS — contatos + negócios do HubSpot numa jornada só, com tempo limite por etapa e decisões da IA
+// (avançar / congelar / desistir) que o fundador aprova. Tarefas vão para o To-do pelo próprio módulo api/todo.
+async function _todoCriar(itens, origem) {
+  const m = await import('./todo.js'); let out = null;
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(o) { out = o; return this; }, setHeader() {}, end() { return this; } };
+  await m.default({ method: 'POST', body: { action: 'criar_lote', itens, origem_ia: origem, contexto: 'Floresta de Vendas' }, query: {}, headers: {}, url: '/api/todo' }, res);
+  if (!out || out.success === false) throw new Error(out?.error || 'To-do sem resposta'); return out;
+}
+let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar }));
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // v3.440: cron diário (dias úteis) — a IA revê quem estourou o tempo limite e enche a FILA DE APROVAÇÃO (não executa nada)
+  if (req.method === 'GET' && req.query?.cron === 'floresta') {
+    try { const r = await floresta().analisarIA({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
   const { action, payload = {} } = body;
   const base = `https://${req.headers['x-forwarded-host'] || req.headers.host || 'atlantyx-os.vercel.app'}`;
@@ -901,6 +915,11 @@ async function handler(req, res) {
     oport_voz_criar: () => oportVozCriar(payload, req.usuario || null),
     oport_voz_buscar: async () => ({ empresas: await _hsBuscarEmpresa(payload.nome, payload.dominio), contatos: await _hsBuscarContato(payload.contato || {}) }),
     leads_esquecidos: () => leadsEsquecidos(payload), // v3.422
+    floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
+    floresta_ia: () => floresta().analisarIA(payload),
+    floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
+    floresta_mover: () => floresta().mover(payload, req.sessao?.login),
+    floresta_cfg: () => floresta().cfgSalvar(payload),
     leads_esquecidos_msg: () => leadsEsquecidosMensagem(payload),
     estrategia_excluir: () => sqlRun(async sql => { await sql`DELETE FROM vendas_estrategias WHERE id = ${payload.id}`; return { ok: true }; }),
   };

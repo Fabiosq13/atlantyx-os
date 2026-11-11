@@ -285,6 +285,10 @@
     {
       "path": "/api/financeiro?cron=maestro_aprovados",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/vendas?cron=floresta",
+      "schedule": "13 11 * * 1-5"
     }
   ],
   "headers": [
