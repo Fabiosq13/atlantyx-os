@@ -3590,7 +3590,8 @@ async function _billsPagasPorFora(contas, { timeoutMs = 7000, tolerancia_dias = 
     const venc = String(b.data).substring(0, 10);
     const valores = [parseFloat(b.valor) || 0, parseFloat(b.valor_total) || 0].filter(v => v > 0);
     const toks = _bpfTokens(b.fornecedor || String(b.descricao || '').split(' · ')[0]);
-    if (!toks.length) return;
+    const _n = String(b.fornecedor || b.descricao || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''), sin = _AG_SINON.filter(([x]) => x.test(_n)).map(([, y]) => y); // v3.447
+    if (!toks.length && !sin.length) return;
     let melhor = null;
     for (const s of saidas) {
       if (usadas.has(s.qb_txn_id)) continue;
@@ -3601,7 +3602,8 @@ async function _billsPagasPorFora(contas, { timeoutMs = 7000, tolerancia_dias = 
       if (dist > tolerancia_dias) continue;
       const alvo = new Set(_bpfTokens([s.descricao, s.contraparte, s.memo, s.fornecedor].filter(Boolean).join(' ')));
       const m = toks.filter(t => alvo.has(t)).length;
-      const ok = m >= 2 || (m === 1 && toks.length === 1) || (m === 1 && exato && dist <= 10);
+      const sinOk = sin.length && sin.some(re => re.test([s.descricao, s.contraparte, s.memo, s.fornecedor].filter(Boolean).join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+      const ok = m >= 2 || (m === 1 && toks.length === 1) || (m === 1 && exato && dist <= 10) || (sinOk && dist <= 30);
       if (!ok) continue;
       const score = m * 10 + (exato ? 5 : 0) - dist / 10;
       if (!melhor || score > melhor.score) melhor = { s, score, dist, m };
@@ -3613,6 +3615,44 @@ async function _billsPagasPorFora(contas, { timeoutMs = 7000, tolerancia_dias = 
     }
   });
   if (mapa.size) _kvFin('fin:bills_pagas_extrato').catch(() => null).then(kv => _kvFinSet('fin:bills_pagas_extrato', { t: Date.now(), mapa: { ...(kv?.t && Date.now() - kv.t < 12 * 3600e3 ? kv.mapa : {}), ...Object.fromEntries(mapa) } })).catch(() => {});
+  return mapa;
+}
+// v3.447: despesa da Agenda já paga no QuickBooks direto do banco (despesa, cheque, transferência, imposto).
+// Casa um-para-um com a saída do extrato: valor igual (± máx(R$0,50; 0,5%)), de 20 dias antes a 45 dias depois do vencimento.
+//  · alta  = nome do fornecedor (ou sinônimo: Receita Federal ↔ DARF, Prefeitura ↔ ISS/DAM…) aparece na saída;
+//  · media = sem nome, mas valor idêntico ao centavo, valor com centavos (não redondo) e saída única com esse valor perto da data.
+const _AG_SINON = [[/receita federal|\brfb\b|secretaria da receita/, /darf|receita federal|\brfb\b|simples nacional|\bdas\b|irrf|irpj|csll|\bpis\b|cofins|\binss\b|tributo|imposto/],
+  [/prefeitura|municipio|municipal/, /prefeitura|\biss\b|issqn|\bdam\b|iptu|municipal|municipio/], [/\binss\b|previdencia/, /\binss\b|\bgps\b|previdencia|esocial/], [/fgts|caixa economica/, /fgts|\bgrf\b|caixa/]];
+async function _agendaPagasNoQb(ocs, { timeoutMs = 6000 } = {}) {
+  const mapa = new Map(), hoje = _hojeBR(); if (!ocs.length || !qbConfigurado()) return mapa;
+  const minV = ocs.reduce((m, o) => o.data_prevista < m ? o.data_prevista : m, hoje), lim = _diasMais(hoje, -400);
+  const ini = _diasMais(minV < lim ? lim : minV, -45), chave = ini + '|' + hoje;
+  let c = _bpfCache.get(chave);
+  if (!c || Date.now() - c.t > 10 * 60000) {
+    const p = extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados: false })
+      .then(ext => (ext.lancamentos || []).filter(l => l.tipo === 'saida' && (parseFloat(l.valor) || 0) > 0 && l.qb_txn_id && !String(l.qb_txn_id).startsWith('pagto_conta:')));
+    c = { t: Date.now(), p }; _bpfCache.set(chave, c); p.catch(() => _bpfCache.delete(chave));
+  }
+  const saidas = await Promise.race([c.p, new Promise(r => setTimeout(() => r(null), timeoutMs))]).catch(() => null);
+  if (!saidas) return mapa;
+  const txt = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const usadas = new Set();
+  const cand = o => { const v = o.valor, venc = o.data_prevista, nome = o.fornecedor || o.descricao || '';
+    const toks = _bpfTokens(nome), n = txt(nome), sin = _AG_SINON.filter(([a]) => a.test(n)).map(([, b]) => b);
+    return saidas.filter(s => !usadas.has(s.qb_txn_id)).map(s => { const sv = parseFloat(s.valor) || 0, exato = Math.abs(sv - v) <= 0.01;
+      if (!exato && Math.abs(sv - v) > Math.max(0.5, v * 0.005)) return null;
+      const d = (Date.parse(String(s.data).substring(0, 10)) - Date.parse(venc)) / 864e5; if (d < -20 || d > 45) return null;
+      const alvoTxt = txt([s.descricao, s.contraparte, s.memo, s.fornecedor, s.categoria].filter(Boolean).join(' ')), alvo = new Set(_bpfTokens(alvoTxt));
+      const m = toks.filter(t => alvo.has(t)).length, sinOk = sin.some(re => re.test(alvoTxt));
+      const nomeOk = m >= 2 || (m === 1 && (toks.length === 1 || exato)) || sinOk;
+      return { s, exato, dist: Math.abs(d), nomeOk, score: (nomeOk ? 100 : 0) + m * 10 + (exato ? 5 : 0) - Math.abs(d) / 10 }; }).filter(Boolean).sort((a, b) => b.score - a.score); };
+  // 1º passe: com nome (alta); 2º: só valor exato com centavos, único na janela (media)
+  const ordem = [...ocs].sort((a, b) => a.data_prevista.localeCompare(b.data_prevista));
+  for (const o of ordem) { const best = cand(o).find(x => x.nomeOk); if (!best) continue; usadas.add(best.s.qb_txn_id);
+    mapa.set(o.id, { data: String(best.s.data).substring(0, 10), descricao: best.s.descricao || best.s.contraparte || '', valor: round(parseFloat(best.s.valor) || 0), qb_txn_id: best.s.qb_txn_id, confianca: 'alta' }); }
+  for (const o of ordem) { if (mapa.has(o.id) || Math.abs(o.valor - Math.round(o.valor)) < 0.005) continue;
+    const L = cand(o).filter(x => x.exato && x.dist <= 20); if (L.length !== 1) continue; usadas.add(L[0].s.qb_txn_id);
+    mapa.set(o.id, { data: String(L[0].s.data).substring(0, 10), descricao: L[0].s.descricao || L[0].s.contraparte || '', valor: round(parseFloat(L[0].s.valor) || 0), qb_txn_id: L[0].s.qb_txn_id, confianca: 'media' }); }
   return mapa;
 }
 const _bpfNota = m => `Pagamento já encontrado no extrato: ${String(m.data).split('-').reverse().join('/')} · ${m.descricao}${m.conta ? ' (' + m.conta + ')' : ''} · ${_brl(m.valor)}. A conta a pagar continua EM ABERTO no QuickBooks porque o pagamento foi lançado como despesa avulsa, sem ser ligado a ela — por isso não entra no saldo projetado. Para corrigir no QuickBooks: exclua esta conta a pagar (🗑, a despesa do extrato fica) ou apague a despesa avulsa e registre o pagamento na conta.`;
@@ -4477,6 +4517,15 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
     cobertasDet = cobertas.map(o => ({ id: o.id, bill_id: o._coberta_por?.id || null, bill_paga: o._coberta_por?.status === 'paga' }));
     if (fora.size) for (let i = locais.length - 1; i >= 0; i--) if (fora.has(locais[i].id)) locais.splice(i, 1);
   }
+  // v3.447: ocorrência VENCIDA que só existe na Agenda, mas já foi PAGA no QuickBooks como despesa/transferência (não como conta
+  // a pagar) — casa com a saída do extrato e baixa. Confiança alta (nome + valor) grava a baixa; só valor exato marca em memória.
+  if (incluir_qb && qbConfigurado()) { try {
+    const venc = locais.filter(o => (o.status === 'prevista' || o.status === 'lancada') && !o.qb_txn_id && o.data_prevista < _hojeBR() && o.valor > 0);
+    if (venc.length) { const m = await _agendaPagasNoQb(venc);
+      for (const o of venc) { const x = m.get(o.id); if (!x) continue; o.status = 'paga'; o.data_pagamento = x.data; o.pago_no_qb = x;
+        o.nota = 'Paga no QuickBooks em ' + x.data.split('-').reverse().join('/') + ' · ' + (x.descricao || '') + ' · ' + _brl(x.valor) + (x.confianca === 'alta' ? '' : ' (mesmo valor — confira)');
+        if (x.confianca === 'alta') try { await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = ${x.data}, observacoes = COALESCE(observacoes, '') || ${' [baixa automática: paga no QuickBooks em ' + x.data + ' · ' + String(x.descricao || '').substring(0, 80) + ']'} WHERE id = ${o.id} AND status IN ('prevista', 'lancada')`; } catch (_) {} } }
+  } catch (e) { console.warn('[Agenda] pagas no QB:', e.message); } }
   const filtQb = status ? qbBills.filter(b => b.status === status) : qbBills;
   if (status) for (let i = locais.length - 1; i >= 0; i--) if (locais[i].status !== status) locais.splice(i, 1); // v3.223: filtra depois da sincronização com o QB
   return { agenda_cobertas_qb: cobertasQb, cobertas_qb: cobertasDet, ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };

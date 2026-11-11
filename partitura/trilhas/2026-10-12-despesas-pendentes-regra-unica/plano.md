@@ -12,3 +12,5 @@
 ## Registro da Batida
 - 2026-10-12 · concluído · sem bloqueio · próximo: conferir no e-mail das 8h com dados reais
 - 2026-10-12 · v3.164 dashboard de abertura incluído · sem bloqueio
+- [x] v3.447 · despesa vencida que só existe na Agenda, mas já foi paga no QuickBooks direto do banco (despesa/transferência/imposto), sai das Pendências, da Agenda e do fluxo: casa com a saída do extrato (nome ou sinônimo — Receita Federal↔DARF, Prefeitura↔ISS/DAM — + valor, −20 a +45 dias). Nome+valor grava a baixa automática; só valor exato com centavos marca paga sem gravar. Sinônimos também valem para contas a pagar do QB pagas por fora
+- 11/11/2026 · v3.447 · ok · — · conferir com o fundador as Pendências de outubro
