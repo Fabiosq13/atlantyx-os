@@ -7245,11 +7245,14 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
       // (3) item financeiro do Maestro, (4) palavra distintiva do nome do projeto (ex.: "jelta", "xplann") no texto, (5) cliente com um só projeto
       const sql = await getSql(); const lig = {}; try { (await sql`SELECT e.qb_invoice_id, t.projeto, t.marco_projeto, t.parcela, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`).forEach(r => { lig[String(r.qb_invoice_id)] = r; }); } catch (_) {}
       const recMap = (await _kvFin(K_REC_PROJ).catch(() => null)) || {};
+      // v3.457: Oficial_ que existe nos apontamentos/marcos/financeiro do Maestro mas não no cadastro também conta
+      { const vistos = new Set(cad.map(p => chNorm(p.nome))); for (const n of [...apts.map(a => a.projeto || a.Projeto), ...mkM.map(m => m.proj), ...finM.map(f => f.proj)]) { const t = String(n || '').trim(); if (/^oficial[_\s-]/i.test(t) && !vistos.has(chNorm(t))) { vistos.add(chNorm(t)); cad.push({ nome: t, status: '', _so_maestro: true }); } } }
       const oficiais = (() => { const o = cad.filter(p => /^oficial[_\s-]/i.test(String(p.nome || '').trim())); return (o.length ? o : cad).map(p => ({ nome: String(p.nome).trim(), cliente: p.cliente || '', ativo: !/conclu|encerr|cancel|suspens|finaliz/i.test(p.status || '') })); })();
       const nomesOf = new Set(oficiais.map(o => o.nome)); oficiaisLista = oficiais;
       const STOP = new Set(['oficial', 'projeto', 'sistema', 'sustentacao', 'servicos', 'servico', 'atlanteam', 'atlantyx', 'desenvolvimento', 'integration', 'process', 'systems', 'kick', 'analytics', 'dados', 'data', 'cpfl', 'energia', 'grupo']);
       const toks = t => chNorm(t).split(' ').filter(w => w.length >= 4 && !STOP.has(w));
-      const ofTok = oficiais.map(o => ({ nome: o.nome, t: toks(o.nome.replace(/^oficial[_\s-]*/i, '')) }));
+      const ofTok = oficiais.map(o => { const resto = o.nome.replace(/^oficial[_\s-]*/i, ''); const siglas = resto.split(/[_\s\-.]+/).filter(w => /^[A-Z0-9]{2,4}$/.test(w) && !STOP.has(w.toLowerCase())).map(w => w.toLowerCase());
+        return { nome: o.nome, t: [...new Set([...toks(resto), ...siglas])] }; });
       const marcosOf = mkM.filter(m => m && m.nome && nomesOf.has(String(m.proj || '').trim())).map(m => ({ n: chNorm(m.nome), proj: String(m.proj).trim() })).filter(m => m.n.length >= 6);
       const finOf = finM.filter(f => f && nomesOf.has(String(f.proj || '').trim())).map(f => ({ n: chNorm([f.descricao, f.nome, f.termo, f.marco].filter(Boolean).join(' ')), proj: String(f.proj).trim() })).filter(f => f.n.length >= 6);
       const acharOficial = (rotulo, texto, cli) => {
@@ -7257,7 +7260,7 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
         const t = chNorm(texto); if (nomesOf.has(String(rotulo || '').trim())) return { proj: String(rotulo).trim(), como: 'nome do projeto' };
         const mk = marcosOf.find(m => t.includes(m.n) || (r && (m.n.includes(r) || r.includes(m.n)))); if (mk) return { proj: mk.proj, como: 'marco do Maestro' };
         const fi = finOf.find(f => r && (f.n.includes(r) || r.includes(f.n))); if (fi) return { proj: fi.proj, como: 'financeiro do Maestro' };
-        const tt = new Set(toks(texto)); const hits = ofTok.map(o => ({ nome: o.nome, n: o.t.filter(w => tt.has(w)).length })).filter(o => o.n > 0).sort((a, b) => b.n - a.n);
+        const tt = new Set([...toks(texto), ...chNorm(texto).split(' ').filter(w => w.length >= 2 && w.length <= 4)]); const hits = ofTok.map(o => ({ nome: o.nome, n: o.t.filter(w => tt.has(w)).length })).filter(o => o.n > 0).sort((a, b) => b.n - a.n);
         if (hits.length && (hits.length === 1 || hits[0].n > hits[1].n)) return { proj: hits[0].nome, como: 'palavra do nome' };
         const doCli = oficiais.filter(o => o.cliente && chNorm(cli).includes(chNorm(o.cliente).split(' ')[0] || '~')); if (doCli.length === 1) return { proj: doCli[0].nome, como: 'único projeto do cliente' };
         return null; };
@@ -7279,6 +7282,7 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
   { const comMov = new Set([...R.projetos.filter(p => p.horas_mes > 0 || p.receita_mes > 0).map(p => p.projeto)]);
     const base = oficiaisLista.length ? oficiaisLista : cad.map(p => ({ nome: String(p.nome || '').trim(), ativo: !/conclu|encerr|cancel|suspens|finaliz/i.test(p.status || '') })).filter(p => p.nome);
     R.projetos_maestro = base.filter(p => p.ativo || comMov.has(p.nome)).map(p => p.nome);
+    R.projetos_para_ligar = [...base.filter(p => p.ativo).map(p => p.nome).sort(), ...base.filter(p => !p.ativo).map(p => p.nome + ' (concluído)').sort()];
     const nomesBase = new Set(base.map(p => p.nome)), lista = new Set(R.projetos_maestro);
     R.projetos = R.projetos.filter(p => !nomesBase.has(p.projeto) || lista.has(p.projeto) || p.horas_mes > 0 || p.receita_mes > 0);
     R.projetos_concluidos_ocultos = base.filter(p => !p.ativo && !comMov.has(p.nome)).length; }
