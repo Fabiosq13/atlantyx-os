@@ -37,3 +37,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-11 · v3.443 · ✅ entregue
 - [x] v3.444: aba "🔍 Raio-X" na agenda (receitas_diagnostico) — termos em todas as etapas, sustentações (meses gerados e motivo), avulsas, marcos dentro/fora, recorrentes do QuickBooks e faturas, com o destino de cada um; termo sem empresa no rateio (ou empresa sem valor) passa a entrar pelo valor total do termo
 - 2026-11-11 · v3.444 · ✅ entregue · aguardando Raio-X de xplann / HC / servipla
+- [x] v3.450 · mensalidade (sustentação/recorrente) só é eliminada por documento da MESMA competência: termo pelo período de medição/data do termo (não pela data de recebimento = termo + 35 dias, que caía no mês seguinte) e fatura pelo mês de emissão — corrige a recorrência Xplann de dezembro "comida" pelo termo/nota de novembro. Raio-X mostra os meses sem mensalidade e o porquê (fim do contrato, marco no mês, desligada)
+- 11/11/2026 · v3.450 · ok · — · fundador conferir dezembro do Xplann; se faltar, Raio-X "xplann" mostra o motivo

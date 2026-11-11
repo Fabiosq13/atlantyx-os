@@ -33193,7 +33193,7 @@ async function arRaioX() {
     const motivos = L => (L || []).filter(o => o.motivo).map(o => '<div style="font-size:9.5px;color:var(--t3);">' + _arDt(o.data) + ': ' + _arE(o.motivo) + '</div>').join('');
     const html = (d.avisos || []).map(a => '<div style="font-size:10.5px;color:var(--gold);margin-bottom:6px;">⚠ ' + _arE(a) + '</div>').join('')
       + sec('📄 Termos (Kanban de Faturamento, todas as etapas)', (d.termos || []).length, tab(['Termo', 'Projeto · empresa', 'Etapa', 'Valor', 'Na agenda', 'Destino'], (d.termos || []).map(t => '<tr>' + td('<b>' + _arE(t.termo) + '</b>') + td(_arE([t.projeto, t.empresa].filter(Boolean).join(' · '))) + td(_arE(t.etapa)) + td(_arR(t.valor)) + td(ok(t.na_agenda) + (t.data_prevista ? ' ' + _arDt(t.data_prevista) : '')) + td(_arE(t.motivo)) + '</tr>')))
-      + sec('🔁 Sustentações', (d.sustentacoes || []).length, (d.sustentacoes || []).map(x => '<div style="padding:6px 0;border-top:1px solid var(--bd);font-size:10.5px;"><b>' + _arE(x.projeto) + '</b> · ' + _arE(x.cliente) + ' · ' + (x.valor_mensal ? _arR(x.valor_mensal) + '/mês' : '<span style="color:var(--red);">sem valor</span>') + ' · ' + _arE(x.inicio || '?') + ' → ' + _arE(x.fim || '?') + (x.aviso ? ' <span style="color:var(--red);">⚠ ' + _arE(x.aviso) + '</span>' : '') + '<div style="margin-top:3px;">' + mes(x.meses) + '</div>' + motivos(x.meses) + '</div>').join(''))
+      + sec('🔁 Sustentações', (d.sustentacoes || []).length, (d.sustentacoes || []).map(x => '<div style="padding:6px 0;border-top:1px solid var(--bd);font-size:10.5px;"><b>' + _arE(x.projeto) + '</b> · ' + _arE(x.cliente) + ' · ' + (x.valor_mensal ? _arR(x.valor_mensal) + '/mês' : '<span style="color:var(--red);">sem valor</span>') + ' · ' + _arE(x.inicio || '?') + ' → ' + _arE(x.fim || '?') + (x.aviso ? ' <span style="color:var(--red);">⚠ ' + _arE(x.aviso) + '</span>' : '') + '<div style="margin-top:3px;">' + mes(x.meses) + '</div>' + motivos(x.meses) + ((x.sem_mensalidade || []).length ? '<div style="margin-top:3px;color:var(--gold);font-size:10px;">Sem mensalidade: ' + x.sem_mensalidade.map(z => '<b>' + _arE(z.mes.split('-').reverse().join('/')) + '</b> — ' + _arE(z.motivo)).join(' · ') + '</div>' : '') + '</div>').join(''))
       + sec('🗓 Avulsas e recorrentes', (d.manuais || []).length, (d.manuais || []).map(x => '<div style="padding:6px 0;border-top:1px solid var(--bd);font-size:10.5px;"><b>' + _arE(x.cliente) + '</b> · ' + _arE(x.descricao) + ' · ' + _arR(x.valor) + ' · ' + _arE(x.recorrencia) + ' · ' + _arE(x.inicio) + (x.fim ? ' → ' + _arE(x.fim) : ' → sem fim') + (x.ativo ? '' : ' <span style="color:var(--red);">inativa</span>') + '<div style="margin-top:3px;">' + mes(x.meses) + '</div>' + motivos(x.meses) + '</div>').join(''))
       + sec('🏁 Marcos na agenda', (d.marcos_na_agenda || []).length, tab(['Data', 'Projeto', 'Marco', 'Valor', 'Destino'], (d.marcos_na_agenda || []).map(o => '<tr>' + td(_arDt(o.data)) + td(_arE(o.cliente)) + td(_arE(String(o.descricao).slice(0, 80))) + td(_arR(o.valor)) + td(o.motivo ? '<span style="color:var(--gold);">' + _arE(o.motivo) + '</span>' : '<span style="color:var(--green);">na agenda</span>') + '</tr>')))
       + sec('🍂 Marcos fora da agenda', (d.marcos_fora || []).length, tab(['Data', 'Projeto', 'Marco', 'Valor', 'Motivo', ''], (d.marcos_fora || []).map(m => '<tr>' + td(m.data ? _arDt(m.data) : '—') + td(_arE(m.projeto)) + td(_arE(String(m.descricao).slice(0, 80))) + td(_arR(m.valor)) + td(_arE(m.motivo)) + td(m.ligado ? '<button class="btn btn-g" style="font-size:9px;padding:1px 6px;" onclick="arMarcoDesligar(\'' + _arE(m.id) + '\',\'\').then(arRaioX)">Desligar</button>' : m.automatico ? '<button class="btn btn-g" style="font-size:9px;padding:1px 6px;" onclick="arMarcoDesligar(\'' + _arE(m.id) + '\',\'' + _arE(m.termo_id || '') + '\').then(arRaioX)">Não é deste termo</button>' : '') + '</tr>')))
@@ -37109,7 +37109,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.449] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.450] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37125,7 +37125,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.449';
+window.__ATX_BUILD_ID__ = 'ATX-v3.450';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

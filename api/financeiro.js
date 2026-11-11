@@ -6820,6 +6820,16 @@ async function _marcosParaReceita(sql) {
 }
 // v3.273: TERMOS NO KANBAN DE FATURAMENTO que ainda não viraram fatura no QuickBooks — receita prevista por empresa do termo.
 // Com fatura no QuickBooks (qb_invoice_id), a fatura em aberto é que conta (A Receber); pago/concluído/cancelado sai.
+// v3.450: COMPETÊNCIA do termo (mês do serviço) = período de medição, senão a data do termo — a data na agenda é a do
+// RECEBIMENTO (termo + 35 dias), que cai no mês seguinte e fazia o termo de novembro "comer" a mensalidade de dezembro
+const _MES_N = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
+function _rpCompet(r) {
+  const p = String(r.periodo_medicao || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let m = p.match(/(\d{4})-(\d{1,2})/); if (m) return m[1] + '-' + m[2].padStart(2, '0');
+  m = p.match(/\b(\d{1,2})\s*\/\s*(\d{4}|\d{2})\b/); if (m && +m[1] >= 1 && +m[1] <= 12) return (m[2].length === 2 ? '20' + m[2] : m[2]) + '-' + m[1].padStart(2, '0');
+  m = p.match(/\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*(?:de\s*)?\/?\s*(\d{4}|\d{2})\b/); if (m) return (m[2].length === 2 ? '20' + m[2] : m[2]) + '-' + String(_MES_N[m[1]]).padStart(2, '0');
+  const b = _dStr(r.data_termo) || _dStr(r.criado_em); return b ? b.substring(0, 7) : null;
+}
 async function _termosParaReceita(sql) {
   // v3.444: LEFT JOIN — termo sem empresas no rateio (ou com a única empresa sem valor) entra pelo valor total do termo;
   // antes ele simplesmente não aparecia na agenda
@@ -6830,7 +6840,7 @@ async function _termosParaReceita(sql) {
       AND e.qb_invoice_id IS NULL AND COALESCE(e.pagamento_status, 'pendente') <> 'pago'`);
   return rows.map(r => { let valor = num(r.nf_valor) > 0 ? num(r.nf_valor) : num(r.valor_parcela); if (!(valor > 0) && Number(r.n_emp) <= 1 && num(r.valor_total_termo) > 0) valor = num(r.valor_total_termo); const base = _dStr(r.data_termo) || _dStr(r.criado_em);
     const prev = _dStr(r.cpfl_previsao_pagamento);
-    return { ...r, valor, data: prev || (base ? _diasMais(base, 35) : null), base_data: prev ? 'previsão de pagamento confirmada' : base ? 'termo de ' + base.split('-').reverse().join('/') + ' + 35 dias' : 'termo sem data' }; })
+    return { ...r, valor, competencia: _rpCompet(r), data: prev || (base ? _diasMais(base, 35) : null), base_data: prev ? 'previsão de pagamento confirmada' : base ? 'termo de ' + base.split('-').reverse().join('/') + ' + 35 dias' : 'termo sem data' }; })
     .filter(r => r.valor > 0);
 }
 async function _qbClientePrevisao(nome, token, cache) {
@@ -8689,7 +8699,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // 1b) v3.273: termos no Kanban de Faturamento sem fatura no QuickBooks (marco que já gerou termo entra por aqui)
   try { for (const t of await _termosParaReceita(sql)) {
       oc.push({ id: 'trm_' + t.emp_id, origem: 'termo', termo: t.numero_termo ? String(t.numero_termo) : null, ref_id: String(t.id), projeto: t.projeto || '', cliente: t.empresa || t.contratante || t.projeto || '', descricao: 'Termo ' + (t.numero_termo || '') + (t.marco_projeto ? ' · ' + t.marco_projeto : t.parcela ? ' · ' + t.parcela : '') + (t.nf_numero ? ' · NF ' + t.nf_numero : ''),
-        valor: round(t.valor), data: t.data || _diasMais(hoje, 35), base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status,
+        valor: round(t.valor), data: t.data || _diasMais(hoje, 35), competencia: t.competencia || null, base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status,
         _txt: [t.projeto, t.fase, t.parcela, t.marco_projeto, t.periodo_medicao].filter(Boolean).join(' '), _sus: num(t.valor_mensal_sustentacao) > 0 || /sustenta/i.test([t.projeto, t.fase, t.parcela, t.marco_projeto].join(' ')) }); } }
   catch (e) { avisos.push('Termos: ' + e.message); }
   // v3.430: MARCO JÁ VIROU TERMO — termo do Kanban de Faturamento do mesmo projeto e mesmo valor (±1%) é a cobrança do marco:
@@ -8732,11 +8742,13 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     // mesmo projeto (nome igual) sempre; senão só termo de sustentação: primeiro pelo assunto, depois pelo cliente
     let alvo = sustentacoes.filter(x => _rpNc(x.projeto) && _rpNc(x.projeto) === _rpNc(t.projeto));
     if (!alvo.length && t._sus) { alvo = sustentacoes.filter(x => _rpCasaAssunto(x.projeto, t._txt + ' ' + t.cliente)); if (!alvo.length) alvo = sustentacoes.filter(x => _rpMesmoCliente(x.cliente, t.cliente)); }
-    if (!alvo.length) continue; const ids = new Set(alvo.map(x => x.id)), td = Date.parse(t.data);
-    const cand = oc.filter(o => o.origem === 'sustentacao' && !o._sombra && !o.coberta_por && ids.has(o.ref_id) && Math.abs(Date.parse(o.data) - td) <= 45 * 86400000)
-      .sort((a, b) => Math.abs(Date.parse(a.data) - td) - Math.abs(Date.parse(b.data) - td));
+    if (!alvo.length) continue; const ids = new Set(alvo.map(x => x.id));
+    // v3.450: a mensalidade do MÊS DE COMPETÊNCIA do termo; sem ela, a mais próxima do mês de competência (até 45 dias)
+    const td = t.competencia ? Date.parse(t.competencia + '-15') : Date.parse(t.data);
+    const cand = oc.filter(o => o.origem === 'sustentacao' && !o.coberta_por && ids.has(o.ref_id) && (t.competencia ? o.data.substring(0, 7) === t.competencia || (!o._sombra && Math.abs(Date.parse(o.data) - td) <= 45 * 86400000) : !o._sombra && Math.abs(Date.parse(o.data) - td) <= 45 * 86400000))
+      .sort((a, b) => ((t.competencia && b.data.substring(0, 7) === t.competencia) - (t.competencia && a.data.substring(0, 7) === t.competencia)) || Math.abs(Date.parse(a.data) - td) - Math.abs(Date.parse(b.data) - td));
     if (!cand.length) continue; const o = cand[0];
-    o.status = 'coberta'; o.coberta_por = { termo: t.termo || t.descricao, casou_por: 'termo_sustentacao', valor: t.valor, data: t.data }; t.substitui = o.descricao + ' · ' + o.projeto;
+    o.status = 'coberta'; o.coberta_por = { termo: t.termo || t.descricao, casou_por: 'termo_sustentacao', valor: t.valor, data: t.data, competencia: t.competencia, substituida_por: 'Termo ' + (t.termo || '') + (t.competencia ? ' (competência ' + t.competencia.split('-').reverse().join('/') + ')' : '') }; t.substitui = o.descricao + ' · ' + o.projeto;
   }
   // 3) avulsas / recorrentes manuais
   const manuais = Array.isArray(man) ? man : [];
@@ -8769,7 +8781,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
       ligErrada.add(String(r.emp_id)); const base = _dStr(r.data_termo) || _dStr(r.criado_em), prev = _dStr(r.cpfl_previsao_pagamento);
       oc.push({ id: 'trm_' + r.emp_id, origem: 'termo', termo: r.numero_termo ? String(r.numero_termo) : null, ref_id: String(r.id), projeto: r.projeto || '', cliente: r.empresa || r.contratante || r.projeto || '',
         descricao: 'Termo ' + (r.numero_termo || '') + (r.marco_projeto ? ' · ' + r.marco_projeto : r.parcela ? ' · ' + r.parcela : '') + (r.nf_numero ? ' · NF ' + r.nf_numero : ''), valor: round(v),
-        data: prev || (base ? _diasMais(base, 35) : _diasMais(hoje, 35)), base_data: (prev ? 'previsão de pagamento confirmada' : 'termo + 35 dias') + ' · ligação com a fatura ' + (r.qb_invoice_doc || f.doc) + ' ignorada (valor não bate)', status_termo: r.status,
+        data: prev || (base ? _diasMais(base, 35) : _diasMais(hoje, 35)), competencia: _rpCompet(r), base_data: (prev ? 'previsão de pagamento confirmada' : 'termo + 35 dias') + ' · ligação com a fatura ' + (r.qb_invoice_doc || f.doc) + ' ignorada (valor não bate)', status_termo: r.status,
         _txt: [r.projeto, r.fase, r.parcela, r.marco_projeto, r.periodo_medicao].filter(Boolean).join(' '), _sus: num(r.valor_mensal_sustentacao) > 0 || /sustenta/i.test([r.projeto, r.fase, r.parcela, r.marco_projeto].join(' ')) });
       avisos.push('Termo ' + (r.numero_termo || '?') + ' (' + (r.projeto || r.empresa || '') + ', ' + ('R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ') está ligado à fatura ' + (r.qb_invoice_doc || f.doc) + ' do QuickBooks (' + ('R$ ' + Number(f.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ', ' + (f.cliente || '') + ') — valor não bate; provavelmente nº de termo repetido. Corrija a ligação no Kanban de Faturamento; enquanto isso o termo conta como previsto.');
     }
@@ -8793,17 +8805,20 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   if (faturas) {
     const janela = (o, f, dias) => Math.abs((Date.parse(o.data) - Date.parse(f.data || f.emissao)) / 864e5) <= dias || Math.abs((Date.parse(o.data) - Date.parse(f.emissao || f.data)) / 864e5) <= dias;
     const valorOk = (o, f) => f.valor >= o.valor * 0.5 && f.valor <= o.valor * 2;
+    // v3.450: mensalidade (sustentação/recorrente) só é coberta por nota EMITIDA no mesmo mês (competência) — antes a nota de
+    // novembro (vencendo em dezembro) cobria a mensalidade de dezembro, que sumia da agenda
+    const compOk = (o, f) => !(o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) || String(f.emissao || f.data || '').substring(0, 7) === o.data.substring(0, 7);
     const cobrir = (o, f, como) => { o.coberta_por = { fatura: f.doc, id: f.id, valor: f.valor, data: f.data, em_aberto: f.saldo > 0, casou_por: como }; o.status = 'coberta'; f._usada = true; };
     const ord = faturas.filter(f => !f._usada).sort((a, b) => String(a.data).localeCompare(String(b.data)));
     for (const f of ord) {
-      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && janela(o, f, 31) && valorOk(o, f) && podeCobrir(o, f));
+      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && janela(o, f, 31) && valorOk(o, f) && podeCobrir(o, f) && compOk(o, f));
       if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'cliente');
     }
     // v3.221: pelo ASSUNTO — palavra distintiva da previsão (ex.: "anaplan") no texto da fatura, valor compatível, até 60 dias.
     // Cobre a previsão cadastrada com o nome do serviço no lugar do cliente (a fatura sai no nome do cliente real).
     for (const f of ord.filter(x => !x._usada)) {
       const txt = new Set(_rpTokens(f.texto));
-      const cand = oc.filter(o => !o.status && !o.coberta_por && janela(o, f, 60) && valorOk(o, f) && podeCobrir(o, f) && _rpTokens([o.cliente, o.projeto, o.descricao].join(' ')).some(t => txt.has(t)));
+      const cand = oc.filter(o => !o.status && !o.coberta_por && janela(o, f, 60) && valorOk(o, f) && podeCobrir(o, f) && compOk(o, f) && _rpTokens([o.cliente, o.projeto, o.descricao].join(' ')).some(t => txt.has(t)));
       if (!cand.length) continue; cand.sort(_rpMaisPerto(f)); cobrir(cand[0], f, 'assunto');
     }
   }
@@ -8820,8 +8835,8 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     const cmp = x => nrm(x).replace(/ /g, '');
     const contem = (txt, frag) => { const f = nrm(frag); return f.length >= 3 && (nrm(txt).includes(f) || cmp(txt).includes(f.replace(/ /g, ''))); };
     const docs = [];
-    (faturas || []).forEach(f => { const n = termoDe['id:' + f.id] || termoDe['doc:' + f.doc]; docs.push({ tipo: 'fatura', ref: f, rotulo: 'fatura ' + f.doc + (n ? ' (Termo ' + n + ')' : ''), txt: [f.texto, n ? termoTxtTodos[n] : ''].join(' '), datas: [f.data, f.emissao].filter(Boolean) }); });
-    oc.filter(o => o.origem === 'termo' && !o.coberta_por).forEach(t => docs.push({ tipo: 'termo', ref: t, rotulo: 'Termo ' + (t.termo || ''), txt: [t.descricao, t._txt, t.cliente].join(' '), datas: [t.data] }));
+    (faturas || []).forEach(f => { const n = termoDe['id:' + f.id] || termoDe['doc:' + f.doc]; docs.push({ tipo: 'fatura', ref: f, rotulo: 'fatura ' + f.doc + (n ? ' (Termo ' + n + ')' : ''), txt: [f.texto, n ? termoTxtTodos[n] : ''].join(' '), datas: [f.data, f.emissao].filter(Boolean), comp: String(f.emissao || f.data || '').substring(0, 7) || null }); }); // v3.450: mês de emissão
+    oc.filter(o => o.origem === 'termo' && !o.coberta_por).forEach(t => docs.push({ tipo: 'termo', ref: t, rotulo: 'Termo ' + (t.termo || '') + (t.competencia ? ' (competência ' + t.competencia.split('-').reverse().join('/') + ')' : ''), txt: [t.descricao, t._txt, t.cliente].join(' '), datas: t.competencia ? [t.competencia + '-15'] : [t.data], comp: t.competencia })); // v3.450
     const recs = oc.filter(o => (o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) && !o.coberta_por && !o.status);
     const textoRec = o => [o.cliente, o.projeto, o.descricao].join(' ');
     const casaDoc = (o, d) => { const tr = textoRec(o);
@@ -8831,7 +8846,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     const dist = (o, d) => Math.min(...d.datas.map(x => Math.abs(Date.parse(o.data) - Date.parse(x))));
     for (const o of recs.sort((a, b) => a.data.localeCompare(b.data))) {
       let best = null;
-      for (const d of docs) { if (d._subst) continue; const por = casaDoc(o, d); if (!por) continue; const dd = dist(o, d); if (dd > 25 * 86400000) continue; if (!best || dd < best.dd) best = { d, dd, por }; }
+      for (const d of docs) { if (d._subst) continue; if (d.comp && d.comp !== o.data.substring(0, 7)) continue; const por = casaDoc(o, d); if (!por) continue; const dd = dist(o, d); if (!d.comp && dd > 25 * 86400000) continue; if (!best || dd < best.dd) best = { d, dd, por }; }
       if (!best) continue; best.d._subst = true; o.status = 'coberta';
       o.coberta_por = best.d.tipo === 'fatura' ? { fatura: best.d.ref.doc, id: best.d.ref.id, valor: best.d.ref.valor, data: best.d.ref.data, em_aberto: best.d.ref.saldo > 0, casou_por: 'regra', regra: best.por, substituida_por: best.d.rotulo }
         : { termo: best.d.ref.termo || best.d.ref.descricao, casou_por: 'regra', regra: best.por, substituida_por: best.d.rotulo };
@@ -8953,7 +8968,12 @@ async function receitasDiagnostico({ busca } = {}) {
         : oc ? (destino(oc).motivo || 'na agenda em ' + oc.data + ' (' + oc.status + ')') : 'não gerou previsão (verificar)';
       return { termo: t.numero_termo, projeto: t.projeto, empresa: t.empresa, etapa: t.status, valor: v, data_prevista: oc?.data || null, na_agenda: !!oc && ['prevista', 'atrasada'].includes(oc.status), motivo }; }); } catch (e) { termos = [{ erro: e.message }]; }
   const sus = (r.sustentacoes || []).filter(x => casa(x.projeto, x.cliente)).map(x => ({ projeto: x.projeto, cliente: x.cliente, ativo: x.ajuste?.ativo !== false, valor_mensal: x.ajuste?.valor_mensal || x.sugerido || null, inicio: x.ajuste?.inicio || x.inicio || null, fim: x.ajuste?.fim || x.fim || null, aviso: x.ajuste?.ativo === false ? 'DESATIVADA na agenda' : !(x.ajuste?.valor_mensal || x.sugerido) ? 'SEM valor mensal (não projeta) — preencha na aba Sustentações' : !(x.ajuste?.inicio || x.inicio) ? 'SEM início/vigência (não projeta)' + (x.sem_contrato ? ' — projeto sem contrato cadastrado' : '') : (x.ajuste?.fim || x.fim) && (x.ajuste?.fim || x.fim) < new Date().toISOString().slice(0, 7) ? 'vigência terminou em ' + (x.ajuste?.fim || x.fim) : null,
-    meses: ocs.filter(o => o.origem === 'sustentacao' && String(o.ref_id) === String(x.id)).map(destino) }));
+    meses: ocs.filter(o => o.origem === 'sustentacao' && String(o.ref_id) === String(x.id)).map(destino),
+    // v3.450: meses dos próximos 12 sem mensalidade e o porquê
+    sem_mensalidade: (() => { const e = x.efetivo || {}, out = [], h = _hojeBR().substring(0, 7); for (let i = 0, mes = h; i < 13; i++, mes = _mesMais(mes, 1)) {
+      if ((r.ocorrencias || []).some(o => o.origem === 'sustentacao' && String(o.ref_id) === String(x.id) && o.data.substring(0, 7) === mes)) continue;
+      const mrc = (r.ocorrencias || []).find(o => o.origem === 'marco' && String(o.projeto_id) === String(x.id) && o.data.substring(0, 7) === mes);
+      out.push({ mes, motivo: e.ativo === false ? 'sustentação desligada' : !(e.valor_mensal > 0) ? 'sem valor mensal' : !e.inicio || mes < e.inicio ? 'antes do início do contrato (' + (e.inicio || '?') + ')' : !e.fim || mes > e.fim ? 'depois do fim do contrato (' + (e.fim || '?') + ') — ajuste o fim na aba Sustentações' : mrc ? 'o projeto tem o marco "' + mrc.descricao + '" no mês (o marco é a cobrança)' : 'fora da janela da agenda' }); } return out; })() }));
   const man = (r.manuais || []).filter(x => casa(x.cliente, x.projeto, x.descricao)).map(x => ({ id: x.id, cliente: x.cliente, descricao: x.descricao, valor: x.valor, recorrencia: x.recorrencia, inicio: x.inicio, fim: x.fim, ativo: x.ativo !== false,
     meses: ocs.filter(o => o.origem === 'manual' && String(o.ref_id) === String(x.id)).map(destino) }));
   const marcosNa = ocs.filter(o => o.origem === 'marco').map(destino), marcosFora = (r.marcos_fora || []).filter(m => casa(m.projeto, m.cliente, m.descricao));
