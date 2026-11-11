@@ -16,3 +16,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 2026-11-10 · v3.441 · ✅ entregue
 - [x] v3.442: ações em lote nos marcados — 📣 Remarketing (nova etapa, kv vendas:floresta:remarketing, CSV do público), ↩ tirar do remarketing, 🗑 excluir (arquiva contato/negócio no HubSpot, restaurável por 90 dias); arrastar para/da coluna Remarketing também funciona
 - 2026-11-11 · v3.442 · ✅ entregue
+- [x] v3.445: campos da IARA no HubSpot (achados pelo rótulo): "Fluxo IA" = IA → etapa Atendimento IARA; "Atendido pela IA" → chip 💬; "Resumo SDR Atlantyx" → conversa no card; "Abordagem" → tag no card, filtro e edição gravando no HubSpot. Botão da seleção agora grava Fluxo IA = IA (a IARA é externa; o envio pela Z-API saiu da tela)
+- 2026-11-11 · v3.445 · ✅ entregue

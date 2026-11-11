@@ -13,7 +13,7 @@
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'Demorou demais — tente de novo' : 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
-  let D = null, vista = 'kanban', filtro = { q: '', tipo: '', atrasados: false, decisores: false, dono: '' }, painel = 'fila', arrastando = null, carregando = false;
+  let D = null, vista = 'kanban', filtro = { q: '', tipo: '', atrasados: false, decisores: false, dono: '', abordagem: '' }, painel = 'fila', arrastando = null, carregando = false;
   const SEL = new Set();   // v3.441: cards marcados para a IARA
   const FLUXO = ['frio', 'iara', 'abordado', 'engajado', 'qualificado', 'reuniao', 'proposta', 'negociacao', 'cliente', 'remarketing', 'congelado', 'perdido'];
   const corTemp = t => t >= 70 ? '#ff5d5d' : t >= 45 ? '#ffaa3c' : t >= 25 ? '#ffd166' : '#5aa9ff';
@@ -27,7 +27,7 @@
   }
   function filtrados() {
     const q = filtro.q.toLowerCase().trim();
-    return (D?.cards || []).filter(c => (!filtro.tipo || c.tipo === filtro.tipo) && (!filtro.atrasados || c.atrasado) && (!filtro.decisores || c.decisor) && (!filtro.dono || c.dono === filtro.dono)
+    return (D?.cards || []).filter(c => (!filtro.tipo || c.tipo === filtro.tipo) && (!filtro.atrasados || c.atrasado) && (!filtro.decisores || c.decisor) && (!filtro.dono || c.dono === filtro.dono) && (!filtro.abordagem || (filtro.abordagem === '__sem' ? !c.abordagem : String(c.abordagem || '').split(', ').includes(filtro.abordagem)))
       && (!q || [c.nome, c.empresa, c.cargo, c.contato, c.email, c.etapa_hs].join(' ').toLowerCase().includes(q)));
   }
   function render() {
@@ -72,6 +72,7 @@
       <div class="seg" style="margin:0;"><button class="${vista === 'kanban' ? 'on' : ''}" onclick="FLORESTA.vista('kanban')">▦ Kanban</button><button class="${vista === 'floresta' ? 'on' : ''}" onclick="FLORESTA.vista('floresta')">🌳 Floresta</button><button class="${vista === 'lista' ? 'on' : ''}" onclick="FLORESTA.vista('lista')">☰ Lista</button></div>
       <input class="fi" style="width:200px;display:inline-block;" placeholder="Buscar nome, empresa, cargo…" value="${esc(filtro.q)}" oninput="FLORESTA.f('q',this.value)"/>
       <select class="fsel" style="width:auto;display:inline-block;" onchange="FLORESTA.f('tipo',this.value)"><option value="">Contatos + negócios</option><option value="contato" ${filtro.tipo === 'contato' ? 'selected' : ''}>Só contatos sem negócio</option><option value="negocio" ${filtro.tipo === 'negocio' ? 'selected' : ''}>Só negócios</option></select>
+      ${(() => { const tags = [...new Set((D.cards || []).flatMap(c => String(c.abordagem || '').split(', ').filter(Boolean)))].sort(); return tags.length || D.props_ia?.abordagem ? `<select class="fsel" style="width:auto;display:inline-block;" onchange="FLORESTA.f('abordagem',this.value)"><option value="">Toda abordagem</option><option value="__sem" ${filtro.abordagem === '__sem' ? 'selected' : ''}>Sem tag de abordagem</option>${tags.map(t => `<option ${filtro.abordagem === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''; })()}
       <select class="fsel" style="width:auto;display:inline-block;" onchange="FLORESTA.f('dono',this.value)"><option value="">Todos os donos</option>${donos.map(d => `<option ${filtro.dono === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
       <label style="font-size:11px;display:flex;gap:4px;align-items:center;"><input type="checkbox" ${filtro.atrasados ? 'checked' : ''} onchange="FLORESTA.f('atrasados',this.checked)"/> só estourados</label>
       <label style="font-size:11px;display:flex;gap:4px;align-items:center;"><input type="checkbox" ${filtro.decisores ? 'checked' : ''} onchange="FLORESTA.f('decisores',this.checked)"/> só decisores</label>
@@ -81,7 +82,7 @@
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.sla()">⏱ Tempos limite</button>
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.carregar(true)">↻ Atualizar</button>
     </div>
-    ${SEL.size ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:rgba(156,109,255,.1);border:1px solid rgba(156,109,255,.35);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;"><b>${SEL.size} marcado(s)</b><span style="flex:1;"></span><button class="btn btn-p" style="font-size:10.5px;" onclick="FLORESTA.iara()">🤖 Abordar com a IARA</button><button class="btn" style="font-size:10.5px;color:#ffaa3c;border-color:#ffaa3c;" onclick="FLORESTA.lote('remarketing')">📣 Remarketing</button>${[...SEL].some(id => D.cards.find(c => c.id === id)?.etapa === 'remarketing') ? `<button class="btn" style="font-size:10.5px;" onclick="FLORESTA.lote('tirar_remarketing')">↩ Tirar do remarketing</button>` : ''}<button class="btn" style="font-size:10.5px;color:var(--red);border-color:var(--red);" onclick="FLORESTA.lote('excluir')">🗑 Excluir</button><button class="btn btn-g" style="font-size:10.5px;" onclick="FLORESTA.limpar()">Limpar</button></div>` : ''}
+    ${SEL.size ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:rgba(156,109,255,.1);border:1px solid rgba(156,109,255,.35);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;"><b>${SEL.size} marcado(s)</b><span style="flex:1;"></span><button class="btn btn-p" style="font-size:10.5px;" onclick="FLORESTA.iara()">🤖 Colocar no fluxo da IARA</button>${[...SEL].some(id => D.cards.find(c => c.id === id)?.no_fluxo_ia) ? `<button class="btn" style="font-size:10.5px;" onclick="FLORESTA.tirarIara()">Tirar da IARA</button>` : ''}<button class="btn" style="font-size:10.5px;color:#ffaa3c;border-color:#ffaa3c;" onclick="FLORESTA.lote('remarketing')">📣 Remarketing</button>${[...SEL].some(id => D.cards.find(c => c.id === id)?.etapa === 'remarketing') ? `<button class="btn" style="font-size:10.5px;" onclick="FLORESTA.lote('tirar_remarketing')">↩ Tirar do remarketing</button>` : ''}<button class="btn" style="font-size:10.5px;color:var(--red);border-color:var(--red);" onclick="FLORESTA.lote('excluir')">🗑 Excluir</button><button class="btn btn-g" style="font-size:10.5px;" onclick="FLORESTA.limpar()">Limpar</button></div>` : ''}
     ${(D.avisos || []).map(a => `<div style="font-size:10.5px;color:var(--gold);margin-bottom:6px;">⚠ ${esc(a)}</div>`).join('')}
     <div class="fl-wrap"><div>${vista === 'kanban' ? kanban(L) : vista === 'floresta' ? forest(L) : lista(L)}</div>${lado()}</div>
     <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Atualizado ${new Date(D.gerado_em).toLocaleString('pt-BR')} · arraste um card para outra coluna para movê-lo no HubSpot · 🧊 congelar = esperar até uma data e voltar à etapa · a IA nunca envia mensagens: você aprova e envia.</div>`;
@@ -94,7 +95,7 @@
         <div style="font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><input type="checkbox" title="Marcar para a IARA abordar" ${SEL.has(c.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="FLORESTA.marcar('${esc(c.id)}',this.checked)" style="margin:0 4px 0 0;vertical-align:-1px;cursor:pointer;"/>${c.tipo === 'negocio' ? '💼 ' : ''}${esc(c.nome)}</div>
         <div style="font-size:9.5px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc([c.tipo === 'negocio' ? c.contato : c.cargo, c.empresa].filter(Boolean).join(' · ') || '—')}</div></div>
         ${c.sla ? `<div class="fl-ring" style="background:conic-gradient(${cs} ${pct}%,var(--bd) 0);" title="${c.dias} de ${c.sla} dias na etapa"><span style="color:${cs};">${c.dias}d</span></div>` : c.dias != null ? `<span class="fl-chip">${c.dias}d</span>` : ''}</div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;padding-left:4px;">${c.valor ? `<span class="fl-chip" style="color:var(--green);">${brl(c.valor)}</span>` : ''}${c.decisor ? '<span class="fl-chip" style="color:var(--pu);">decisor</span>' : ''}${c.atrasado ? `<span class="fl-chip" style="color:var(--red);">+${c.estouro}d além</span>` : ''}${c.congelado ? `<span class="fl-chip" style="color:#5aa9ff;">volta ${dt(c.congelado.ate)}</span>` : ''}${(D.fila || []).some(f => f.card_id === c.id) ? '<span class="fl-chip" style="color:var(--pu);">🤖 decisão</span>' : ''}${c.dono ? `<span class="fl-chip">${esc(c.dono.split(' ')[0])}</span>` : ''}</div></div>`;
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;padding-left:4px;">${c.atendido_ia ? '<span class="fl-chip" style="color:#25d366;" title="A IARA já mandou WhatsApp">💬 IARA falou</span>' : c.no_fluxo_ia ? '<span class="fl-chip" style="color:var(--pu);" title="Fluxo IA = IA no HubSpot">🤖 no fluxo</span>' : ''}${c.resumo_sdr ? '<span class="fl-chip" title="Tem resumo da conversa — clique para ler">📝 conversa</span>' : ''}${c.abordagem ? `<span class="fl-chip" style="color:#ffaa3c;" title="Abordagem">🏷 ${esc(c.abordagem)}</span>` : ''}${c.valor ? `<span class="fl-chip" style="color:var(--green);">${brl(c.valor)}</span>` : ''}${c.decisor ? '<span class="fl-chip" style="color:var(--pu);">decisor</span>' : ''}${c.atrasado ? `<span class="fl-chip" style="color:var(--red);">+${c.estouro}d além</span>` : ''}${c.congelado ? `<span class="fl-chip" style="color:#5aa9ff;">volta ${dt(c.congelado.ate)}</span>` : ''}${(D.fila || []).some(f => f.card_id === c.id) ? '<span class="fl-chip" style="color:var(--pu);">🤖 decisão</span>' : ''}${c.dono ? `<span class="fl-chip">${esc(c.dono.split(' ')[0])}</span>` : ''}</div></div>`;
   }
   function kanban(L) {
     return `<div class="fl-kb">${FLUXO.map(id => { const e = D.etapas.find(x => x.id === id), C = L.filter(c => c.etapa === id).sort((a, b) => (b.atrasado - a.atrasado) || (b.temperatura - a.temperatura)), v = C.reduce((t, c) => t + (c.valor || 0), 0);
@@ -138,6 +139,11 @@
     const m = document.createElement('div'); m.id = 'flModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
     m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:14px;width:min(560px,100%);padding:16px;font-size:11px;">
       <div style="display:flex;gap:8px;align-items:flex-start;"><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">${c.tipo === 'negocio' ? '💼 ' : ''}${esc(c.nome)}</div><div style="color:var(--t3);">${esc([c.cargo, c.empresa].filter(Boolean).join(' · '))}</div></div><span style="font-size:22px;font-weight:800;color:${corTemp(c.temperatura)};" title="temperatura">${c.temperatura}°</span></div>
+      ${(c.resumo_sdr || c.atendido_ia || c.no_fluxo_ia || D.props_ia?.abordagem) ? `<div style="margin-top:10px;border:1px solid rgba(156,109,255,.35);background:rgba(156,109,255,.07);border-radius:10px;padding:9px 11px;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><b>🤖 IARA</b>${c.no_fluxo_ia ? '<span class="fl-chip" style="color:var(--pu);">no fluxo da IARA</span>' : '<span class="fl-chip">fora do fluxo</span>'}${c.atendido_ia ? '<span class="fl-chip" style="color:#25d366;">💬 já mandou WhatsApp</span>' : ''}</div>
+        ${c.resumo_sdr ? `<div style="font-size:9.5px;color:var(--t3);margin-top:6px;text-transform:uppercase;">Resumo da conversa (SDR)</div><div style="white-space:pre-wrap;line-height:1.55;margin-top:2px;max-height:220px;overflow:auto;">${esc(c.resumo_sdr)}</div>` : '<div style="color:var(--t3);margin-top:4px;">Sem resumo de conversa ainda.</div>'}
+        ${D.props_ia?.abordagem ? `<div style="font-size:9.5px;color:var(--t3);margin-top:8px;text-transform:uppercase;">Abordagem (tag)</div><div id="flAbTags" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${(D.props_ia.abordagem_opcoes || []).length ? D.props_ia.abordagem_opcoes.map(o => `<label class="fl-chip" style="cursor:pointer;"><input type="checkbox" value="${esc(o.v)}" ${String(c.abordagem || '').split(', ').includes(o.l) ? 'checked' : ''} style="margin:0 3px 0 0;vertical-align:-1px;"/>${esc(o.l)}</label>`).join('') : `<input class="fi" id="flAbTxt" value="${esc(c.abordagem || '')}" style="max-width:260px;"/>`}<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="FLORESTA.abordagem('${esc(c.id)}')">Salvar no HubSpot</button></div>` : ''}
+      </div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;">
         <div><span style="color:var(--t3);">Etapa:</span> ${e.icone} ${esc(e.nome)}</div><div><span style="color:var(--t3);">No HubSpot:</span> ${esc(c.etapa_hs || '—')}</div>
         <div><span style="color:var(--t3);">Na etapa há:</span> <b style="color:${corSla(c)};">${c.dias ?? '?'} dias</b>${c.sla ? ' (limite ' + c.sla + ')' : ''}</div><div><span style="color:var(--t3);">Último contato:</span> ${dt(c.ultimo_contato)}</div>
@@ -193,22 +199,18 @@
   // ══ v3.441: IARA — revisar e aprovar a 1ª mensagem de cada marcado
   function modal(html, w) { document.getElementById('flModal')?.remove(); const m = document.createElement('div'); m.id = 'flModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
     m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:14px;width:min(${w || 760}px,100%);max-height:90vh;overflow:auto;padding:16px;font-size:11px;">${html}</div>`; document.body.appendChild(m); return m; }
-  async function iara() {
-    const ids = [...SEL]; if (!ids.length) return; const m = modal('<div style="padding:30px;text-align:center;color:var(--t3);">🤖 A IARA está escrevendo as mensagens de ' + ids.length + ' contato(s)…</div>');
-    let r; try { r = await api('floresta_iara_preparar', { card_ids: ids }); } catch (e) { m.querySelector('div').innerHTML = '<div style="color:var(--red);padding:20px;">Erro: ' + esc(e.message) + '</div>'; return; }
-    const it = r.itens || [];
-    m.querySelector('div').innerHTML = `<div style="font-family:var(--H);font-size:15px;font-weight:700;">🤖 Abordagem IARA — revise e aprove</div>
-      <div style="color:var(--t2);margin:3px 0 10px;line-height:1.5;">A IARA manda a 1ª mensagem pelo WhatsApp da Atlantyx e segue a conversa quando o contato responder (qualifica e marca reunião). Quem pediu para sair, não tem telefone ou já foi abordado nos últimos 7 dias fica de fora. Os cards vão para a etapa <b>🤖 Abordagem IARA</b>.</div>
-      ${it.map(x => `<div style="border:1px solid var(--bd);border-radius:10px;padding:8px 10px;margin-bottom:8px;${x.pode ? '' : 'opacity:.6;'}"><div style="display:flex;gap:6px;align-items:center;">${x.pode ? `<input type="checkbox" class="flIaOk" data-id="${esc(x.card_id)}" checked/>` : ''}<b>${esc(x.contato || x.nome)}</b><span style="color:var(--t3);">${esc([x.cargo, x.empresa].filter(Boolean).join(' · '))}${x.telefone ? ' · +' + esc(x.telefone) : ''}</span></div>
-        ${x.pode ? `<textarea class="fta flIaMsg" data-id="${esc(x.card_id)}" rows="3" style="margin-top:5px;font-size:10.5px;">${esc(x.mensagem || '')}</textarea>` : `<div style="color:var(--gold);margin-top:3px;">fora: ${esc(x.motivo)}</div>`}</div>`).join('')}
-      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px;position:sticky;bottom:0;background:var(--bg2);padding-top:6px;"><button class="btn btn-g" onclick="document.getElementById('flModal').remove()">Cancelar</button>${r.prontos ? `<button class="btn btn-gn" id="flIaEnviar">✔ Aprovar e enviar pela IARA</button>` : ''}</div>`;
-    const b = m.querySelector('#flIaEnviar'); if (b) b.onclick = async () => {
-      const itens = [...m.querySelectorAll('.flIaOk:checked')].map(c => ({ card_id: c.dataset.id, mensagem: m.querySelector('.flIaMsg[data-id="' + CSS.escape(c.dataset.id) + '"]')?.value || '' })).filter(x => x.mensagem.trim());
-      if (!itens.length) return nota('Nenhuma mensagem marcada', 'error'); if (!confirm('Enviar ' + itens.length + ' mensagem(ns) pelo WhatsApp da Atlantyx agora?')) return;
-      b.disabled = true; b.textContent = 'Enviando… (' + itens.length + ')';
-      try { const x = await api('floresta_iara_enviar', { itens }); const falhas = x.resultados.filter(y => !y.ok);
-        nota(x.enviados + ' enviada(s) pela IARA' + (falhas.length ? ' · ' + falhas.length + ' não: ' + falhas.map(y => y.nome + ' (' + y.motivo + ')').join('; ') : ''), falhas.length ? 'error' : 'success');
-        m.remove(); SEL.clear(); await carregar(true); } catch (e) { b.disabled = false; b.textContent = '✔ Aprovar e enviar pela IARA'; nota('Erro: ' + e.message, 'error'); } };
+  async function iara() { // v3.445: a IARA é um sistema externo — entrar no fluxo dela = "Fluxo IA" = IA no contato do HubSpot
+    const ids = [...SEL]; if (!ids.length) return; const L = ids.map(id => D.cards.find(c => c.id === id)).filter(Boolean); const semTel = L.filter(c => !c.telefone).length, ja = L.filter(c => c.no_fluxo_ia).length;
+    if (!confirm('Colocar ' + L.length + ' no fluxo da IARA?\n\nO campo "' + (D.props_ia?.fluxo || 'Fluxo IA') + '" passa a ser IA no HubSpot e a IARA assume a abordagem pelo WhatsApp.' + (ja ? '\n' + ja + ' já estão no fluxo.' : '') + (semTel ? '\n⚠ ' + semTel + ' sem telefone — a IARA não consegue falar com eles.' : ''))) return;
+    try { const r = await api('floresta_iara_fluxo', { card_ids: ids }); const f = (r.resultados || []).filter(x => !x.ok);
+      nota(r.ok + ' no fluxo da IARA' + (f.length ? ' · ' + f.length + ' com erro: ' + f.map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success'); SEL.clear(); await carregar(true); }
+    catch (e) { nota('Erro: ' + e.message, 'error'); }
+  }
+  async function tirarIara() { const ids = [...SEL]; if (!ids.length || !confirm('Tirar ' + ids.length + ' do fluxo da IARA (limpa o campo no HubSpot)?')) return;
+    try { const r = await api('floresta_iara_fluxo', { card_ids: ids, tirar: true }); nota(r.ok + ' fora do fluxo da IARA'); SEL.clear(); await carregar(true); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
+  async function abordagem(id) {
+    const box = document.getElementById('flAbTags'); const t = box?.querySelector('#flAbTxt'); const valores = t ? [t.value.trim()] : [...box.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value);
+    try { await api('floresta_abordagem', { card_id: id, valores }); nota('Abordagem salva no HubSpot'); document.getElementById('flModal')?.remove(); await carregar(true); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
   // ══ v3.441: gerar leads frios no Apollo (mesma busca da Prospecção, sem crédito) e plantar na floresta
   function apollo() {
@@ -238,7 +240,7 @@
       const b = ev.target; b.disabled = true; b.textContent = 'Plantando ' + sel.length + '…';
       try { const r = await api('floresta_importar', { pessoas: sel }); nota(r.criados + ' lead(s) frio(s) plantado(s)' + (r.ja_existiam ? ' · ' + r.ja_existiam + ' já existiam no HubSpot' : ''));
         m.remove(); filtro.q = ''; await carregar(true); (r.resultados || []).filter(x => x.card_id).forEach(x => SEL.add(x.card_id)); render();
-        if (SEL.size) nota(SEL.size + ' novo(s) marcado(s) — clique em "Abordar com a IARA" para a IARA falar com eles (os sem telefone ficam de fora)'); }
+        if (SEL.size) nota(SEL.size + ' novo(s) marcado(s) — clique em "Colocar no fluxo da IARA" para ela abordar (precisa de telefone)'); }
       catch (e) { b.disabled = false; b.textContent = '🌱 Plantar na floresta'; nota('Erro: ' + e.message, 'error'); } };
   }
   // ══ v3.442: ações em lote — remarketing / tirar / excluir (arquiva no HubSpot; restaurável lá por 90 dias)
@@ -255,7 +257,7 @@
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })); a.download = 'remarketing-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
       nota(L.length + ' pessoa(s) — suba no Meta, LinkedIn ou na campanha de e-mail'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
-  window.FLORESTA = { lote, csvRmk, marcar: (id, on) => { on ? SEL.add(id) : SEL.delete(id); render(); }, marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); render(); }, limpar: () => { SEL.clear(); render(); }, iara, apollo,
+  window.FLORESTA = { tirarIara, abordagem, lote, csvRmk, marcar: (id, on) => { on ? SEL.add(id) : SEL.delete(id); render(); }, marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); render(); }, limpar: () => { SEL.clear(); render(); }, iara, apollo,
     abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
     painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, ver, congelar, ia, iaUm, decidir, wa, mail, sla, _d: () => D };
 })();
