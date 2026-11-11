@@ -1,0 +1,74 @@
+// public/custo-hora-ui.js — v3.455 · Custo por Projeto, rateio do fixo e piso do valor-hora (tela S3)
+(function () {
+  let D = null, carregando = false;
+  const P = { meses: 3, metodo: 'horas', utilizacao_pct: '', margem_alvo_pct: '', fixo_manual: '', aliquota_pct: '' };
+  const E = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const R$ = v => v == null ? '—' : fmtBRLcompleto(v), pc = v => v == null ? '—' : String(v).replace('.', ',') + '%', h = v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR') + ' h';
+  const MOT = { projetos: '🧩 Projetos', produtos: '📦 Produtos', pessoas: '👥 Alocação' };
+  const box = () => document.getElementById('chCorpo');
+
+  async function carregar() {
+    if (carregando) return; carregando = true; const b = box(); if (!b) return;
+    b.innerHTML = '<div style="padding:20px;color:var(--t3);font-size:12px;">Apurando folha (Maestro), horas apontadas, despesas e faturas (QuickBooks)…</div>';
+    try { const q = {}; for (const [k, v] of Object.entries(P)) if (v !== '' && v != null) q[k] = v;
+      D = await finApi('custo_projetos', q, { timeoutMs: 90000 });
+      const pr = D.parametros || {}; ['utilizacao_pct', 'margem_alvo_pct', 'fixo_manual', 'aliquota_pct'].forEach(k => { if (P[k] === '' && pr[k] != null) P[k] = pr[k]; }); if (pr.metodo && !q.metodo) P.metodo = pr.metodo;
+      render(); }
+    catch (e) { b.innerHTML = '<div style="padding:16px;color:var(--red);font-size:12px;">Erro: ' + E(e.message) + '</div>'; }
+    finally { carregando = false; }
+  }
+  function card(t, v, sub, cor) { return '<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;min-width:150px;flex:1;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">' + t + '</div><div style="font-size:18px;font-weight:700;margin-top:3px;color:' + (cor || 'var(--t1)') + ';">' + v + '</div>' + (sub ? '<div style="font-size:10px;color:var(--t3);margin-top:2px;">' + sub + '</div>' : '') + '</div>'; }
+
+  function render() {
+    const b = box(); if (!b || !D) return; const S = D.resumo, Pi = D.piso;
+    const metOpt = [['horas', 'pelas horas apontadas'], ['receita', 'pela receita'], ['custo', 'pelo custo direto']].map(([v, t]) => '<option value="' + v + '"' + (P.metodo === v ? ' selected' : '') + '>' + t + '</option>').join('');
+    const inp = (k, ph, w) => '<input class="fi" style="width:' + (w || 80) + 'px;margin:0;font-size:11px;" value="' + E(P[k]) + '" placeholder="' + ph + '" onchange="CH.p(\'' + k + '\',this.value)">';
+    let html = '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11px;margin-bottom:12px;">'
+      + 'Período: <select class="fi" style="width:auto;margin:0;font-size:11px;" onchange="CH.p(\'meses\',this.value)">' + [1, 3, 6, 12].map(n => '<option value="' + n + '"' + (+P.meses === n ? ' selected' : '') + '>últimos ' + n + ' mês(es) fechados</option>').join('') + '</select>'
+      + ' Rateio do fixo: <select class="fi" style="width:auto;margin:0;font-size:11px;" onchange="CH.p(\'metodo\',this.value)">' + metOpt + '</select>'
+      + ' Utilização-alvo % ' + inp('utilizacao_pct', '75', 56) + ' Margem-alvo % ' + inp('margem_alvo_pct', '30', 56) + ' Impostos % ' + inp('aliquota_pct', String(D.aliquota_pct), 56) + ' Fixo/mês R$ ' + inp('fixo_manual', 'do QuickBooks', 110)
+      + ' <button class="btn btn-p" style="font-size:11px;" onclick="CH.carregar()">↻ Recalcular</button> <button class="btn btn-g" style="font-size:11px;" onclick="CH.salvarPar()" title="Guarda utilização, margem, impostos, fixo e método como padrão">Salvar como padrão</button></div>'
+      + '<div style="font-size:10.5px;color:var(--t3);margin-bottom:10px;">Meses: ' + D.meses.map(m => m.split('-').reverse().join('/')).join(', ') + ' · valores por mês (média) · impostos ' + pc(D.aliquota_pct) + ' (' + E(D.aliquota_fonte) + ') · fixo: ' + E(S.fixo_fonte) + '</div>';
+    if ((D.avisos || []).length) html += '<div style="background:rgba(255,190,60,.08);border:1px solid rgba(255,190,60,.35);border-radius:8px;padding:8px 12px;font-size:11px;margin-bottom:12px;">' + D.avisos.map(a => '⚠ ' + E(a)).join('<br>') + '</div>';
+    // PISO
+    html += '<div style="font-weight:700;font-size:13px;margin:4px 0 8px;">💰 Piso do valor-hora da Atlantyx</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;">'
+      + card('Custo total / mês', R$(S.custo_total_mes), 'folha ' + R$(S.folha_mes) + ' + fixo ' + R$(S.fixo_estrutura_mes))
+      + card('Piso (empata) · realizado', R$(Pi.realizado.piso_hora) + '/h', h(Pi.realizado.horas_mes) + ' em projetos/mês', 'var(--red)')
+      + card('Preço-alvo · realizado', R$(Pi.realizado.preco_alvo_hora) + '/h', 'com ' + pc(D.margem_alvo_pct) + ' de margem', 'var(--green)')
+      + card('Piso · na utilização-alvo', R$(Pi.meta.piso_hora) + '/h', h(Pi.meta.horas_mes) + ' = ' + S.profissionais + ' pessoas × 160 h × ' + pc(D.utilizacao_pct), 'var(--gold)')
+      + card('Preço-alvo · utilização-alvo', R$(Pi.meta.preco_alvo_hora) + '/h', 'meta de preço de tabela', 'var(--green)')
+      + card('Utilização real', pc(S.utilizacao_real_pct), h(S.horas_projetos_mes) + ' de ' + h(S.capacidade_mes) + ' · internas ' + h(S.horas_internas_mes))
+      + '</div><div style="font-size:10.5px;color:var(--t3);margin-bottom:16px;line-height:1.5;">Piso = custo total do mês ÷ horas vendáveis ÷ (1 − impostos). Abaixo do piso cada hora vendida dá prejuízo. Preço-alvo = custo total ÷ horas ÷ (1 − impostos − margem-alvo). '
+      + 'O piso "realizado" usa as horas que de fato foram apontadas em projetos; o "na utilização-alvo" usa a capacidade do time × a utilização que você quer (mais horas vendidas → piso menor). Fixo pesa ' + pc(S.fator_fixo_pct) + ' sobre a folha.</div>';
+    // MOTORES
+    if ((D.motores || []).length) html += '<div style="font-weight:700;font-size:13px;margin:4px 0 8px;">⚙ Por motor</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
+      + D.motores.map(m => card(MOT[m.motor] || m.motor, R$(m.margem_mes), 'receita ' + R$(m.receita_mes) + ' · margem ' + pc(m.margem_pct) + ' · ' + h(m.horas_mes), m.margem_mes >= 0 ? 'var(--green)' : 'var(--red)')).join('') + '</div>';
+    // PROJETOS
+    html += '<div style="font-weight:700;font-size:13px;margin:4px 0 8px;">🧾 Resultado por projeto (centro de custo) · média mensal</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:980px;"><thead><tr style="color:var(--t3);font-size:9px;text-transform:uppercase;text-align:right;"><th style="text-align:left;padding:5px;">Projeto</th><th style="text-align:left;">Motor</th><th>Horas</th><th>Receita</th><th>Impostos</th><th>Custo direto (folha)</th><th>Fixo rateado</th><th>Margem</th><th>Margem %</th><th>Custo/h</th><th>Preço/h realizado</th></tr></thead><tbody>'
+      + D.projetos.map((p, i) => '<tr style="border-top:1px solid var(--bd);text-align:right;cursor:pointer;" onclick="CH.ver(' + i + ')"><td style="text-align:left;padding:6px 5px;"><b>' + E(p.projeto) + '</b>' + (p.clientes.length ? '<div style="font-size:9.5px;color:var(--t3);">' + E(p.clientes.join(', ')) + '</div>' : '') + '</td><td style="text-align:left;">' + (MOT[p.motor] || p.motor) + '</td><td>' + h(p.horas_mes) + '</td><td>' + R$(p.receita_mes) + '</td><td style="color:var(--t3);">' + R$(p.impostos_mes) + '</td><td>' + R$(p.custo_direto_mes) + '</td><td>' + R$(p.fixo_rateado_mes) + ' <span style="color:var(--t3);font-size:9.5px;">' + pc(p.peso_rateio_pct) + '</span></td><td style="font-weight:700;color:' + (p.margem_mes >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + R$(p.margem_mes) + '</td><td>' + pc(p.margem_pct) + '</td><td>' + R$(p.custo_hora) + '</td><td style="color:' + (p.preco_hora_realizado != null && Pi.realizado.piso_hora && p.preco_hora_realizado < Pi.realizado.piso_hora ? 'var(--red)' : 'var(--t1)') + ';">' + R$(p.preco_hora_realizado) + '</td></tr><tr id="chDet' + i + '" style="display:none;"><td colspan="11" style="padding:4px 10px 10px;font-size:10.5px;color:var(--t2);">' + (p.pessoas.length ? 'Folha apropriada: ' + p.pessoas.map(x => E(x.nome) + ' ' + R$(x.custo_mes)).join(' · ') : 'Sem horas apontadas (receita sem custo direto registrado).') + '</td></tr>').join('')
+      + '<tr style="border-top:2px solid var(--bd2);font-weight:700;text-align:right;"><td style="text-align:left;padding:6px 5px;">Fixo total rateado</td><td></td><td></td><td>' + R$(S.receita_mes) + '</td><td></td><td></td><td>' + R$(S.fixo_total_rateado_mes) + '</td><td colspan="4" style="text-align:left;font-weight:400;font-size:10px;color:var(--t3);">= estrutura ' + R$(S.fixo_estrutura_mes) + ' + folha não apropriada a projeto ' + R$(S.folha_nao_apropriada_mes) + '</td></tr></tbody></table></div>';
+    if ((D.internos || []).length) html += '<div style="font-size:10.5px;color:var(--t3);margin-top:6px;">Horas internas (viram custo fixo): ' + D.internos.map(x => E(x.projeto) + ' ' + h(x.horas_mes) + ' · ' + R$(x.custo_mes)).join(' · ') + '</div>';
+    // PESSOAS
+    html += '<div style="font-weight:700;font-size:13px;margin:18px 0 8px;">👤 Piso por profissional</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:860px;"><thead><tr style="color:var(--t3);font-size:9px;text-transform:uppercase;text-align:right;"><th style="text-align:left;padding:5px;">Profissional</th><th>Folha/mês</th><th>Horas/mês</th><th>Em projetos</th><th>Utilização</th><th>Valor-hora custo</th><th>Piso de venda/h</th><th>Preço-alvo/h</th><th style="text-align:left;">Projetos</th></tr></thead><tbody>'
+      + D.pessoas.map(p => '<tr style="border-top:1px solid var(--bd);text-align:right;"><td style="text-align:left;padding:5px;"><b>' + E(p.nome) + '</b><div style="font-size:9.5px;color:var(--t3);">' + E(p.cargo) + '</div></td><td>' + R$(p.custo_mes) + '</td><td>' + h(p.horas_mes) + '</td><td>' + h(p.horas_projeto_mes) + '</td><td>' + pc(p.utilizacao_pct) + '</td><td>' + R$(p.vh_custo) + '</td><td style="color:var(--red);">' + R$(p.piso_hora) + '</td><td style="color:var(--green);">' + R$(p.preco_alvo_hora) + '</td><td style="text-align:left;font-size:10px;color:var(--t3);">' + p.projetos.map(x => E(x.projeto)).join(', ') + '</td></tr>').join('') + '</tbody></table></div>'
+      + '<div style="font-size:10.5px;color:var(--t3);margin-top:6px;">Piso por profissional = valor-hora custo × (1 + fixo ÷ folha) ÷ utilização-alvo ÷ (1 − impostos).</div>';
+    // MOTOR POR CLIENTE
+    html += '<div style="font-weight:700;font-size:13px;margin:20px 0 6px;">🏷 Motor de cada cliente / projeto</div><div style="font-size:10.5px;color:var(--t3);margin-bottom:8px;">Marque aqui o cliente que compra <b>produto</b> (assinatura, licença, IA) ou <b>alocação</b>. A receita dele sai do motor Projetos em todas as telas (DRE, metas, estratégia) e vai para o motor certo. Sem marcação, vale a regra pelos nomes.</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;">' + [...(D.clientes || []).map(c => ({ nome: c.cliente, motor: c.motor, tipo: 'cliente' })), ...(D.projetos_maestro || []).map(n => ({ nome: n, motor: (D.projetos.find(p => p.projeto === n) || {}).motor || 'projetos', tipo: 'projeto' }))]
+        .map(x => '<label style="display:flex;gap:5px;align-items:center;"><span style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + E(x.tipo + ': ' + x.nome) + '">' + (x.tipo === 'projeto' ? '🗂 ' : '🏢 ') + E(x.nome) + '</span><select class="fi chMot" data-n="' + E(x.nome) + '" style="width:auto;margin:0;font-size:10.5px;padding:2px 4px;">' + ['projetos', 'produtos', 'pessoas'].map(m => '<option value="' + m + '"' + (x.motor === m ? ' selected' : '') + '>' + MOT[m] + '</option>').join('') + '</select></label>').join('')
+      + '</div><div style="margin-top:8px;"><button class="btn btn-p" style="font-size:11px;" onclick="CH.salvarMotores()">Salvar motores</button></div>';
+    // EXPLICAÇÃO
+    html += '<details style="margin-top:18px;font-size:11px;color:var(--t2);line-height:1.6;"><summary style="cursor:pointer;font-weight:700;">Como o custo é apropriado e o fixo é rateado</summary><ol style="margin:6px 0 0 18px;padding:0;">'
+      + '<li><b>Folha → projeto (centro de custo):</b> o valor pago a cada profissional no mês (Pagamento a Colaboradores) é dividido pelos projetos na proporção das horas que ele apontou no Maestro. Ex.: 120 h no projeto A e 40 h no B → 75% do custo dele vai para A.</li>'
+      + '<li><b>Horas internas</b> (comercial, pré-venda, administrativo, treinamento, férias) e <b>profissional sem apontamento</b> não são custo de projeto: entram no custo fixo.</li>'
+      + '<li><b>Custo fixo de estrutura</b> = todas as despesas do QuickBooks no mês, menos impostos sobre a receita, retiradas dos sócios e a própria folha dos colaboradores (já apropriada). Pode ser informado à mão.</li>'
+      + '<li><b>Rateio do fixo:</b> por <b>horas apontadas</b> (recomendado para homem-hora: quem consome mais gente consome mais estrutura), por <b>receita</b> (quem fatura mais paga mais) ou por <b>custo direto</b>.</li>'
+      + '<li><b>Margem do projeto</b> = receita − impostos − folha apropriada − fixo rateado. Receita = faturas do QuickBooks do mês, ligadas ao projeto pelo termo (sem termo, pelo cliente).</li></ol></details>';
+    b.innerHTML = html;
+  }
+  async function salvarMotores() { const motores = {}; document.querySelectorAll('.chMot').forEach(s => { if (s.value !== 'projetos') motores[s.dataset.n] = s.value; });
+    try { await finApi('custo_projetos_cfg', { motores }); toast('Motores salvos — a receita desses clientes muda de motor em todas as telas', 'success'); carregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+  async function salvarPar() { const parametros = {}; ['utilizacao_pct', 'margem_alvo_pct', 'aliquota_pct', 'fixo_manual'].forEach(k => { parametros[k] = P[k] === '' ? null : Number(String(P[k]).replace(',', '.')); }); parametros.metodo = P.metodo;
+    try { await finApi('custo_projetos_cfg', { parametros }); toast('Parâmetros salvos como padrão', 'success'); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+  window.CH = { abrir: () => { if (!D) carregar(); else render(); }, carregar, p: (k, v) => { P[k] = v; if (k === 'meses' || k === 'metodo') carregar(); }, ver: i => { const r = document.getElementById('chDet' + i); if (r) r.style.display = r.style.display === 'none' ? '' : 'none'; }, salvarMotores, salvarPar };
+})();
