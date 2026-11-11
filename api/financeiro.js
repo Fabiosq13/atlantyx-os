@@ -7197,13 +7197,15 @@ async function impostosRecorrentes({ meses = 13 } = {}) {
 // Folha = Pagamento a Colaboradores (Maestro: horas × valor-hora custo); horas por projeto = apontamentos do Maestro;
 // fixo = despesas do QuickBooks no mês sem impostos, retiradas e a própria folha; receita = faturas do QuickBooks do mês
 // (ligadas ao projeto pelo termo; sem termo, pelo cliente). Motor de cada projeto/cliente: kv fin:motor_cliente (editável).
+const K_APT_PROJ = 'fin:apontamento_projeto'; // v3.460: nome do projeto no apontamento → Oficial_
 const K_MOTOR_CLI = 'fin:motor_cliente', K_CH_CFG = 'fin:custo_hora_cfg', K_REC_PROJ = 'fin:receita_projeto'; // v3.456: rótulo da receita → projeto Oficial_
 async function _maestroLer(chaves) {
   const { getSqlCrono } = await import('./pmo.js'); const crono = await getSqlCrono();
   const txt = 'SELECT key AS k, (value)::text AS v FROM atlx_store WHERE key = ANY($1)', rows = await (typeof crono.query === 'function' ? crono.query(txt, [chaves]) : crono(txt, [chaves]));
   const S = {}; (rows.rows || rows).forEach(r => { try { let v = JSON.parse(r.v); if (typeof v === 'string') v = JSON.parse(v); S[r.k] = v; } catch (_) {} }); return S;
 }
-async function custoProjetosCfg({ motores, parametros, receita_map } = {}) {
+async function custoProjetosCfg({ motores, parametros, receita_map, apontamento_map } = {}) {
+  if (apontamento_map && typeof apontamento_map === 'object') { const M = (await _kvFin(K_APT_PROJ).catch(() => null)) || {}; for (const [k, v] of Object.entries(apontamento_map)) { const kk = chNorm(k); if (!kk) continue; if (v === null || v === undefined || v === 'auto') delete M[kk]; else M[kk] = String(v); } await _kvFinSet(K_APT_PROJ, M); }
   if (receita_map && typeof receita_map === 'object') { const M = (await _kvFin(K_REC_PROJ).catch(() => null)) || {}; for (const [k, v] of Object.entries(receita_map)) { const kk = chNorm(k); if (!kk) continue; if (v) M[kk] = String(v); else delete M[kk]; } await _kvFinSet(K_REC_PROJ, M); }
   if (motores && typeof motores === 'object') { const L = {}; for (const [k, m] of Object.entries(motores)) if (['pessoas', 'projetos', 'produtos'].includes(m) && String(k).trim()) L[chNorm(k)] = m; await _kvFinSet(K_MOTOR_CLI, L); }
   if (parametros && typeof parametros === 'object') await _kvFinSet(K_CH_CFG, { ...((await _kvFin(K_CH_CFG).catch(() => null)) || {}), ...parametros, atualizado_em: new Date().toISOString() });
@@ -7272,12 +7274,29 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
     } catch (e) { avisos.push('QuickBooks: ' + e.message); } }
   else avisos.push('QuickBooks não configurado — sem custo fixo e sem receita.');
   const cfgFin = await _fv2Cfg().catch(() => ({})), aliq = aliquota_pct != null && aliquota_pct !== '' ? Number(aliquota_pct) / 100 : cfgP.aliquota_pct != null ? Number(cfgP.aliquota_pct) / 100 : cfgFin.aliquota_pct != null ? cfgFin.aliquota_pct / 100 : (aliqQb || 0.1615);
+  // v3.460: APONTAMENTO → PROJETO OFICIAL_ — horas lançadas em nomes antigos ("CPFL Projeto Xplann", "Projeto Motriz") vão para o
+  // Oficial_ certo: de-para salvo na tela (vazio = manter separado) ou a palavra característica do Oficial_ no nome (xplann,
+  // bigdata, motriz, transmissao, jelta, sigla HC…), só quando um único Oficial_ ganha.
+  const aptMap = (await _kvFin(K_APT_PROJ).catch(() => null)) || {}, aptLig = {};
+  { const ofs = (oficiaisLista.length ? oficiaisLista : cad.filter(p => /^oficial[_\s-]/i.test(String(p.nome || '')))).map(o => String(o.nome || '').trim()).filter(Boolean);
+    const cmp = t => chNorm(t).replace(/ /g, ''), STOP2 = new Set(['oficial', 'projeto', 'sistema', 'sustentacao', 'servicos', 'atlanteam', 'atlantyx', 'desenvolvimento', 'cpfl', 'energia', 'grupo', 'v2', '2026', '2025', '2027', 'banco', 'dados', 'gestao']);
+    const ofT = ofs.map(n => ({ nome: n, t: [...new Set(n.replace(/^oficial[_\s-]*/i, '').split(/[_\s\-.]+/).map(cmp).filter(w => w.length >= 2 && !STOP2.has(w) && (w.length >= 4 || /^[a-z0-9]{2,3}$/.test(w))))] }));
+    const alvo = nome => { const k = chNorm(nome); if (!k || /^oficial[_\s-]/i.test(String(nome).trim())) return null; if (k in aptMap) return aptMap[k] ? { proj: aptMap[k], como: 'de-para salvo' } : { proj: null, como: 'mantido separado' };
+      const c = cmp(nome), pal = new Set(chNorm(nome).split(' '));
+      const sc = ofT.map(o => { const m = o.t.filter(w => w.length <= 3 ? pal.has(w) : c.includes(w)); return { nome: o.nome, n: m.length, cob: o.t.length ? m.length / o.t.length : 0 }; }).filter(x => x.n > 0)
+        .sort((a, b) => b.n - a.n || b.cob - a.cob);
+      if (sc.length && (sc.length === 1 || sc[0].n > sc[1].n || sc[0].cob > sc[1].cob)) return { proj: sc[0].nome, como: 'palavra do nome' }; return null; };
+    const nomesApt = [...new Set(apts.filter(a => L.includes(String(a.data || '').slice(0, 7))).map(a => String(a.projeto || a.Projeto || '').trim()).filter(Boolean))];
+    for (const n of nomesApt) { const a = alvo(n); if (a) aptLig[n] = a; }
+    apts = apts.map(a => { const n = String(a.projeto || a.Projeto || '').trim(), x = aptLig[n]; return x?.proj ? { ...a, projeto: x.proj } : a; }); }
   const R = chApurar({ meses: L, folhas, apts, receitas, fixoMes, aliquota: aliq, metodo: metodo || cfgP.metodo || 'horas', utilizacao: (Number(utilizacao_pct ?? cfgP.utilizacao_pct) || 75) / 100,
     margem_alvo: (Number(margem_alvo_pct ?? cfgP.margem_alvo_pct) || 30) / 100, fixoManual: fixo_manual !== undefined && fixo_manual !== '' && fixo_manual != null ? Number(fixo_manual) : (cfgP.fixo_manual ?? null),
     motorDe: (pr, cli) => motorDoNome(mapa, pr, cli) });
   R.avisos = avisos.concat(R.avisos); R.aliquota_fonte = aliquota_pct != null && aliquota_pct !== '' ? 'informada' : cfgP.aliquota_pct != null ? 'configurada aqui' : cfgFin.aliquota_pct != null ? 'alíquota efetiva da DRE' : aliqQb ? 'impostos ÷ receita do QuickBooks no período' : 'padrão 16,15%';
   R.fixo_mes = fixoMes; R.mapa_motores = mapa; R.parametros = cfgP;
   R.clientes = [...new Set(receitas.map(r => r.cliente).filter(Boolean))].sort().map(c => ({ cliente: c, motor: motorDoNome(mapa, c), marcado: Object.keys(mapa).some(k => chNorm(c).includes(k) || k.includes(chNorm(c))) }));
+  R.apontamentos_ligados = Object.entries(aptLig).map(([nome, x]) => ({ nome, projeto: x.proj, como: x.como }));
+  R.apontamentos_nomes = [...new Set(apts.filter(a => L.includes(String(a.data || '').slice(0, 7))).map(a => String(a.projeto || a.Projeto || '').trim()).filter(n => n && !/^oficial[_\s-]/i.test(n)))].sort();
   // v3.456: só projetos ATIVOS + concluídos que tiveram hora apontada ou receita no período
   { const comMov = new Set([...R.projetos.filter(p => p.horas_mes > 0 || p.receita_mes > 0).map(p => p.projeto)]);
     const base = oficiaisLista.length ? oficiaisLista : cad.map(p => ({ nome: String(p.nome || '').trim(), ativo: !/conclu|encerr|cancel|suspens|finaliz/i.test(p.status || '') })).filter(p => p.nome);

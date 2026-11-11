@@ -9,3 +9,5 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - 11/11/2026 · v3.456 · ok · — · fundador ligar as receitas que sobrarem
 - [x] v3.457 · lista de ligação mostra TODOS os Oficial_ (ativos primeiro, depois "(concluído)"), inclusive os que só existem nos apontamentos/marcos/financeiro do Maestro; siglas do nome (HC, TI…) contam no casamento automático
 - 11/11/2026 · v3.457 · ok · — · —
+- [x] v3.460 · horas apontadas com nome antigo do projeto vão para o Oficial_ (palavra característica/sigla, só com vencedor único; ex.: "CPFL Projeto Xplann" → Oficial_Xplann, "Projeto Transmissão" → Oficial_Transmissão); quadro "🗂 Horas apontadas → projeto Oficial_" para trocar/manter separado (kv fin:apontamento_projeto)
+- 11/11/2026 · v3.460 · ok · — · fundador conferir as ligações automáticas (XPLANN_2026, Projeto Jelta - V2, Projeto cadastro também foram ligados)
