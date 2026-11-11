@@ -16,3 +16,5 @@
 - 11/11/2026 · v3.447 · ok · — · conferir com o fundador as Pendências de outubro
 - [x] v3.448 · casamento "já pago no QuickBooks" passa a ler as despesas pagas (Purchase) direto do QB, consulta leve (o extrato consolidado estourava o tempo e nada casava); vale para despesas só da Agenda e para contas a pagar do QB vencidas, na Agenda e nas Pendências. Botão 🔍 "já paguei?" em cada conta em atraso: mostra despesas do QB com valor ±5% perto da data, link ↗ e "É esta → pago"
 - 11/11/2026 · v3.448 · ok · — · fundador conferir a lista de atraso com o 🔍
+- [x] v3.449 · Pendências: item da Agenda que o detector de duplicados já reconhece como "pago, mas segue a pagar na Agenda" sai de "A pagar vencido"
+- 11/11/2026 · v3.449 · ok · — · conferir Pendências após o deploy

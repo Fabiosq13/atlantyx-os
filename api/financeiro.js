@@ -3907,7 +3907,11 @@ async function pendenciasFin() {
   // a pagar vencido (o painel de vencidos já junta QuickBooks e agenda, sem repetir)
   // v3.246: pago parcialmente não é pendência (fatura/conta com parte já paga, inclusive saldo = imposto retido)
   const parcial = x => Number(x.valor_total) > Number(x.valor) + 0.01;
-  for (const x of v?.pagar || []) if (!parcial(x) && unico('p|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_vencido', gravidade: x.dias > 7 ? 'alta' : 'media', titulo: x.contraparte || 'Conta a pagar',
+  // v3.449: o detector de duplicados já sabe quais itens da Agenda foram PAGOS no QuickBooks ("pago, mas segue a pagar na Agenda")
+  // — esses não são "a pagar vencido": a baixa é automática aqui e ficam só como aviso de duplicado
+  let _px = null, pagosQb = new Set(); try { if (d) { _px = await _relPagamentosExtra(d);
+    for (const p of _px.duplicados || []) if (p.tipo === 'baixa') for (const x of [p.a, p.b]) if (x.fonte !== 'quickbooks' && x.situacao === 'pendente' && x.id) pagosQb.add('desp_' + x.id); } } catch (_) {}
+  for (const x of v?.pagar || []) if (!pagosQb.has(String(x.id)) && !parcial(x) && unico('p|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_vencido', gravidade: x.dias > 7 ? 'alta' : 'media', titulo: x.contraparte || 'Conta a pagar',
     detalhe: 'venceu em ' + x.vencimento.split('-').reverse().join('/') + ' (' + x.dias + ' dia' + (x.dias > 1 ? 's' : '') + ')' + (x.doc ? ' · ' + x.doc : '') + (x.obs ? ' · ' + x.obs : ''), valor: x.valor, dias: x.dias, tela: 's3agenda' });
   // a pagar hoje
   for (const x of d?.listaDia || []) if (unico('p|' + nrm(x.fornecedor || x.descricao) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_hoje', gravidade: 'media', titulo: x.fornecedor || x.descricao,
@@ -3930,7 +3934,7 @@ async function pendenciasFin() {
   for (const x of (t?.criticos || []).filter(x => !termosParciais.has(x.id))) itens.push({ grupo: 'termo', gravidade: (x.prazo_etapa?.estourado || (x.dias != null && x.dias >= 30)) ? 'alta' : 'media', titulo: 'Termo ' + (x.numero || '') + ' · ' + (x.cliente || x.projeto || ''),
     detalhe: (x.pendencias || []).map(p => typeof p === 'string' ? p : (p.texto || p.titulo || p.msg || '')).filter(Boolean).slice(0, 3).join(' · ') + (x.prazo_etapa?.estourado ? ' · etapa ' + x.prazo_etapa.etapa + ' ' + x.prazo_etapa.texto : '') || 'pendência no termo', valor: x.valor, dias: x.dias, tela: 's3fatkanban', termo_id: x.id });
   // possíveis pagamentos duplicados no mês
-  try { if (d) { const px = await _relPagamentosExtra(d); const ign = new Set(Object.keys((await _kvFin('fin:dup_ignorados')) || {}));
+  try { if (d) { const px = _px || await _relPagamentosExtra(d); const ign = new Set(Object.keys((await _kvFin('fin:dup_ignorados')) || {}));
     const ori = x => (x.fonte === 'quickbooks' ? 'QuickBooks' + (/pagamento de conta/i.test(x.categoria || '') ? ' (pagamento de conta)' : /conta a pagar/i.test(x.categoria || '') ? ' (conta a pagar)' : ' (despesa paga' + (x.conta ? ' pela conta ' + x.conta : '') + ')') : 'Agenda') + ' · ' + x.situacao + ' em ' + String(x.data).split('-').reverse().join('/')
       + (x.fonte === 'quickbooks' ? ' · ' + String(x.categoria || '').replace(/^QuickBooks · /, '') : '') + (x.memo ? ' · “' + x.memo + '”' : x.descricao && x.descricao !== x.fornecedor ? ' · “' + x.descricao + '”' : '');
     for (const p of px.duplicados || []) { if (ign.has(p.chave)) continue;
