@@ -24,3 +24,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 11/11/2026 · v3.458 · ok · — · conferir no HubSpot o valor gravado em atendido_pela_ia
 - [x] v3.459 · atendido_pela_ia = true ao mandar para a IARA e false ao tirar
 - 11/11/2026 · v3.459 · ok · — · —
+- [x] v3.461 · conferidos os campos do HubSpot (prints do fundador): fluxo_de_atendimento (botões Manual/IA — "IA" põe na etapa IARA), atendido_pela_ia (Sim=true/Não=false), abordagem (botão de opção Geral/FQ — escolha ÚNICA: a tela passou de checkbox para opção única e grava um valor só)
+- 11/11/2026 · v3.461 · ok · — · —
