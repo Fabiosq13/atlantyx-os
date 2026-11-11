@@ -45,13 +45,13 @@
     box.innerHTML = `<div style="background:linear-gradient(135deg,rgba(0,196,204,.12),rgba(124,156,255,.06));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700;">🧠 Estratégia IA</div>
         <div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;"><b>ATLAS</b> é o estrategista-chefe: conversa com você por <b>chat ou voz</b> com os números vivos da empresa. <b>NORTE</b> é o mentor de propósito e metas: alinha as suas metas pessoais ao seu propósito e ao da Atlantyx. Na <b>Sala de Estratégia</b>, o ATLAS conduz um comitê de IAs (CFO, CRO, CTO, COO, Advogado do Diabo, Voz do Cliente e NORTE) e fecha num plano que você aprova e transforma em demandas, ideias ou pauta de reunião.</div></div>
-      <div class="seg" id="estAbas" style="margin-bottom:10px;">${[['atlas', '🧠 ATLAS · Estratégia'], ['conselho', '🏛️ Sala do Conselho'], ['norte', '🧭 NORTE · Propósito e metas'], ['trilha', '🗺 Trilha guiada 2027–2031'], ['sala', '🏛 Sala de Estratégia'], ['plano', '📜 Plano vigente e premissas']].map(([k, r]) => `<button data-a="${k}" class="${k === aba ? 'on' : ''}" onclick="EST.aba('${k}')">${r}</button>`).join('')}</div>
+      <div class="seg" id="estAbas" style="margin-bottom:10px;">${[['atlas', '🧠 ATLAS · Estratégia'], ['conselho', '🏛️ Sala do Conselho'], ['norte', '🧭 NORTE · Propósito e metas'], ['trilha', '🗺 Trilha guiada 2027–2031'], ['moat', '🏰 Moat'], ['sala', '🏛 Sala de Estratégia'], ['plano', '📜 Plano vigente e premissas']].map(([k, r]) => `<button data-a="${k}" class="${k === aba ? 'on' : ''}" onclick="EST.aba('${k}')">${r}</button>`).join('')}</div>
       <div id="estCorpo"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando…</div></div>`;
     carregar();
   }
   async function carregar() { try { D = await api('inicio'); render(); } catch (e) { $('estCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">${esc(e.message)}</div>`; } }
   function trocar(k) { aba = k; document.querySelectorAll('#estAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === k)); calar(); render(); }
-  function render() { if (!D) return; if (aba === 'atlas' || aba === 'norte') renderChat(aba); else if (aba === 'conselho') renderConselho(); else if (aba === 'trilha') renderTrilha(); else if (aba === 'sala') renderSalas(); else renderPlano(); }
+  function render() { if (!D) return; if (aba === 'atlas' || aba === 'norte') renderChat(aba); else if (aba === 'conselho') renderConselho(); else if (aba === 'trilha') renderTrilha(); else if (aba === 'moat') renderMoat(); else if (aba === 'sala') renderSalas(); else renderPlano(); }
 
   // ── v3.404: SALA DO CONSELHO — todos os agentes + Conselheiro do Contra, por chat (aqui) ou reunião por rodadas (Sala de Estratégia) ──
   let CS = { conv: null, msgs: [], agentes: null, enviando: false };
@@ -104,6 +104,14 @@
   function ouvirConselho() { ouvir('estTxt', () => conselhoEnviar()); }
 
   // v3.341: trilha guiada (11 perguntas, o que NÃO fazer, calendário de revisão, orçamento semestral) — módulo carregado sob demanda
+  // v3.439: aba Moat (fosso competitivo) — módulo próprio carregado sob demanda
+  function renderMoat() {
+    const el = $('estCorpo'); if (window.ESTM) return ESTM.render(el);
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando o moat…</div>';
+    const s = document.createElement('script'); s.src = '/estrategia-moat-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now());
+    s.onload = () => { if (aba === 'moat' && window.ESTM) ESTM.render($('estCorpo')); }; s.onerror = () => { el.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /estrategia-moat-ui.js</div>'; };
+    document.head.appendChild(s);
+  }
   function renderTrilha() {
     const el = $('estCorpo'); if (window.ESTT) return ESTT.render(el);
     el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando a trilha guiada…</div>';
