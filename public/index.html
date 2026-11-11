@@ -20830,10 +20830,23 @@ function renderCalendario() {
   const _hj = new Date().toLocaleDateString('sv-SE');
   const _atraso = (_ocoCache || []).filter(o => o.status !== 'paga' && o.status !== 'cancelada' && String(o.data_prevista).substring(0, 10) < _hj).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista)));
   const _atrasoHtml = _atraso.length ? '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11px;"><b style="color:var(--red);">⚠ ' + _atraso.length + ' conta(s) em atraso · ' + fmtBRLcompleto(_atraso.reduce((a, o) => a + (o.valor || 0), 0)) + '</b>'
-    + _atraso.slice(0, 8).map(o => '<div style="display:flex;gap:8px;margin-top:3px;"><span style="font-family:var(--M);color:var(--t2);width:72px;">' + String(o.data_prevista).substring(0, 10).split('-').reverse().join('/') + '</span><span style="flex:1;">' + String(o.descricao || '').replace(/</g, '&lt;') + (o.fonte === 'quickbooks' ? ' <span style="color:var(--t3);font-size:9px;">QB</span>' : '') + '</span><b>' + fmtBRLcompleto(o.valor) + '</b></div>').join('') + (_atraso.length > 8 ? '<div style="color:var(--t3);margin-top:3px;">… e mais ' + (_atraso.length - 8) + '</div>' : '') + '</div>' : '';
+    + (window._atrasoTodos ? _atraso : _atraso.slice(0, 8)).map(o => '<div style="display:flex;gap:8px;margin-top:3px;align-items:center;"><span style="font-family:var(--M);color:var(--t2);width:72px;">' + String(o.data_prevista).substring(0, 10).split('-').reverse().join('/') + '</span><span style="flex:1;">' + String(o.descricao || '').replace(/</g, '&lt;') + (o.fonte === 'quickbooks' ? ' <span style="color:var(--t3);font-size:9px;">QB</span>' : '') + '</span><b>' + fmtBRLcompleto(o.valor) + '</b><button class="btn btn-g" style="font-size:9.5px;padding:1px 7px;" title="Procurar o pagamento no QuickBooks" onclick="atrasoDiag(\'' + String(o.id).replace(/'/g, '') + '\')">🔍 já paguei?</button></div>').join('') + (_atraso.length > 8 ? '<div style="margin-top:4px;"><a href="#" style="color:var(--t3);" onclick="event.preventDefault();window._atrasoTodos=!window._atrasoTodos;renderCalendario()">' + (window._atrasoTodos ? 'mostrar menos' : '… e mais ' + (_atraso.length - 8) + ' — ver todas') + '</a></div>' : '') + '</div>' : '';
   el.innerHTML = _atrasoHtml + html;
 }
 
+// v3.448: "já paguei?" — procura no QuickBooks despesas pagas com valor parecido perto do vencimento
+async function atrasoDiag(id) {
+  const o = (_ocoCache || []).find(x => String(x.id) === String(id)); if (!o) return;
+  document.getElementById('atrDiag')?.remove(); const m = document.createElement('div'); m.id = 'atrDiag'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;'; m.onclick = e => { if (e.target === m) m.remove(); };
+  const E = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:14px;width:min(720px,100%);max-height:88vh;overflow:auto;padding:16px;font-size:11px;"><div style="font-weight:700;font-size:14px;">🔍 ' + E(o.descricao) + ' · ' + fmtBRLcompleto(o.valor) + '</div><div style="color:var(--t3);margin:2px 0 10px;">venceu em ' + String(o.data_prevista).substring(0, 10).split('-').reverse().join('/') + ' · procurando despesas pagas no QuickBooks com valor parecido (±5%)…</div><div id="atrDiagL">Carregando…</div><div style="text-align:right;margin-top:10px;"><button class="btn btn-g" onclick="document.getElementById(\'atrDiag\').remove()">Fechar</button></div></div>';
+  document.body.appendChild(m);
+  try { const r = await finApi('desp_atraso_diag', { data: String(o.data_prevista).substring(0, 10), valor: o.valor, fornecedor: o.fornecedor || String(o.descricao || '').split(' · ')[0] }); const C = r.candidatos || [];
+    m.querySelector('#atrDiagL').innerHTML = !C.length ? '<div style="color:var(--t2);">Nenhuma despesa paga no QuickBooks com esse valor entre ' + r.janela.map(d => d.split('-').reverse().join('/')).join(' e ') + ' (' + r.total_despesas_qb + ' despesas olhadas). Se foi paga, o lançamento no QuickBooks pode estar com outro valor (juros/multa), como transferência ou ainda não lançado.</div>'
+      : '<table style="width:100%;border-collapse:collapse;"><tr style="color:var(--t3);font-size:9.5px;text-align:left;"><th>Pago em</th><th>No QuickBooks</th><th style="text-align:right;">Valor</th><th></th></tr>' + C.map(x => '<tr style="border-top:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + x.data.split('-').reverse().join('/') + ' <span style="color:var(--t3);">(' + (x.dias >= 0 ? '+' : '') + x.dias + 'd)</span></td><td>' + (x.nome_bate ? '<b style="color:var(--green);">✓ nome</b> ' : '') + E(x.descricao) + '<div style="color:var(--t3);font-size:9.5px;">' + E(x.conta) + (x.categoria ? ' · ' + E(String(x.categoria).substring(0, 70)) : '') + '</div></td><td style="text-align:right;white-space:nowrap;">' + fmtBRLcompleto(x.valor) + (Math.abs(x.dif) > 0.01 ? '<div style="font-size:9.5px;color:var(--gold);">' + (x.dif > 0 ? '+' : '') + fmtBRLcompleto(x.dif) + '</div>' : '') + '</td><td style="white-space:nowrap;text-align:right;">' + (x.qb_url ? '<a class="btn btn-g" style="font-size:9.5px;padding:1px 6px;text-decoration:none;" href="' + E(x.qb_url) + '" target="_blank" rel="noopener">QB ↗</a> ' : '') + (o.fonte !== 'quickbooks' ? '<button class="btn btn-gn" style="font-size:9.5px;padding:1px 7px;" onclick="atrasoEhEsta(\'' + E(o.id) + '\',\'' + x.data + '\')">É esta → pago</button>' : '') + '</td></tr>').join('') + '</table>' + (o.fonte === 'quickbooks' ? '<div style="color:var(--t3);margin-top:8px;">Esta é uma conta a pagar do QuickBooks: se o pagamento foi lançado como despesa avulsa, ligue os dois no QuickBooks (ou exclua a conta a pagar, a despesa fica).</div>' : '');
+  } catch (e) { m.querySelector('#atrDiagL').innerHTML = '<span style="color:var(--red);">Erro: ' + E(e.message) + '</span>'; }
+}
+async function atrasoEhEsta(id, data) { try { await finApi('desp_marcar_paga', { id, data_pagamento: data, so_no_sistema: true }); document.getElementById('atrDiag')?.remove(); toast('Baixada na Agenda (paga em ' + data.split('-').reverse().join('/') + ')', 'success'); await carregarDespesas(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 let _ocoJanela = null;
 function mudarMesCal(delta) {
   _calMes = new Date(_calMes.getFullYear(), _calMes.getMonth() + delta, 1);
@@ -37096,7 +37109,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.447] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.448] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37112,7 +37125,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.447';
+window.__ATX_BUILD_ID__ = 'ATX-v3.448';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

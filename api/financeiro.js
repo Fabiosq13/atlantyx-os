@@ -261,6 +261,7 @@ async function handler(req, res) {
       desp_oco_desfazer:     () => despOcoDesfazer(params), // v3.248
       desp_ocorrencias:      () => despOcorrencias(params),
       desp_marcar_paga:      () => despMarcarPaga(params),
+      desp_atraso_diag:      () => despAtrasoDiag(params), // v3.448
       desp_lancar_qb:        () => despLancarQb(params),
       desp_mes_qb_previa:    () => despMesQbPrevia(params), desp_mes_qb_lancar: () => despMesQbLancar(params), // v3.271
       qb_fornecedores_list:  () => qbFornecedoresList(),
@@ -3623,17 +3624,34 @@ async function _billsPagasPorFora(contas, { timeoutMs = 7000, tolerancia_dias = 
 //  · media = sem nome, mas valor idêntico ao centavo, valor com centavos (não redondo) e saída única com esse valor perto da data.
 const _AG_SINON = [[/receita federal|\brfb\b|secretaria da receita/, /darf|receita federal|\brfb\b|simples nacional|\bdas\b|irrf|irpj|csll|\bpis\b|cofins|\binss\b|tributo|imposto/],
   [/prefeitura|municipio|municipal/, /prefeitura|\biss\b|issqn|\bdam\b|iptu|municipal|municipio/], [/\binss\b|previdencia/, /\binss\b|\bgps\b|previdencia|esocial/], [/fgts|caixa economica/, /fgts|\bgrf\b|caixa/]];
+const _sldCache = new Map();
+async function _qbSaidasLeves(ini, fim) {
+  const k = ini + '|' + fim, c = _sldCache.get(k); if (c && Date.now() - c.t < 10 * 60000) return c.L;
+  const token = await qbToken(), L = [];
+  for (let pos = 1; pos <= 4001; pos += 1000) { const d = await qbQuery(`select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${fim}' startposition ${pos} maxresults 1000`, token);
+    const P = d?.QueryResponse?.Purchase || [];
+    P.forEach(p => { if (p.Credit === true) return; const linhas = (p.Line || []).map(l => [l.Description, l.AccountBasedExpenseLineDetail?.AccountRef?.name, l.ItemBasedExpenseLineDetail?.ItemRef?.name].filter(Boolean).join(' ')).join(' ');
+      L.push({ qb_txn_id: 'despesa:' + p.Id, data: p.TxnDate, valor: parseFloat(p.TotalAmt || 0), descricao: [p.EntityRef?.name, p.PrivateNote].filter(Boolean).join(' · ') || linhas.substring(0, 80), contraparte: p.EntityRef?.name || '', memo: p.PrivateNote || '', categoria: linhas, conta: p.AccountRef?.name || '' }); });
+    if (P.length < 1000) break; }
+  _sldCache.set(k, { t: Date.now(), L }); return L;
+}
+// v3.448: "por que segue em atraso?" — despesas pagas no QuickBooks com valor parecido (±5%) perto da data, sem exigir nome
+async function despAtrasoDiag({ data, valor, fornecedor } = {}) {
+  const v = parseFloat(valor) || 0, d = String(data || '').substring(0, 10); if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error('data e valor obrigatórios');
+  const hoje = _hojeBR(), fim = _diasMais(d, 60) < hoje ? _diasMais(d, 60) : hoje; const L = await _qbSaidasLeves(_diasMais(d, -30), fim);
+  const toks = _bpfTokens(fornecedor);
+  const c = L.filter(x => Math.abs(x.valor - v) <= v * 0.05 + 0.01).map(x => { const alvo = new Set(_bpfTokens([x.descricao, x.categoria].join(' ')));
+    return { ...x, dif: round(x.valor - v), dias: Math.round((Date.parse(x.data) - Date.parse(d)) / 864e5), nome_bate: toks.some(t => alvo.has(t)), qb_url: _qbUrlTxn(x.qb_txn_id) }; })
+    .sort((a, b) => (b.nome_bate - a.nome_bate) || (Math.abs(a.dif) - Math.abs(b.dif)) || (Math.abs(a.dias) - Math.abs(b.dias))).slice(0, 12);
+  return { candidatos: c, janela: [_diasMais(d, -30), fim], total_despesas_qb: L.length };
+}
 async function _agendaPagasNoQb(ocs, { timeoutMs = 6000 } = {}) {
   const mapa = new Map(), hoje = _hojeBR(); if (!ocs.length || !qbConfigurado()) return mapa;
   const minV = ocs.reduce((m, o) => o.data_prevista < m ? o.data_prevista : m, hoje), lim = _diasMais(hoje, -400);
-  const ini = _diasMais(minV < lim ? lim : minV, -45), chave = ini + '|' + hoje;
-  let c = _bpfCache.get(chave);
-  if (!c || Date.now() - c.t > 10 * 60000) {
-    const p = extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados: false })
-      .then(ext => (ext.lancamentos || []).filter(l => l.tipo === 'saida' && (parseFloat(l.valor) || 0) > 0 && l.qb_txn_id && !String(l.qb_txn_id).startsWith('pagto_conta:')));
-    c = { t: Date.now(), p }; _bpfCache.set(chave, c); p.catch(() => _bpfCache.delete(chave));
-  }
-  const saidas = await Promise.race([c.p, new Promise(r => setTimeout(() => r(null), timeoutMs))]).catch(() => null);
+  const ini = _diasMais(minV < lim ? lim : minV, -45);
+  // v3.448: consulta leve e direta das despesas pagas no QuickBooks (Purchase = despesa/cheque/cartão) — o extrato
+  // consolidado é pesado e estourava o tempo, e aí nada casava
+  let saidas = null; try { saidas = await _qbSaidasLeves(ini, hoje); } catch (_) {}
   if (!saidas) return mapa;
   const txt = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const usadas = new Set();
@@ -3980,6 +3998,9 @@ async function vencidosPainel() {
   }).sort((a, b) => b.dias - a.dias);
   const pagar = (fut.pagaveis || []).filter(l => String(l.data).substring(0, 10) < hoje).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), dias: dias(l.data), doc: l.doc || '', contraparte: l.fornecedor || String(l.descricao).split(' · ')[0],
     valor: round(l.valor), valor_total: round(l.valor_total || l.valor), obs: dias(l.data) > 60 ? 'Há mais de 60 dias — confira se já foi paga e não baixada' : '' })).sort((a, b) => b.dias - a.dias);
+  // v3.448: conta a pagar do QB vencida mas já paga como despesa avulsa (Purchase) — sai da lista
+  try { const m = await _agendaPagasNoQb(pagar.map(x => ({ id: x.id, data_prevista: x.vencimento, valor: x.valor, fornecedor: x.contraparte })));
+    for (let i = pagar.length - 1; i >= 0; i--) if (m.has(pagar[i].id)) pagar.splice(i, 1); } catch (_) {}
   // v3.224: + despesas vencidas que só existem na Agenda (já conferidas com o QuickBooks) — o aviso do fluxo também as conta
   try { const ag = await despOcorrencias({ data_inicio: _diasMais(hoje, -365), data_fim: _diasMais(hoje, -1), incluir_qb: true });
     (ag.ocorrencias || []).filter(o => o.fonte === 'atlantyx' && !o.qb_txn_id && (o.status === 'prevista' || o.status === 'pendente')).forEach(o => { const dv = _dStr(o.data_prevista);
@@ -4521,7 +4542,11 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
   // a pagar) — casa com a saída do extrato e baixa. Confiança alta (nome + valor) grava a baixa; só valor exato marca em memória.
   if (incluir_qb && qbConfigurado()) { try {
     const venc = locais.filter(o => (o.status === 'prevista' || o.status === 'lancada') && !o.qb_txn_id && o.data_prevista < _hojeBR() && o.valor > 0);
-    if (venc.length) { const m = await _agendaPagasNoQb(venc);
+    const billsV = qbBills.filter(b => b.status !== 'paga' && b.data_prevista < _hojeBR() && b.valor > 0).map(b => ({ ...b, fornecedor: String(b.descricao || '').split(' · ')[0] }));
+    if (venc.length || billsV.length) { const m = await _agendaPagasNoQb(venc.concat(billsV));
+      for (const b of qbBills) { const x = m.get(b.id); if (!x) continue; b.status = 'paga'; b.data_pagamento = x.data; b.pago_no_extrato = x;
+        b.categoria = 'QuickBooks · Conta a pagar · paga por despesa avulsa, falta ligar no QB'; b.nota = 'Paga no QuickBooks em ' + x.data.split('-').reverse().join('/') + ' · ' + (x.descricao || '') + ' · ' + _brl(x.valor) + ' — lançada como despesa, sem ligar a esta conta a pagar (ela segue aberta no QuickBooks).' + (x.confianca === 'alta' ? '' : ' Mesmo valor — confira.'); }
+      for (const o of locais) { const b = o.qb_txn_id && billPorId.get(String(o.qb_txn_id)); if (b && b.pago_no_extrato && o.status !== 'paga') { o.status = 'paga'; o.data_pagamento = b.data_pagamento; o.nota = b.nota; } }
       for (const o of venc) { const x = m.get(o.id); if (!x) continue; o.status = 'paga'; o.data_pagamento = x.data; o.pago_no_qb = x;
         o.nota = 'Paga no QuickBooks em ' + x.data.split('-').reverse().join('/') + ' · ' + (x.descricao || '') + ' · ' + _brl(x.valor) + (x.confianca === 'alta' ? '' : ' (mesmo valor — confira)');
         if (x.confianca === 'alta') try { await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = ${x.data}, observacoes = COALESCE(observacoes, '') || ${' [baixa automática: paga no QuickBooks em ' + x.data + ' · ' + String(x.descricao || '').substring(0, 80) + ']'} WHERE id = ${o.id} AND status IN ('prevista', 'lancada')`; } catch (_) {} } }

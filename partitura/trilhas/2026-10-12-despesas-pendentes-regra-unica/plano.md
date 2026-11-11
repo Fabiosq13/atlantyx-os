@@ -14,3 +14,5 @@
 - 2026-10-12 · v3.164 dashboard de abertura incluído · sem bloqueio
 - [x] v3.447 · despesa vencida que só existe na Agenda, mas já foi paga no QuickBooks direto do banco (despesa/transferência/imposto), sai das Pendências, da Agenda e do fluxo: casa com a saída do extrato (nome ou sinônimo — Receita Federal↔DARF, Prefeitura↔ISS/DAM — + valor, −20 a +45 dias). Nome+valor grava a baixa automática; só valor exato com centavos marca paga sem gravar. Sinônimos também valem para contas a pagar do QB pagas por fora
 - 11/11/2026 · v3.447 · ok · — · conferir com o fundador as Pendências de outubro
+- [x] v3.448 · casamento "já pago no QuickBooks" passa a ler as despesas pagas (Purchase) direto do QB, consulta leve (o extrato consolidado estourava o tempo e nada casava); vale para despesas só da Agenda e para contas a pagar do QB vencidas, na Agenda e nas Pendências. Botão 🔍 "já paguei?" em cada conta em atraso: mostra despesas do QB com valor ±5% perto da data, link ↗ e "É esta → pago"
+- 11/11/2026 · v3.448 · ok · — · fundador conferir a lista de atraso com o 🔍
