@@ -24,3 +24,5 @@
 - 11/11/2026 · v3.452 · ok · — · fundador revisar as sugestões
 - [x] v3.453 · botão "＋ Incluir na Agenda" em cada proposta de recorrência (impostos e outros pagamentos; "Tornar recorrente"/"Renovar recorrência" quando já está na Agenda)
 - 11/11/2026 · v3.453 · ok · — · —
+- [x] v3.454 · calendário de despesas: colunas iguais que não estouram o quadro (minmax(0,1fr)), calendário mais largo (1,7 × a lista), dias mais altos com 3 lançamentos, total no pé do dia, nome completo no tooltip; empilha em tela estreita
+- 11/11/2026 · v3.454 · ok · — · —

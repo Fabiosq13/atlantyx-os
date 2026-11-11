@@ -876,6 +876,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .ia-txt.ia-fluindo::after{content:'▍';display:inline-block;margin-left:1px;color:var(--pu);animation:iaPisca .9s steps(2) infinite;}
 @keyframes iaPisca{to{opacity:0;}}
 </style>
+<style>.desp-cal-grid{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)!important}.desp-cal-grid>.panel{min-width:0}@media(max-width:1100px){.desp-cal-grid{grid-template-columns:minmax(0,1fr)!important}}</style>
 </head>
 <body>
 <aside class="sb">
@@ -5193,7 +5194,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       </div>
     </div>
 
-    <div class="kg k2">
+    <div class="kg k2 desp-cal-grid">
       <div class="panel">
         <div class="ph"><div class="pt">Calendario Mensal</div><button class="btn btn-g" onclick="despReplicarMesUI()" title="Copia as despesas do mês exibido (Agenda + contas a pagar do QuickBooks) para os meses seguintes — você escolhe os itens e quantos meses. Se a despesa já existe no mês, não cria de novo." style="font-size:9px;padding:3px 8px;">&#10697; Replicar este mês…</button><button class="btn btn-g" onclick="despMesQbUI()" title="Lança as despesas previstas do mês exibido como contas a pagar no QuickBooks — com prévia, você escolhe quais" style="font-size:9px;padding:3px 8px;margin-left:6px;">&#129534; Lançar o mês no QuickBooks…</button></div>
         <div class="pb" id="f_calendario"><div style="text-align:center;padding:24px;color:var(--t3);font-size:11px;">Carregando calendario...</div></div>
@@ -20846,7 +20847,7 @@ function renderCalendario() {
       <span style="color:var(--t2);">Total despesas no mês:</span>
       <span style="font-family:var(--M);font-weight:600;color:var(--red);">${fmtBRLcompleto(totalMes)}</span>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">
+    <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;">
   `;
 
   ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach(d => {
@@ -20862,13 +20863,13 @@ function renderCalendario() {
     const isHoje = hoje.getFullYear() === ano && hoje.getMonth() === mes && hoje.getDate() === dia;
 
     html += `
-      <div style="background:${isHoje ? 'rgba(79,124,255,.15)' : 'var(--bg4)'};border:1px solid ${isHoje ? 'var(--blue)' : 'var(--bd)'};border-radius:5px;padding:5px;min-height:62px;font-size:10px;cursor:${ocs.length ? 'pointer' : 'default'};" ${ocs.length ? `onclick="mostrarDetalhesDia(${dia})"` : ''}>
+      <div style="min-width:0;overflow:hidden;background:${isHoje ? 'rgba(79,124,255,.15)' : 'var(--bg4)'};border:1px solid ${isHoje ? 'var(--blue)' : 'var(--bd)'};border-radius:6px;padding:5px;min-height:104px;font-size:10px;display:flex;flex-direction:column;cursor:${ocs.length ? 'pointer' : 'default'};" ${ocs.length ? `onclick="mostrarDetalhesDia(${dia})"` : ''}>
         <div style="font-family:var(--M);font-size:10px;color:var(--t1);margin-bottom:3px;">${dia}</div>
-        ${ocs.slice(0, 2).map(o => `
-          <div style="background:rgba(255,79,79,.12);color:var(--red);padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${o.status === 'paga' ? 'opacity:.55;text-decoration:line-through;' : ''}">${_dsE(o.descricao)}</div>
+        ${ocs.slice(0, 3).map(o => `
+          <div style="background:rgba(255,79,79,.12);color:var(--red);padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${o.status === 'paga' ? 'opacity:.55;text-decoration:line-through;' : ''}" title="${_dsE(o.descricao)} · ${fmtBRLcompleto(o.valor)}${o.status === 'paga' ? ' (paga)' : ''}">${_dsE(o.descricao)}</div>
         `).join('')}
-        ${ocs.length > 2 ? `<div style="font-size:9px;color:var(--t3);">+${ocs.length - 2} mais</div>` : ''}
-        ${total > 0 ? `<div style="font-family:var(--M);font-size:9px;color:var(--red);margin-top:2px;">${fmtBRL(total)}</div>` : ''}
+        ${ocs.length > 3 ? `<div style="font-size:9px;color:var(--t3);">+${ocs.length - 3} mais</div>` : ''}
+        ${total > 0 ? `<div style="font-family:var(--M);font-size:9.5px;font-weight:600;color:var(--red);margin-top:auto;padding-top:2px;">${fmtBRL(total)}</div>` : ''}
       </div>
     `;
   }
@@ -37157,7 +37158,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.453] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.454] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37173,7 +37174,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.453';
+window.__ATX_BUILD_ID__ = 'ATX-v3.454';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
