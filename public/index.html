@@ -32980,11 +32980,12 @@ function arRender() {
   const soma = l => l.reduce((t, o) => t + (Number(o.valor) || 0), 0), por = k => A.filter(o => o.origem === k);
   const atr = A.filter(o => o.status === 'atrasada'), cob = O.filter(o => o.status === 'coberta');
   const card = (t, v, sub, cor) => '<div style="flex:1;min-width:150px;border:1px solid var(--bd);border-radius:8px;padding:8px 11px;"><div style="font-size:10px;color:var(--t3);">' + t + '</div><div style="font-size:17px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + v + '</div><div style="font-size:9.5px;color:var(--t3);">' + sub + '</div></div>';
-  const abas = [['todas', 'Todas · M-1, M0 e futuro'], ['proximas', 'Só previsões (' + A.length + ')'], ['sustentacoes', 'Sustentações (' + (D.sustentacoes || []).length + ')'], ['manuais', 'Avulsas e recorrentes (' + (D.manuais || []).length + ')'], ['faturadas', 'Já faturadas / encerradas (' + O.filter(o => !['prevista', 'atrasada'].includes(o.status)).length + ')'], ['regras', 'Regras de substituição (' + (D.regras_subst || []).length + ')'], ['qbrec', 'Recorrentes QuickBooks (' + (D.qb_rec_modelos || []).filter(m => m.usado).length + '/' + (D.qb_rec_modelos || []).length + ' em uso)']];
+  const abas = [['todas', 'Todas · M-1, M0 e futuro'], ['raiox', '🔍 Raio-X (o que sumiu?)'], ['proximas', 'Só previsões (' + A.length + ')'], ['sustentacoes', 'Sustentações (' + (D.sustentacoes || []).length + ')'], ['manuais', 'Avulsas e recorrentes (' + (D.manuais || []).length + ')'], ['faturadas', 'Já faturadas / encerradas (' + O.filter(o => !['prevista', 'atrasada'].includes(o.status)).length + ')'], ['regras', 'Regras de substituição (' + (D.regras_subst || []).length + ')'], ['qbrec', 'Recorrentes QuickBooks (' + (D.qb_rec_modelos || []).filter(m => m.usado).length + '/' + (D.qb_rec_modelos || []).length + ' em uso)']];
   let corpo = '';
   if (_ar.aba === 'todas') corpo = _arTodas(D);
   else if (_ar.aba === 'qbrec') corpo = _arQbRec(D);
   else if (_ar.aba === 'regras') corpo = _arRegras(D);
+  else if (_ar.aba === 'raiox') corpo = '<div style="font-size:10.5px;color:var(--t2);margin:10px 0;line-height:1.6;">Digite um cliente, projeto ou termo (ex.: <b>xplann</b>, <b>HC</b>, <b>servipla</b>). O Raio-X mostra <b>toda</b> origem de receita ligada a ele — termos em qualquer etapa, marcos, sustentações, avulsas/recorrentes, recorrentes do QuickBooks e faturas — e o destino de cada uma: <b>na agenda</b> (mês e valor) ou <b>fora</b> e por quê.</div><div style="display:flex;gap:6px;"><input class="fi" id="arRxQ" style="max-width:260px;" placeholder="ex.: xplann" value="' + _arE(_ar.rx || '') + '" onkeydown="if(event.key===\'Enter\')arRaioX()"/><button class="btn btn-p" onclick="arRaioX()">🔍 Analisar</button></div><div id="arRxOut" style="margin-top:12px;">' + (_ar.rxHtml || '') + '</div>';
   else if (_ar.aba === 'proximas' || _ar.aba === 'faturadas') {
     const L = _ar.aba === 'proximas' ? A : O.filter(o => !['prevista', 'atrasada'].includes(o.status));
     const meses = {}; L.forEach(o => (meses[o.data.slice(0, 7)] = meses[o.data.slice(0, 7)] || []).push(o));
@@ -33165,6 +33166,27 @@ function arExcluir(id) {
     try { if (o.origem === 'manual') await finApi('receita_manual_excluir', { id: o.ref_id });
       else { const s = (_ar.d?.sustentacoes || []).find(z => String(z.id) === String(o.ref_id)) || {}, aj = s.ajuste || {}; await finApi('receita_sustentacao_ajustar', { id: o.ref_id, valor_mensal: aj.valor_mensal, dia: aj.dia, inicio: aj.inicio, fim: aj.fim, ativo: false }); }
       toast(o.origem === 'manual' ? 'Receita excluída' : 'Sustentação desativada', 'success'); await arCarregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } };
+}
+// v3.444: Raio-X — de onde vem cada receita e por que algo não aparece
+async function arRaioX() {
+  const q = (document.getElementById('arRxQ')?.value || '').trim(); if (q.length < 2) return toast('Digite ao menos 2 letras', 'error'); _ar.rx = q;
+  const out = document.getElementById('arRxOut'); out.innerHTML = '<div style="color:var(--t3);padding:16px;">Analisando…</div>';
+  try { const d = await finApi('receitas_diagnostico', { busca: q });
+    const ok = b => b ? '<span style="color:var(--green);">✓</span>' : '<span style="color:var(--red);">✕</span>';
+    const sec = (t, n, h) => '<div style="margin-bottom:14px;"><div style="font-size:11.5px;font-weight:700;border-bottom:1px solid var(--bd);padding-bottom:4px;margin-bottom:4px;">' + t + ' <span style="color:var(--t3);font-weight:400;">(' + n + ')</span></div>' + (n ? h : '<div style="font-size:10.5px;color:var(--t3);">nada encontrado</div>') + '</div>';
+    const tab = (cab, linhas) => '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);font-size:9.5px;text-align:left;">' + cab.map(c => '<th style="padding:3px 4px;">' + c + '</th>').join('') + '</tr>' + linhas.join('') + '</table>';
+    const td = v => '<td style="padding:4px;border-top:1px solid var(--bd);vertical-align:top;">' + v + '</td>';
+    const mes = L => (L || []).map(o => '<span style="display:inline-block;margin:1px 3px 1px 0;padding:1px 6px;border-radius:8px;font-size:9.5px;background:var(--bg3);color:' + (o.motivo ? 'var(--gold)' : 'var(--green)') + ';" title="' + _arE(o.motivo || o.status) + '">' + _arDt(o.data).slice(3) + (o.motivo ? ' ✕' : '') + '</span>').join('') || '<span style="color:var(--red);font-size:10px;">nenhum mês gerado</span>';
+    const motivos = L => (L || []).filter(o => o.motivo).map(o => '<div style="font-size:9.5px;color:var(--t3);">' + _arDt(o.data) + ': ' + _arE(o.motivo) + '</div>').join('');
+    const html = (d.avisos || []).map(a => '<div style="font-size:10.5px;color:var(--gold);margin-bottom:6px;">⚠ ' + _arE(a) + '</div>').join('')
+      + sec('📄 Termos (Kanban de Faturamento, todas as etapas)', (d.termos || []).length, tab(['Termo', 'Projeto · empresa', 'Etapa', 'Valor', 'Na agenda', 'Destino'], (d.termos || []).map(t => '<tr>' + td('<b>' + _arE(t.termo) + '</b>') + td(_arE([t.projeto, t.empresa].filter(Boolean).join(' · '))) + td(_arE(t.etapa)) + td(_arR(t.valor)) + td(ok(t.na_agenda) + (t.data_prevista ? ' ' + _arDt(t.data_prevista) : '')) + td(_arE(t.motivo)) + '</tr>')))
+      + sec('🔁 Sustentações', (d.sustentacoes || []).length, (d.sustentacoes || []).map(x => '<div style="padding:6px 0;border-top:1px solid var(--bd);font-size:10.5px;"><b>' + _arE(x.projeto) + '</b> · ' + _arE(x.cliente) + ' · ' + (x.valor_mensal ? _arR(x.valor_mensal) + '/mês' : '<span style="color:var(--red);">sem valor</span>') + ' · ' + _arE(x.inicio || '?') + ' → ' + _arE(x.fim || '?') + (x.aviso ? ' <span style="color:var(--red);">⚠ ' + _arE(x.aviso) + '</span>' : '') + '<div style="margin-top:3px;">' + mes(x.meses) + '</div>' + motivos(x.meses) + '</div>').join(''))
+      + sec('🗓 Avulsas e recorrentes', (d.manuais || []).length, (d.manuais || []).map(x => '<div style="padding:6px 0;border-top:1px solid var(--bd);font-size:10.5px;"><b>' + _arE(x.cliente) + '</b> · ' + _arE(x.descricao) + ' · ' + _arR(x.valor) + ' · ' + _arE(x.recorrencia) + ' · ' + _arE(x.inicio) + (x.fim ? ' → ' + _arE(x.fim) : ' → sem fim') + (x.ativo ? '' : ' <span style="color:var(--red);">inativa</span>') + '<div style="margin-top:3px;">' + mes(x.meses) + '</div>' + motivos(x.meses) + '</div>').join(''))
+      + sec('🏁 Marcos na agenda', (d.marcos_na_agenda || []).length, tab(['Data', 'Projeto', 'Marco', 'Valor', 'Destino'], (d.marcos_na_agenda || []).map(o => '<tr>' + td(_arDt(o.data)) + td(_arE(o.cliente)) + td(_arE(String(o.descricao).slice(0, 80))) + td(_arR(o.valor)) + td(o.motivo ? '<span style="color:var(--gold);">' + _arE(o.motivo) + '</span>' : '<span style="color:var(--green);">na agenda</span>') + '</tr>')))
+      + sec('🍂 Marcos fora da agenda', (d.marcos_fora || []).length, tab(['Data', 'Projeto', 'Marco', 'Valor', 'Motivo', ''], (d.marcos_fora || []).map(m => '<tr>' + td(m.data ? _arDt(m.data) : '—') + td(_arE(m.projeto)) + td(_arE(String(m.descricao).slice(0, 80))) + td(_arR(m.valor)) + td(_arE(m.motivo)) + td(m.ligado ? '<button class="btn btn-g" style="font-size:9px;padding:1px 6px;" onclick="arMarcoDesligar(\'' + _arE(m.id) + '\',\'\').then(arRaioX)">Desligar</button>' : m.automatico ? '<button class="btn btn-g" style="font-size:9px;padding:1px 6px;" onclick="arMarcoDesligar(\'' + _arE(m.id) + '\',\'' + _arE(m.termo_id || '') + '\').then(arRaioX)">Não é deste termo</button>' : '') + '</tr>')))
+      + sec('🧾 Recorrentes do QuickBooks', (d.recorrentes_qb || []).length, tab(['Modelo', 'Cliente', 'Próxima', 'Valor', 'Situação'], (d.recorrentes_qb || []).map(m => '<tr>' + td(_arE(m.nome)) + td(_arE(m.cliente)) + td(_arDt(m.proxima)) + td(_arR(m.valor)) + td('<span style="color:' + (m.usado ? 'var(--green)' : 'var(--gold)') + ';">' + _arE(m.motivo) + '</span>' + (m.usado ? '' : ' <button class="btn btn-gn" style="font-size:9px;padding:1px 6px;" onclick="arQbRec(\'' + _arE(m.id) + '\',true)">Usar</button>')) + '</tr>')))
+      + sec('💵 Faturas do QuickBooks (M-1 em diante)', (d.faturas_qb || []).length, tab(['Fatura', 'Cliente', 'Venc.', 'Valor', 'Situação', 'Cobre'], (d.faturas_qb || []).map(f => '<tr>' + td(_arE(f.doc) + (f.termo ? ' · T' + _arE(f.termo) : '')) + td(_arE(f.cliente)) + td(_arDt(f.vencimento)) + td(_arR(f.valor)) + td(_arE(f.situacao)) + td(_arE((f.cobre || []).join(' / '))) + '</tr>')));
+    _ar.rxHtml = html; out.innerHTML = html; } catch (e) { out.innerHTML = '<div style="color:var(--red);">Erro: ' + _arE(e.message) + '</div>'; }
 }
 function arFiltroMes(v) { _ar.fMes = v; arRender(); }
 function arFiltroTermo(v) { _ar.fTermo = v; arRender(); }
@@ -37074,7 +37096,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.443] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.444] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37090,7 +37112,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.443';
+window.__ATX_BUILD_ID__ = 'ATX-v3.444';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

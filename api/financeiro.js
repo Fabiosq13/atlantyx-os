@@ -198,6 +198,7 @@ async function handler(req, res) {
       receitas_agenda:            () => receitasAgenda(params),
       qb_rec_receitas_cfg:        () => qbRecReceitasCfg(params),   // v3.426
       rp_regras_salvar:           () => rpRegrasSalvar(params),     // v3.427
+      receitas_diagnostico:       () => receitasDiagnostico(params), // v3.444
       inv_prev_receb:             () => invPrevReceb(params),       // v3.428
       qb_fatura_datas:            () => qbFaturaDatas(params),      // v3.429
       marco_ligar_termo:          () => marcoLigarTermo(params),    // v3.432
@@ -6742,11 +6743,14 @@ async function _marcosParaReceita(sql) {
 // v3.273: TERMOS NO KANBAN DE FATURAMENTO que ainda não viraram fatura no QuickBooks — receita prevista por empresa do termo.
 // Com fatura no QuickBooks (qb_invoice_id), a fatura em aberto é que conta (A Receber); pago/concluído/cancelado sai.
 async function _termosParaReceita(sql) {
-  const rows = await sql`SELECT t.*, e.id AS emp_id, e.empresa, e.valor_parcela, e.nf_valor, e.nf_numero, e.qb_invoice_id, e.pagamento_status AS emp_pag
-    FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id
+  // v3.444: LEFT JOIN — termo sem empresas no rateio (ou com a única empresa sem valor) entra pelo valor total do termo;
+  // antes ele simplesmente não aparecia na agenda
+  const rows = (await sql`SELECT t.*, COALESCE(e.id::text, 't' || t.id::text) AS emp_id, e.empresa, e.valor_parcela, e.nf_valor, e.nf_numero, e.qb_invoice_id, e.pagamento_status AS emp_pag,
+      (SELECT COUNT(*) FROM termos_empresas x WHERE x.termo_id = t.id)::int AS n_emp
+    FROM termos_faturamento t LEFT JOIN termos_empresas e ON e.termo_id = t.id
     WHERE COALESCE(t.status, '') NOT IN ('pago', 'cancelado', 'concluido') AND COALESCE(t.pagamento_status, 'pendente') <> 'pago'
-      AND e.qb_invoice_id IS NULL AND COALESCE(e.pagamento_status, 'pendente') <> 'pago'`;
-  return rows.map(r => { const valor = num(r.nf_valor) > 0 ? num(r.nf_valor) : num(r.valor_parcela); const base = _dStr(r.data_termo) || _dStr(r.criado_em);
+      AND e.qb_invoice_id IS NULL AND COALESCE(e.pagamento_status, 'pendente') <> 'pago'`);
+  return rows.map(r => { let valor = num(r.nf_valor) > 0 ? num(r.nf_valor) : num(r.valor_parcela); if (!(valor > 0) && Number(r.n_emp) <= 1 && num(r.valor_total_termo) > 0) valor = num(r.valor_total_termo); const base = _dStr(r.data_termo) || _dStr(r.criado_em);
     const prev = _dStr(r.cpfl_previsao_pagamento);
     return { ...r, valor, data: prev || (base ? _diasMais(base, 35) : null), base_data: prev ? 'previsão de pagamento confirmada' : base ? 'termo de ' + base.split('-').reverse().join('/') + ' + 35 dias' : 'termo sem data' }; })
     .filter(r => r.valor > 0);
@@ -8847,6 +8851,37 @@ async function rpRegrasSalvar({ regras } = {}) {
   const L = regras.map(r => ({ documento: String(r?.documento || '').trim().substring(0, 120), recorrente: String(r?.recorrente || '').trim().substring(0, 120) })).filter(r => r.documento.length >= 3 && r.recorrente.length >= 3).slice(0, 50);
   const sql = await getSql(); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('fin:rp_regras', ${JSON.stringify(L)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
   _rpCache.v = null; return { regras: L };
+}
+// v3.444: RAIO-X DA AGENDA — para um texto (ex.: "xplann", "HC", "servipla"), mostra TODA origem de receita (termos em qualquer
+// etapa, marcos, sustentações, avulsas/recorrentes, recorrentes do QuickBooks) e o destino de cada uma: na agenda (mês, valor),
+// coberta/substituída (por quê) ou fora (por quê). Serve para achar o que "sumiu" sem adivinhar.
+async function receitasDiagnostico({ busca } = {}) {
+  const q = String(busca || '').trim(); if (q.length < 2) throw Object.assign(new Error('informe ao menos 2 letras'), { status: 400 });
+  const nq = _rpNc(q), casa = (...xs) => xs.some(x => _rpNc(x).includes(nq));
+  const r = await receitasPrevistas({ meses: 13, _forcar: true }); const sql = await getSql();
+  const ocs = (r.ocorrencias || []).filter(o => casa(o.cliente, o.projeto, o.descricao, o.termo));
+  const destino = o => ({ id: o.id, origem: o.origem, data: o.data, valor: o.valor, descricao: o.descricao, cliente: o.cliente, status: o.status,
+    motivo: o.coberta_por ? (o.coberta_por.substituida_por ? 'substituída por ' + o.coberta_por.substituida_por + (o.coberta_por.regra ? ' (' + o.coberta_por.regra + ')' : '') : o.coberta_por.fatura ? 'coberta pela fatura ' + o.coberta_por.fatura + (o.coberta_por.casou_por ? ' (' + o.coberta_por.casou_por + ')' : '') : o.coberta_por.termo ? 'coberta pelo termo ' + o.coberta_por.termo : o.coberta_por.recorrente ? 'recorrente do QuickBooks' : 'coberta') : o.status_manual === 'cancelada' ? 'excluída/cancelada na agenda' : o.status_manual === 'recebida' ? 'marcada como recebida' : null });
+  // termos em QUALQUER etapa
+  let termos = []; try { termos = (await sql`SELECT t.id, t.numero_termo, t.projeto, t.contratante, t.status, t.pagamento_status, t.data_termo, t.criado_em, t.cpfl_previsao_pagamento, t.valor_total_termo, t.marco_projeto, t.parcela,
+      e.id AS emp_id, e.empresa, e.valor_parcela, e.nf_valor, e.nf_numero, e.qb_invoice_id, e.qb_invoice_doc, e.pagamento_status AS emp_pag
+      FROM termos_faturamento t LEFT JOIN termos_empresas e ON e.termo_id = t.id ORDER BY t.criado_em DESC LIMIT 2000`)
+    .filter(t => casa(t.projeto, t.contratante, t.empresa, t.marco_projeto, t.parcela, 'termo ' + t.numero_termo, t.numero_termo)).slice(0, 60).map(t => {
+      const v = num(t.nf_valor) > 0 ? num(t.nf_valor) : num(t.valor_parcela) > 0 ? num(t.valor_parcela) : num(t.valor_total_termo), oc = (r.ocorrencias || []).find(o => o.id === 'trm_' + (t.emp_id || 't' + t.id)), fat = (r.faturas_qb || []).find(f => String(f.id) === String(t.qb_invoice_id));
+      const motivo = ['pago', 'cancelado', 'concluido'].includes(String(t.status || '')) ? 'termo na etapa "' + t.status + '" — não entra como previsão'
+        : t.pagamento_status === 'pago' || t.emp_pag === 'pago' ? 'termo marcado como pago'
+        : !(v > 0) ? 'empresa do rateio sem valor (valor da parcela e da NF zerados)'
+        : t.qb_invoice_id ? (fat ? 'faturado: aparece como fatura ' + fat.doc + ' do QuickBooks (' + fat.situacao + ', venc. ' + fat.vencimento + ')' : 'ligado à fatura ' + (t.qb_invoice_doc || t.qb_invoice_id) + ' do QuickBooks (fora da janela da agenda ou já paga)')
+        : oc ? (destino(oc).motivo || 'na agenda em ' + oc.data + ' (' + oc.status + ')') : 'não gerou previsão (verificar)';
+      return { termo: t.numero_termo, projeto: t.projeto, empresa: t.empresa, etapa: t.status, valor: v, data_prevista: oc?.data || null, na_agenda: !!oc && ['prevista', 'atrasada'].includes(oc.status), motivo }; }); } catch (e) { termos = [{ erro: e.message }]; }
+  const sus = (r.sustentacoes || []).filter(x => casa(x.projeto, x.cliente)).map(x => ({ projeto: x.projeto, cliente: x.cliente, ativo: x.ajuste?.ativo !== false, valor_mensal: x.ajuste?.valor_mensal || x.sugerido || null, inicio: x.ajuste?.inicio || x.inicio || null, fim: x.ajuste?.fim || x.fim || null, aviso: x.ajuste?.ativo === false ? 'DESATIVADA na agenda' : !(x.ajuste?.valor_mensal || x.sugerido) ? 'SEM valor mensal (não projeta) — preencha na aba Sustentações' : !(x.ajuste?.inicio || x.inicio) ? 'SEM início/vigência (não projeta)' + (x.sem_contrato ? ' — projeto sem contrato cadastrado' : '') : (x.ajuste?.fim || x.fim) && (x.ajuste?.fim || x.fim) < new Date().toISOString().slice(0, 7) ? 'vigência terminou em ' + (x.ajuste?.fim || x.fim) : null,
+    meses: ocs.filter(o => o.origem === 'sustentacao' && String(o.ref_id) === String(x.id)).map(destino) }));
+  const man = (r.manuais || []).filter(x => casa(x.cliente, x.projeto, x.descricao)).map(x => ({ id: x.id, cliente: x.cliente, descricao: x.descricao, valor: x.valor, recorrencia: x.recorrencia, inicio: x.inicio, fim: x.fim, ativo: x.ativo !== false,
+    meses: ocs.filter(o => o.origem === 'manual' && String(o.ref_id) === String(x.id)).map(destino) }));
+  const marcosNa = ocs.filter(o => o.origem === 'marco').map(destino), marcosFora = (r.marcos_fora || []).filter(m => casa(m.projeto, m.cliente, m.descricao));
+  const qbrec = (r.qb_rec_modelos || []).filter(m => casa(m.nome, m.cliente, m.descricao)).map(m => ({ ...m, motivo: m.usado ? 'em uso (substitui a sustentação do mesmo cliente/serviço)' : 'IGNORADO — recorrentes do QuickBooks ficam fora por padrão; ligue em "Recorrentes QuickBooks" → Usar' }));
+  const faturas = (r.faturas_qb || []).filter(f => casa(f.cliente, f.termo, f.termo_projeto, f.doc)).map(f => ({ doc: f.doc, cliente: f.cliente, vencimento: f.vencimento, valor: f.valor, saldo: f.saldo, situacao: f.situacao, termo: f.termo, cobre: (f.cobre || []).map(c => c.descricao) }));
+  return { busca: q, termos, sustentacoes: sus, manuais: man, marcos_na_agenda: marcosNa, marcos_fora: marcosFora, recorrentes_qb: qbrec, faturas_qb: faturas, outras_ocorrencias: ocs.filter(o => o.origem === 'qb_recorrente').map(destino), avisos: (r.avisos || []).filter(a => _rpNc(a).includes(nq)) };
 }
 async function receitasAgenda({ meses = 13 } = {}) { const r = await receitasPrevistas({ meses, _forcar: true }); return { agenda: r }; }
 async function receitaManualSalvar({ item } = {}) {
