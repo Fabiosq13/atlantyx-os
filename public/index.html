@@ -20630,7 +20630,7 @@ function impRecRender() {
       + '<td style="padding:5px;white-space:nowrap;">' + e(x.recorrencia) + ' <span style="font-size:9.5px;color:' + cor + ';">● ' + e(x.confianca) + '</span></td>'
       + '<td style="padding:5px;">' + (rec && !x.cadastrada ? '<input class="fi" style="width:110px;font-size:11px;margin:0;" id="impRecV_' + i + '" value="' + String(x.valor).replace('.', ',') + '">' : fmtBRLcompleto(x.valor)) + '</td>'
       + '<td style="padding:5px;">' + (rec && !x.cadastrada ? '<input class="fi" type="number" min="1" max="28" style="width:58px;font-size:11px;margin:0;" id="impRecD_' + i + '" value="' + x.dia + '">' : 'dia ' + x.dia) + '</td>'
-      + '<td style="padding:5px;font-size:10.5px;">' + (x.cadastrada ? '<span style="color:var(--green);">✓ já na Agenda</span> ' + _recBadge(x.cadastrada) + '<div style="color:var(--t3);">' + e(x.cadastrada.descricao) + ' · ' + fmtBRLcompleto(x.cadastrada.valor) + '</div>' : rec ? 'próximo ' + x.proximo.split('-').reverse().join('/') : 'sem padrão — não entra') + '</td></tr>'; };
+      + '<td style="padding:5px;font-size:10.5px;">' + (x.cadastrada ? '<span style="color:var(--green);">✓ já na Agenda</span> ' + _recBadge(x.cadastrada) + '<div style="color:var(--t3);">' + e(x.cadastrada.descricao) + ' · ' + fmtBRLcompleto(x.cadastrada.valor) + '</div>' : rec ? 'próximo ' + x.proximo.split('-').reverse().join('/') + ' <button class="btn btn-p" style="font-size:10px;padding:2px 8px;margin-left:6px;" onclick="impRecCadastrar(this,' + i + ')">＋ Incluir na Agenda</button>' : 'sem padrão — não entra') + '</td></tr>'; };
   const grupos = ['parcelamento', 'municipal', 'federal', 'estadual', 'viagem'].map(g => { const itens = L.map((x, i) => [x, i]).filter(([x]) => x.grupo === g); if (!itens.length) return '';
     return '<tr><td colspan="6" style="padding:8px 5px 3px;font-weight:700;font-size:11.5px;">' + GR[g] + '</td></tr>' + itens.map(([x, i]) => linha(x, i)).join(''); }).join('');
   const R = d.resumo || {};
@@ -20662,15 +20662,15 @@ function despRepRender() {
       + '<td style="padding:5px;white-space:nowrap;">' + (pode ? '<select class="fi" id="despRepR_' + i + '" style="width:auto;font-size:11px;margin:0;"><option' + (x.recorrencia === 'mensal' ? ' selected' : '') + '>mensal</option><option' + (x.recorrencia === 'trimestral' ? ' selected' : '') + '>trimestral</option></select>' : e(x.recorrencia)) + ' <span style="font-size:9.5px;color:' + cor[x.confianca] + ';">● ' + e(x.confianca) + '</span></td>'
       + '<td style="padding:5px;">' + (pode ? '<input class="fi" style="width:110px;font-size:11px;margin:0;" id="despRepV_' + i + '" value="' + String(x.valor).replace('.', ',') + '">' : fmtBRLcompleto(x.valor)) + '</td>'
       + '<td style="padding:5px;">' + (pode ? '<input class="fi" type="number" min="1" max="28" style="width:58px;font-size:11px;margin:0;" id="despRepD_' + i + '" value="' + x.dia + '">' : 'dia ' + x.dia) + '</td>'
-      + '<td style="padding:5px;font-size:10.5px;">' + (x.situacao === 'recorrente' ? '' : SIT[x.situacao]) + (x.agenda ? (x.situacao === 'na_agenda_sem_recorrencia' ? '' : ' ' + _recBadge(x.agenda)) + '<div style="color:var(--t3);">' + e(x.agenda.descricao) + ' · ' + fmtBRLcompleto(x.agenda.valor) + '</div>' : '') + '</td></tr>'; };
+      + '<td style="padding:5px;font-size:10.5px;">' + (x.situacao === 'recorrente' ? '' : SIT[x.situacao]) + (x.agenda ? (x.situacao === 'na_agenda_sem_recorrencia' ? '' : ' ' + _recBadge(x.agenda)) + '<div style="color:var(--t3);">' + e(x.agenda.descricao) + ' · ' + fmtBRLcompleto(x.agenda.valor) + '</div>' : '') + (pode ? '<div style="margin-top:4px;"><button class="btn btn-p" style="font-size:10px;padding:2px 8px;" onclick="despRepCadastrar(this,' + i + ')">＋ ' + (x.situacao === 'fora_da_agenda' ? 'Incluir na Agenda' : x.situacao === 'recorrencia_acabou' ? 'Renovar recorrência' : 'Tornar recorrente') + '</button></div>' : '') + '</td></tr>'; };
   const R = d.resumo || {};
   box.innerHTML = '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--t2);margin-bottom:8px;"><span><b>' + R.fora + '</b> sem recorrência na Agenda (~' + fmtBRLcompleto(R.valor_mensal_fora) + '/mês fora do fluxo)</span><span>' + R.recorrentes + ' já recorrentes</span><span style="color:var(--t3);">' + d.analisados + ' lançamentos de ' + d.periodo.de.split('-').reverse().join('/') + ' a ' + d.periodo.ate.split('-').reverse().join('/') + ' · repete em 3+ meses e pago nos últimos 4</span></div>'
     + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:720px;"><thead><tr style="color:var(--t3);font-size:9px;text-transform:uppercase;"><th><input type="checkbox" title="Marcar todos" onchange="document.querySelectorAll(\'.despRepSel\').forEach(c=>c.checked=this.checked)"></th><th style="text-align:left;padding:4px;">Fornecedor / lançamento</th><th style="text-align:left;padding:4px;">Recorrência</th><th style="text-align:left;padding:4px;">Valor previsto</th><th style="text-align:left;padding:4px;">Vence</th><th style="text-align:left;padding:4px;">Agenda</th></tr></thead><tbody>'
     + L.map(linha).join('') + '</tbody></table></div>'
     + (R.fora ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;"><button class="btn btn-p" style="font-size:11px;" onclick="despRepCadastrar(this)">＋ Criar recorrência dos marcados na Agenda</button><span style="font-size:10.5px;color:var(--t3);">Cria a despesa recorrente com as ocorrências dos próximos 12 meses (sem lançar nada no QuickBooks). Se já existe na Agenda como lançamento único, apague o avulso depois para não duplicar.</span></div><div id="despRepMsg" style="font-size:11px;margin-top:6px;"></div>' : '');
 }
-async function despRepCadastrar(btn) {
-  const sel = [...document.querySelectorAll('.despRepSel:checked')].map(c => +c.dataset.i); if (!sel.length) return toast('Marque pelo menos um', 'error');
+async function despRepCadastrar(btn, um) {
+  const sel = um != null ? [um] : [...document.querySelectorAll('.despRepSel:checked')].map(c => +c.dataset.i); const txt0 = btn.textContent; if (!sel.length) return toast('Marque pelo menos um', 'error');
   const lerV = v => { v = String(v || '').trim(); return parseFloat(/,\d{1,2}$/.test(v) ? v.replace(/\./g, '').replace(',', '.') : v.replace(/,/g, '')); };
   const itens = sel.map(i => { const x = _despRep.sugestoes[i]; return { tributo: x.nome, descricao: x.nome, fornecedor: x.nome, categoria: x.conta || 'Despesas recorrentes', recorrencia: document.getElementById('despRepR_' + i)?.value || x.recorrencia, valor: lerV(document.getElementById('despRepV_' + i)?.value), dia: parseInt(document.getElementById('despRepD_' + i)?.value) || x.dia }; });
   if (itens.some(i => !(i.valor > 0))) return toast('Há valor inválido em algum marcado', 'error');
@@ -20679,10 +20679,10 @@ async function despRepCadastrar(btn) {
     toast(r.cadastrados + ' recorrência(s) criada(s) na Agenda' + (r.erros.length ? ' · ' + r.erros.length + ' com erro' : ''), r.erros.length ? 'error' : 'success');
     const m = document.getElementById('despRepMsg'); if (m && r.erros.length) m.innerHTML = '<span style="color:var(--red);">' + r.erros.map(x => String(x).replace(/</g, '&lt;')).join('<br>') + '</span>';
     if (typeof carregarDespesas === 'function') carregarDespesas(); await despRepCarregar(true);
-  } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '＋ Criar recorrência dos marcados na Agenda'; }
+  } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = txt0; }
 }
-async function impRecCadastrar(btn) {
-  const sel = [...document.querySelectorAll('.impRecSel:checked')].map(c => +c.dataset.i); if (!sel.length) return toast('Marque pelo menos um imposto', 'error');
+async function impRecCadastrar(btn, um) { // v3.453: um = índice da linha (botão "Incluir na Agenda" da própria proposta)
+  const sel = um != null ? [um] : [...document.querySelectorAll('.impRecSel:checked')].map(c => +c.dataset.i); const txt0 = btn.textContent; if (!sel.length) return toast('Marque pelo menos um imposto', 'error');
   const lerV = v => { v = String(v || '').trim(); return parseFloat(/,\d{1,2}$/.test(v) ? v.replace(/\./g, '').replace(',', '.') : v.replace(/,/g, '')); };
   const itens = sel.map(i => { const x = _impRec.sugestoes[i], via = x.grupo === 'viagem'; return { tributo: x.tributo, descricao: via ? 'Despesas de viagem · MaxMilhas (média mensal)' : (x.grupo === 'parcelamento' ? '' : 'Imposto · ') + x.tributo + (x.recorrencia === 'trimestral' ? ' (trimestral)' : ''), fornecedor: via ? 'MaxMilhas' : x.grupo === 'municipal' ? 'Prefeitura' : x.grupo === 'estadual' ? 'SEFAZ' : x.tributo.includes('PGFN') ? 'PGFN' : 'Receita Federal',
     categoria: via ? 'Despesas de viagem' : x.grupo === 'parcelamento' ? 'Impostos — parcelamento' : 'Impostos', recorrencia: x.recorrencia, valor: lerV(document.getElementById('impRecV_' + i)?.value), dia: parseInt(document.getElementById('impRecD_' + i)?.value) || x.dia }; });
@@ -20693,7 +20693,7 @@ async function impRecCadastrar(btn) {
     const m = document.getElementById('impRecMsg'); if (m && r.erros.length) m.innerHTML = '<span style="color:var(--red);">' + r.erros.map(x => String(x).replace(/</g, '&lt;')).join('<br>') + '</span>';
     try { addLog('info', '[Agenda] impostos recorrentes incluídos: ' + r.feitos.map(f => f.tributo).join(', ')); } catch (_) {}
     if (typeof carregarDespesas === 'function') carregarDespesas(); await impRecCarregar(true);
-  } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '＋ Incluir os marcados na Agenda de Despesas'; }
+  } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = txt0; }
 }
 async function carregarDespesas() {
   setTimeout(waPagarCarregar, 300);
@@ -37157,7 +37157,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.452] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.453] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37173,7 +37173,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.452';
+window.__ATX_BUILD_ID__ = 'ATX-v3.453';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

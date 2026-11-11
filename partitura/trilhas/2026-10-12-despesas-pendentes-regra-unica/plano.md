@@ -22,3 +22,5 @@
 - 11/11/2026 · v3.451 · ok · — · —
 - [x] v3.452 · Impostos recorrentes: coluna Agenda mostra se a despesa é recorrente (🔁 mensal/trimestral · N futuras até mm/aaaa), ⚠ não recorrente (lançamento único) ou ⚠ recorrência acabou. Novo quadro "Outros pagamentos que se repetem" (QB Purchase+Bill do último ano, sem impostos/viagens/transferências): repete em 3+ meses e pago nos últimos 4 → sugere recorrência mensal/trimestral, valor (mediana dos 3 últimos) e dia; situação na Agenda; cria a recorrência dos marcados
 - 11/11/2026 · v3.452 · ok · — · fundador revisar as sugestões
+- [x] v3.453 · botão "＋ Incluir na Agenda" em cada proposta de recorrência (impostos e outros pagamentos; "Tornar recorrente"/"Renovar recorrência" quando já está na Agenda)
+- 11/11/2026 · v3.453 · ok · — · —
