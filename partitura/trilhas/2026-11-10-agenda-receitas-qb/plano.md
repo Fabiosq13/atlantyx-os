@@ -33,3 +33,5 @@ Pedido do fundador (10/11/2026): ver todas as receitas a partir de M-1 com filtr
 - 2026-11-10 · v3.436 · ✅ entregue
 - [x] v3.437: fatura ligada a termo só cobre previsão do mesmo termo/projeto (fatura 204 Transmissão não cobre mais o marco MC4 Cativo x Livre); linha da fatura mostra o projeto do termo
 - 2026-11-10 · v3.437 · ✅ entregue
+- [x] v3.443: aba Todas — ↗ ir para a origem do lançamento (fatura no QuickBooks, termo, marco, sustentação, avulsa), 🗑 excluir (só este lançamento ou a recorrência/sustentação inteira; fatura do QuickBooks não se exclui aqui) e ✎ editar (valor, data, descrição, cliente, observação; voltar ao original)
+- 2026-11-11 · v3.443 · ✅ entregue

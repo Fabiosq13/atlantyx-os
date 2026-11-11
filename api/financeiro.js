@@ -8668,7 +8668,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   }
   // ajustes por ocorrência
   const aj = ocCfg || {};
-  for (const o of oc) { const a = aj[o.id]; if (!a) continue; if (Number(a.valor) > 0) { o.valor_original = o.valor; o.valor = round(Number(a.valor)); } if (/^\d{4}-\d{2}-\d{2}$/.test(a.data || '')) { o.data_original = o.data; o.data = a.data; } if (a.status) o.status_manual = a.status; if (a.nota) o.nota = a.nota; }
+  for (const o of oc) { const a = aj[o.id]; if (!a) continue; if (a.descricao) { o.descricao_original = o.descricao; o.descricao = a.descricao; } if (a.cliente) { o.cliente_original = o.cliente; o.cliente = a.cliente; } if (Number(a.valor) > 0) { o.valor_original = o.valor; o.valor = round(Number(a.valor)); } if (/^\d{4}-\d{2}-\d{2}$/.test(a.data || '')) { o.data_original = o.data; o.data = a.data; } if (a.status) o.status_manual = a.status; if (a.nota) o.nota = a.nota; }
   // QuickBooks vence
   const desde = _diasMais(mesHoje + '-01', -75), faturas = await _rpFaturasQB(desde);
   if (!faturas) avisos.push('QuickBooks indisponível: a agenda não pôde ser conferida com as faturas reais (nada foi descartado).');
@@ -8866,7 +8866,7 @@ async function receitaSustentacaoAjustar({ id, valor_mensal, dia, inicio, fim, a
 }
 async function receitaOcorrenciaAjustar({ id, status, valor, data, nota, limpar } = {}) {
   if (!id) throw new Error('id obrigatório'); const cfg = (await _kvFin(_RP_OC).catch(() => null)) || {};
-  if (limpar) delete cfg[id]; else cfg[id] = { fatura: arguments[0].fatura ? String(arguments[0].fatura).replace(/[^\w\-\/]/g, '').substring(0, 30) || null : null, status: ['recebida', 'cancelada'].includes(status) ? status : null, valor: Number(valor) > 0 ? round(Number(valor)) : null, data: /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : null, nota: nota ? String(nota).slice(0, 300) : null, em: new Date().toISOString() };
+  if (limpar) delete cfg[id]; else cfg[id] = { fatura: arguments[0].fatura ? String(arguments[0].fatura).replace(/[^\w\-\/]/g, '').substring(0, 30) || null : null, status: ['recebida', 'cancelada'].includes(status) ? status : null, valor: Number(valor) > 0 ? round(Number(valor)) : null, data: /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : null, nota: nota ? String(nota).slice(0, 300) : null, descricao: arguments[0].descricao ? String(arguments[0].descricao).slice(0, 200) : null, cliente: arguments[0].cliente ? String(arguments[0].cliente).slice(0, 120) : null, em: new Date().toISOString() };   // v3.443: descrição e cliente editáveis
   await _kvFinSet(_RP_OC, cfg); _rpCache.v = null; return { ok: true };
 }
 

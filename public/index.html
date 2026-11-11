@@ -33022,7 +33022,7 @@ function _arTodas(D) {
   const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], m1 = D.mes_m1 || '';
   const F = (D.faturas_qb || []).map(f => { const ref = String(f.vencimento || f.emissao || ''); const mes = ref.slice(0, 7) < m1 ? 'antes' : ref.slice(0, 7);
     return { tipo: 'qb', mes, data: ref, cliente: f.cliente, desc: 'Fatura ' + f.doc + (f.termo_projeto ? ' · ' + f.termo_projeto : '') + (f.cobre.length ? ' · ' + f.cobre.map(c => c.descricao).join(' / ') : ''), termo: f.termo, valor: f.valor, saldo: f.saldo, situacao: f.situacao, emissao: f.emissao, origem: 'quickbooks', id: f.id, venc_qb: f.venc_qb, prev_receb: f.prev_receb, rateio: f.rateio, termo_id: f.termo_id, doc: f.doc, retencao: f.retencao }; });
-  const P = (D.ativas || []).map(o => ({ tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
+  const P = (D.ativas || []).map(o => ({ ref_id: o.ref_id, recorrencia: o.recorrencia, tipo: 'prev', mes: o.data.slice(0, 7), data: o.data, cliente: o.cliente, desc: o.descricao + (o.projeto && o.projeto !== o.cliente ? ' · ' + o.projeto : '') + (o.substitui ? ' · substitui ' + o.substitui : ''), termo: o.termo || null, valor: o.valor, situacao: o.status, origem: o.origem, id: o.id, data_prevista: o.data_prevista }));
   let L = F.concat(P);
   const termos = [...new Set(L.map(x => x.termo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
   const mesesTodos = [...new Set(L.map(x => x.mes))].sort((a, b) => a === 'antes' ? -1 : b === 'antes' ? 1 : a.localeCompare(b));
@@ -33055,7 +33055,7 @@ function _arTodas(D) {
           + '<td><b>' + _arE(x.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(x.desc) + '</div></td><td style="white-space:nowrap;">' + (x.termo ? '<span class="nbx bl" style="font-size:9px;">Termo ' + _arE(x.termo) + '</span>' : '') + '</td>'
           + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(x.valor) + (x.tipo === 'qb' && x.saldo > 0 && x.saldo < x.valor ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">em aberto ' + _arR(x.saldo) + '</div>' : '') + (x.retencao ? '<div style="font-size:9px;color:var(--t3);font-weight:400;" title="O saldo aberto no QuickBooks é a retenção de impostos — a fatura foi paga pelo líquido">retenção ' + _arR(x.retencao.valor) + '</div>' : '') + '</td>'
-          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' + (x.origem === 'marco' ? ' <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Este marco já está num termo do Kanban de Faturamento: vale o termo" onclick="arMarcoTermo(\'' + _arE(x.id) + '\')">→ Termo</button>' : '') : '') + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
+          + '<td style="text-align:right;white-space:nowrap;">' + (x.tipo === 'qb' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Corrigir vencimento no QuickBooks e emissão das notas do termo" onclick="arInvDatas(\'' + _arE(x.id) + '\')">🗓</button> ' : '') + (x.tipo === 'qb' && x.saldo > 0 ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Quando o cliente paga de fato (o vencimento no QuickBooks não muda)" onclick="arInvPrev(\'' + _arE(x.id) + '\',\'' + _arE(x.prev_receb || '') + '\',\'' + _arE(x.venc_qb || '') + '\')">📅</button>' : '') + (x.tipo === 'prev' && x.origem !== 'qb_recorrente' ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Editar lançamento" onclick="arOcEditar(\'' + _arE(x.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks" onclick="arOcFatura(\'' + _arE(x.id) + '\')">QB</button>' + (x.origem === 'marco' ? ' <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Este marco já está num termo do Kanban de Faturamento: vale o termo" onclick="arMarcoTermo(\'' + _arE(x.id) + '\')">→ Termo</button>' : '') : '') + ' ' + _arAcoes(x) + '</td></tr>' + _arRateio(x); }).join('') + '</table></div>'; }).join('');
   return filtros + (corpo || '<div style="padding:16px;color:var(--t3);font-size:11px;">Nada com esses filtros.</div>') + foraHtml + mfHtml + (D.qb_conferido ? '' : '<div style="font-size:10px;color:var(--gold);margin-top:8px;">QuickBooks indisponível: só as previsões da agenda aparecem.</div>');
 }
 // v3.426: modelos recorrentes de RECEITA do QuickBooks — fora por padrão (valem os recorrentes do sistema); liga/desliga um a um
@@ -33119,6 +33119,52 @@ async function arInvPrev(id, atual, venc) {
   const v = prompt('Previsão de recebimento desta fatura (AAAA-MM-DD).\nVencimento no QuickBooks: ' + (venc || '—') + '\nDeixe em branco para voltar ao vencimento do QuickBooks.', atual || '');
   if (v === null) return; const d = v.trim(); if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('Use o formato AAAA-MM-DD', 'error'); return; }
   try { await finApi('inv_prev_receb', { id, data: d || null }); toast(d ? 'Previsão ajustada — vale no fluxo, extrato e projetado' : 'Voltou ao vencimento do QuickBooks', 'success'); await arCarregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+// v3.443: em cada lançamento da agenda — ↗ ir para a origem e 🗑 excluir
+function _arAcoes(x) {
+  const b = (ic, tit, fn) => '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="' + _arE(tit) + '" onclick="' + fn + '">' + ic + '</button>';
+  let ir = '';
+  if (x.tipo === 'qb') ir = b('↗', 'Abrir a fatura ' + x.doc + ' no QuickBooks', "window.open('https://app.qbo.intuit.com/app/invoice?txnId=" + _arE(String(x.id)) + "','_blank','noopener')") + (x.termo_id ? ' ' + b('📄', 'Abrir o termo no Kanban de Faturamento', "abrirDetalheTermo('" + _arE(x.termo_id) + "')") : '');
+  else if (x.origem === 'termo') ir = b('↗', 'Abrir o termo no Kanban de Faturamento', "abrirDetalheTermo('" + _arE(x.ref_id) + "')");
+  else if (x.origem === 'marco') ir = b('↗', 'Abrir o Kanban de Marcos', "nav('s3marcoskanban')");
+  else if (x.origem === 'manual') ir = b('↗', 'Editar a receita avulsa/recorrente', "arManualForm('" + _arE(x.ref_id) + "')");
+  else if (x.origem === 'sustentacao') ir = b('↗', 'Abrir a sustentação', "_ar.aba='sustentacoes';arRender()");
+  const del = x.tipo === 'qb' ? '' : b('🗑', 'Excluir este lançamento', "arExcluir('" + _arE(x.id) + "')");
+  return ir + (del ? ' ' + del : '');
+}
+// v3.443: editar lançamento — valor, data, descrição, cliente e observação (só esta previsão); atalhos para editar a origem
+function arOcEditar(id) {
+  const o = (_ar.d?.ocorrencias || []).find(z => z.id === id); if (!o) return; document.getElementById('arModal')?.remove();
+  const ori = o.origem === 'manual' ? '<a href="#" onclick="event.preventDefault();document.getElementById(\'arModal\').remove();arManualForm(\'' + _arE(o.ref_id) + '\')">editar a receita inteira (todos os meses)</a>'
+    : o.origem === 'sustentacao' ? '<a href="#" onclick="event.preventDefault();document.getElementById(\'arModal\').remove();_ar.aba=\'sustentacoes\';arRender()">editar a sustentação (valor mensal, dia, início e fim)</a>'
+    : o.origem === 'termo' ? '<a href="#" onclick="event.preventDefault();document.getElementById(\'arModal\').remove();abrirDetalheTermo(\'' + _arE(o.ref_id) + '\')">editar o termo no Kanban de Faturamento</a>'
+    : o.origem === 'marco' ? '<a href="#" onclick="event.preventDefault();document.getElementById(\'arModal\').remove();nav(\'s3marcoskanban\')">editar o marco no Kanban de Marcos</a>' : '';
+  const m = document.createElement('div'); m.id = 'arModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;'; m.onclick = e => { if (e.target === m) m.remove(); };
+  m.innerHTML = '<div class="panel" style="max-width:480px;width:100%;padding:16px;font-size:11px;"><b style="font-size:13px;">✎ Editar lançamento</b><div style="color:var(--t3);margin:3px 0 10px;">' + _arE((_arOri[o.origem] || [o.origem])[0]) + (o.valor_original || o.data_original || o.descricao_original ? ' · já ajustado (original: ' + [o.valor_original ? _arR(o.valor_original) : '', o.data_original ? _arDt(o.data_original) : '', o.descricao_original || ''].filter(Boolean).map(_arE).join(' · ') + ')' : '') + '</div>'
+    + '<div style="display:grid;gap:7px;"><label class="fl">Cliente</label><input class="fi" id="arEc" value="' + _arE(o.cliente || '') + '"/><label class="fl">Descrição</label><input class="fi" id="arEd" value="' + _arE(o.descricao || '') + '"/>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label class="fl">Valor (R$)</label><input class="fi" id="arEv" inputmode="decimal" value="' + String(o.valor).replace('.', ',') + '"/></div><div><label class="fl">Data prevista</label><input class="fi" type="date" id="arEt" value="' + _arE(o.data_prevista || o.data) + '"/></div></div>'
+    + '<label class="fl">Observação</label><input class="fi" id="arEn" value="' + _arE(o.nota || '') + '" placeholder="opcional"/></div>'
+    + '<div style="font-size:9.5px;color:var(--t3);margin-top:8px;">Muda só esta previsão (vale na agenda, extrato, fluxo e projetado).' + (ori ? ' Para mudar na origem: ' + ori + '.' : '') + '</div>'
+    + '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;">' + (o.valor_original || o.data_original || o.descricao_original ? '<button class="btn btn-g" id="arEl">↺ Voltar ao original</button>' : '') + '<button class="btn btn-g" onclick="document.getElementById(\'arModal\').remove()">Cancelar</button><button class="btn btn-gn" id="arEs">Salvar</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('#arEs').onclick = () => { const g = k => m.querySelector('#' + k).value.trim(); m.remove();
+    _arAj({ id, valor: _numBR(g('arEv')), data: g('arEt') || null, descricao: g('arEd') !== (o.descricao_original || o.descricao) || o.descricao_original ? g('arEd') : null, cliente: g('arEc') !== (o.cliente_original || o.cliente) || o.cliente_original ? g('arEc') : null, nota: g('arEn') || null }, 'Lançamento atualizado'); };
+  const l = m.querySelector('#arEl'); if (l) l.onclick = () => { m.remove(); _arAj({ id, limpar: true }, 'Voltou ao original'); };
+}
+function arExcluir(id) {
+  const o = (_ar.d?.ocorrencias || []).find(z => z.id === id); if (!o) return; document.getElementById('arModal')?.remove();
+  const inteira = o.origem === 'manual' ? (o.recorrencia && o.recorrencia !== 'unica' ? 'Excluir a receita recorrente inteira (todos os meses)' : 'Excluir a receita avulsa') : o.origem === 'sustentacao' ? 'Desativar a sustentação (todos os meses)' : null;
+  const m = document.createElement('div'); m.id = 'arModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;'; m.onclick = e => { if (e.target === m) m.remove(); };
+  m.innerHTML = '<div class="panel" style="max-width:460px;width:100%;padding:16px;font-size:11px;"><b style="font-size:13px;">🗑 Excluir lançamento</b><div style="color:var(--t2);margin:6px 0 12px;">' + _arDt(o.data) + ' · <b>' + _arE(o.cliente || o.projeto) + '</b> · ' + _arE(o.descricao) + ' · ' + _arR(o.valor) + '</div>'
+    + '<div style="display:grid;gap:6px;"><button class="btn" id="arDel1">Só este lançamento (sai da agenda e de todas as telas)</button>' + (inteira ? '<button class="btn" style="color:var(--red);border-color:var(--red);" id="arDel2">' + inteira + '</button>' : '')
+    + (o.origem === 'termo' ? '<div style="font-size:9.5px;color:var(--t3);">O termo continua no Kanban de Faturamento — para excluí-lo de vez, abra o termo (↗) e use "Excluir termo".</div>' : o.origem === 'marco' ? '<div style="font-size:9.5px;color:var(--t3);">O marco continua no Kanban de Marcos (é do projeto). Aqui ele só sai da previsão de receita.</div>' : '')
+    + '<div style="font-size:9.5px;color:var(--t3);">Dá para desfazer: em "Já faturadas / encerradas", botão ↺.</div><button class="btn btn-g" onclick="document.getElementById(\'arModal\').remove()">Cancelar</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('#arDel1').onclick = () => { m.remove(); _arAj({ id, status: 'cancelada', nota: 'excluído na agenda' }, 'Lançamento excluído da agenda'); };
+  const d2 = m.querySelector('#arDel2'); if (d2) d2.onclick = async () => { if (!confirm(inteira + '?')) return; m.remove();
+    try { if (o.origem === 'manual') await finApi('receita_manual_excluir', { id: o.ref_id });
+      else { const s = (_ar.d?.sustentacoes || []).find(z => String(z.id) === String(o.ref_id)) || {}, aj = s.ajuste || {}; await finApi('receita_sustentacao_ajustar', { id: o.ref_id, valor_mensal: aj.valor_mensal, dia: aj.dia, inicio: aj.inicio, fim: aj.fim, ativo: false }); }
+      toast(o.origem === 'manual' ? 'Receita excluída' : 'Sustentação desativada', 'success'); await arCarregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } };
 }
 function arFiltroMes(v) { _ar.fMes = v; arRender(); }
 function arFiltroTermo(v) { _ar.fTermo = v; arRender(); }
@@ -37028,7 +37074,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.442] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.443] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37044,7 +37090,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.442';
+window.__ATX_BUILD_ID__ = 'ATX-v3.443';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
