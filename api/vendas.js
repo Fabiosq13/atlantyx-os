@@ -845,7 +845,14 @@ async function _todoCriar(itens, origem) {
   await m.default({ method: 'POST', body: { action: 'criar_lote', itens, origem_ia: origem, contexto: 'Floresta de Vendas' }, query: {}, headers: {}, url: '/api/todo' }, res);
   if (!out || out.success === false) throw new Error(out?.error || 'To-do sem resposta'); return out;
 }
-let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar }));
+async function _apolloBuscar(params) { // v3.441: mesma busca da tela de prospecção (people_search, sem crédito)
+  const m = await import('./apollo.js'); let out = null, st = 200;
+  const res = { statusCode: 200, status(c) { st = c; return this; }, json(o) { out = o; return this; }, setHeader() {}, end() { return this; } };
+  await m.default({ method: 'POST', body: { action: 'people_search', ...params }, query: {}, headers: {}, url: '/api/apollo' }, res);
+  if (!out || out.success === false) throw new Error(out?.error || ('Apollo sem resposta (' + st + ')')); return out;
+}
+let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar, normTelefone: _normTel, apolloBuscar: _apolloBuscar }));
+function _normTel(v) { let p = String(v || '').replace(/\D/g, ''); if (!p) return null; if (p.startsWith('00')) p = p.slice(2); if (p.length === 10 || p.length === 11) p = '55' + p; if (!/^55\d{10,11}$/.test(p)) return /^\d{11,15}$/.test(p) && !p.startsWith('55') ? p : null; return p; }
 
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -920,6 +927,10 @@ async function handler(req, res) {
     floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
     floresta_mover: () => floresta().mover(payload, req.sessao?.login),
     floresta_cfg: () => floresta().cfgSalvar(payload),
+    floresta_iara_preparar: () => floresta().iaraPreparar(payload),          // v3.441: IARA
+    floresta_iara_enviar: () => floresta().iaraEnviar(payload, req.sessao?.login),
+    floresta_apollo: () => floresta().apolloBuscar(payload),                 // v3.441: leads frios do Apollo
+    floresta_importar: () => floresta().importar(payload),
     leads_esquecidos_msg: () => leadsEsquecidosMensagem(payload),
     estrategia_excluir: () => sqlRun(async sql => { await sql`DELETE FROM vendas_estrategias WHERE id = ${payload.id}`; return { ok: true }; }),
   };

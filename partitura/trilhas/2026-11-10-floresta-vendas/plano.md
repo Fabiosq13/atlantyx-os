@@ -9,3 +9,8 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - T2: escreve no HubSpot (dealstage, lifecyclestage, hs_lead_status, criação de negócio) só após aprovação ou arraste do fundador.
 ## Registro da Batida
 - 2026-11-10 · v3.440 · ✅ entregue · próximo: Fabio rodar a 1ª leitura da IA e ajustar os tempos limite.
+- [x] v3.441: etapa "🤖 Abordagem IARA (SDR)"; marcar cards (ou coluna) → IARA escreve a 1ª mensagem → fundador revisa e aprova → envio pelo WhatsApp (Z-API) com descadastro e sem repetir em 7 dias, status ATTEMPTED_TO_CONTACT e nota no HubSpot; IA de decisão pode propor "abordar_iara"
+- [x] v3.441: "🧲 Gerar leads frios (Apollo)" na floresta — mesma busca da Prospecção (people_search, sem crédito), deduplica e cria no HubSpot como contato frio (lifecycle lead, NEW), já marcados para a IARA
+## Interseções (v3.441)
+- T2: envio de WhatsApp pela Z-API (aprovação explícita do fundador por lote) e escrita no HubSpot (contatos, notas).
+- 2026-11-10 · v3.441 · ✅ entregue
