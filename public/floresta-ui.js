@@ -227,7 +227,7 @@
       if (!umId) f.length ? (SEL.clear(), f.forEach(x => SEL.add(x.card_id))) : SEL.clear(); _redesenhar(); carregar(true).catch(() => {}); }
     catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
-  async function tirarIara(umId) { const ids = umId ? [umId] : [...SEL]; if (!ids.length || !confirm('Tirar ' + ids.length + ' do fluxo da IARA (limpa o campo no HubSpot)?')) return;
+  async function tirarIara(umId) { const ids = umId ? [umId] : [...SEL]; if (!ids.length || !confirm('Tirar ' + ids.length + ' do fluxo da IARA (atendido_pela_ia = false no HubSpot)?')) return;
     document.getElementById('flModal')?.remove(); const L = ids.map(id => D.cards.find(c => c.id === id)).filter(Boolean);
     try { const r = await api('floresta_iara_fluxo', { card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })), tirar: true }); _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), false);
       nota(r.ok + ' fora do fluxo da IARA'); if (!umId) SEL.clear(); _redesenhar(); carregar(true).catch(() => {}); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
