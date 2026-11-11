@@ -5,3 +5,5 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - [x] Tela S3 · Custo por Projeto & Piso da Hora
 ## Registro da Batida
 - 11/11/2026 · v3.455 · ok · fundador precisa marcar o cliente da IA Sales como Produtos na tela · conferir horas apontadas no Maestro
+- [x] v3.456 · projetos = Maestro "Oficial_*"; receita ligada ao Oficial_ por de-para salvo, marco do Maestro, financeiro do Maestro, palavra distintiva do nome ou cliente com um só projeto; o que não liga vai para o quadro "🔗 Receita → projeto Oficial_" (de-para em kv fin:receita_projeto); lista só ativos + concluídos com hora ou receita no período
+- 11/11/2026 · v3.456 · ok · — · fundador ligar as receitas que sobrarem

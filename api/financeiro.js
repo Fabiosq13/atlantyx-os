@@ -7197,13 +7197,14 @@ async function impostosRecorrentes({ meses = 13 } = {}) {
 // Folha = Pagamento a Colaboradores (Maestro: horas × valor-hora custo); horas por projeto = apontamentos do Maestro;
 // fixo = despesas do QuickBooks no mês sem impostos, retiradas e a própria folha; receita = faturas do QuickBooks do mês
 // (ligadas ao projeto pelo termo; sem termo, pelo cliente). Motor de cada projeto/cliente: kv fin:motor_cliente (editável).
-const K_MOTOR_CLI = 'fin:motor_cliente', K_CH_CFG = 'fin:custo_hora_cfg';
+const K_MOTOR_CLI = 'fin:motor_cliente', K_CH_CFG = 'fin:custo_hora_cfg', K_REC_PROJ = 'fin:receita_projeto'; // v3.456: rótulo da receita → projeto Oficial_
 async function _maestroLer(chaves) {
   const { getSqlCrono } = await import('./pmo.js'); const crono = await getSqlCrono();
   const txt = 'SELECT key AS k, (value)::text AS v FROM atlx_store WHERE key = ANY($1)', rows = await (typeof crono.query === 'function' ? crono.query(txt, [chaves]) : crono(txt, [chaves]));
   const S = {}; (rows.rows || rows).forEach(r => { try { let v = JSON.parse(r.v); if (typeof v === 'string') v = JSON.parse(v); S[r.k] = v; } catch (_) {} }); return S;
 }
-async function custoProjetosCfg({ motores, parametros } = {}) {
+async function custoProjetosCfg({ motores, parametros, receita_map } = {}) {
+  if (receita_map && typeof receita_map === 'object') { const M = (await _kvFin(K_REC_PROJ).catch(() => null)) || {}; for (const [k, v] of Object.entries(receita_map)) { const kk = chNorm(k); if (!kk) continue; if (v) M[kk] = String(v); else delete M[kk]; } await _kvFinSet(K_REC_PROJ, M); }
   if (motores && typeof motores === 'object') { const L = {}; for (const [k, m] of Object.entries(motores)) if (['pessoas', 'projetos', 'produtos'].includes(m) && String(k).trim()) L[chNorm(k)] = m; await _kvFinSet(K_MOTOR_CLI, L); }
   if (parametros && typeof parametros === 'object') await _kvFinSet(K_CH_CFG, { ...((await _kvFin(K_CH_CFG).catch(() => null)) || {}), ...parametros, atualizado_em: new Date().toISOString() });
   _camCtx.em = 0; return { motores: (await _kvFin(K_MOTOR_CLI).catch(() => null)) || {}, parametros: (await _kvFin(K_CH_CFG).catch(() => null)) || {} };
@@ -7220,8 +7221,10 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
   const ini = L[0] + '-01', fim = _addMesesData(fimM + '-01', 1).substring(0, 8) + '01'; const fimD = _diasMais(fim, -1);
   const avisos = [];
   // 1) Maestro: folha, apontamentos, projetos
-  let folhas = {}, apts = [], cad = [];
-  try { const S = await _maestroLer(['atlx_analistas_cad', 'atlx_apontamentos', 'atlx_pag_mensal', 'atlx_projetos_cad']);
+  let folhas = {}, apts = [], cad = [], oficiaisLista = [];
+  let mkM = [], finM = [];
+  try { const S = await _maestroLer(['atlx_analistas_cad', 'atlx_apontamentos', 'atlx_pag_mensal', 'atlx_projetos_cad', 'atlx_proj_marcos', 'atlx_proj_financeiro']);
+    mkM = Array.isArray(S.atlx_proj_marcos?.marcos) ? S.atlx_proj_marcos.marcos : (Array.isArray(S.atlx_proj_marcos) ? S.atlx_proj_marcos : []); finM = Array.isArray(S.atlx_proj_financeiro?.itens) ? S.atlx_proj_financeiro.itens : [];
     const ana = Array.isArray(S.atlx_analistas_cad) ? S.atlx_analistas_cad : (S.atlx_analistas_cad?.itens || []); apts = Array.isArray(S.atlx_apontamentos) ? S.atlx_apontamentos : (S.atlx_apontamentos?.itens || []);
     cad = Array.isArray(S.atlx_projetos_cad) ? S.atlx_projetos_cad : []; const st = PAGC.store(S.atlx_pag_mensal);
     for (const m of L) folhas[m] = PAGC.linhas(ana, apts, st, m).map(l => ({ nome: l.nome, cargo: l.cargo, valor: l.valor, horas: l.horas, vh: l.vh })); }
@@ -7237,12 +7240,32 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
       if (recT > 0 && impT > 0) aliqQb = impT / recT;
       // receita: faturas do período, linhas sem imposto
       const inv = []; for (let pos = 1; pos <= 3001; pos += 1000) { const d = await qbQuery(`select * from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fimD}' startposition ${pos} maxresults 1000`, token); const X = d?.QueryResponse?.Invoice || []; inv.push(...X); if (X.length < 1000) break; }
-      const sql = await getSql(); const lig = {}; try { (await sql`SELECT e.qb_invoice_id, t.projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`).forEach(r => { lig[String(r.qb_invoice_id)] = r.projeto || ''; }); } catch (_) {}
-      const nomesMae = cad.map(p => String(p.nome || '').trim()).filter(Boolean), acharProj = t => { const a = chNorm(t); if (!a) return null; return nomesMae.find(x => chNorm(x) === a) || nomesMae.find(x => { const b = chNorm(x); return b.length >= 4 && (a.includes(b) || b.includes(a)); }) || null; };
+      // v3.456: projeto de verdade = os do Maestro que começam com "Oficial_" (os demais nomes são marcos/termos). A fatura vai para
+      // o Oficial_ pelo (1) de-para salvo na tela, (2) marco do Maestro com o mesmo nome (o marco pertence a um Oficial_),
+      // (3) item financeiro do Maestro, (4) palavra distintiva do nome do projeto (ex.: "jelta", "xplann") no texto, (5) cliente com um só projeto
+      const sql = await getSql(); const lig = {}; try { (await sql`SELECT e.qb_invoice_id, t.projeto, t.marco_projeto, t.parcela, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`).forEach(r => { lig[String(r.qb_invoice_id)] = r; }); } catch (_) {}
+      const recMap = (await _kvFin(K_REC_PROJ).catch(() => null)) || {};
+      const oficiais = (() => { const o = cad.filter(p => /^oficial[_\s-]/i.test(String(p.nome || '').trim())); return (o.length ? o : cad).map(p => ({ nome: String(p.nome).trim(), cliente: p.cliente || '', ativo: !/conclu|encerr|cancel|suspens|finaliz/i.test(p.status || '') })); })();
+      const nomesOf = new Set(oficiais.map(o => o.nome)); oficiaisLista = oficiais;
+      const STOP = new Set(['oficial', 'projeto', 'sistema', 'sustentacao', 'servicos', 'servico', 'atlanteam', 'atlantyx', 'desenvolvimento', 'integration', 'process', 'systems', 'kick', 'analytics', 'dados', 'data', 'cpfl', 'energia', 'grupo']);
+      const toks = t => chNorm(t).split(' ').filter(w => w.length >= 4 && !STOP.has(w));
+      const ofTok = oficiais.map(o => ({ nome: o.nome, t: toks(o.nome.replace(/^oficial[_\s-]*/i, '')) }));
+      const marcosOf = mkM.filter(m => m && m.nome && nomesOf.has(String(m.proj || '').trim())).map(m => ({ n: chNorm(m.nome), proj: String(m.proj).trim() })).filter(m => m.n.length >= 6);
+      const finOf = finM.filter(f => f && nomesOf.has(String(f.proj || '').trim())).map(f => ({ n: chNorm([f.descricao, f.nome, f.termo, f.marco].filter(Boolean).join(' ')), proj: String(f.proj).trim() })).filter(f => f.n.length >= 6);
+      const acharOficial = (rotulo, texto, cli) => {
+        const r = chNorm(rotulo); if (r && recMap[r]) return { proj: recMap[r], como: 'de-para salvo' };
+        const t = chNorm(texto); if (nomesOf.has(String(rotulo || '').trim())) return { proj: String(rotulo).trim(), como: 'nome do projeto' };
+        const mk = marcosOf.find(m => t.includes(m.n) || (r && (m.n.includes(r) || r.includes(m.n)))); if (mk) return { proj: mk.proj, como: 'marco do Maestro' };
+        const fi = finOf.find(f => r && (f.n.includes(r) || r.includes(f.n))); if (fi) return { proj: fi.proj, como: 'financeiro do Maestro' };
+        const tt = new Set(toks(texto)); const hits = ofTok.map(o => ({ nome: o.nome, n: o.t.filter(w => tt.has(w)).length })).filter(o => o.n > 0).sort((a, b) => b.n - a.n);
+        if (hits.length && (hits.length === 1 || hits[0].n > hits[1].n)) return { proj: hits[0].nome, como: 'palavra do nome' };
+        const doCli = oficiais.filter(o => o.cliente && chNorm(cli).includes(chNorm(o.cliente).split(' ')[0] || '~')); if (doCli.length === 1) return { proj: doCli[0].nome, como: 'único projeto do cliente' };
+        return null; };
       for (const i of inv) { const v = (i.Line || []).filter(l => l.DetailType === 'SalesItemLineDetail').reduce((s, l) => s + (parseFloat(l.Amount) || 0), 0) || (parseFloat(i.TotalAmt) || 0); if (!(v > 0)) continue;
-        const cli = i.CustomerRef?.name || ''; let pr = lig[String(i.Id)] ? (acharProj(lig[String(i.Id)]) || lig[String(i.Id)]) : null;
-        if (!pr) { const doCli = cad.filter(p => p.cliente && chNorm(cli).includes(chNorm(p.cliente).split(' ')[0] || '~')); if (doCli.length === 1) pr = doCli[0].nome; }
-        receitas.push({ projeto: pr, cliente: cli, valor: v, mes: String(i.TxnDate).substring(0, 7) }); }
+        const cli = i.CustomerRef?.name || '', L0 = lig[String(i.Id)], linhas = (i.Line || []).map(l => l.Description).filter(Boolean).join(' ');
+        const rotulo = L0?.projeto || cli, texto = [L0?.projeto, L0?.marco_projeto, L0?.parcela, linhas, i.PrivateNote, i.CustomerMemo?.value, cli].filter(Boolean).join(' ');
+        const a = acharOficial(rotulo, texto, cli);
+        receitas.push({ projeto: a ? a.proj : null, cliente: cli, valor: v, mes: String(i.TxnDate).substring(0, 7), rotulo, como: a?.como || null, doc: i.DocNumber || i.Id }); }
     } catch (e) { avisos.push('QuickBooks: ' + e.message); } }
   else avisos.push('QuickBooks não configurado — sem custo fixo e sem receita.');
   const cfgFin = await _fv2Cfg().catch(() => ({})), aliq = aliquota_pct != null && aliquota_pct !== '' ? Number(aliquota_pct) / 100 : cfgP.aliquota_pct != null ? Number(cfgP.aliquota_pct) / 100 : cfgFin.aliquota_pct != null ? cfgFin.aliquota_pct / 100 : (aliqQb || 0.1615);
@@ -7252,7 +7275,17 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
   R.avisos = avisos.concat(R.avisos); R.aliquota_fonte = aliquota_pct != null && aliquota_pct !== '' ? 'informada' : cfgP.aliquota_pct != null ? 'configurada aqui' : cfgFin.aliquota_pct != null ? 'alíquota efetiva da DRE' : aliqQb ? 'impostos ÷ receita do QuickBooks no período' : 'padrão 16,15%';
   R.fixo_mes = fixoMes; R.mapa_motores = mapa; R.parametros = cfgP;
   R.clientes = [...new Set(receitas.map(r => r.cliente).filter(Boolean))].sort().map(c => ({ cliente: c, motor: motorDoNome(mapa, c), marcado: Object.keys(mapa).some(k => chNorm(c).includes(k) || k.includes(chNorm(c))) }));
-  R.projetos_maestro = cad.map(p => p.nome).filter(Boolean);
+  // v3.456: só projetos ATIVOS + concluídos que tiveram hora apontada ou receita no período
+  { const comMov = new Set([...R.projetos.filter(p => p.horas_mes > 0 || p.receita_mes > 0).map(p => p.projeto)]);
+    const base = oficiaisLista.length ? oficiaisLista : cad.map(p => ({ nome: String(p.nome || '').trim(), ativo: !/conclu|encerr|cancel|suspens|finaliz/i.test(p.status || '') })).filter(p => p.nome);
+    R.projetos_maestro = base.filter(p => p.ativo || comMov.has(p.nome)).map(p => p.nome);
+    const nomesBase = new Set(base.map(p => p.nome)), lista = new Set(R.projetos_maestro);
+    R.projetos = R.projetos.filter(p => !nomesBase.has(p.projeto) || lista.has(p.projeto) || p.horas_mes > 0 || p.receita_mes > 0);
+    R.projetos_concluidos_ocultos = base.filter(p => !p.ativo && !comMov.has(p.nome)).length; }
+  { const g = {}; receitas.filter(r => !r.projeto).forEach(r => { const k = r.rotulo || r.cliente || '?'; const x = g[k] = g[k] || { rotulo: k, cliente: r.cliente, valor: 0, faturas: [] }; x.valor = round(x.valor + r.valor); x.faturas.push(r.doc); });
+    R.receitas_sem_projeto = Object.values(g).map(x => ({ ...x, valor_mes: round(x.valor / L.length) })).sort((a, b) => b.valor - a.valor);  if (R.receitas_sem_projeto.length) R.avisos.unshift(R.receitas_sem_projeto.length + ' receita(s) sem projeto Oficial_ (' + R.receitas_sem_projeto.reduce((t, x) => t + x.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ' no período) — ligue no quadro "🔗 Receita → projeto Oficial_" para a margem dos projetos ficar certa.'); }
+  R.receitas_ligadas = receitas.filter(r => r.projeto).reduce((o, r) => { const k = r.rotulo + '→' + r.projeto; (o[k] = o[k] || { rotulo: r.rotulo, projeto: r.projeto, como: r.como, valor: 0 }).valor = round(o[k].valor + r.valor); return o; }, {});
+  R.receitas_ligadas = Object.values(R.receitas_ligadas).sort((a, b) => b.valor - a.valor);
   return R;
 }
 async function impostosCadastrar({ itens = [] } = {}) {
