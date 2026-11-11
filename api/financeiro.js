@@ -1,7 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
-import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
+import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, casarCadastradas as impCasarCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
 import { termoPendencias, etapaPrazo, previsaoPagamento } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -7118,7 +7118,8 @@ async function impostosRecorrentes({ meses = 13 } = {}) {
   ].filter(p => p.data && p.valor > 0);
   const sugestoes = impAnalisar(pagamentos, hoje);
   const sql = await getSql(); const desp = await sql`SELECT id, descricao, categoria, fornecedor, valor, recorrencia, dia_vencimento FROM despesas_programadas WHERE ativa = true`;
-  const lista = sugestoes.map(s => { const j = impJaCad(s, desp); return { ...s, cadastrada: j ? { id: j.id, descricao: j.descricao, valor: num(j.valor) } : null, proximo: impProxVenc(s.recorrencia, s.dia, hoje),
+  const _cad = impCasarCad(sugestoes, desp); // v3.451: um-para-um
+  const lista = sugestoes.map((s, _i) => { const j = _cad[_i]; return { ...s, cadastrada: j ? { id: j.id, descricao: j.descricao, valor: num(j.valor) } : null, proximo: impProxVenc(s.recorrencia, s.dia, hoje),
     ultimo: s.ultimo ? { data: s.ultimo.data, valor: s.ultimo.valor, texto: String(s.ultimo.texto || '').substring(0, 160), qb_url: _qbUrlTxn(s.ultimo.ref) } : null }; });
   const rec = lista.filter(x => ['mensal', 'trimestral'].includes(x.recorrencia));
   return { periodo: { de: ini, ate: hoje }, analisados: pagamentos.length, sugestoes: lista,

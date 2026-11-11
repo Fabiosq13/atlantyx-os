@@ -18,3 +18,5 @@
 - 11/11/2026 · v3.448 · ok · — · fundador conferir a lista de atraso com o 🔍
 - [x] v3.449 · Pendências: item da Agenda que o detector de duplicados já reconhece como "pago, mas segue a pagar na Agenda" sai de "A pagar vencido"
 - 11/11/2026 · v3.449 · ok · — · conferir Pendências após o deploy
+- [x] v3.451 · Impostos recorrentes: "já na Agenda" passa a ser um-para-um (nome exato primeiro) — incluir "DARF trimestral (IRPJ/CSLL)" não trava mais a inclusão do "IRPJ" trimestral (e vice-versa)
+- 11/11/2026 · v3.451 · ok · — · —
