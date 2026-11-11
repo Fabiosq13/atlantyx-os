@@ -219,8 +219,8 @@
     m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:14px;width:min(${w || 760}px,100%);max-height:90vh;overflow:auto;padding:16px;font-size:11px;">${html}</div>`; document.body.appendChild(m); return m; }
   async function iara(umId) { // v3.445: a IARA é um sistema externo — entrar no fluxo dela = "Fluxo IA" = IA no contato do HubSpot
     const ids = umId ? [umId] : [...SEL]; if (!ids.length) return nota('Marque ao menos um card', 'error'); const L = ids.map(id => D.cards.find(c => c.id === id)).filter(Boolean); const semTel = L.filter(c => !c.telefone).length, ja = L.filter(c => c.no_fluxo_ia).length;
-    if (!confirm('Colocar ' + L.length + ' no fluxo da IARA?\n\nO campo "' + (D.props_ia?.fluxo || 'Fluxo IA') + '" passa a ser IA no HubSpot e a IARA assume a abordagem pelo WhatsApp.' + (ja ? '\n' + ja + ' já estão no fluxo.' : '') + (semTel ? '\n⚠ ' + semTel + ' sem telefone — a IARA não consegue falar com eles.' : ''))) return;
-    document.getElementById('flModal')?.remove(); nota('Gravando "Fluxo IA" = IA no HubSpot…', 'info');
+    if (!confirm('Colocar ' + L.length + ' no fluxo da IARA?\n\nO campo "' + (D.props_ia?.marca_interno || 'atendido_pela_ia') + '" é marcado no HubSpot e a IARA assume a abordagem pelo WhatsApp.' + (ja ? '\n' + ja + ' já estão no fluxo.' : '') + (semTel ? '\n⚠ ' + semTel + ' sem telefone — a IARA não consegue falar com eles.' : ''))) return;
+    document.getElementById('flModal')?.remove(); nota('Marcando "' + (D.props_ia?.marca_interno || 'atendido_pela_ia') + '" no HubSpot…', 'info');
     try { const r = await api('floresta_iara_fluxo', { card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })) }); const f = (r.resultados || []).filter(x => !x.ok);
       _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), true);
       nota(r.ok + ' no fluxo da IARA' + (f.length ? ' · ' + f.length + ' com erro: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
