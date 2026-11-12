@@ -32,3 +32,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 12/11/2026 · v3.464 · ok · — · conferir no ar arrastando um contato frio para a coluna da IARA
 - [x] v3.465 · Kanban da Floresta: colunas fixas em 196px (antes 232px e a 1ª crescia com cargos longos do LinkedIn); cargo/empresa cortados com "…" para caber mais etapas na tela
 - 12/11/2026 · v3.465 · ok · — · —
+- [x] v3.466 · "Colocar no fluxo da IARA" grava os DOIS campos no contato: atendido_pela_ia = true E fluxo_de_atendimento = IA (tirar: false + Manual). O job da IARA não achava o lead porque fluxo_de_atendimento ficava vazio. A mensagem de confirmação mostra os campos gravados.
+- 12/11/2026 · v3.466 · ok · — · time confirmar no job da IARA com um contato de teste

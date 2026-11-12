@@ -213,7 +213,7 @@
     const id = arrastando; arrastando = null; if (!id) return; const c = D.cards.find(x => x.id === id); if (!c || c.etapa === para) return;
     const e = D.etapas.find(x => x.id === para); let ate = null, motivo = '';
     if (para === 'congelado') { ate = prompt('Congelar até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
-    else if (!confirm(`Mover "${c.nome}" para ${e.nome}?` + (para === 'iara' ? '\n\nO contato entra no fluxo da IARA (atendido_pela_ia = true no HubSpot). Não precisa de negócio.' : c.tipo === 'contato' && ['reuniao', 'proposta', 'negociacao'].includes(para) ? '\n\nUm NEGÓCIO será criado no HubSpot para este contato.' : '\n\nA etapa muda também no HubSpot.'))) return;
+    else if (!confirm(`Mover "${c.nome}" para ${e.nome}?` + (para === 'iara' ? '\n\nO contato entra no fluxo da IARA (atendido_pela_ia = true e fluxo_de_atendimento = IA no HubSpot). Não precisa de negócio.' : c.tipo === 'contato' && ['reuniao', 'proposta', 'negociacao'].includes(para) ? '\n\nUm NEGÓCIO será criado no HubSpot para este contato.' : '\n\nA etapa muda também no HubSpot.'))) return;
     try { const r = await api('floresta_mover', { card_id: id, para, congelar_ate: ate, motivo }); nota(r.resultado || 'Movido'); await carregar(true); } catch (e2) { nota('Erro: ' + e2.message, 'error'); }
   }
   async function congelar(id) { arrastando = id; document.getElementById('flModal')?.remove(); await soltar('congelado'); }
@@ -252,11 +252,11 @@
     document.getElementById('flModal')?.remove(); nota('Marcando "' + (D.props_ia?.marca_interno || 'atendido_pela_ia') + '" no HubSpot…', 'info');
     try { const r = await api('floresta_iara_fluxo', { card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })) }); const f = (r.resultados || []).filter(x => !x.ok);
       _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), true);
-      nota(r.ok + ' no fluxo da IARA' + (f.length ? ' · ' + f.length + ' com erro: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
+      nota(r.ok + ' no fluxo da IARA' + (r.campos ? ' — HubSpot: ' + Object.entries(r.campos).map(([k, v]) => k + ' = ' + v).join(', ') : '') + (f.length ? ' · ' + f.length + ' com erro: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
       if (!umId) f.length ? (SEL.clear(), f.forEach(x => SEL.add(x.card_id))) : SEL.clear(); _redesenhar(); carregar(true).catch(() => {}); }
     catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
-  async function tirarIara(umId) { const ids = umId ? [umId] : [...SEL]; if (!ids.length || !confirm('Tirar ' + ids.length + ' do fluxo da IARA (atendido_pela_ia = false no HubSpot)?')) return;
+  async function tirarIara(umId) { const ids = umId ? [umId] : [...SEL]; if (!ids.length || !confirm('Tirar ' + ids.length + ' do fluxo da IARA (atendido_pela_ia = false e fluxo_de_atendimento = Manual no HubSpot)?')) return;
     document.getElementById('flModal')?.remove(); const L = ids.map(id => D.cards.find(c => c.id === id)).filter(Boolean);
     try { const r = await api('floresta_iara_fluxo', { card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })), tirar: true }); _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), false);
       nota(r.ok + ' fora do fluxo da IARA'); if (!umId) SEL.clear(); _redesenhar(); carregar(true).catch(() => {}); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
