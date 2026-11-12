@@ -38,3 +38,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 12/11/2026 · v3.467 · ok · — · —
 - [x] v3.468 · regra dos campos confirmada pelo fundador: fluxo_de_atendimento (IA/Manual) = QUEM a IARA aborda; atendido_pela_ia (true/false, padrão false) = se a IARA JÁ atendeu; abordagem (Geral/FQ) = tipo de abordagem. "Colocar na IARA" grava fluxo = IA, atendido_pela_ia = false e abordagem = Geral se vazia; "Tirar" grava fluxo = Manual. A coluna da IARA lê o fluxo; o selo "IARA atendeu" lê atendido_pela_ia.
 - 12/11/2026 · v3.468 · ok · — · reenviar à IARA os leads marcados entre v3.459 e v3.467 (ficaram com atendido_pela_ia = true sem terem sido atendidos)
+- [x] v3.469 · Apollo 401 na Floresta: a chave salva no navegador (Credenciais) tinha prioridade e estava inválida. Agora, se ela for recusada, tenta com a APOLLO_API_KEY da Vercel e avisa; se as duas falharem, a mensagem diz qual chave trocar e onde.
+- 12/11/2026 · v3.469 · ok · — · fundador gerar nova chave no Apollo se a da Vercel também estiver recusada

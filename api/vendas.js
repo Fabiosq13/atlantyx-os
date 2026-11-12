@@ -848,8 +848,14 @@ async function _todoCriar(itens, origem) {
 async function _apolloBuscar(params) { // v3.441: mesma busca da tela de prospecção (people_search, sem crédito)
   const m = await import('./apollo.js'); let out = null, st = 200;
   const res = { statusCode: 200, status(c) { st = c; return this; }, json(o) { out = o; return this; }, setHeader() {}, end() { return this; } };
-  await m.default({ method: 'POST', body: { action: 'people_search', ...params }, query: {}, headers: {}, url: '/api/apollo' }, res);
-  if (!out || out.success === false) throw new Error(out?.error || ('Apollo sem resposta (' + st + ')')); return out;
+  const chamar = async b => { out = null; st = 200; await m.default({ method: 'POST', body: { action: 'people_search', ...b }, query: {}, headers: {}, url: '/api/apollo' }, res); };
+  await chamar(params);
+  // v3.469: a chave salva no navegador (tela de credenciais) tem prioridade; se ela for inválida (401), tenta de novo com a APOLLO_API_KEY da Vercel
+  const invalida = () => !out || out.success === false ? /401|API_KEY_INVALID|Invalid API key/i.test(String(out?.error || '') + ' ' + st) : false;
+  if (invalida() && params.api_key && process.env.APOLLO_API_KEY && params.api_key !== process.env.APOLLO_API_KEY) { const { api_key, ...sem } = params; await chamar(sem); if (out && out.success !== false) out.aviso_chave = 'A chave do Apollo salva no seu navegador está inválida — usei a do servidor. Atualize ou apague a chave em Credenciais.'; }
+  if (!out || out.success === false) { const e = String(out?.error || ('Apollo sem resposta (' + st + ')'));
+    throw new Error(/401|API_KEY_INVALID|Invalid API key/i.test(e) ? 'Chave do Apollo inválida (401). ' + (params.api_key ? 'A chave salva no navegador (Credenciais → API Key do Apollo) ' + (process.env.APOLLO_API_KEY ? 'e a do servidor estão' : 'está') + ' recusadas: gere uma nova no Apollo (Settings → Integrations → API) e salve.' : 'A APOLLO_API_KEY da Vercel foi recusada: gere uma nova no Apollo (Settings → Integrations → API) e troque na Vercel.') : e); }
+  return out;
 }
 let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar, normTelefone: _normTel, apolloBuscar: _apolloBuscar }));
 function _normTel(v) { let p = String(v || '').replace(/\D/g, ''); if (!p) return null; if (p.startsWith('00')) p = p.slice(2); if (p.length === 10 || p.length === 11) p = '55' + p; if (!/^55\d{10,11}$/.test(p)) return /^\d{11,15}$/.test(p) && !p.startsWith('55') ? p : null; return p; }
