@@ -8706,6 +8706,19 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
     pct_meta: metaFat ? Math.round(ganhosPer.valor / metaFat * 100) : null, falta: falta != null ? round(falta) : null,
     cobertura_pct: falta ? Math.round(aberto.ponderado / falta * 100) : null, taxa_ganho_pct: Math.round(tg * 100), taxa_ganho_fonte: taxaGanho != null ? `${ganhos12.length} ganhos × ${perd12.length} perdidos em 12 meses` : 'padrão 25% (menos de 3 ganhos e 3 perdidos registrados em 12 meses)',
     pipeline_necessario: falta ? round(falta / tg) : null, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) } };
+  // v3.479: MOVIMENTO NO FUNIL — negócios que mudaram de etapa (data de entrada em cada etapa do HubSpot):
+  // avançou = entrou numa coluna à frente (ou ganhou); recuou = voltou para uma coluna anterior (ou perdeu). Semana = 7 dias; mês = período do funil.
+  try { const tSem = Date.now() - 7 * 864e5, tMes = P.tIni, z = () => ({ avancou: 0, recuou: 0, ganhos: 0, perdidos: 0 });
+    const mov = { semana: z(), mes: z(), por_coluna: {} };
+    for (const d of deals) { const pid = d.properties?.pipeline, ev = etapas.filter(e => e.pipeline === pid).map(e => ({ e, t: ent(d, e.id) })).filter(x => x.t).sort((a, b) => a.t - b.t);
+      for (let i = 1; i < ev.length; i++) { const de = ev[i - 1].e, para = ev[i].e, t = ev[i].t; let k = null;
+        if (para.perdido) k = 'perdidos'; else if (para.ganho) k = 'ganhos'; else if (de.perdido) k = 'avancou';
+        else if (para.col != null && de.col != null) k = para.col > de.col ? 'avancou' : para.col < de.col ? 'recuou' : null;
+        if (!k) continue; const pos = k === 'avancou' || k === 'ganhos';
+        for (const [per, t0] of [['semana', tSem], ['mes', tMes]]) { if (t < t0) continue; mov[per][k]++;
+          if (para.col != null && !para.perdido) { const c = mov.por_coluna[para.col] = mov.por_coluna[para.col] || { semana: { entrou_avancando: 0, entrou_recuando: 0 }, mes: { entrou_avancando: 0, entrou_recuando: 0 } }; c[per][pos ? 'entrou_avancando' : 'entrou_recuando']++; } } } }
+    ['semana', 'mes'].forEach(k => { const m = mov[k]; m.positivos = m.avancou + m.ganhos; m.negativos = m.recuou + m.perdidos; });
+    resumo.movimentos = mov; } catch (e) { resumo.movimentos = { erro: e.message }; }
   // ── leads captados pelo sistema no período ──
   let leads = null;
   try { const sql = await getSql(); const r = (await sql`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE score IN ('A','B'))::int AS ab, COUNT(reuniao_marcada_em)::int AS reunioes FROM leads

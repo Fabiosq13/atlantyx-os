@@ -31,3 +31,5 @@ ID: 2026-10-11-tv-conferir-qualidade · Trilha: T4
 - 12/11/2026 · v3.477 · ok · — · —
 - [x] v3.478 · funil da TV com 6+ etapas: faixas baixas e texto em 2 linhas vazando para a faixa de baixo; agora número e valor numa linha ("297 abertos · R$ 0"), faixa ocupa a linha inteira, nomes à esquerda centralizados; etapa sem meta mostra "sem meta para esta etapa"; o cartão "Leads do mês" escolhe a etapa de lead que tem meta (havia duas).
 - 12/11/2026 · v3.478 · ok · — · —
+- [x] v3.479 · TV Marketing: resultado ORGÂNICO do mês (Metricool LinkedIn/Instagram/Facebook — publicações, impressões, engajamento e taxa, cliques e CTR, tabela por rede e as 4 melhores publicações) com o pago resumido ao lado. TV Vendas: MOVIMENTO NO FUNIL — negócios que avançaram (inclui ganhos) e recuaram (inclui perdidos) nos últimos 7 dias e no mês, pelas datas de entrada em cada etapa do HubSpot (funil_vendas → resumo.movimentos), e ▲/▼ por etapa; título deixa claro que as faixas são todos os negócios abertos hoje (qualquer mês) e que ganhos/metas são do mês.
+- 12/11/2026 · v3.479 · ok · — · conferir com dados reais (Metricool/HubSpot)

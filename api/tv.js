@@ -84,13 +84,15 @@ function termosResumo(T, mes) {
 }
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
     chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'mes', ref: mes, pipeline: 'todos' } }, 58000),
     chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config(), chamar('metricool', { action: 'patrocinado_listar' }, 40000),
-    chamar('financeiro', { action: 'kpis_saude', params: {} }, 45000)]); // v3.357: previsto do mês (programado até o fim do mês)
+    chamar('financeiro', { action: 'kpis_saude', params: {} }, 45000),
+    // v3.479: ORGÂNICO — publicações do mês no Metricool (mesma fonte do Dashboard de Desempenho)
+    ...['linkedin', 'instagram', 'facebook'].map(rede => chamar('metricool', { action: 'metricas_posts', payload: { rede, inicio: mes + '-01', fim: hoje } }, 40000))]); // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -120,6 +122,14 @@ async function montarDados() {
     const T = lista.reduce((a, c) => { a.gasto += c.gasto; a.impressoes += c.impressoes; a.cliques += c.cliques; a.leads += c.leads; if (c.meta) { a.meta += c.meta; a.esperado += c.esperado; } return a; }, { gasto: 0, impressoes: 0, cliques: 0, leads: 0, meta: 0, esperado: 0 });
     T.farol = T.meta ? (T.leads >= T.meta ? 'verde' : T.leads / Math.max(0.01, T.esperado) >= 1 ? 'verde' : T.leads / Math.max(0.01, T.esperado) >= 0.85 ? 'amarelo' : 'vermelho') : null;
     return { erro: null, campanhas: lista, total: T, ativas: lista.filter(c => c.status === 'ativa').length }; })();
+  const organico = (() => { const R = [['LinkedIn', oLi], ['Instagram', oIg], ['Facebook', oFb]], redes = [], posts = [];
+    for (const [nome, p] of R) { const d = v(p); if (!d) { redes.push({ rede: nome, erro: erro(p) }); continue; } const t = d.totais || {};
+      const eng = (num(t.curtidas) || 0) + (num(t.comentarios) || 0) + (num(t.compartilhamentos) || 0);
+      redes.push({ rede: nome, posts: num(t.posts) ?? (d.posts || []).length, impressoes: num(t.impressoes) || 0, cliques: num(t.cliques) || 0, curtidas: num(t.curtidas) || 0, comentarios: num(t.comentarios) || 0, compartilhamentos: num(t.compartilhamentos) || 0, engajamento: eng, aviso: d.diagnostico?.api_ok === false ? 'sem acesso às métricas' : null });
+      (d.posts || []).forEach(x => posts.push({ rede: nome, texto: String(x.texto || '').replace(/\s+/g, ' ').substring(0, 110), data: String(x.data || '').substring(0, 10), impressoes: num(x.impressoes) || 0, cliques: num(x.cliques) || 0, engajamento: (num(x.curtidas) || 0) + (num(x.comentarios) || 0) + (num(x.compartilhamentos) || 0) })); }
+    const T = redes.reduce((a, r) => { ['posts', 'impressoes', 'cliques', 'engajamento', 'curtidas', 'comentarios', 'compartilhamentos'].forEach(k => { a[k] += r[k] || 0; }); return a; }, { posts: 0, impressoes: 0, cliques: 0, engajamento: 0, curtidas: 0, comentarios: 0, compartilhamentos: 0 });
+    return { redes, total: T, top: posts.sort((a, b) => (b.impressoes + b.engajamento * 10) - (a.impressoes + a.engajamento * 10)).slice(0, 4), erro: redes.every(r => r.erro) ? redes[0].erro : null }; })();
+  mkt.organico = organico;
   return { qual, proj, mkt, gerado_em: new Date().toISOString(), mes_ref: mes,
     // v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol (previsto = real + programado até o fim do mês)
     res: (() => { const KS = v(ks)?.kpis || null, cx = K.regime === 'caixa';
@@ -141,8 +151,8 @@ async function montarDados() {
       mensal: (K.mensal || []).map(m => ({ mes: m.mes, faturamento: num(m.faturamento), lucro: num(m.lucro_liquido) })) },
     com: { erro: erro(fn), indisponivel: FN.indisponivel || null,
       funil: FN.etapas ? { rotulo: FN.periodo?.rotulo, decorrido_pct: FN.periodo?.decorrido_pct, pipeline: FN.pipeline?.nome || '', lidos: FN.total_negocios_lidos ?? null, resumo: FN.resumo || {}, leads: FN.leads || null, perdidos: FN.perdidos || null,
-        ticket: FN.meta_base?.ticket_medio ?? null,
-        etapas: FN.etapas.map(L => ({ nome: L.nome, ganho: !!L.ganho, agora: L.agora, real: L.real, farol: L.farol, conv_real: L.conv_real, conv_meta: L.conv_meta, conv_base: L.conv_base, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, qtd: L.meta.qtd, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
+        ticket: FN.meta_base?.ticket_medio ?? null, movimentos: FN.resumo?.movimentos || null,
+        etapas: FN.etapas.map(L => ({ nome: L.nome, ordem: L.ordem, ganho: !!L.ganho, agora: L.agora, real: L.real, farol: L.farol, conv_real: L.conv_real, conv_meta: L.conv_meta, conv_base: L.conv_base, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, qtd: L.meta.qtd, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
   };
 }
 // v3.152: CONFERIR — abre cada número da TV até a origem (só no sistema, com login; a página da TV continua só com totais)
@@ -325,6 +335,9 @@ function sCom(){var C=D.com||{},Fu=C.funil;
     var larg=function(x){return 100-62*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
     var pc=e.pct_valor,f=nz(pc)?null:pc>=100?'verde':pc>=80?'amarelo':'vermelho';
     var sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s)'+(ag.sem_valor?' · '+ag.sem_valor+' sem valor':''));
+    if(!e.ganho&&Fu.movimentos&&Fu.movimentos.por_coluna)sub=(ag.qtd||0)+' neg.'+(ag.sem_valor?' · '+ag.sem_valor+' s/ valor':'');
+    var MVc=Fu.movimentos&&Fu.movimentos.por_coluna&&Fu.movimentos.por_coluna[e.ordem]; /* v3.479: chegaram na etapa na semana avançando (▲) ou recuando (▼) */
+    if(MVc&&!e.ganho&&(MVc.semana.entrou_avancando||MVc.semana.entrou_recuando))sub='<span style="color:#2EE6A6">▲'+MVc.semana.entrou_avancando+'</span> <span style="color:#FF5C7A">▼'+MVc.semana.entrou_recuando+'</span> 7d · '+sub;
     var gV=e.ganho&&R.meta;var fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,mqI=e.meta&&e.meta.qtd?Math.ceil(e.meta.qtd):null,mt=mqI||(e.meta&&e.meta.valor),rl=e.meta&&e.meta.qtd?(e.real&&e.real.qtd):(e.real&&e.real.valor),atg=mt&&!nz(rl)?rl/mt*100:null,fm=e.meta&&e.meta.qtd?nI:brl;if(gV&&!nz(R.pct_meta))atg=R.pct_meta;
     /* v3.474: coluna da direita compacta (antes 3 linhas que se sobrepunham) — status e % numa linha, real × meta e conversão na outra */
     var dir='<div style="display:flex;justify-content:space-between;gap:12px;font-weight:700;color:'+cor(fr)+';white-space:nowrap"><span><span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9px;background:'+cor(fr)+'"></span>'+(fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora da meta':'sem meta')+'</span><span>'+(nz(atg)?'—':pct(atg))+'</span></div>'
@@ -337,7 +350,11 @@ function sCom(){var C=D.com||{},Fu=C.funil;
      +'<div style="height:100%;max-height:86.4px;clip-path:polygon('+a+'% 0,'+(100-a)+'% 0,'+(100-bq)+'% 100%,'+bq+'% 100%);background:linear-gradient(180deg,'+g[1]+','+g[0]+');display:flex;flex-direction:column;align-items:center;justify-content:center">'
      +'<div style="white-space:nowrap;line-height:1"><b style="font-size:32px;font-weight:800">'+nI(e.ganho?(e.real&&e.real.qtd):ag.qtd)+'</b> <span style="font-size:18px;font-weight:600;opacity:.92">'+(e.ganho?'ganhos':'abertos')+' · '+brl(val)+'</span></div></div>'
      +'<div style="font-size:20px;display:flex;flex-direction:column;justify-content:center;min-width:0">'+dir+'</div></div>'}).join('');
-  h+='<div class="painel" style="flex:1;min-height:0"><h3>Pipeline agora — negócios abertos em cada etapa (a faixa Ganho mostra os ganhos de '+esc(Fu.rotulo||'')+') · '+esc(Fu.pipeline||'')+'</h3><div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:6px">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
+  var MV=Fu.movimentos,mvB=function(rot,m){return !m?'':'<div style="display:flex;align-items:center;gap:16px;padding:6px 16px;border-radius:12px;background:#121C3C;white-space:nowrap"><span style="font-size:17px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px;font-weight:700">'+rot+'</span>'
+     +'<span style="font-size:21px;color:#2EE6A6;font-weight:800">▲ '+m.positivos+'</span><span style="font-size:16px;color:#AAB6D8">avançaram'+(m.ganhos?' ('+m.ganhos+' ganho'+(m.ganhos>1?'s':'')+')':'')+'</span>'
+     +'<span style="font-size:21px;color:#FF5C7A;font-weight:800">▼ '+m.negativos+'</span><span style="font-size:16px;color:#AAB6D8">recuaram'+(m.perdidos?' ('+m.perdidos+' perdido'+(m.perdidos>1?'s':'')+')':'')+'</span></div>'};
+  h+='<div class="painel" style="flex:1;min-height:0"><h3 style="margin-bottom:6px">Pipeline hoje — todos os negócios abertos (de qualquer mês) · ganhos e metas de '+esc(Fu.rotulo||'')+'</h3>'
+     +(MV&&!MV.erro?'<div style="display:flex;gap:14px;margin-bottom:8px"><span style="font-size:17px;color:#8E9BC0;align-self:center;font-weight:700">MOVIMENTO NO FUNIL</span>'+mvB('Últimos 7 dias',MV.semana)+mvB('No mês',MV.mes)+'</div>':'')+'<div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:6px">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
    +'<div style="display:flex;gap:38.4px;font-size:18.4px;color:#8E9BC0;margin-top:8.6px">'+(Fu.perdidos?'<span>Perdidos em '+esc(Fu.rotulo||'')+': <b>'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')</span>':'')+(Fu.ticket?'<span>Ticket médio: <b>'+brl(Fu.ticket)+'</b></span>':'')+(Fu.lidos!=null?'<span>'+Fu.lidos+' negócio(s) lidos do HubSpot</span>':'')+'</div></div>'
    +(C.erro?'<div class="erro">⚠ '+esc(C.erro)+'</div>':'');
   return h}
@@ -394,30 +411,29 @@ function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
    +(L.length>max?'<div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px">+ '+(L.length-max)+' projeto(s) — os mais críticos aparecem primeiro</div>':'')+'</div>';
   return h}
 // v3.332: MARKETING DIGITAL — resultado de cada campanha e farol de leads (meta × realizado, pelo ritmo da campanha)
-function sMkt(){var M=D.mkt||{},L=M.campanhas||[],T=M.total||{};
-  /* v3.474: linhas com altura fixa (antes uma campanha ocupava a tela toda), aviso quando não há campanha ativa e, ao lado, o funil do mês no HubSpot */
-  var ctr=T.impressoes?(T.cliques/T.impressoes*100):null,n=function(v){return nz(v)?'—':Math.round(v).toLocaleString('pt-BR')};
-  var h='<div class="grade g4">'+k('Investido',brl(T.gasto),(M.ativas||0)+' campanha(s) ativa(s)','md')+k('Cliques no anúncio',n(T.cliques),nz(ctr)?(T.impressoes?n(T.impressoes)+' impressões':'sem impressões no período'):'CTR '+pct(ctr)+' · '+n(T.impressoes)+' impressões','md')
-   +'<div class="k md" style="display:flex;gap:20px;align-items:center">'+luz(T.farol)+'<div style="min-width:0"><div class="l">Leads × meta</div><div class="v '+clsF(T.farol)+'">'+n(T.leads)+(T.meta?' <span style="font-size:30px;color:#8E9BC0">/ '+n(T.meta)+'</span>':'')+'</div><div class="s">'+(T.meta?'esperado até hoje '+String(Math.round(T.esperado*10)/10).replace('.',','):'sem meta de leads cadastrada')+'</div></div></div>'
-   +k('Custo por lead',T.leads?brlI(T.gasto/T.leads):'—',T.leads?n(T.leads)+' lead(s) no período':'nenhum lead das campanhas ainda','md')+'</div>';
-  var mx=7,ls=L.slice(0,mx);
-  var lista=ls.map(function(c){var co=cor(c.farol),pm=nz(c.pct)?0:c.pct,esp=c.meta?Math.min(100,c.esperado/c.meta*100):null;
-     return '<div class="lin" style="padding:12px 0"><span class="bola" style="width:26px;height:26px;background:'+co+';box-shadow:0 0 12px '+co+'"></span>'
-      +'<div class="n"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome)+'</div><div style="font-size:17px;color:#8E9BC0;font-weight:500">'+esc(c.rede)+' · '+esc(c.status)+(c.inicio?' · '+c.inicio.split('-').reverse().slice(0,2).join('/')+' a '+String(c.fim||'').split('-').reverse().slice(0,2).join('/'):'')+(c.local?' · 📍 '+esc(c.local):'')+'</div></div>'
-      +'<div style="width:140px;text-align:right" class="q">'+brl(c.gasto)+'</div><div style="width:110px;text-align:right" class="q">'+n(c.cliques)+'</div>'
-      +'<div style="width:300px;padding-left:24px">'+(c.meta?'<div style="display:flex;justify-content:space-between;font-size:21px"><b class="'+clsF(c.farol)+'">'+n(c.leads)+' de '+n(c.meta)+'</b><span class="'+clsF(c.farol)+'" style="font-weight:800">'+pm+'%</span></div>'+barra(pm,esp)
-        :'<div style="font-size:21px"><b>'+n(c.leads)+'</b> lead(s) <span style="color:#8E9BC0;font-size:16px">· sem meta</span></div>')+'</div></div>'}).join('');
-  var vazio=!M.ativas?'<div style="margin:10px 0 4px;padding:14px 18px;border-radius:12px;background:#121C3C;font-size:21px;color:#FFB547">Nenhuma campanha paga ativa agora'+(L.length?' — abaixo as pausadas/encerradas dos últimos 7 dias':'')+'.</div>':'';
-  var esq='<div class="painel" style="min-height:0"><h3>Campanhas pagas · resultado e farol de leads</h3>'
-   +(L.length?'<div class="lin" style="font-size:16px;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">CAMPANHA</div><div style="width:140px;text-align:right">INVESTIDO</div><div style="width:110px;text-align:right">CLIQUES</div><div style="width:300px;padding-left:24px">LEADS × META</div></div>':'')
-   +vazio+lista+(L.length>mx?'<div style="font-size:17px;color:#8E9BC0;margin-top:6px">+ '+(L.length-mx)+' campanha(s)</div>':'')+(M.erro?'<div class="erro">⚠ '+esc(M.erro)+'</div>':'')+'</div>';
-  var Fu=(D.com||{}).funil,E=(Fu&&Fu.etapas)||[];
-  var dir='<div class="painel" style="min-height:0"><h3>Funil do mês no HubSpot'+(Fu&&Fu.rotulo?' · '+esc(Fu.rotulo):'')+'</h3>'
-   +(E.length?E.map(function(e){var r=e.real&&e.real.qtd,mq=e.meta&&e.meta.qtd?Math.ceil(e.meta.qtd):null,fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,p=mq&&!nz(r)?Math.min(100,r/mq*100):0;
-       return '<div style="padding:10px 0;border-bottom:1px solid #1A2447"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.nome)+'</span><span style="font-size:26px;font-weight:800;color:'+cor(fr)+'">'+nI(r)+'<span style="font-size:17px;color:#8E9BC0;font-weight:600"> / '+(mq?nI(mq):'—')+'</span></span></div>'+(mq?barra(p):'')+'</div>'}).join('')
-     :'<div class="erro">Funil do HubSpot indisponível agora.</div>')+'</div>';
-  h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:1.75fr 1fr;gap:23px">'+esq+dir+'</div>'
-   +'<div style="font-size:16px;color:#6E7BA0">Farol da campanha pelo ritmo: verde ≥ 100% dos leads esperados até hoje, amarelo ≥ 85%, vermelho abaixo · traço branco na barra = esperado até hoje · funil: real × meta do mês</div>';
+function sMkt(){var M=D.mkt||{},L=M.campanhas||[],T=M.total||{},O=M.organico||{},OT=O.total||{},RD=O.redes||[];
+  /* v3.479: ORGÂNICO do mês (Metricool: publicações, impressões, cliques, engajamento por rede e as melhores publicações) + PAGO resumido ao lado */
+  var n=function(v){return nz(v)?'—':Math.round(v).toLocaleString('pt-BR')},tx=function(a,b){return b?pct(a/b*100):'—'};
+  var MESN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'],mn=MESN[parseInt(String(D.mes_ref||'').substring(5,7),10)-1]||'mês';
+  var h='<div class="grade g4">'+k('Publicações orgânicas',n(OT.posts),'em '+mn+' · LinkedIn, Instagram e Facebook','md')
+   +k('Impressões',n(OT.impressoes),'vezes que as publicações apareceram','md')
+   +k('Engajamento',n(OT.engajamento),'taxa '+tx(OT.engajamento,OT.impressoes)+' · '+n(OT.curtidas)+' curtidas · '+n(OT.comentarios)+' coment. · '+n(OT.compartilhamentos)+' compart.','md')
+   +k('Cliques',n(OT.cliques),'CTR '+tx(OT.cliques,OT.impressoes)+' (cliques ÷ impressões)','md')+'</div>';
+  // orgânico por rede
+  var cab='<div class="lin" style="font-size:16px;color:#6E7BA0;border-bottom:1px solid #26335F"><div class="n">REDE</div><div style="width:90px;text-align:right">POSTS</div><div style="width:150px;text-align:right">IMPRESSÕES</div><div style="width:150px;text-align:right">ENGAJAMENTO</div><div style="width:110px;text-align:right">TAXA</div><div style="width:110px;text-align:right">CLIQUES</div></div>';
+  var lin=RD.map(function(r){return r.erro?'<div class="lin"><div class="n">'+esc(r.rede)+'</div><div style="font-size:18px;color:#FFB547">sem resposta do Metricool</div></div>'
+     :'<div class="lin" style="padding:11px 0"><div class="n" style="font-weight:700">'+esc(r.rede)+(r.aviso?' <span style="font-size:15px;color:#FFB547">· '+esc(r.aviso)+'</span>':'')+'</div><div style="width:90px;text-align:right" class="q">'+n(r.posts)+'</div><div style="width:150px;text-align:right" class="q">'+n(r.impressoes)+'</div><div style="width:150px;text-align:right" class="q">'+n(r.engajamento)+'</div><div style="width:110px;text-align:right" class="q az">'+tx(r.engajamento,r.impressoes)+'</div><div style="width:110px;text-align:right" class="q">'+n(r.cliques)+'</div></div>'}).join('');
+  var top=(O.top||[]).map(function(p,i){return '<div style="display:flex;gap:14px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #1A2447"><div style="font-size:26px;font-weight:800;color:#00C4CC;width:28px">'+(i+1)+'</div><div style="flex:1;min-width:0"><div style="font-size:19px;line-height:1.3;max-height:50px;overflow:hidden">'+esc(p.texto||'(sem texto)')+'</div><div style="font-size:16px;color:#8E9BC0;margin-top:2px">'+esc(p.rede)+(p.data?' · '+p.data.split('-').reverse().slice(0,2).join('/'):'')+' · '+n(p.impressoes)+' impressões · '+n(p.engajamento)+' interações'+(p.cliques?' · '+n(p.cliques)+' cliques':'')+'</div></div></div>'}).join('');
+  var esq='<div class="painel" style="min-height:0"><h3>Orgânico por rede · '+esc(mn)+'</h3>'+(RD.length?cab+lin:'<div class="erro">'+esc(O.erro||'Sem dados do Metricool agora.')+'</div>')
+   +'<h3 style="margin-top:16px">Melhores publicações do mês</h3><div style="flex:1;min-height:0;overflow:hidden">'+(top||'<div style="font-size:19px;color:#8E9BC0">Nenhuma publicação com métricas neste mês ainda.</div>')+'</div></div>';
+  // pago (resumo)
+  var ls=L.slice(0,4).map(function(c){var co=cor(c.farol);return '<div class="lin" style="padding:9px 0;font-size:20px"><span class="bola" style="background:'+co+'"></span><div class="n"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome)+'</div><div style="font-size:15px;color:#8E9BC0">'+esc(c.rede)+' · '+esc(c.status)+' · '+brl(c.gasto)+'</div></div><div class="q">'+n(c.leads)+(c.meta?'<span style="font-size:15px;color:#8E9BC0">/'+n(c.meta)+'</span>':'')+' <span style="font-size:15px;color:#8E9BC0">leads</span></div></div>'}).join('');
+  var mini=function(r,v){return '<div style="flex:1;min-width:0"><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">'+r+'</div><div style="font-size:30px;font-weight:800;white-space:nowrap">'+v+'</div></div>'};
+  var dir='<div class="painel" style="min-height:0"><h3>Anúncios pagos</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:8px">'+mini('Investido',brl(T.gasto))+mini('Cliques',n(T.cliques))+mini('Leads',n(T.leads)+(T.meta?' <span style="font-size:18px;color:#8E9BC0">/ '+n(T.meta)+'</span>':''))+mini('Custo por lead',T.leads?brlI(T.gasto/T.leads):'—')+'</div>'
+   +(!M.ativas?'<div style="margin:6px 0;padding:10px 14px;border-radius:10px;background:#121C3C;font-size:18px;color:#FFB547">Nenhuma campanha paga ativa agora.</div>':'')
+   +'<div style="flex:1;min-height:0;overflow:hidden">'+ls+'</div>'+(M.erro?'<div class="erro">⚠ '+esc(M.erro)+'</div>':'')+'</div>';
+  h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
+   +'<div style="font-size:16px;color:#6E7BA0">Orgânico: Metricool, publicações de '+esc(mn)+' até hoje · taxa de engajamento = curtidas + comentários + compartilhamentos ÷ impressões · pago: Meta/LinkedIn Ads</div>';
   return h}
 var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing digital',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
