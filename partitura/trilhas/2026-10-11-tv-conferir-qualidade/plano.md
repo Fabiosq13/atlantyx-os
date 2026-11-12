@@ -27,3 +27,5 @@ ID: 2026-10-11-tv-conferir-qualidade · Trilha: T4
 - 12/11/2026 · v3.475 · ok · — · —
 - [x] v3.476 · gráfico "Evolução no ano" sobrepunha o título do painel na TV real (altura fixa em px): barras agora em % da altura real do painel, com espaço reservado para o valor em cima.
 - 12/11/2026 · v3.476 · ok · — · —
+- [x] v3.477 · TV com a fonte real (Montserrat, mais larga que a do teste): cartões do mês cortavam valores ("R$ 170 ...") e quebravam o status; valores 31px, status em selo e só o % à direita; lucro/EBITDA abaixo de zero contra meta positiva mostram "negativo" (antes −324,9% atingido); barra na cor do farol (gastos acima da meta ficava verde); mês abreviado; grades com colunas iguais (minmax) e textos da Qualidade quebram linha em vez de cortar. Testes agora renderizam com Montserrat local.
+- 12/11/2026 · v3.477 · ok · — · —
