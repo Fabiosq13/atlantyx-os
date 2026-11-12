@@ -634,6 +634,26 @@ async function patrocinadoAlinharTexto({ id, aplicar = true } = {}) {
 }
 // v3.343: TROCAR A ARTE de uma campanha no ar — a IA propõe 3 manchetes (dor + urgência → oferta) com benefícios; o fundador
 // escolhe/edita, a tela monta a arte no padrão e só então o criativo é trocado no Meta (mesmo texto, link e botão; o Meta reanalisa).
+// v3.483: ARTE DOS POSTS ORGÂNICOS NO PADRÃO DO ANÚNCIO PAGO — a foto genérica do Ideogram (sem mensagem) sai; entra a mesma
+// arte da última campanha paga: manchete DOR + SOLUÇÃO com destaques, 4 benefícios com ✓, tela do sistema e chamada no rodapé.
+// A IA tira a manchete do próprio post (a oferta é a do post). Falhou a IA → manchete do título/1ª frase do post.
+async function arteOrganica({ texto = '', titulo = '', oferta = '', variacao = null } = {}) {
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  let j = null;
+  try { const sys = 'Você é diretor de criação B2B da Atlantyx (dados, indicadores e IA para empresas médias e grandes). Transforma um post de rede social na ARTE que acompanha o post: para o executivo no feed nomeando a dor que ele sente agora e entregando a solução/oferta do próprio post. Responde só JSON.';
+    const usr = `POST:\n${String(texto).substring(0, 1500)}\n${oferta ? 'OFERTA DO POST: ' + oferta + '\n' : ''}
+${ARTE_REGRA().replace(/a oferta da página/g, 'a oferta do post')}
+Regras extras: a manchete resume ESTE post (mesma dor, mesma oferta); nunca cite cliente, número inventado ou resultado prometido; sem termo técnico (nada de ETL, pipeline, dashboard, BI).
+Devolva JSON: {"manchete":"…","beneficios":["…","…","…","…"],"rodape":"chamada curta para o rodapé, até 26 caracteres, ex.: DIAGNÓSTICO GRÁTIS · LINK NO POST"}`;
+    j = JSON.parse(String(await _claudeAuto(sys, usr, 500)).replace(/```json|```/g, '').trim()); } catch (e) { console.warn('[arte organica] IA:', e.message); }
+  const prim = String(titulo || String(texto).split(/\n|[.!?]\s/)[0] || 'Seus dados podem decidir mais rápido').replace(/\*/g, '').substring(0, 70).toUpperCase();
+  const man = String(j?.manchete || ('**' + prim + '**')).substring(0, 120);
+  const ben = (Array.isArray(j?.beneficios) ? j.beneficios : ['Decisão com número certo', 'Margem sob controle', 'Grátis e sem reunião', 'Resposta em 1 dia útil']).map(x => String(x).substring(0, 34)).filter(Boolean).slice(0, 4);
+  const v = variacao == null ? Math.floor(Math.random() * 3) : variacao;
+  const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'arte_padrao', payload: { manchete: man, beneficios: ben, rodape: String(j?.rodape || 'Saiba mais no link do post').substring(0, 30), variacao: v, origem: 'arte-organica' } }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success || !d.url) throw new Error(d.error || 'arte não montada (HTTP ' + r.status + ')');
+  return { url: d.url, manchete: man, beneficios: ben };
+}
 async function patrocinadoArteSugerir({ id } = {}) {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
   if (!reg) throw Object.assign(new Error('Campanha não encontrada'), { status: 400 });
@@ -1608,6 +1628,12 @@ async function filaProcessar({ lote } = {}) {
       const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
       // v2.72: a cena vem do próprio post (escrita pela IA junto com o texto). Sem ela, deriva do
       // texto do post — nunca mais só do "ângulo" em 3 palavras, que deixava o Ideogram inventar.
+      // v3.483: arte no padrão do anúncio pago (manchete + benefícios + tela do sistema); só cai na foto do Ideogram se a arte falhar
+      try { const ar = await arteOrganica({ texto: it.texto, oferta: it.oferta });
+        const prox = it.apenas_rascunho ? 'fim' : 'agendar';
+        await sql`UPDATE autocampanha_fila SET imagem_url = ${ar.url}, etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+        return { id: it.id, etapa: 'imagem', ok: true, proxima: prox, arte: 'padrao' };
+      } catch (e) { console.warn('[autocampanha] arte no padrão falhou, usando foto:', e.message); }
       const cena = it.imagem_prompt || `Professional corporate photograph illustrating: ${String(it.texto || '').replace(/\s+/g, ' ').substring(0, 220)}. Setting: energy utility control room or modern data center with dashboards.`;
       const prompt = `${cena} Photorealistic corporate photography, B2B technology consulting, natural light, shallow depth of field, navy blue and gold color accents.`;
       const r = await fetch(base + '/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1734,6 +1760,30 @@ async function autoCampanhaDiagnostico() {
 // v2.76: toda publicação da autocampanha passa pela ação "publicar" do S2 — o mesmo formato de corpo
 // que funciona desde a v1.x (Story sem texto, tipo dentro do provider, URL efêmera convertida etc.).
 // Os corpos montados à mão na v2.65/v2.31 eram incompatíveis com o Metricool.
+// v3.483: LINKEDIN PESSOAL DO FUNDADOR — o Metricool só aceita UM LinkedIn por marca (página da empresa OU perfil pessoal).
+// O perfil pessoal fica numa 2ª marca do Metricool; todo post que vai para o LinkedIn da empresa é criado também nela,
+// no mesmo horário, com o mesmo texto, imagem e 1º comentário. Config: kv 'mkt:linkedin_pessoal' { blog_id, ativo } (tela
+// Marketing → "LinkedIn pessoal") ou a variável METRICOOL_BLOG_ID_PESSOAL. Falha no pessoal nunca derruba o post da empresa.
+const _KV_LIP = 'mkt:linkedin_pessoal';
+async function _liPessoalCfg() { const c = (await _kvMc(_KV_LIP).catch(() => null)) || {}; const blog_id = c.blog_id || process.env.METRICOOL_BLOG_ID_PESSOAL || null;
+  return { blog_id: blog_id ? String(blog_id) : null, ativo: blog_id ? c.ativo !== false : false, nome: c.nome || null, origem: c.blog_id ? 'tela' : (process.env.METRICOOL_BLOG_ID_PESSOAL ? 'variavel' : null) }; }
+async function _espelharPessoal(body, { TOKEN, USERID, BLOGID }) {
+  const temLi = (body.providers || []).some(p => String(p.network || p).toUpperCase() === 'LINKEDIN'); if (!temLi || body.draft) return null;
+  const c = await _liPessoalCfg(); if (!c.ativo || !c.blog_id || String(c.blog_id) === String(BLOGID)) return null;
+  const copia = { ...body, providers: [{ network: 'LINKEDIN' }] }; delete copia.instagramData; delete copia.facebookData;
+  try { const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${c.blog_id}`, TOKEN, 'POST', copia); return { ok: true, blog_id: c.blog_id, metricool_id: r?.data?.id || r?.id || null }; }
+  catch (e) { console.warn('[metricool] LinkedIn pessoal:', e.message); return { ok: false, blog_id: c.blog_id, erro: String(e.message).substring(0, 200) }; }
+}
+async function liPessoalObter() {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID; const cfg = await _liPessoalCfg();
+  const r = await mc(`/admin/simpleProfiles?userId=${USERID}`, TOKEN); const marcas = (Array.isArray(r) ? r : (r?.profiles || [])).map(m => ({ id: String(m.id), nome: m.label || m.title || m.name || ('Marca ' + m.id), redes: extrairRedes(m) }));
+  return { ...cfg, blog_empresa: String(process.env.METRICOOL_BLOG_ID || ''), marcas, com_linkedin: marcas.filter(m => (m.redes || []).some(x => /linkedin/i.test(x)) && m.id !== String(process.env.METRICOOL_BLOG_ID || '')) };
+}
+async function liPessoalSalvar({ blog_id, ativo = true, nome } = {}) {
+  if (!blog_id) { await _kvMc(_KV_LIP, { blog_id: null, ativo: false, em: new Date().toISOString() }); return { ok: true, desligado: true }; }
+  if (String(blog_id) === String(process.env.METRICOOL_BLOG_ID || '')) throw Object.assign(new Error('Essa é a marca da empresa — escolha a marca onde está conectado o seu perfil pessoal do LinkedIn'), { status: 400 });
+  await _kvMc(_KV_LIP, { blog_id: String(blog_id), ativo: !!ativo, nome: nome ? String(nome).substring(0, 80) : null, em: new Date().toISOString() }); return { ok: true, ...(await _liPessoalCfg()) };
+}
 async function _publicarViaS2(params) {
   const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
   const r = await fetch(base + '/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: params }) });
@@ -2025,6 +2075,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.${trilha ? '\n' + briefi
           body.media = conv; body.medias = conv;
         }
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+        await _espelharPessoal(body, { TOKEN, USERID, BLOGID }); // v3.483
         criados.push({ ...slot, trilha: trilha?.id || null, trilha_nome: trilha?.nome || null, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
       }
     } catch (e) { erros.push(`${slot.data} ${slot.hora}: ${e.message}`); }
@@ -2139,6 +2190,8 @@ async function handler(req, res) {
     patrocinado_status:     () => patrocinadoStatus(req),
     patrocinado_diagnostico: () => patrocinadoDiagnostico(), // v3.176
     patrocinado_copy:       () => patrocinadoCopy(payload),
+    arte_post: () => arteOrganica(payload), // v3.483
+    linkedin_pessoal_obter: () => liPessoalObter(), linkedin_pessoal_salvar: () => liPessoalSalvar(payload), // v3.483
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
     geo_local_resolver:     () => geoLocalResolver(payload), // v3.316: confere o local da campanha geolocalizada (não cria nada)
     patrocinado_estado:     () => patrocinadoEstado(payload),
@@ -2296,6 +2349,7 @@ async function handler(req, res) {
         }
 
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+        const linkedin_pessoal = payload.espelhar_pessoal === false ? null : await _espelharPessoal(body, { TOKEN, USERID, BLOGID }); // v3.483
         // v3.65: confere quais redes o Metricool REALMENTE manteve no post (um Story pedido para Instagram + Facebook
         // ficou só no Facebook e o sistema achava que estava nos dois)
         const devolvidas = ((r?.data || r)?.providers || []).map(x => String(x.network || x).toUpperCase()).filter(Boolean);
@@ -2306,7 +2360,7 @@ async function handler(req, res) {
           agendado_para: quando.toISOString(),
           redes: providers.filter(p => !faltando.includes(p)),
           redes_faltando: faltando.map(x => x.toLowerCase()),
-          metricool_id: r?.data?.id || r?.id || null,
+          metricool_id: r?.data?.id || r?.id || null, linkedin_pessoal,
           resposta: r,
         };
       },

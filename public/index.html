@@ -2946,7 +2946,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <button class="btn btn-g" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool e agenda 3 publicações otimizadas">🤖 Auto-campanha IA</button>
       <details class="kb-cfg"><summary class="btn btn-g">⚙ Configurar</summary>
         <div class="kb-menu">
-          <button class="btn btn-g" onclick="escolherMarcaMetricool()" title="Em qual marca/página do Metricool publicar">🏢 <span id="marcaAtivaLabel">Página de publicação</span></button>
+          <button class="btn btn-g" onclick="escolherMarcaMetricool()" title="Em qual marca/página do Metricool publicar">🏢 <span id="marcaAtivaLabel">Página de publicação</span></button><button class="btn btn-g" onclick="liPessoalConfigurar()" title="Publicar também no seu perfil pessoal do LinkedIn, no mesmo horário">👤 <span id="liPessoalLabel">LinkedIn pessoal</span></button>
           <button class="btn btn-g" onclick="definirLinkReuniao()">🔗 Link de reunião (oferecido após o cadastro)</button>
           <button class="btn btn-g" onclick="nav('s2auto', document.querySelector('.sbi[onclick*=&quot;s2auto&quot;]'))" title="Escolha como o Instagram leva ao cadastro/agenda: link curto, palavra no Direct, WhatsApp ou bio">📲 CTA do Instagram</button>
           <button class="btn btn-g" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">↻ Reconstruir peças das campanhas</button>
@@ -8514,7 +8514,24 @@ async function escolherMarcaMetricool() {
     _atualizaLabelMarca(); verificarMetricool(true);
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v3.483: LinkedIn PESSOAL — todo post do LinkedIn da empresa sai também no perfil pessoal (2ª marca do Metricool)
+async function liPessoalConfigurar() {
+  try { toast('Consultando marcas do Metricool...', 'success');
+    const d = await mcApi('linkedin_pessoal_obter', {});
+    const L = d.com_linkedin || [];
+    const atual = d.blog_id ? (d.marcas.find(m => m.id === d.blog_id)?.nome || d.blog_id) + (d.ativo ? ' (ligado)' : ' (desligado)') : 'nenhum';
+    if (!L.length) { alert('Publicar também no seu LinkedIn pessoal\n\nO Metricool aceita só UM LinkedIn por marca, e a marca da empresa já usa a página da Atlantyx.\n\nPara ligar:\n1. No Metricool, crie uma marca nova (ex.: "Fabio — LinkedIn pessoal").\n2. Nessa marca, conecte o seu PERFIL PESSOAL do LinkedIn.\n3. Volte aqui e clique de novo em 👤 LinkedIn pessoal.\n\nHoje: ' + atual); return; }
+    const esc = prompt('Publicar também no LinkedIn PESSOAL (mesmo texto, imagem e horário do post da empresa)\n\nHoje: ' + atual + '\n\n' + L.map((m, i) => (i + 1) + '. ' + m.nome + '  · redes: ' + (m.redes || []).join(', ')).join('\n') + '\n\nDigite o NÚMERO da marca com o seu perfil pessoal (0 = desligar):', d.blog_id ? String(L.findIndex(m => m.id === d.blog_id) + 1 || '') : '1');
+    if (esc === null) return;
+    if (esc.trim() === '0') { await mcApi('linkedin_pessoal_salvar', { blog_id: null }); toast('LinkedIn pessoal desligado', 'success'); _liPessoalLabel(); return; }
+    const m = L[parseInt(esc) - 1]; if (!m) { toast('Número inválido', 'error'); return; }
+    await mcApi('linkedin_pessoal_salvar', { blog_id: m.id, nome: m.nome, ativo: true });
+    toast('Ligado: os próximos posts do LinkedIn saem também em ' + m.nome, 'success'); _liPessoalLabel();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function _liPessoalLabel() { try { const d = await mcApi('linkedin_pessoal_obter', {}); const el = document.getElementById('liPessoalLabel'); if (el) el.textContent = d.ativo && d.blog_id ? 'LinkedIn pessoal ✓' : 'LinkedIn pessoal'; } catch (_) {} }
 function _atualizaLabelMarca() {
+  if (!window._liPesLido) { window._liPesLido = true; _liPessoalLabel(); }
   const el = document.getElementById('marcaAtivaLabel');
   if (el) { const n = _metricoolMarcaNome(); el.textContent = n ? n.substring(0, 24) : 'Página de publicação'; }
 }
@@ -22532,6 +22549,7 @@ async function salvarPublicacoes() {
 // ---------- Status Metricool -----------------------------------------------
 async function verificarMetricool(force) {
   if (!force && _mcConfigurado !== null) return _mcConfigurado;
+  if (!window._liPesLido && document.getElementById('liPessoalLabel')) { window._liPesLido = true; _liPessoalLabel(); } // v3.483
   try {
     const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'status' }) });
@@ -25971,6 +25989,7 @@ async function acPlanejar() {
 }
 // v2.65: imagem do post — prompt a partir do ângulo, Ideogram via /api/image-gen, cópia permanente em /api/media
 async function _acGerarImagem(post) {
+  try { const ar = await mcApi('arte_post', { texto: post.texto, titulo: post.titulo, oferta: post.oferta }); if (ar.url) return ar.url; } catch (e) { console.warn('arte no padrão falhou, usando foto', e); } // v3.483
   const cena = post.imagem_prompt || `Professional corporate photograph illustrating: ${String(post.texto || '').replace(/\s+/g, ' ').substring(0, 220)}. Setting: energy utility control room or modern data center with dashboards.`;
   const prompt = `${cena} Photorealistic corporate photography, B2B technology consulting, natural light, navy blue and gold color accents.`;
   const r = await fetch('/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, formato: 'ASPECT_1_1', estilo: 'REALISTIC', quantidade: 1, magic_prompt: false, estilo_padrao: false,
@@ -36075,6 +36094,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
       // v3.32: prompt padrão quando a IA do plano não escreveu um, título para a arte de marca de reserva e 2ª tentativa
       const _pi = post.prompt_imagem || ('Professional B2B corporate scene illustrating: ' + String(post.texto || post.titulo || '').replace(/\s+/g, ' ').substring(0, 200) + '. Dark navy and electric blue, modern data/AI setting, no text.');
       let di = {};
+      try { const ar = await mcApi('arte_post', { texto: post.texto, titulo: post.titulo }); if (ar.url) { imgUrl = ar.url; addLog('ok', '[Auto-IA] Arte no padrão do anúncio: ' + post.titulo); } } catch (e) { addLog('warn', '[Auto-IA] arte no padrão falhou (' + e.message + ') — tentando foto'); } // v3.483
       for (let _t = 0; _t < 2 && !imgUrl; _t++) {
         const ri = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ prompt: _pi, formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1, titulo: String(post.titulo || '').substring(0, 90), chamada: ctaTituloArte().replace(/^\S+\s/, '').substring(0, 34) }) });
@@ -37171,7 +37191,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.482] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.483] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37187,7 +37207,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.482';
+window.__ATX_BUILD_ID__ = 'ATX-v3.483';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

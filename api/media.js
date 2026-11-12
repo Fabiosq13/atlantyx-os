@@ -187,6 +187,21 @@ async function handler(req, res) {
       await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, 'story-autocampanha')`;
       return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length };
     },
+    // v3.483: ARTE NO PADRÃO DO ANÚNCIO PAGO (lib/arte-padrao.js) — manchete com destaques, benefícios com ✓, tela do sistema e rodapé
+    arte_padrao:    async () => {
+      const { manchete = '', beneficios = [], rodape, variacao = 0, origem = 'arte-padrao' } = payload;
+      if (!String(manchete).trim()) throw new Error('manchete obrigatória');
+      const path = await import('path'); const fsm = await import('fs'); const { fileURLToPath } = await import('url');
+      const dirFontes = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
+      process.env.FONTCONFIG_PATH = dirFontes; process.env.FONTCONFIG_FILE = path.join(dirFontes, 'fonts.conf');
+      const sharp = (await import('sharp')).default; const { arteSvg } = await import('../lib/arte-padrao.js');
+      const a = arteSvg({ manchete, beneficios, rodape, variacao });
+      const camadas = []; try { const lg = await sharp(fsm.readFileSync(path.join(dirFontes, 'logo-atlantyx-branco.png'))).resize({ height: a.logo.h }).toBuffer(); camadas.push({ input: lg, left: a.logo.x, top: a.logo.y }); } catch (_) {}
+      const out = await sharp(Buffer.from(a.svg)).composite(camadas).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+      const sql = await getSql(); const id = novoId();
+      await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, ${String(origem).substring(0, 40)})`;
+      return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length, largura: a.W, altura: a.H };
+    },
     // v3.26: ARTE DE MARCA sem IA — último recurso do /api/image-gen quando Ideogram/OpenAI recusam
     // (chave inválida, sem crédito). Fundo navy com grafismo, título, apoio e chamada, no formato pedido.
     arte_marca:     async () => {
