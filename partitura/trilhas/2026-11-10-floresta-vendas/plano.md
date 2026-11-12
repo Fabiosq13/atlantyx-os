@@ -30,3 +30,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 12/11/2026 · v3.463 · ok · IARA voz (Retell + Twilio) ainda não contratada — caminho B fica para ligação manual até lá · criar no HubSpot os campos de resultado/tentativas (hoje vai como nota)
 - [x] v3.464 · arrastar ou aprovar um contato SEM negócio para "Atendimento IARA" dava "crie um negócio para ele": agora vai direto ao fluxo da IARA (atendido_pela_ia = true), sem negócio; o mesmo para 📞 Abordagem telefônica e para voltar a Contato frio (tira da IARA e hs_lead_status = NEW)
 - 12/11/2026 · v3.464 · ok · — · conferir no ar arrastando um contato frio para a coluna da IARA
+- [x] v3.465 · Kanban da Floresta: colunas fixas em 196px (antes 232px e a 1ª crescia com cargos longos do LinkedIn); cargo/empresa cortados com "…" para caber mais etapas na tela
+- 12/11/2026 · v3.465 · ok · — · —
