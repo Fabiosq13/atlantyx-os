@@ -1,5 +1,12 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+// v3.482: código da versão no canto da TV — lido do index.html publicado (mesma versão ATX-vX.YY do sistema); sem o arquivo, o commit do deploy
+let _ver = null;
+const versao = () => { if (_ver != null) return _ver; try { const h = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html'), 'utf8'); _ver = (h.match(/ATX-v\d+\.\d+/) || [])[0] || ''; } catch (_) { _ver = ''; }
+  if (!_ver && process.env.VERCEL_GIT_COMMIT_SHA) _ver = 'build ' + process.env.VERCEL_GIT_COMMIT_SHA.substring(0, 7); return _ver; };
 // api/tv.js — v3.150 · GESTÃO À VISTA (TV) · trilha T4
 // Página em tela cheia para a TV da empresa, aberta por LINK DIRETO com código (sem login na TV):
 //   /tv/<código>  → slides que giram sozinhos: Financeiro (faturamento, lucro, margem, caixa, a receber/pagar, evolução no ano)
@@ -21,9 +28,9 @@ async function kv(k, v) {
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
 const CFG_PADRAO = { codigo: null, criado_em: null, rotacao_s: 25, slides: ['financeiro', 'comercial', 'qualidade'] };
-const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos', 'projetos_tarefas'];
+const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos', 'projetos_tarefas', 'metas', 'objetivos', 'riscos'];
 // v3.152: o slide Qualidade entra nas TVs já configuradas (uma vez; depois vale o que o usuário salvar)
-const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (!c.v479) { const sl = [...(c.slides || [])]; const i = sl.indexOf('projetos'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'projetos_tarefas'); c.slides = [...new Set(sl)]; c.v479 = true; } /* v3.479: tarefas e rentabilidade por projeto */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
+const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (!c.v479) { const sl = [...(c.slides || [])]; const i = sl.indexOf('projetos'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'projetos_tarefas'); c.slides = [...new Set(sl)]; c.v479 = true; } /* v3.479: tarefas e rentabilidade por projeto */ if (!c.v482) { c.slides = [...new Set([...(c.slides || []), 'metas', 'objetivos', 'riscos'])]; c.v482 = true; } /* v3.482: metas anuais, objetivos e riscos */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
 const codigoNovo = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const b = crypto.randomBytes(12); let s = ''; for (const x of b) s += a[x % a.length]; return s; };
 const base = () => { const b = process.env.MEDIA_PUBLIC_BASE || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app'; return (b.startsWith('http') ? b : 'https://' + b).replace(/\/$/, ''); };
 
@@ -95,9 +102,42 @@ async function rentabilidade() {
     .sort((a, b) => b.margem_mes - a.margem_mes) };
   await kv('tv:rentab', { em: Date.now(), v }).catch(() => {}); return v;
 }
+// v3.482: ESTRATÉGIA na TV — últimos OKRs (com o status mais recente), análise de riscos e planejamento estratégico gerados no S1
+// (s1_historico), última síntese da Sala de Estratégia (est_sessoes). Só leitura; tabela ausente = bloco vazio, sem erro.
+const _tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().substring(0, n);
+const _farTx = v => { const t = String(v || '').toLowerCase(); return /verde|🟢/.test(t) ? 'verde' : /amarel|🟡/.test(t) ? 'amarelo' : /vermelh|🔴/.test(t) ? 'vermelho' : null; };
+const _nivel = v => { const t = String(v || '').toLowerCase(); return /alt/.test(t) ? 3 : /m[eé]d/.test(t) ? 2 : /baix/.test(t) ? 1 : 0; };
+async function estrategiaTv() {
+  const sql = await getSql(), H = {}, out = { erro: null };
+  try { const r = await sql`SELECT DISTINCT ON (tipo) tipo, dados, criado_em FROM s1_historico WHERE tipo IN ('okr_gerador','status_okr','analise_riscos','planejamento_estrategico') ORDER BY tipo, criado_em DESC`;
+    r.forEach(x => { let d = x.dados; if (typeof d === 'string') try { d = JSON.parse(d); } catch (_) { d = null; } H[x.tipo] = { em: x.criado_em, d: d || {} }; }); } catch (e) { out.erro = 'histórico do planejamento: ' + e.message; }
+  let ses = null; try { ses = (await sql`SELECT tema, sintese, status, atualizado_em FROM est_sessoes WHERE sintese IS NOT NULL ORDER BY atualizado_em DESC LIMIT 1`)[0] || null; } catch (_) {}
+  let S = ses?.sintese; if (typeof S === 'string') try { S = JSON.parse(S); } catch (_) { S = null; }
+  // OBJETIVOS: OKRs gerados + o status (progresso/semáforo) se for mais novo que eles
+  const g = H.okr_gerador, st = H.status_okr, G = g ? (g.d.okrs || g.d) : null, ST = st ? (st.d.okr || st.d) : null;
+  const usaSt = ST?.objetivos?.length && (!g || new Date(st.em) >= new Date(g.em));
+  const objs = (usaSt ? ST.objetivos : (G?.objetivos || [])).slice(0, 5).map((o, i) => { const base = (G?.objetivos || [])[i] || {};
+    return { objetivo: _tx(o.objetivo || base.objetivo, 140), progresso: usaSt ? num(o.progresso_geral) : null, farol: usaSt ? _farTx(o.semaforo) : null,
+      krs: (o.krs || base.krs || []).slice(0, 4).map(k => ({ kr: _tx(k.kr, 120), meta: _tx(k.meta, 30), atual: _tx(usaSt ? k.atual : k.baseline, 30), unidade: _tx(k.unidade, 12), prazo: _tx(k.prazo, 12),
+        progresso: usaSt ? num(k.progresso) : null, farol: usaSt ? _farTx(k.semaforo) : null })) }; });
+  out.okr = objs.length ? { trimestre: _tx(G?.trimestre || ST?.trimestre, 20), tema: _tx(G?.tema_do_trimestre, 160), em: g?.em || st?.em, status_em: usaSt ? st.em : null, saude: usaSt ? _farTx(ST.saude_geral) : null, objetivos: objs, nao_fazer: (G?.anti_objetivos || []).slice(0, 3).map(x => _tx(x, 110)) }
+    : (S?.objetivos?.length ? { origem: 'sala', tema: _tx(ses.tema, 160), em: ses.atualizado_em, objetivos: S.objetivos.slice(0, 5).map(o => ({ objetivo: _tx(o.objetivo, 140), progresso: null, farol: null, krs: (o.kr || o.krs || []).slice(0, 3).map(k => ({ kr: _tx(typeof k === 'string' ? k : k.kr, 120) })) })), nao_fazer: (S.nao_fazer || []).slice(0, 3).map(x => _tx(x, 110)) } : null);
+  const PL = H.planejamento_estrategico?.d?.plano || null;
+  out.planejamento = PL ? { em: H.planejamento_estrategico.em, v90: _tx(PL.visao_90_dias, 220), a1: _tx(PL.visao_1_ano, 220), a3: _tx(PL.visao_3_anos, 220), estrategia: _tx(PL.estrategia_competitiva, 160),
+    prioridades: (PL.prioridades_estrategicas || []).slice(0, 5).map(p => ({ titulo: _tx(p.prioridade, 90), horizonte: _tx(p.horizonte, 20), impacto: _tx(p.impacto_receita, 30) })) } : null;
+  out.sala = S ? { tema: _tx(ses.tema, 140), status: ses.status, em: ses.atualizado_em, decisao: _tx(S.decisao, 260), proximos: (S.proximos_90_dias || []).slice(0, 4).map(x => _tx(typeof x === 'string' ? x : (x.acao || x.titulo), 110)),
+    riscos: (S.riscos || []).slice(0, 5).map(r => ({ risco: _tx(r.risco, 140), mitigacao: _tx(r.mitigacao, 140) })) } : null;
+  // RISCOS: última análise de riscos (prob × impacto)
+  const R = H.analise_riscos?.d?.riscos || null;
+  out.riscos = R?.riscos?.length ? { em: H.analise_riscos.em, nivel: _tx(R.nivel_risco_geral, 10), n1: _tx(R.risco_numero_1, 260), contingencia: _tx(R.plano_contingencia_receita, 200),
+    matriz: { criticos: (R.matriz_risco?.criticos || []).length, monitorar: (R.matriz_risco?.monitorar || []).length, aceitar: (R.matriz_risco?.aceitar || []).length },
+    lista: R.riscos.map(r => ({ categoria: _tx(r.categoria, 20), risco: _tx(r.risco, 150), prob: _tx(r.probabilidade, 8), impacto: _tx(r.impacto, 8), score: _nivel(r.probabilidade) * _nivel(r.impacto),
+      valor: _tx(r.impacto_financeiro_estimado, 40), mitigacao: _tx(r.mitigacao, 150), dono: _tx(r.responsavel, 20), prazo: _tx(r.prazo_mitigacao, 14), status: _tx(r.status, 16) })).sort((a, b) => b.score - a.score).slice(0, 8) } : null;
+  return out;
+}
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
@@ -105,7 +145,10 @@ async function montarDados() {
     chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config(), chamar('metricool', { action: 'patrocinado_listar' }, 40000),
     chamar('financeiro', { action: 'kpis_saude', params: {} }, 45000),
     // v3.479: ORGÂNICO — publicações do mês no Metricool (mesma fonte do Dashboard de Desempenho)
-    ...['linkedin', 'instagram', 'facebook'].map(rede => chamar('metricool', { action: 'metricas_posts', payload: { rede, inicio: mes + '-01', fim: hoje } }, 40000)), rentabilidade()]); // v3.357: previsto do mês (programado até o fim do mês)
+    ...['linkedin', 'instagram', 'facebook'].map(rede => chamar('metricool', { action: 'metricas_posts', payload: { rede, inicio: mes + '-01', fim: hoje } }, 40000)), rentabilidade(),
+    // v3.482: metas anuais (funil do ANO, ano anterior para o crescimento, plano estratégico vigente) e estratégia (OKRs, riscos)
+    chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'ano', ref: String(ano), pipeline: 'todos' } }, 58000), chamar('financeiro', { action: 'metas_empresa_status', params: { ano: ano - 1, com_crm: false } }, 45000),
+    chamar('estrategia', { action: 'plano_estr_obter' }, 30000), estrategiaTv()]); // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -146,7 +189,26 @@ async function montarDados() {
   const rent = v(rt) ? { ...v(rt), erro: null } : { erro: erro(rt), projetos: [] };
   if (CF.nomes_projetos === false) rent.projetos = (rent.projetos || []).map((p, i) => ({ ...p, projeto: 'Projeto ' + (i + 1) }));
   proj.rentabilidade = rent; (proj.lista || []).forEach(p => { delete p.nome_real; });
-  return { qual, proj, mkt, gerado_em: new Date().toISOString(), mes_ref: mes,
+  // v3.482: METAS ANUAIS — financeiras (QuickBooks/Metas da Empresa), clientes e vendas (funil do ano no HubSpot), saúde e alavancas do plano
+  const metas = (() => { const MA_ = v(meA)?.metas || {}, FY = v(fnA) || {}, KS = v(ks)?.kpis || {}, PE = v(pe) || {}, VIG = PE.vigente?.plano || null, SIM = PE.sim_vigente, REA = PE.realizado;
+    const etA = (FY.etapas || []).map(L => ({ nome: L.nome, ganho: !!L.ganho, contatos: !!L.contatos || L.id === 'contatos_hs', real_qtd: L.real?.qtd ?? null, real_valor: L.real?.valor ?? null,
+      meta_qtd: L.meta?.qtd ?? null, meta_valor: L.meta?.valor ?? null, meta_qtd_hoje: L.meta?.qtd_ate_hoje ?? null, meta_valor_hoje: L.meta?.valor_ate_hoje ?? null, farol: L.farol && L.farol !== 'sem_meta' ? L.farol : null }));
+    const ant = num(MA_.realizado?.faturamento);
+    return { ano, erro: [erro(me), erro(fnA)].filter(Boolean).join(' · ') || null,
+      fat: FA.meta != null ? { meta: num(FA.meta), real: num(FA.realizado), pct: num(FA.pct_atingido), esperado: num(FA.esperado_ate_hoje), falta: num(FA.falta), projecao: num(FA.projecao_fechamento), projecao_carteira: num(FA.projecao_com_carteira),
+        por_mes: num(FA.por_mes_necessario), meses_rest: num(FA.meses_restantes), farol: FA.semaforo && FA.semaforo !== 'cinza' ? FA.semaforo : null } : null,
+      margem: ME.margem ? { meta: num(ME.margem.meta_pct), real: num(ME.margem.realizado_pct), dif: num(ME.margem.diferenca_pp), lucro_meta: num(ME.margem.lucro_meta), lucro_real: num(ME.margem.lucro_realizado), farol: ME.margem.semaforo && ME.margem.semaforo !== 'cinza' ? ME.margem.semaforo : null } : null,
+      carteira: ME.carteira ? { prevista: num(ME.carteira.prevista), cobre_pct: num(ME.carteira.cobre_pct) } : null, fracao: num(ME.fracao_ano),
+      anterior: ant != null ? { ano: ano - 1, faturamento: ant, lucro: num(MA_.realizado?.lucro_liquido), margem: num(MA_.realizado?.margem_pct) } : null,
+      saude: v(ks) ? { semaforo: KS.semaforo || null, runway: num(KS.runway_meses), runway_farol: KS.runway_semaforo || null, liquidez: num(KS.liquidez_corrente), caixa: num(KS.saldo_caixa), burn: num(KS.burn_rate_mensal) } : null,
+      vendas: FY.etapas ? { ganho: FY.resumo?.ganho || null, meta: num(FY.resumo?.meta), cobertura: num(FY.resumo?.cobertura_pct), taxa: num(FY.resumo?.taxa_ganho_pct), perdidos: FY.resumo?.perdidos || null,
+        aberto: FY.resumo?.aberto ? { qtd: FY.resumo.aberto.qtd, valor: FY.resumo.aberto.valor } : null, ticket: num(FY.meta_base?.ticket_medio), leads: FY.leads || null, etapas: etA, decorrido: num(FY.periodo?.decorrido_pct) } : null,
+      plano: VIG ? { nome: _tx(VIG.nome, 40), horizonte: _tx(VIG.horizonte, 10), versao: PE.vigente.versao, metas: VIG.metas, total: SIM?.total ? { faturamento: SIM.total.faturamento, contratos: SIM.total.contratos, leads_mes: SIM.total.leads_mes, reunioes_mes: SIM.total.reunioes_mes } : null,
+        alavancas: VIG.alavancas.filter(a => a.status !== 'pausada' && (a.receita_meta || a.peso_campanha)).map(a => { const lin = (SIM?.linhas || []).find(l => l.id === a.id) || {}, r = (REA?.alavancas || []).find(x => x.id === a.id) || {};
+          return { nome: _tx(a.nome, 60), status: a.status, receita_meta: a.receita_meta, receita_real: a.receita_realizada, contratos: lin.contratos || 0, leads_ano: lin.leads || 0, leads_90d: r.leads_90d ?? null, reunioes_90d: r.reunioes_90d ?? null }; }).slice(0, 9), visao: VIG.visao || null, prioridades: (VIG.prioridades || []).slice(0, 5).map(x => _tx(x, 130)) } : null };
+  })();
+  const estr = v(es) || { erro: erro(es) };
+  return { qual, proj, mkt, metas, estr, gerado_em: new Date().toISOString(), mes_ref: mes,
     // v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol (previsto = real + programado até o fim do mês)
     res: (() => { const KS = v(ks)?.kpis || null, cx = K.regime === 'caixa';
       const dF = KS ? num(cx ? KS.contas_receber_mes : KS.receita_prevista_mes) : null, dG = KS ? num(KS.contas_pagar_mes) : null, dR = dF != null && dG != null ? dF - dG : null;
@@ -197,12 +259,13 @@ const BLOCOS_OK = {
   res: d => d.res && [d.res.fat?.real, d.res.gas?.real, d.res.luc?.real].some(v => v != null),
   fin: d => d.fin && (d.fin.caixa != null || d.fin.ano?.faturamento != null || (d.fin.mensal || []).length),
   com: d => !!d.com?.funil, mkt: d => d.mkt && !d.mkt.erro, proj: d => d.proj && !d.proj.erro,
-  qual_termos: d => d.qual?.termos?.abertos != null, qual_qb: d => d.qual?.qb?.corretas != null, qual_proj: d => d.qual?.projetos?.total != null };
+  qual_termos: d => d.qual?.termos?.abertos != null, qual_qb: d => d.qual?.qb?.corretas != null, qual_proj: d => d.qual?.projetos?.total != null,
+  metas_vendas: d => !!d.metas?.vendas, estr: d => !!(d.estr && (d.estr.okr || d.estr.riscos || d.estr.planejamento || d.estr.sala)) };
 async function _comUltimoBom(d) {
   let bom = {}; try { bom = (await kv('tv:ultimo_bom')) || {}; } catch (_) {}
-  const pega = { res: x => x.res, fin: x => x.fin, com: x => x.com, mkt: x => x.mkt, proj: x => x.proj, qual_termos: x => x.qual?.termos, qual_qb: x => x.qual?.qb, qual_proj: x => x.qual?.projetos };
+  const pega = { res: x => x.res, fin: x => x.fin, com: x => x.com, mkt: x => x.mkt, proj: x => x.proj, qual_termos: x => x.qual?.termos, qual_qb: x => x.qual?.qb, qual_proj: x => x.qual?.projetos, metas_vendas: x => x.metas?.vendas, estr: x => x.estr };
   const poe = { res: (x, v) => { x.res = v; }, fin: (x, v) => { x.fin = { ...v, erro: null }; }, com: (x, v) => { x.com = v; }, mkt: (x, v) => { x.mkt = v; }, proj: (x, v) => { x.proj = v; },
-    qual_termos: (x, v) => { x.qual = x.qual || {}; x.qual.termos = v; }, qual_qb: (x, v) => { x.qual = x.qual || {}; x.qual.qb = v; }, qual_proj: (x, v) => { x.qual = x.qual || {}; x.qual.projetos = v; } };
+    qual_termos: (x, v) => { x.qual = x.qual || {}; x.qual.termos = v; }, qual_qb: (x, v) => { x.qual = x.qual || {}; x.qual.qb = v; }, qual_proj: (x, v) => { x.qual = x.qual || {}; x.qual.projetos = v; }, metas_vendas: (x, v) => { x.metas = x.metas || {}; x.metas.vendas = v; }, estr: (x, v) => { x.estr = v; } };
   const antigos = []; let mudou = false;
   for (const [b, ok] of Object.entries(BLOCOS_OK)) {
     if (ok(d)) { bom[b] = { v: pega[b](d), em: d.gerado_em, mes: d.mes_ref }; mudou = true; }
@@ -218,6 +281,7 @@ async function dados(forcar) {
   catch (e) { if (c) return { ...c, aviso_cache: 'mostrando os últimos números salvos' }; throw e; }
 }
 
+const esc0 = t => String(t || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function pagina(cfg, cod) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>Atlantyx · Gestão à vista</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -258,7 +322,7 @@ svg text{font-family:Montserrat,Calibri,Arial,sans-serif}
 </style></head><body><div id="app">
 <div class="top"><div class="logo"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" onerror="this.parentNode.innerHTML='ATLANT<b>Y</b>X'"></div><div class="tit" id="tit">Gestão à vista</div><div class="esp"></div><div><div class="rel" id="rel">--:--</div><div class="dt" id="dt"></div></div></div>
 <div class="palco" id="palco"><div class="slide on"><div style="margin:auto;font-size:32.4px;color:#8E9BC0;">Carregando os números…</div></div></div>
-<div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div></div></div><div class="prog" id="prog"></div>
+<div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div><div style="font-size:13px;color:#3A4670;margin-left:6px">${esc0(versao())}</div></div></div><div class="prog" id="prog"></div>
 <script>
 var COD=${JSON.stringify(cod)},ROT=${Math.max(8, Math.min(180, +cfg.rotacao_s || 25))},SLIDES=${JSON.stringify((cfg.slides || []).filter(s => SLIDES_OK.indexOf(s) >= 0))};
 var D=null,idx=0,timer=null,t0=0;
@@ -480,7 +544,119 @@ function sProjT(){var J=D.proj||{},L=(J.lista||[]).slice(),R=J.rentabilidade||{}
   h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
    +'<div style="font-size:16px;color:#6E7BA0">Tarefas: cronograma do Maestro (atraso = fim já passou e não concluída · tendência = vence em até 14 dias e está 15pp+ atrás do previsto ou não começou) · rentabilidade: tela Custo por Projeto (receita − impostos − folha apontada − custo fixo rateado), média mensal de '+esc(R.periodo||'3 meses')+' × '+esc(R.anterior||'trimestre anterior')+'</div>';
   return h}
-var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing',qualidade:'Qualidade',projetos:'Projetos',projetos_tarefas:'Projetos · tarefas e rentabilidade'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj,projetos_tarefas:sProjT};
+/* v3.482: METAS ANUAIS · OBJETIVOS · RISCOS */
+function fq(q,a,b){return nz(q)?null:q>=(a||1)?'verde':q>=(b||0.85)?'amarelo':'vermelho'}
+function dtc(s){if(!s)return '';var d=String(s).substring(0,10).split('-');return d.length===3?d[2]+'/'+d[1]+'/'+d[0]:''}
+function mt(o){var c=cor(o.f),tx=o.f==='verde'?'no rumo':o.f==='amarelo'?'atenção':o.f==='vermelho'?'fora da meta':(o.semTx||'sem meta');
+  return '<div class="cr3" style="--c:'+c+';gap:3px;padding:14px 22px"><div class="t"><i></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+esc(o.rot)+'</span><span style="color:'+c+';padding:2px 10px;border-radius:20px;border:1px solid '+c+';font-size:13px;letter-spacing:.6px">'+tx+'</span></div>'
+   +'<div style="font-size:42px;font-weight:800;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;color:'+(o.f?c:'#EAF0FF')+'">'+o.real+'</div>'
+   +'<div style="font-size:18px;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(o.meta||'')+'</div>'
+   +(nz(o.p)?'':'<div class="bar" style="margin-top:6px"><i style="width:'+Math.max(0,Math.min(100,o.p))+'%;background:'+(o.f?c:'#00C4CC')+'"></i>'+(nz(o.marca)?'':'<u style="left:'+Math.max(0,Math.min(100,o.marca))+'%"></u>')+'</div>')
+   +'<div style="font-size:16px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(o.sub||'')+'</div></div>'}
+function sMetas(){var M=D.metas||{},F=M.fat,G=M.margem,A=M.anterior,V=M.vendas,S=M.saude||{},P=M.plano,fr=nz(M.fracao)?null:M.fracao;
+  var n=function(v){return nz(v)?'—':Number(v).toLocaleString('pt-BR')};
+  var T=[];
+  // financeiras
+  T.push(F?{rot:'Faturamento '+M.ano,real:brl(F.real),meta:'meta '+brl(F.meta)+' · '+pct(F.pct)+' atingido',p:F.pct,marca:fr,f:F.farol,
+    sub:(nz(F.esperado)?'':'esperado até hoje '+brl(F.esperado))+(nz(F.projecao)?'':' · no ritmo fecha em '+brl(F.projecao))}:{rot:'Faturamento '+M.ano,real:'—',meta:'meta não cadastrada',sub:'Planejamento → Metas da Empresa'});
+  T.push(G?{rot:'Margem líquida',real:pct(G.real),meta:'meta '+pct(G.meta)+(nz(G.dif)?'':' · '+(G.dif>=0?'+':'')+String(G.dif).replace('.',',')+' pp'),f:G.farol,p:nz(G.real)||!G.meta?null:G.real/G.meta*100,sub:'lucro líquido ÷ faturamento no ano (QuickBooks)'}:{rot:'Margem líquida',real:'—',meta:'meta não cadastrada'});
+  var lq=G&&!nz(G.lucro_meta)&&!nz(G.lucro_real)?G.lucro_real/(G.lucro_meta*(fr!=null?fr/100:1)||1):null;
+  T.push({rot:'Lucro líquido '+M.ano,real:brl(G?G.lucro_real:null),meta:G&&G.lucro_meta?'meta '+brl(G.lucro_meta)+' no ano':'sem meta de lucro',f:G&&G.lucro_real<0?'vermelho':fq(lq),p:G&&G.lucro_meta&&!nz(G.lucro_real)?G.lucro_real/G.lucro_meta*100:null,marca:fr,
+    sub:G&&G.lucro_meta&&fr!=null?'esperado até hoje '+brl(G.lucro_meta*fr/100):''});
+  var gM=A&&A.faturamento>0&&F&&F.meta?(F.meta/A.faturamento-1)*100:null,base=F?(nz(F.projecao)?F.real:F.projecao):null,gP=A&&A.faturamento>0&&!nz(base)?(base/A.faturamento-1)*100:null;
+  T.push({rot:'Crescimento × '+(A?A.ano:'ano anterior'),real:nz(gP)?'—':(gP>=0?'+':'')+pct(gP),meta:nz(gM)?(A?M.ano-1+': '+brl(A.faturamento):'sem o ano anterior no QuickBooks'):'meta implícita '+(gM>=0?'+':'')+pct(gM)+' ('+brl(F.meta)+' × '+brl(A.faturamento)+')',
+    f:nz(gP)||nz(gM)?null:fq(base/F.meta),semTx:'sem base',sub:F&&!nz(F.projecao)?'projeção do ano no ritmo atual × faturamento de '+(A?A.ano:''):'faturamento até hoje × ano anterior'});
+  // clientes e vendas
+  var E=(V&&V.etapas)||[],eg=E.filter(function(e){return e.ganho})[0]||{},el=E.filter(function(e){return e.contatos})[0]||null,dec=V&&!nz(V.decorrido)?V.decorrido:fr;
+  var gq=V&&V.ganho?V.ganho.qtd:null,gv=V&&V.ganho?V.ganho.valor:null,mq=eg.meta_qtd,mv=!nz(eg.meta_valor)?eg.meta_valor:(V?V.meta:null);
+  T.push({rot:'Novos contratos (ganhos)',real:n(gq),meta:mq?'meta '+n(Math.ceil(mq))+' no ano'+(nz(eg.meta_qtd_hoje)?'':' · '+n(Math.round(eg.meta_qtd_hoje))+' até hoje'):'sem meta de quantidade no funil',f:mq?(eg.farol||fq(gq/Math.max(0.1,eg.meta_qtd_hoje||mq))):null,p:mq?gq/mq*100:null,marca:dec,
+    sub:'negócios ganhos no HubSpot em '+M.ano+(V&&V.ticket?' · ticket médio '+brl(V.ticket):'')});
+  T.push({rot:'Receita de vendas ganhas',real:brl(gv),meta:mv?'meta '+brl(mv)+' · '+pct(gv/mv*100):'sem meta',f:mv?fq(gv/Math.max(1,(eg.meta_valor_hoje||mv*(dec!=null?dec/100:1)))):null,p:mv?gv/mv*100:null,marca:dec,
+    sub:'valor dos negócios ganhos no ano'+(V&&V.perdidos&&V.perdidos.qtd?' · '+n(V.perdidos.qtd)+' perdidos ('+brl(V.perdidos.valor)+')':'')});
+  T.push(el?{rot:'Leads no ano',real:n(el.real_qtd),meta:el.meta_qtd?'meta '+n(Math.ceil(el.meta_qtd))+' · '+pct(el.real_qtd/el.meta_qtd*100):'sem meta de leads no funil',f:el.farol,p:el.meta_qtd?el.real_qtd/el.meta_qtd*100:null,marca:dec,
+    sub:'contatos criados no HubSpot'+(V.leads&&V.leads.total?' · '+n(V.leads.total)+' pelo site/campanhas ('+n(V.leads.reunioes)+' reuniões)':'')}:{rot:'Leads no ano',real:V&&V.leads?n(V.leads.total):'—',meta:'leads captados pelo sistema',sub:V&&V.leads?n(V.leads.reunioes)+' reuniões marcadas':''});
+  var cb=V?V.cobertura:null;
+  T.push({rot:'Cobertura do pipeline',real:nz(cb)?'—':pct(cb),meta:V&&V.aberto?n(V.aberto.qtd)+' negócios abertos · '+brl(V.aberto.valor):'',f:nz(cb)?null:cb>=100?'verde':cb>=70?'amarelo':'vermelho',p:cb,semTx:'sem dado',
+    sub:'pipeline ponderado ÷ o que falta da meta'+(V&&!nz(V.taxa)?' · taxa de ganho '+V.taxa+'%':'')});
+  var fs=T.map(function(t){return t.f}),cv=fs.filter(function(f){return f==='verde'}).length,ca=fs.filter(function(f){return f==='amarelo'}).length,cr=fs.filter(function(f){return f==='vermelho'}).length;
+  var placar='<div style="display:flex;align-items:center;gap:26px;background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:12px 26px">'
+   +'<div style="font-size:22px;font-weight:800;flex:1">Metas de '+M.ano+' <span style="font-size:18px;color:#8E9BC0;font-weight:600">· '+(fr!=null?pct(fr)+' do ano decorrido':'')+'</span></div>'
+   +[['verde',cv,'no rumo'],['amarelo',ca,'atenção'],['vermelho',cr,'fora da meta']].map(function(x){return '<div style="display:flex;align-items:center;gap:10px"><span class="bola" style="width:30px;height:30px;background:'+cor(x[0])+';box-shadow:0 0 14px '+cor(x[0])+'"></span><b style="font-size:34px">'+x[1]+'</b><span style="font-size:17px;color:#8E9BC0">'+x[2]+'</span></div>'}).join('')+'</div>';
+  var sec=function(t){return '<div style="font-size:17px;color:#6E7BA0;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:-8px">'+t+'</div>'};
+  var h=placar+sec('Financeiras')+'<div class="grade g4">'+T.slice(0,4).map(mt).join('')+'</div>'+sec('Clientes e vendas')+'<div class="grade g4">'+T.slice(4).map(mt).join('')+'</div>';
+  // indicadores-chave
+  var li=function(f,r,v,s){return '<div class="lin" style="padding:5px 0;font-size:20px"><span class="bola" style="background:'+cor(f)+'"></span><div class="n">'+r+(s?'<div style="font-size:15px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s+'</div>':'')+'</div><div class="q" style="font-size:24px">'+v+'</div></div>'};
+  var C=M.carteira,rw=S.runway;
+  var ind='<div class="painel" style="min-height:0"><h3>Indicadores-chave</h3><div style="flex:1;min-height:0;overflow:hidden">'
+   +(C?li(nz(C.cobre_pct)?null:C.cobre_pct>=100?'verde':C.cobre_pct>=70?'amarelo':'vermelho','Carteira prevista até dez',brl(C.prevista),nz(C.cobre_pct)?'marcos, sustentações e faturas a receber':'cobre '+pct(C.cobre_pct)+' do que falta da meta'):'')
+   +(F&&!nz(F.projecao_carteira)?li(F.meta?fq(F.projecao_carteira/F.meta,1,0.9):null,'Fechamento com a carteira',brl(F.projecao_carteira),'realizado + carteira prevista × meta '+brl(F.meta)):'')
+   +(F&&!nz(F.por_mes)&&F.falta>0?li(null,'Preciso faturar por mês',brl(F.por_mes),'para bater a meta nos '+F.meses_rest+' meses restantes'):'')
+   +li(S.runway_farol||null,'Runway de caixa',nz(rw)?'—':rw>=999?'sem queima':String(rw).replace('.',',')+' meses','caixa '+brl(S.caixa)+(nz(S.liquidez)?'':' · liquidez '+String(S.liquidez).replace('.',',')))
+   +'</div></div>';
+  // alavancas do plano
+  var al=P?(P.alavancas||[]).filter(function(a){return a.receita_meta}).slice(0,6).map(function(a){var rit=a.leads_ano?a.leads_ano/4:null,q=rit&&!nz(a.leads_90d)?a.leads_90d/rit:null,f=nz(q)?null:q>=1?'verde':q>=0.5?'amarelo':'vermelho';
+     return '<div class="lin" style="padding:7px 0;font-size:19px"><span class="bola" style="background:'+cor(f)+'"></span><div class="n">'+esc(a.nome)+'<div style="font-size:15px;color:#8E9BC0">meta '+brl(a.receita_meta)+' · '+n(a.contratos)+' contrato(s)'+(nz(a.receita_real)?'':' · realizado '+brl(a.receita_real))+'</div></div><div class="q" style="font-size:22px;text-align:right">'+n(a.leads_90d)+'<span style="font-size:15px;color:#8E9BC0"> / '+(rit?n(Math.ceil(rit)):'—')+' leads</span></div></div>'}).join(''):'';
+  var pl='<div class="painel" style="min-height:0"><h3>'+(P?esc(P.nome)+' · alavancas — leads em 90 dias × ritmo necessário':'Plano estratégico')+'</h3><div style="flex:1;min-height:0;overflow:hidden">'+(al||'<div class="erro">Nenhum plano estratégico aprovado (Estratégia → Plano estratégico).</div>')+'</div></div>';
+  h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:23px">'+ind+pl+'</div>'
+   +'<div style="font-size:15px;color:#6E7BA0">Financeiras: QuickBooks + Metas da Empresa ('+(D.fin&&D.fin.regime?'regime '+esc(D.fin.regime):'')+') · clientes e vendas: funil de '+M.ano+' no HubSpot com as metas do funil · farol: realizado × esperado até hoje (verde ≥ 100%, amarelo ≥ 85%) · alavancas: verde = leads de 90 dias no ritmo do plano, amarelo ≥ metade'+(M.erro?' · ⚠ '+esc(M.erro):'')+'</div>';
+  return h}
+function sObj(){var X=D.estr||{},O=X.okr,Sa=X.sala,PL=X.planejamento,P=(D.metas||{}).plano,Vi=P&&P.visao;
+  var br=function(p,f){return '<div style="flex:1;height:12px;background:#1A2447;border-radius:7px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.max(0,Math.min(100,p||0))+'%;background:'+(f?cor(f):'#00C4CC')+'"></i></div>'};
+  var top='<div style="display:flex;align-items:center;gap:24px;background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:16px 26px">'+(O&&O.saude?luz(O.saude):'')
+   +'<div style="flex:1;min-width:0"><div style="font-size:16px;color:#8E9BC0;letter-spacing:1.5px;text-transform:uppercase;font-weight:700">'+(O&&O.trimestre?'Foco de '+esc(O.trimestre):'Foco estratégico')+'</div>'
+   +'<div style="font-size:28px;font-weight:700;line-height:1.25;margin-top:4px;max-height:72px;overflow:hidden">'+esc((O&&O.tema)||(Sa&&Sa.decisao)||(PL&&PL.estrategia)||'Gere os OKRs em Planejamento → OKRs para aparecerem aqui.')+'</div></div></div>';
+  var ob=O?(O.objetivos||[]).map(function(o,i){var f=o.farol;
+     return '<div style="padding:12px 0;border-bottom:1px solid #1A2447"><div style="display:flex;align-items:center;gap:16px"><div style="width:44px;height:44px;border-radius:50%;background:'+(f?cor(f):'#1E2A52')+';color:#0A1022;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;flex:0 0 44px">O'+(i+1)+'</div>'
+       +'<div style="flex:1;min-width:0;font-size:23px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(o.objetivo)+'</div>'+(nz(o.progresso)?'<span style="font-size:16px;color:#8E9BC0;white-space:nowrap">não medido</span>':'<b style="font-size:28px;color:'+cor(f)+'">'+o.progresso+'%</b>')+'</div>'
+       +(nz(o.progresso)?'':'<div style="display:flex;margin:8px 0 2px 60px">'+br(o.progresso,f)+'</div>')
+       +(o.krs||[]).slice(0,3).map(function(k){return '<div style="display:flex;gap:10px;align-items:center;margin:5px 0 0 60px;font-size:17px"><span class="bola" style="width:13px;height:13px;background:'+cor(k.farol)+'"></span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#C8D2EE">'+esc(k.kr)+'</span>'
+         +(k.meta?'<span style="white-space:nowrap;color:#8E9BC0">'+(k.atual?esc(k.atual)+' → ':'')+'<b style="color:#EAF0FF">'+esc(k.meta)+'</b>'+(nz(k.progresso)?'':' · '+k.progresso+'%')+'</span>':'')+'</div>'}).join('')+'</div>'}).join(''):'';
+  var esq='<div class="painel" style="min-height:0"><h3>Objetivos e resultados-chave'+(O&&O.status_em?' · status de '+dtc(O.status_em):O&&O.em?' · gerados em '+dtc(O.em):'')+'</h3><div style="flex:1;min-height:0;overflow:hidden">'+(ob||'<div class="erro">Sem OKRs gerados ainda (Planejamento → OKRs → Gerar OKRs com IA).</div>')+'</div>'
+   +(O&&!O.status_em&&O.objetivos&&O.objetivos.length?'<div style="font-size:16px;color:#FFB547">Progresso não medido — rode "Status dos OKRs" no Planejamento para acender o farol de cada objetivo.</div>':'')+'</div>';
+  var vis=function(r,t){return t?'<div style="padding:8px 0;border-bottom:1px solid #1A2447"><div style="font-size:15px;color:#00C4CC;font-weight:800;letter-spacing:1.5px">'+r+'</div><div style="font-size:18px;line-height:1.3;max-height:48px;overflow:hidden">'+esc(t)+'</div></div>':''};
+  var pr=(P&&P.prioridades&&P.prioridades.length?P.prioridades:(PL?(PL.prioridades||[]).map(function(x){return x.titulo}):[])).slice(0,4);
+  var nf=(O&&O.nao_fazer)||[];
+  var dir='<div class="painel" style="min-height:0"><h3>Visão'+(P?' · '+esc(P.nome):'')+'</h3>'
+   +(Vi?vis('90 DIAS',Vi.d90)+vis('1 ANO',Vi.a1)+vis('5 ANOS',Vi.a5):PL?vis('90 DIAS',PL.v90)+vis('1 ANO',PL.a1)+vis('3 ANOS',PL.a3):'<div class="erro">Sem plano estratégico aprovado.</div>')
+   +'<h3 style="margin-top:14px">Prioridades</h3><div style="flex:1;min-height:0;overflow:hidden">'+pr.map(function(x,i){return '<div style="display:flex;gap:10px;font-size:18px;padding:4px 0"><b style="color:#00C4CC">'+(i+1)+'</b><span style="min-width:0;max-height:46px;overflow:hidden">'+esc(x)+'</span></div>'}).join('')
+   +(nf.length?'<div style="font-size:15px;color:#FF9AAE;font-weight:800;letter-spacing:1.5px;margin-top:10px">NÃO VAMOS FAZER</div>'+nf.slice(0,2).map(function(x){return '<div style="font-size:17px;color:#C8D2EE;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">✕ '+esc(x)+'</div>'}).join(''):'')+'</div></div>';
+  return top+'<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
+   +'<div style="font-size:15px;color:#6E7BA0">OKRs: Planejamento → OKRs (último gerado'+(O&&O.status_em?' e último status medido':'')+') · visão e prioridades: plano estratégico aprovado'+(Sa?' · última sessão da Sala de Estratégia: '+esc(Sa.tema)+' ('+dtc(Sa.em)+')':'')+(X.erro?' · ⚠ '+esc(X.erro):'')+'</div>'}
+function sRis(){var X=D.estr||{},R=X.riscos,Sa=X.sala,M=D.metas||{},Fi=D.fin||{},Q=D.qual||{},J=D.proj||{},Ra=J.resumo||{};
+  var nv=R?String(R.nivel).toLowerCase():'',fn=/alt/.test(nv)?'vermelho':/m[eé]d/.test(nv)?'amarelo':/baix/.test(nv)?'verde':null;
+  var fs=function(sc){return sc>=6?'vermelho':sc>=3?'amarelo':'verde'};
+  var box=function(n,r,c){return '<div style="text-align:center;padding:0 14px"><div style="font-size:44px;font-weight:800;color:'+c+';line-height:1">'+n+'</div><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">'+r+'</div></div>'};
+  var top='<div style="display:flex;align-items:center;gap:24px;background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:14px 26px">'+luz(fn)
+   +'<div style="width:230px"><div style="font-size:16px;color:#8E9BC0;letter-spacing:1.5px;text-transform:uppercase;font-weight:700">Risco geral</div><div style="font-size:42px;font-weight:800;color:'+cor(fn)+'">'+esc(R?R.nivel:'—')+'</div></div>'
+   +(R?box(R.matriz.criticos,'críticos','#FF5C7A')+box(R.matriz.monitorar,'monitorar','#FFB547')+box(R.matriz.aceitar,'aceitar','#2EE6A6'):'')
+   +'<div style="flex:1;min-width:0;border-left:1px solid #1E2A52;padding-left:24px"><div style="font-size:15px;color:#FF9AAE;letter-spacing:1.5px;font-weight:800">RISCO Nº 1 · AGIR ESTA SEMANA</div><div style="font-size:20px;line-height:1.3;max-height:78px;overflow:hidden;margin-top:3px">'+esc(R?R.n1:'Gere a análise de riscos em Planejamento → Riscos.')+'</div></div></div>';
+  var L=R?R.lista:((Sa&&Sa.riscos)||[]).map(function(r){return {risco:r.risco,mitigacao:r.mitigacao,score:null}});
+  var cards=L.slice(0,6).map(function(r){var f=nz(r.score)?null:fs(r.score),c=cor(f);
+    return '<div style="background:#0B1228;border:1px solid #1E2A52;border-left:6px solid '+c+';border-radius:12px;padding:10px 16px;min-width:0;display:flex;flex-direction:column;gap:3px;overflow:hidden">'
+     +'<div style="display:flex;gap:10px;align-items:center;font-size:14px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px;font-weight:700;white-space:nowrap"><span style="color:'+c+'">'+esc(r.categoria||'Risco')+'</span>'+(r.prob?'<span>· prob. '+esc(r.prob)+' · impacto '+esc(r.impacto)+'</span>':'')+'<span style="flex:1"></span>'+'</div>'
+     +'<div style="font-size:19px;font-weight:700;line-height:1.25;max-height:48px;overflow:hidden">'+esc(r.risco)+'</div>'
+     +'<div style="font-size:16px;color:#AAB6D8;line-height:1.25;max-height:40px;overflow:hidden"><b style="color:#2EE6A6">Mitigação:</b> '+esc(r.mitigacao)+'</div>'
+     +(r.dono||r.prazo||r.status||r.valor?'<div style="font-size:14px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(r.valor&&r.valor!=='—'?'<b style="color:#EAF0FF">impacto '+esc(r.valor)+'</b> · ':'')+[r.dono,r.prazo,r.status].filter(Boolean).map(esc).join(' · ')+'</div>':'')+'</div>'}).join('');
+  var esq='<div class="painel" style="min-height:0"><h3>Riscos mapeados'+(R&&R.em?' · análise de '+dtc(R.em):Sa?' · Sala de Estratégia '+dtc(Sa.em):'')+'</h3>'
+   +(cards?'<div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr);gap:12px">'+cards+'</div>':'<div class="erro">Nenhuma análise de riscos gerada ainda.</div>')+'</div>';
+  // sinais ao vivo
+  var ta=0;(J.lista||[]).forEach(function(p){ta+=p.tarefas_atraso||0});
+  var cx=Fi.caixa,pg=Fi.pagar,rv=Fi.receber_vencido,rc=Fi.receber,cb=M.vendas?M.vendas.cobertura:null,sd=M.saude||{};
+  var S=[
+    ['Caixa × contas a pagar',nz(cx)||nz(pg)?null:pg<=0?'verde':fq(cx/pg,1,0.7),nz(cx)?'—':brl(cx),nz(pg)?'':'a pagar '+brl(pg)],
+    ['Recebíveis vencidos',nz(rv)?null:rv<=0?'verde':rc&&rv/rc<=0.1?'amarelo':'vermelho',brl(rv),nz(rc)?'':'de '+brl(rc)+' a receber'],
+    ['Runway de caixa',sd.runway_farol||null,nz(sd.runway)?'—':sd.runway>=999?'sem queima':String(sd.runway).replace('.',',')+' m','meses de gasto cobertos pelo caixa'],
+    ['Faturamento do ano no ritmo',M.fat?M.fat.farol:null,M.fat?pct(M.fat.pct):'—',M.fat&&!nz(M.fat.projecao)?'fecha em '+brl(M.fat.projecao)+' × meta '+brl(M.fat.meta):''],
+    ['Cobertura do pipeline',nz(cb)?null:cb>=100?'verde':cb>=70?'amarelo':'vermelho',nz(cb)?'—':pct(cb),'ponderado ÷ o que falta da meta'],
+    ['Projetos no vermelho',nz(Ra.vermelho)?null:Ra.vermelho===0?'verde':Ra.vermelho<=2?'amarelo':'vermelho',nz(Ra.vermelho)?'—':Ra.vermelho+' de '+Ra.total,ta?ta+' tarefa(s) em atraso':'nenhuma tarefa vencida'],
+    ['Termos de faturamento',(Q.termos||{}).farol||null,nz((Q.termos||{}).errados)?'—':Q.termos.errados,(Q.termos||{}).valor_pendente?brl(Q.termos.valor_pendente)+' parados':'com pendência'],
+    ['Contabilidade (QuickBooks)',(Q.qb||{}).farol||null,nz((Q.qb||{}).com_erro)?'—':Q.qb.com_erro,'problema(s) a corrigir no fechamento']];
+  var sl=S.map(function(x){return '<div class="lin" style="padding:7px 0;font-size:19px"><span class="bola" style="background:'+cor(x[1])+';box-shadow:0 0 10px '+cor(x[1])+'"></span><div class="n">'+x[0]+'<div style="font-size:14px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+x[3]+'</div></div><div class="q" style="font-size:23px">'+x[2]+'</div></div>'}).join('');
+  var dir='<div class="painel" style="min-height:0"><h3>Sinais de risco nos números · ao vivo</h3><div style="flex:1;min-height:0;overflow:hidden">'+sl+'</div>'
+   +(R&&R.contingencia?'<div style="font-size:15px;color:#FFB547;line-height:1.3;max-height:40px;overflow:hidden;margin-top:6px"><b>Contingência:</b> '+esc(R.contingencia)+'</div>':'')+'</div>';
+  return top+'<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
+   +'<div style="font-size:15px;color:#6E7BA0">Riscos: última análise do Planejamento Estratégico (cor = probabilidade × impacto) · sinais: QuickBooks, HubSpot, Maestro e Faturamento atualizados a cada carga da TV</div>'}
+var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing',qualidade:'Qualidade',projetos:'Projetos',projetos_tarefas:'Projetos · tarefas e rentabilidade',metas:'Metas anuais',objetivos:'Objetivos estratégicos',riscos:'Riscos'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj,projetos_tarefas:sProjT,metas:sMetas,objetivos:sObj,riscos:sRis};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
   var g=new Date(D.gerado_em),NB={res:'resultado do mês',fin:'financeiro',com:'vendas',mkt:'marketing',proj:'projetos',qual_termos:'termos',qual_qb:'QuickBooks',qual_proj:'projetos'};
@@ -516,7 +692,7 @@ async function handler(req, res) {
       config: async () => { const c = await config(); return { config: { ...c, link: c.codigo ? base() + '/tv/' + c.codigo : null } }; },
       gerar: async () => { const c = await config(); const n = { ...c, codigo: codigoNovo(), criado_em: new Date().toISOString() }; await kv('tv:config', n); return { config: { ...n, link: base() + '/tv/' + n.codigo } }; },
       revogar: async () => { const c = await config(); await kv('tv:config', { ...c, codigo: null, criado_em: null }); return { ok: true }; },
-      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, v479: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
+      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, v479: true, v482: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
         if (!Array.isArray(n.slides) || !n.slides.length) throw new Error('Escolha pelo menos um slide'); await kv('tv:config', n);
         /* v3.237: esconder nomes vale na hora (cache de 10 min) */ if (n.nomes_projetos !== c.nomes_projetos) { try { await kv('tv:dados', null); } catch (_) {} } return { config: { ...n, link: n.codigo ? base() + '/tv/' + n.codigo : null } }; },
       atualizar_dados: async () => ({ dados: await dados(true) }),
