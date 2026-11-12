@@ -605,7 +605,10 @@
   const RED_ORDEM = RED_PARTES.flat();
   const _vazios = () => { const S = PROP.documento?.secoes || []; return RED_ORDEM.filter(k => !String(S.find(x => x.chave === k)?.conteudo || '').trim()); };
   let _redRodando = false;
-  const _redMsg = (h, cor) => { const e = $('vpRedStatus'); if (e) e.innerHTML = h ? `<div style="margin:0 0 10px;padding:9px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--bg4);font-size:11px;color:${cor || 'var(--t1)'};">${h}</div>` : ''; };
+  // v3.471: barra de andamento (pct 0–100; null = sem barra)
+  const _barra = pct => pct == null ? '' : `<div style="height:7px;border-radius:5px;background:var(--bd);overflow:hidden;margin-top:7px;"><div style="height:100%;width:${Math.max(3, Math.min(100, pct))}%;background:linear-gradient(90deg,#00708A,#00C4CC);transition:width .6s;"></div></div>`;
+  let _redPct = null;
+  const _redMsg = (h, cor) => { const e = $('vpRedStatus'); if (e) e.innerHTML = h ? `<div style="margin:0 0 10px;padding:9px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--bg4);font-size:11px;color:${cor || 'var(--t1)'};">${h}${_barra(_redPct)}</div>` : ''; };
   // v3.390: a trava "em andamento" sempre se solta (finally) e expira em 15 min — antes um erro no meio deixava a trava presa
   let _redDesde = 0;
   async function _redigirPartes(chavesAlvo, btn0) {
@@ -621,8 +624,10 @@
     try { const t = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_teste' }) }).then(r => r.json());
       if (t && t.success && t.ok === false) { _redMsg(`⛔ A redação não começou: ${esc(t.msg || 'a IA não está respondendo')}${t.motivo === 'desligada' && typeof window.iaChave === 'function' ? ' <a href="javascript:void(0)" onclick="iaChave()">Ligar IA</a>' : ''}`, 'var(--red)'); nota('IA indisponível: ' + (t.msg || ''), 'error'); return ['IA indisponível: ' + (t.msg || '')]; } } catch (_) {}
     const btn = { set innerHTML(h) { _redMsg(h); if (btn0 && document.body.contains(btn0)) btn0.innerHTML = h; }, get innerHTML() { return ''; } };
-    const partes = RED_PARTES.map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = [];
-    const prog = () => { btn.innerHTML = `✍ Redigindo com a IA: parte ${Math.min(feitas + 1, partes.length)} de ${partes.length} (${partes[Math.min(feitas, partes.length - 1)].join(', ')})… cada parte leva até 1,5 min`; }; prog();
+    const partes = RED_PARTES.map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = []; const t0 = Date.now(), emCurso = new Set();
+    const prog = () => { _redPct = Math.round(feitas / partes.length * 100); const min = Math.floor((Date.now() - t0) / 60000), sg = Math.floor((Date.now() - t0) / 1000) % 60;
+      btn.innerHTML = `✍ Redigindo com a IA — <b>${feitas} de ${partes.length} partes prontas (${_redPct}%)</b> · ${min}min${String(sg).padStart(2, '0')}s${emCurso.size ? ' · agora: ' + esc([...emCurso].join(' + ')) : ''}`; }; prog();
+    const relogio = setInterval(prog, 1000);
     const D = PROP.documento;
     const espera = (seg, txt) => new Promise(ok => { let n = seg; const tk = () => { btn.innerHTML = `⏳ ${txt} — ${n}s`; if (n-- <= 0) return ok(); setTimeout(tk, 1000); }; tk(); });
     // v3.384: Escopo em etapas (plano → itens de 3 em 3 → requisitos/fora do escopo), cada etapa com repetição
@@ -644,9 +649,12 @@
           if (r.matriz_responsabilidades?.length) D.matriz_responsabilidades = r.matriz_responsabilidades; return; }
         catch (e) { const lim = /\[(429|529)\]|rate|overloaded|limit/i.test(e.message); if (t === 2) { erros.push(p.join(', ') + ': ' + e.message); break; }
           await espera(lim ? 45 : 5, lim ? 'Limite de uso da IA atingido, aguardando para continuar' : 'Tentando de novo'); prog(); } } };
-    const fila = [...partes]; await Promise.all([0].map(async () => { while (fila.length) { if (erros.length >= 2 && feitas === erros.length) { erros.push('interrompido: as primeiras partes falharam com erro da IA'); break; } const p = fila.shift(); await roda(p); feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }));
-    D._erros = erros; renderDoc();
-    const falta = _vazios(); _redMsg(falta.length ? `⚠ ${falta.length} capítulo(s) continuam em branco (${falta.join(', ')}).${erros.length ? ' Erro da IA: ' + esc(erros[0]) : ''}` : '✅ Todos os capítulos foram redigidos — revise o texto abaixo e salve a proposta.', falta.length ? 'var(--red)' : 'var(--green)');
+    // v3.471: 3 partes ao mesmo tempo (antes 1 por vez — 10+ min); escopo (o mais longo) entra primeiro
+    const fila = [...partes]; try { await Promise.all([0, 1, 2].map(async () => { while (fila.length) { if (erros.length >= 2 && feitas === erros.length) { erros.push('interrompido: as primeiras partes falharam com erro da IA'); break; } const p = fila.shift(); const rot = p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } })); } finally { clearInterval(relogio); }
+    D._erros = erros; renderDoc(); _redPct = null;
+    const falta = _vazios(); let salvo = false; if (!falta.length && PROP.cliente) { try { await salvar(true); salvo = true; } catch (_) {} }
+    const tempo = Math.round((Date.now() - t0) / 1000);
+    _redMsg(falta.length ? `⚠ <b>Redação PARCIAL</b> — ${RED_ORDEM.length - falta.length} de ${RED_ORDEM.length} capítulos prontos; ${falta.length} em branco (${esc(falta.join(', '))}).${erros.length ? ' Erro da IA: ' + esc(erros[0]) : ''} Clique em <b>Completar capítulos em branco</b>.` : `✅ <b>Proposta redigida — ${RED_ORDEM.length} de ${RED_ORDEM.length} capítulos</b> em ${Math.floor(tempo / 60)}min${String(tempo % 60).padStart(2, '0')}s${salvo ? ' e <b>salva</b> (' + esc(PROP.numero || '') + ')' : ' — clique em Salvar'}. Revise o texto abaixo.`, falta.length ? 'var(--red)' : 'var(--green)');
     return erros;
   }
   async function redigir() {
@@ -704,10 +712,11 @@
     document.querySelectorAll('.vdDocSecT').forEach(e => { d.secoes[+e.dataset.i].titulo = e.value; });
     if ($('vdMR')) d.matriz_responsabilidades = [...document.querySelectorAll('#vdMR tr')].map(tr => { const o = {}; tr.querySelectorAll('[data-k]').forEach(e => o[e.dataset.k] = e.value); return o; }).filter(x => x.atividade); document.querySelectorAll('.vdDocSecC').forEach(e => { d.secoes[+e.dataset.i].conteudo = e.value; });
   }
-  async function salvar() {
-    lerForm(); lerDoc(); if (!PROP.cliente) return nota('Informe o cliente', 'error');
-    try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); if (PROP.dados.rfp_origem) rfpLog(PROP.dados.rfp_origem, PROP); } catch (e) { nota('Erro: ' + e.message, 'error'); }
-    try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); funilCarregar(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
+  async function salvar(silencioso) {
+    lerForm(); lerDoc(); if (!PROP.cliente) { if (silencioso) throw new Error('Informe o cliente para salvar'); return nota('Informe o cliente', 'error'); }
+    // v3.471: uma gravação só (antes gravava duas vezes seguidas)
+    try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; if (!silencioso) nota('Proposta ' + r.numero + ' salva'); if (PROP.dados.rfp_origem) rfpLog(PROP.dados.rfp_origem, PROP); try { funilCarregar(); } catch (_) {} return r; }
+    catch (e) { if (silencioso) throw e; nota('Erro: ' + e.message, 'error'); }
   }
   function docMarkdownParaPdf(txt) { return String(txt || '').split('\n').map(l => l.trim().startsWith('- ') ? { text: '• ' + l.trim().substring(2), margin: [8, 1, 0, 1] } : { text: l.replace(/\*\*/g, ''), margin: [0, 1, 0, 1] }); }
 
@@ -931,8 +940,9 @@
     b.innerHTML = `<div class="panel"><div class="ph"><div class="pt">💬 Copiloto da proposta</div><span style="font-size:10px;color:var(--t2);">discuta valores, escopo e texto — os ajustes viram botões para aplicar</span>${M.length ? '<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;margin-left:auto;" onclick="VD.chatLimpar()">Limpar conversa</button>' : ''}</div><div class="pb">
       <div id="vpChatLog" style="max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">${M.length ? M.map((m, i) => m.papel === 'usuario'
         ? `<div style="align-self:flex-end;max-width:85%;background:var(--blue, #00708A);color:#fff;border-radius:10px 10px 2px 10px;padding:8px 11px;font-size:11.5px;line-height:1.5;">${_md(m.texto)}</div>`
-        : `<div style="align-self:flex-start;max-width:92%;background:var(--bg4);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:11.5px;line-height:1.6;"><div class="ia-txt" data-ia-txt>${window.ATX_IA ? ATX_IA.md(m.texto) : _md(m.texto)}</div>${(m.acoes || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;">${m.acoes.map((a, k) => a.feito ? `<span style="font-size:10px;color:var(--green);">✓ ${esc(a.rotulo || a.tipo)}</span>` : `<button class="btn btn-p" style="font-size:10px;padding:4px 9px;" onclick="VD.chatAplicar(${i},${k})">⚡ ${esc(a.rotulo || a.tipo)}</button>`).join('')}</div>` : ''}</div>`).join('')
+        : `<div style="align-self:flex-start;max-width:92%;background:var(--bg4);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:10px 12px;font-size:11.5px;line-height:1.6;"><div class="ia-txt" data-ia-txt>${window.ATX_IA ? ATX_IA.md(m.texto) : _md(m.texto)}</div>${(m.acoes || []).filter(a => !a.feito).length > 1 ? `<div style="margin-top:7px;"><button class="btn btn-or" style="font-size:10px;padding:4px 10px;" onclick="VD.chatAplicarTodas(${i})">⚡ Aplicar todas (${m.acoes.filter(a => !a.feito).length})</button></div>` : ''}${(m.acoes || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;">${m.acoes.map((a, k) => a.feito ? `<span style="font-size:10px;color:var(--green);">✓ ${esc(a.rotulo || a.tipo)}</span>` : `<button class="btn btn-p" style="font-size:10px;padding:4px 9px;" onclick="VD.chatAplicar(${i},${k})">⚡ ${esc(a.rotulo || a.tipo)}</button>`).join('')}</div>` : ''}</div>`).join('')
         : `<div style="font-size:10.5px;color:var(--t3);">Pergunte sobre preço, desconto, margem, formato, escopo ou o texto. Exemplos:</div><div style="display:flex;flex-wrap:wrap;gap:5px;">${sug.map(t => `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.chatEnviar(${esc(JSON.stringify(t))})">${esc(t)}</button>`).join('')}</div>`}</div>
+      <div id="vpChatProg"></div>
       <div style="display:flex;gap:6px;align-items:flex-end;"><textarea class="fta" id="vpChatIn" style="min-height:44px;flex:1;" placeholder="Ex.: o cliente tem R$ 400 mil de orçamento — como ajusto sem cair abaixo da margem mínima?" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();VD.chatEnviar();}"></textarea>
         <button class="btn btn-or" id="vpChatBtn" onclick="VD.chatEnviar()">Enviar</button></div></div></div>`;
     const lg = $('vpChatLog'); if (lg) lg.scrollTop = lg.scrollHeight;
@@ -940,16 +950,23 @@
   async function chatEnviar(txt) {
     const inp = $('vpChatIn'); const t = String(txt || inp?.value || '').trim(); if (!t) return;
     lerForm(); lerDoc(); PROP.dados.chat = PROP.dados.chat || []; PROP.dados.chat.push({ papel: 'usuario', texto: t, em: new Date().toISOString() }); chatRender();
-    const fim = ocupado($('vpChatBtn'), 'Pensando...');
-    try { const r = await api('prop_chat', { proposta: PROP, mensagens: PROP.dados.chat.map(m => ({ papel: m.papel, texto: m.texto })) }, 100000);
+    const fim = ocupado($('vpChatBtn'), 'Pensando...'); const t0 = Date.now();
+    const tk = setInterval(() => { const sg = Math.round((Date.now() - t0) / 1000); _chatProg(`💭 O copiloto está analisando a proposta… ${sg}s (costuma levar 20 a 60s)`, Math.min(92, sg * 1.6)); }, 1000);
+    // v3.471: o copiloto passa a saber quais ações já foram aplicadas (antes respondia "não foi aplicado" para o que já estava aplicado)
+    const aplicadas = PROP.dados.chat.flatMap(m => (m.acoes || []).filter(a => a.feito).map(a => (a.rotulo || a.tipo) + (a.feito_em ? ' (aplicada em ' + a.feito_em + ')' : ' (aplicada)')));
+    try { const r = await api('prop_chat', { proposta: PROP, acoes_aplicadas: aplicadas, mensagens: PROP.dados.chat.map(m => ({ papel: m.papel, texto: m.texto + ((m.acoes || []).length ? '\n[botões desta resposta: ' + m.acoes.map(a => (a.rotulo || a.tipo) + (a.feito ? ' = APLICADO' : ' = não aplicado')).join('; ') + ']' : '') })) }, 100000);
       PROP.dados.chat.push({ papel: 'ia', texto: r.resposta, acoes: r.acoes || [], em: new Date().toISOString() }); }
     catch (e) { PROP.dados.chat.push({ papel: 'ia', texto: '⚠ ' + e.message, acoes: [] }); }
-    PROP.dados.chat = PROP.dados.chat.slice(-40); fim(); chatRender();
+    clearInterval(tk); PROP.dados.chat = PROP.dados.chat.slice(-40); fim(); chatRender();
     try { const els = document.querySelectorAll('#vpChatLog [data-ia-txt]'); const el = els[els.length - 1]; const ult = PROP.dados.chat[PROP.dados.chat.length - 1]; if (el && ult && ult.papel === 'ia' && window.ATX_IA) ATX_IA.fluir(el, ult.texto); } catch (_) {} // v3.399: fluidez
   }
+  const _chatProg = (h, pct, cor) => { const e = $('vpChatProg'); if (e) e.innerHTML = h ? `<div style="margin:0 0 8px;padding:8px 11px;border-radius:8px;border:1px solid var(--bd);background:var(--bg4);font-size:11px;color:${cor || 'var(--t1)'};">${h}${_barra(pct)}</div>` : ''; };
+  async function chatAplicarTodas(i) { const m = PROP.dados.chat?.[i]; if (!m) return; for (let k = 0; k < (m.acoes || []).length; k++) if (!m.acoes[k].feito) { const ok = await chatAplicar(i, k, true); if (ok === false) break; } await _chatSalvar(); }
+  async function _chatSalvar() { if (!PROP.cliente) { _chatProg('✅ Ajuste aplicado no documento. ⚠ Informe o cliente e clique em <b>Salvar</b> para gravar.', null, 'var(--gold)'); return; }
+    try { await salvar(true); _chatProg('✅ Aplicado e <b>salvo</b> (proposta ' + esc(PROP.numero || '') + '). O documento abaixo já mostra o texto novo.', null, 'var(--green)'); } catch (e) { _chatProg('⚠ Aplicado, mas não consegui salvar: ' + esc(e.message) + ' — clique em Salvar.', null, 'var(--red)'); } }
   function chatLimpar() { if (!confirm('Apagar a conversa desta proposta?')) return; PROP.dados.chat = []; chatRender(); }
-  async function chatAplicar(i, k) {
-    const m = PROP.dados.chat?.[i], a = m?.acoes?.[k]; if (!a) return; lerForm(); lerDoc(); const d = PROP.dados; const acha = n => (d.perfis || []).find(x => String(x.perfil).toLowerCase() === String(n || '').toLowerCase());
+  async function chatAplicar(i, k, emLote) {
+    const m = PROP.dados.chat?.[i], a = m?.acoes?.[k]; if (!a || a.feito) return; lerForm(); lerDoc(); const d = PROP.dados; const acha = n => (d.perfis || []).find(x => String(x.perfil).toLowerCase() === String(n || '').toLowerCase());
     let reanalisar = false;
     if (a.tipo === 'desconto') { d.descontos = { ...(d.descontos || {}), [a.formato]: +a.pct || 0 }; PROP.formato = a.formato; reanalisar = true; }
     else if (a.tipo === 'horas') { const p = acha(a.perfil); if (!p) return nota('Perfil não encontrado: ' + a.perfil, 'error'); p.horas = +a.horas || 0; reanalisar = true; }
@@ -961,11 +978,23 @@
     else if (a.tipo === 'formato') { PROP.formato = a.formato; if (PROP.analise) renderAnalise(); }
     else if (a.tipo === 'escopo_adicionar') { d.escopo = (d.escopo ? d.escopo + '\n\n' : '') + a.texto; }
     else if (a.tipo === 'secao') { if (!PROP.documento) return nota('Redija a proposta antes de mudar o texto', 'error'); const S = PROP.documento.secoes; const s0 = S.find(x => x.titulo.toLowerCase() === String(a.titulo).toLowerCase()); if (s0) s0.conteudo = a.conteudo; else S.push({ titulo: a.titulo, conteudo: a.conteudo }); }
-    else return nota('Ajuste não reconhecido', 'error');
-    a.feito = true; const docAntes = PROP.documento; preencherForm();
+    else if (a.tipo === 'reescrever') { // v3.471: reescreve seção por seção, com barra de andamento, e salva no fim
+      if (!PROP.documento) { nota('Redija a proposta antes de mudar o texto', 'error'); return false; }
+      const lista = (Array.isArray(a.secoes) ? a.secoes : [a.secoes]).filter(Boolean); const S = PROP.documento.secoes; const falhas = []; const t0 = Date.now();
+      for (let j = 0; j < lista.length; j++) { const tit = lista[j];
+        const tk = setInterval(() => _chatProg(`✍ Reescrevendo <b>${j + 1} de ${lista.length}</b>: “${esc(tit)}” · ${Math.round((Date.now() - t0) / 1000)}s`, Math.round(j / lista.length * 100) + 3), 1000);
+        try { let r = null; for (let t = 0; t < 2 && !r; t++) { try { r = await api('prop_secao', { proposta: PROP, titulo: tit, instrucao: a.instrucao || a.rotulo || '' }, 115000); } catch (e) { if (t === 1) throw e; } }
+          const s0 = S.find(x => String(x.titulo).toLowerCase().trim() === String(r.titulo).toLowerCase().trim()); if (s0) s0.conteudo = r.conteudo; else S.push({ titulo: r.titulo, conteudo: r.conteudo }); renderDoc(); }
+        catch (e) { falhas.push(tit + ': ' + e.message); } finally { clearInterval(tk); } }
+      if (falhas.length === lista.length) { _chatProg('⛔ Nada foi reescrito: ' + esc(falhas[0]) + ' — clique de novo no botão.', null, 'var(--red)'); chatRender(); return false; }
+      a.feito = true; a.feito_em = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); a.parcial = falhas.length ? falhas : undefined;
+      chatRender(); if (!emLote) await _chatSalvar();
+      if (falhas.length) _chatProg(`⚠ <b>Reescrita PARCIAL</b>: ${lista.length - falhas.length} de ${lista.length} seções reescritas e salvas. Falharam: ${esc(falhas.join(' · '))}. Peça de novo só essas.`, null, 'var(--red)');
+      return true; }
+    else { nota('Ajuste não reconhecido', 'error'); return false; }
+    a.feito = true; a.feito_em = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); const docAntes = PROP.documento; preencherForm();
     if (reanalisar && PROP.analise) { await analisar(); if (docAntes) nota('Preço recalculado — clique em ✍ Redigir de novo para o documento refletir o novo valor', 'info'); }
-    else nota('Ajuste aplicado — salve a proposta');
-    chatRender();
+    chatRender(); if (!emLote) await _chatSalvar(); return true;
   }
   // ═══ v3.366 · ESCOPO COMPLEMENTAR (IA) ═══
   const COMPL_DEC = { incluir: 'Incluir no escopo', opcional: 'Opcional (à parte)', ignorar: 'Não usar' };
@@ -1434,5 +1463,5 @@
 
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo, simAbrir, simFechar, simSet, simRender, simAplicar, simPadrao };
+    chatAplicarTodas, aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo, simAbrir, simFechar, simSet, simRender, simAplicar, simPadrao };
 })();

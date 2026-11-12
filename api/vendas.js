@@ -571,7 +571,7 @@ async function clienteChecar({ cliente } = {}) {
 }
 // ═══════════════════════ v3.366 · ESCOPO COMPLEMENTAR E APRESENTAÇÃO DA SOLUÇÃO ═══════════════════════
 // v3.375 · copiloto da proposta: conversa sobre valores, escopo e texto, devolvendo ajustes que o usuário aplica com um clique
-async function propChat({ proposta, mensagens } = {}) {
+async function propChat({ proposta, mensagens, acoes_aplicadas } = {}) {
   const pr = proposta || {}, d = pr.dados || {}, A = pr.analise || {};
   const hist = (mensagens || []).filter(m => m && m.texto).slice(-14);
   if (!hist.length || hist[hist.length - 1].papel !== 'usuario') throw new Error('Escreva uma mensagem');
@@ -585,7 +585,9 @@ async function propChat({ proposta, mensagens } = {}) {
     rate_card: rc.map(x => ({ perfil: x.perfil, custo_hora: x.custo_hora, piso: x.preco_piso, alvo: x.preco_alvo, teto: x.preco_teto })).slice(0, 30),
     parametros: { margem_min_pct: params.margem_min_pct, margem_alvo_pct: params.margem_alvo_pct, overhead_pct: params.overhead_pct, impostos_por_ano: params.impostos_por_ano, contingencia: params.contingencia, desconto_recorrente_pct: params.desconto_recorrente_pct },
     analise: A.formatos ? { formato_escolhido: pr.formato, recomendado: A.recomendado, metas: A.metas, custos: { custo_total: A.custos?.custo_total, preco_minimo: A.custos?.preco_minimo, preco_alvo: A.custos?.preco_alvo, impostos_efetivo_pct: A.custos?.impostos_efetivo_pct }, formatos: fmts } : 'ainda não analisada',
-    documento: pr.documento ? (pr.documento.secoes || []).map(x => ({ titulo: x.titulo, conteudo: String(x.conteudo || '').substring(0, 600) })) : 'ainda não redigido',
+    documento: pr.documento ? (pr.documento.secoes || []).map(x => ({ titulo: x.titulo, tamanho: String(x.conteudo || '').length, inicio: String(x.conteudo || '').substring(0, 500) })) : 'ainda não redigido',
+    // v3.471: o que o fundador já aplicou pelos botões (o copiloto não aplica nada sozinho)
+    acoes_aplicadas: Array.isArray(acoes_aplicadas) ? acoes_aplicadas.slice(-20) : [],
   };
   const sys = `Você é o copiloto comercial e financeiro da Atlantyx (consultoria de dados, BI, engenharia de dados e IA, 17 anos) ajudando o fundador a ajustar UMA proposta. Português do Brasil, direto, com números.
 Regras: use só os números do CONTEXTO (não invente custos, metas ou preços de mercado específicos); quando estimar, diga que é estimativa. Nunca sugira preço abaixo do piso (margem mínima) sem dizer claramente o impacto na margem. Lembre que desconto em proposta acima de 12 meses precisa de reajuste IPCA. Para mudar preço prefira: tirar escopo, faseamento, mudar formato, ajustar horas ou mix de perfis, antes de desconto puro.
@@ -599,11 +601,25 @@ ${instrucoes ? 'Instruções do dono: ' + String(instrucoes).substring(0, 1500) 
 {"tipo":"risco","valor":"baixo|medio|alto","rotulo":"..."}
 {"tipo":"formato","formato":"tm|fechado|mensal|hibrido|poc","rotulo":"..."}
 {"tipo":"escopo_adicionar","texto":"linhas em markdown","rotulo":"..."}
-{"tipo":"secao","titulo":"título exato de uma seção do documento ou novo","conteudo":"texto completo novo da seção","rotulo":"..."}
-"rotulo" = frase curta do botão (ex.: "Aplicar 8% de desconto no escopo fechado").`;
+{"tipo":"reescrever","secoes":["título exato de seção do documento (ou novo)", "..."],"instrucao":"o que deve mudar no texto, com os números e cenários a usar","rotulo":"..."}
+"rotulo" = frase curta do botão (ex.: "Aplicar 8% de desconto no escopo fechado").
+COMO O DOCUMENTO MUDA (v3.471): você NÃO escreve o texto das seções aqui. Para mudar texto use UMA ação "reescrever" listando as seções (quantas forem) e a instrução; quando o fundador clicar, o sistema reescreve seção por seção com barra de andamento e salva. Você não executa nada fora dos botões desta resposta e não existe "depois": NUNCA diga "vou gerar", "estou gerando", "as ações estão sendo geradas" ou "aguarde". Se o fundador perguntar se algo já foi aplicado/sobrescrito, responda pelo campo acoes_aplicadas do CONTEXTO (e pelo início/tamanho das seções); se não foi, devolva de novo a ação e diga para clicar nela.`;
   const conversa = hist.map(m => (m.papel === 'usuario' ? 'FUNDADOR: ' : 'COPILOTO: ') + String(m.texto).substring(0, 3000)).join('\n\n');
-  const r = json(await claude(sys, `CONTEXTO DA PROPOSTA:\n${JSON.stringify(ctx).substring(0, 22000)}\n\nCONVERSA:\n${conversa}\n\nResponda à última mensagem do FUNDADOR.`, 3000, 90000));
-  return { resposta: String(r.resposta || ''), acoes: Array.isArray(r.acoes) ? r.acoes.slice(0, 6) : [] };
+  const r = json(await claude(sys, `CONTEXTO DA PROPOSTA:\n${JSON.stringify(ctx).substring(0, 22000)}\n\nCONVERSA:\n${conversa}\n\nResponda à última mensagem do FUNDADOR.`, 2500, 80000));
+  const acoes = (Array.isArray(r.acoes) ? r.acoes : []).filter(a => a && a.tipo).map(a => a.tipo === 'secao' && String(a.conteudo || '').length < 40 ? { tipo: 'reescrever', secoes: [a.titulo], instrucao: a.conteudo || '', rotulo: a.rotulo } : a).slice(0, 6);
+  return { resposta: String(r.resposta || ''), acoes };
+}
+// v3.471: reescreve UMA seção do documento (chamada pelo botão "reescrever" do copiloto, seção por seção, com barra de andamento)
+async function propSecao({ proposta, titulo, instrucao } = {}) {
+  const pr = proposta || {}, d = pr.dados || {}, A = pr.analise || {}, doc = pr.documento || {};
+  if (!titulo) throw new Error('Informe a seção');
+  const atual = (doc.secoes || []).find(x => String(x.titulo || '').toLowerCase().trim() === String(titulo).toLowerCase().trim());
+  const fmt = (A.formatos || []).map(f => ({ formato: f.formato, nome: f.nome, valor_total: f.valor_total, mensal: f.valor_mensal_medio, desconto_pct: f.desconto_aplicado_pct, margem_pct: f.margem_pct }));
+  const sys = 'Você é redator sênior de propostas da Atlantyx (dados, BI, engenharia de dados e IA, 17 anos). Reescreva UMA seção de uma proposta comercial seguindo a instrução do fundador. Português do Brasil, tom profissional e persuasivo, markdown simples (parágrafos, listas com "- ", **negrito**, tabelas markdown quando houver cenários/valores). Use só números do contexto; o que faltar escreva [a confirmar]. Responda SÓ com o texto da seção, sem o título e sem comentários.';
+  const usr = `CLIENTE: ${pr.cliente || ''}\nTÍTULO DA PROPOSTA: ${pr.titulo || ''}\nFORMATO ESCOLHIDO: ${pr.formato || ''}\nFORMATOS E VALORES: ${JSON.stringify(fmt).substring(0, 2500)}\nPRAZO: ${d.meses || ''} meses\nESCOPO (resumo): ${String(d.escopo || '').substring(0, 3500)}\nOUTRAS SEÇÕES: ${(doc.secoes || []).map(x => x.titulo).join(' | ')}\n\nSEÇÃO A REESCREVER: ${titulo}\nTEXTO ATUAL:\n${atual ? String(atual.conteudo || '').substring(0, 5000) : '(seção nova)'}\n\nINSTRUÇÃO DO FUNDADOR:\n${String(instrucao || '').substring(0, 3000)}`;
+  const txt = String(await claudeStream(sys, usr, 3000, 95000) || '').replace(/^```(markdown)?|```$/g, '').trim();
+  if (txt.length < 30) throw new Error('A IA devolveu um texto vazio para "' + titulo + '"');
+  return { titulo: atual?.titulo || titulo, conteudo: txt, nova: !atual };
 }
 // briefing (o que é o projeto / solução, em texto livre) → escopo completo e editável
 async function escopoBriefing({ briefing, cliente, tipo_demanda, tipo_documento, meses, poc } = {}) {
@@ -908,6 +924,7 @@ async function handler(req, res) {
     redigir: () => redigir(payload),
     cliente_checar: () => clienteChecar(payload),
     prop_chat: () => propChat(payload),
+    prop_secao: () => propSecao(payload), // v3.471
     prop_salvar: () => propSalvar(payload),
     prop_listar: () => sqlRun(async sql => ({ propostas: await sql`SELECT id, numero, cliente, contato, titulo, status, formato, valor_total, valor_mensal, meses, margem_pct, motivo_resultado, projeto_id, criado_em, enviada_em, fechada_em, atualizado_em, documento->>'validade_dias' AS validade_dias FROM propostas ORDER BY atualizado_em DESC LIMIT 300` })),
     prop_obter: () => sqlRun(async sql => ({ proposta: (await sql`SELECT * FROM propostas WHERE id = ${payload.id}`)[0] || null })),
