@@ -213,7 +213,7 @@
     const id = arrastando; arrastando = null; if (!id) return; const c = D.cards.find(x => x.id === id); if (!c || c.etapa === para) return;
     const e = D.etapas.find(x => x.id === para); let ate = null, motivo = '';
     if (para === 'congelado') { ate = prompt('Congelar até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
-    else if (!confirm(`Mover "${c.nome}" para ${e.nome}?` + (c.tipo === 'contato' && ['reuniao', 'proposta', 'negociacao'].includes(para) ? '\n\nUm NEGÓCIO será criado no HubSpot para este contato.' : '\n\nA etapa muda também no HubSpot.'))) return;
+    else if (!confirm(`Mover "${c.nome}" para ${e.nome}?` + (para === 'iara' ? '\n\nO contato entra no fluxo da IARA (atendido_pela_ia = true no HubSpot). Não precisa de negócio.' : c.tipo === 'contato' && ['reuniao', 'proposta', 'negociacao'].includes(para) ? '\n\nUm NEGÓCIO será criado no HubSpot para este contato.' : '\n\nA etapa muda também no HubSpot.'))) return;
     try { const r = await api('floresta_mover', { card_id: id, para, congelar_ate: ate, motivo }); nota(r.resultado || 'Movido'); await carregar(true); } catch (e2) { nota('Erro: ' + e2.message, 'error'); }
   }
   async function congelar(id) { arrastando = id; document.getElementById('flModal')?.remove(); await soltar('congelado'); }
