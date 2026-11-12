@@ -127,7 +127,9 @@ async function handler(req, res) {
       const buscaPessoa = !!params.nome_exato || !!params.q_organization_domains_list?.length && !!params.q_keywords;
       body.person_seniorities = params.person_seniorities?.length ? params.person_seniorities : (buscaPessoa ? undefined : APOLLO_SENIORIDADES);
       if (!body.person_seniorities) delete body.person_seniorities;
-      if (!buscaPessoa) body.organization_num_employees_ranges = params.organization_num_employees_ranges?.length ? params.organization_num_employees_ranges : APOLLO_PORTES;
+      // v3.470: empresas já escolhidas (lista do Apollo com intenção de compra / visitantes do site) — não aplica filtro de porte
+      const orgIds = (params.organization_ids || []).filter(Boolean); if (orgIds.length) body.organization_ids = orgIds;
+      if (!buscaPessoa && !orgIds.length && !params.q_organization_domains_list?.length) body.organization_num_employees_ranges = params.organization_num_employees_ranges?.length ? params.organization_num_employees_ranges : APOLLO_PORTES;
       if (params.q_keywords) body.q_keywords = params.q_keywords;
       if (params.q_organization_domains_list?.length) body.q_organization_domains_list = params.q_organization_domains_list;
 
@@ -178,6 +180,47 @@ async function handler(req, res) {
       console.log('[Apollo] busca', JSON.stringify(body).substring(0, 300), '→', JSON.stringify(data._stats));
       return data;
     };
+    // ═══ v3.470: LEADS MORNOS — listas salvas no Apollo (montadas na tela do Apollo com Buying Intent / Website Visitors,
+    // que não existem na API pública). listas = suas listas; lista_pessoas = decisores das EMPRESAS da lista (lista de
+    // empresas → busca de pessoas por organization_ids, 0 crédito) ou as PESSOAS da lista (lista de contatos).
+    if (action === 'listas') {
+      const r = await fetch('https://api.apollo.io/api/v1/labels', { headers }); const t = await r.text();
+      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + t.substring(0, 200) + (r.status === 403 ? ' — a chave precisa ser Master API key (ou ter permissão para listas)' : '') });
+      const L = (safeJsonParse(t, 'labels') || []); const arr = Array.isArray(L) ? L : (L.labels || []);
+      return res.status(200).json({ success: true, listas: arr.filter(x => ['accounts', 'contacts'].includes(x.modality)).map(x => ({ id: x.id || x._id, nome: x.name, tipo: x.modality, qtd: x.cached_count ?? null, atualizada: x.updated_at || null }))
+        .sort((a, b) => String(b.atualizada || '').localeCompare(String(a.atualizada || ''))) });
+    }
+    if (action === 'lista_pessoas') {
+      const lid = params.lista_id; if (!lid) return res.status(400).json({ success: false, error: 'lista_id obrigatório' });
+      const quer = Math.min(parseInt(params.per_page) || 50, 200);
+      if (params.lista_tipo === 'contacts') {
+        let people = [], pg = 1, total = null;
+        while (people.length < quer && pg <= 5) { const r = await fetch('https://api.apollo.io/api/v1/contacts/search', { method: 'POST', headers, body: JSON.stringify({ contact_label_ids: [lid], page: pg, per_page: 100 }) });
+          const t = await r.text(); if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + t.substring(0, 200) });
+          const d = safeJsonParse(t, 'contacts_search'); total = d.pagination?.total_entries ?? total; const cs = d.contacts || []; if (!cs.length) break;
+          people = people.concat(cs.map(c => ({ id: c.person_id || c.id, first_name: c.first_name, last_name: c.last_name, name: c.name, title: c.title, email: c.email, phone_numbers: c.phone_numbers || (c.sanitized_phone ? [{ sanitized_number: c.sanitized_phone }] : []),
+            linkedin_url: c.linkedin_url, city: c.city, state: c.state, country: c.country, organization: c.organization || { name: c.organization_name }, organization_name: c.organization_name }))); pg++; }
+        people = people.filter(p => classificarCargo(p.title) !== 'fora').slice(0, quer);
+        return res.status(200).json({ success: true, people, _stats: { total_apollo: total, apos_conferencia: people.length } });
+      }
+      // lista de EMPRESAS → ids das organizações → decisores (mesmo filtro de cargo/senioridade da busca)
+      let orgs = [], pg = 1, totalEmp = null;
+      while (pg <= 5) { const r = await fetch('https://api.apollo.io/api/v1/accounts/search', { method: 'POST', headers, body: JSON.stringify({ account_label_ids: [lid], page: pg, per_page: 100 }) });
+        const t = await r.text(); if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + t.substring(0, 200) });
+        const d = safeJsonParse(t, 'accounts_search'); totalEmp = d.pagination?.total_entries ?? totalEmp; const as = d.accounts || []; if (!as.length) break;
+        orgs = orgs.concat(as.map(a => ({ org: a.organization_id || null, dom: String(a.domain || a.website_url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase() || null, nome: a.name })));
+        if (as.length < 100) break; pg++; }
+      if (!orgs.length) return res.status(200).json({ success: true, people: [], _stats: { total_apollo: 0, apos_conferencia: 0, empresas: 0 } });
+      const ids = [...new Set(orgs.map(o => o.org).filter(Boolean))], doms = [...new Set(orgs.filter(o => !o.org).map(o => o.dom).filter(Boolean))];
+      let people = [], total = 0;
+      const lotes = []; for (let i = 0; i < ids.length; i += 100) lotes.push({ organization_ids: ids.slice(i, i + 100) }); for (let i = 0; i < doms.length; i += 100) lotes.push({ q_organization_domains_list: doms.slice(i, i + 100) });
+      for (const lt of lotes) { if (people.length >= quer) break;
+        const d = await _peopleSearch({ person_titles: params.person_titles, cargo_estrito: params.cargo_estrito, person_locations: params.person_locations, per_page: 100, ...lt });
+        total += d._stats?.total_apollo || 0; people = people.concat(d.people || []); }
+      people = people.slice(0, quer);
+      return res.status(200).json({ success: true, people, _stats: { total_apollo: total, apos_conferencia: people.length, empresas: orgs.length, empresas_total: totalEmp } });
+    }
+
     if (action === 'people_search') {
       try { const data = await _peopleSearch(params); return res.status(200).json({ success: true, ...data }); }
       catch (e) { if (e.enviado) return res.status(e.status || 500).json({ success: false, error: e.message, enviado: e.enviado }); throw e; }

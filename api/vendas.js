@@ -845,10 +845,11 @@ async function _todoCriar(itens, origem) {
   await m.default({ method: 'POST', body: { action: 'criar_lote', itens, origem_ia: origem, contexto: 'Floresta de Vendas' }, query: {}, headers: {}, url: '/api/todo' }, res);
   if (!out || out.success === false) throw new Error(out?.error || 'To-do sem resposta'); return out;
 }
-async function _apolloBuscar(params) { // v3.441: mesma busca da tela de prospecção (people_search, sem crédito)
+async function _apolloBuscar(params, acao) { // v3.441: mesma busca da tela de prospecção (people_search, sem crédito) · v3.470: listas do Apollo (mornos)
+  acao = acao || (params.lista_id ? 'lista_pessoas' : 'people_search');
   const m = await import('./apollo.js'); let out = null, st = 200;
   const res = { statusCode: 200, status(c) { st = c; return this; }, json(o) { out = o; return this; }, setHeader() {}, end() { return this; } };
-  const chamar = async b => { out = null; st = 200; await m.default({ method: 'POST', body: { action: 'people_search', ...b }, query: {}, headers: {}, url: '/api/apollo' }, res); };
+  const chamar = async b => { out = null; st = 200; await m.default({ method: 'POST', body: { action: acao, ...b }, query: {}, headers: {}, url: '/api/apollo' }, res); };
   await chamar(params);
   // v3.469: a chave salva no navegador (tela de credenciais) tem prioridade; se ela for inválida (401), tenta de novo com a APOLLO_API_KEY da Vercel
   const invalida = () => !out || out.success === false ? /401|API_KEY_INVALID|Invalid API key/i.test(String(out?.error || '') + ' ' + st) : false;
@@ -937,6 +938,7 @@ async function handler(req, res) {
     floresta_iara_enviar: () => floresta().iaraEnviar(payload, req.sessao?.login),
     floresta_apollo: () => floresta().apolloBuscar(payload),                 // v3.441: leads frios do Apollo
     floresta_importar: () => floresta().importar(payload),
+    floresta_apollo_listas: async () => { const d = await _apolloBuscar(payload, 'listas'); return { listas: d.listas || [], aviso: d.aviso_chave || null }; }, // v3.470
     floresta_lote: () => floresta().lote(payload, req.sessao?.login),        // v3.442: remarketing / excluir em lote
     floresta_iara_fluxo: () => floresta().iaraFluxo(payload),                // v3.445: Fluxo IA = IA no HubSpot
     floresta_ligacao: () => floresta().ligacao(payload, req.sessao?.login),                 // v3.463: 📞 entrar/sair da abordagem telefônica
