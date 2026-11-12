@@ -30,19 +30,37 @@
 
   // ───────────── texto redigido (markdown simples) → blocos ─────────────
   // "### título" ou "N.N Título" → subtítulo · "- item" → marcador · "a) texto" → alínea · "**Rótulo:** texto" → rótulo
+  // v3.472: tabela markdown (| a | b |) → tabela de verdade no Word/PDF · "> texto" → nota em itálico (antes saíam os caracteres)
+  const _celulas = l => l.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  const _ehSep = l => /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(l) && l.includes('-');
+  function _tabelaMd(ls) {
+    const rows = ls.filter(l => !_ehSep(l)).map(_celulas); if (!rows.length) return null;
+    const sep = ls.find(_ehSep); const al = sep ? _celulas(sep).map(c => /^:-+:$/.test(c) ? 'center' : /-+:$/.test(c) ? 'right' : null) : [];
+    const n = Math.max(...rows.map(r => r.length)); const norm = r => Array.from({ length: n }, (_, k) => r[k] ?? '');
+    const cab = norm(rows[0]).map(c => c.replace(/\*\*/g, '')), linhas = rows.slice(1).map(norm);
+    const peso = cab.map((h, k) => Math.max(6, Math.min(40, Math.max(h.length, ...linhas.map(r => String(r[k]).replace(/\*\*/g, '').length)))));
+    const soma = peso.reduce((a, x) => a + x, 0); const larguras = peso.map(w => Math.floor(w / soma * 9350));
+    const ult = linhas[linhas.length - 1] || []; const total = /^\**\s*total/i.test(String(ult[0] || ''));
+    return { t: 'tabela', cab, linhas, larguras, alinhar: Array.from({ length: n }, (_, k) => al[k] || (k > 0 && linhas.every(r => /^\**\s*(R\$|[\d.,%]+\s*(h|%)?\s*\**$|—|-)/.test(String(r[k]).trim()) || !String(r[k]).trim()) ? 'right' : null)), total };
+  }
   function mdBlocos(t) {
-    const out = []; let par = [];
+    const out = []; let par = [], tab = [];
+    const fechaTab = () => { if (tab.length) { const b = tab.length >= 2 ? _tabelaMd(tab) : null; if (b && b.linhas.length) out.push(b); else tab.forEach(l => out.push({ t: 'p', texto: _celulas(l).join(' · ') })); tab = []; } };
     const fecha = () => { if (par.length) { out.push({ t: 'p', texto: par.join(' ') }); par = []; } };
     String(t || '').replace(/\r/g, '').split('\n').forEach(l0 => { const l = l0.trim();
+      if (/^\|.*\|$/.test(l) || (tab.length && _ehSep(l))) { fecha(); tab.push(l); return; }
+      fechaTab();
       if (!l) return fecha();
       let m;
+      if ((m = l.match(/^>\s?(.*)$/))) { fecha(); if (m[1].trim()) out.push({ t: 'nota', texto: m[1].trim() }); return; }
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(l)) { fecha(); return; }
       if ((m = l.match(/^#{1,6}\s*(.+)$/))) { fecha(); out.push({ t: 'sub', texto: m[1].replace(/\*\*/g, '') }); }
       else if (/^\d+\.\d+(\.\d+)?\s+\S/.test(l) && l.length < 110) { fecha(); out.push({ t: 'sub', texto: l.replace(/\*\*/g, '') }); }
       else if ((m = l.match(/^[-•*]\s+(.+)$/))) { fecha(); out.push({ t: 'bullet', texto: m[1] }); }
       else if ((m = l.match(/^([a-z])\)\s+(.+)$/i))) { fecha(); out.push({ t: 'alinea', letra: m[1].toLowerCase(), texto: m[2] }); }
       else if ((m = l.match(/^\*\*([^*]{2,80}?):?\*\*:?\s*(.*)$/))) { fecha(); out.push({ t: 'rotulo', rotulo: m[1].replace(/:$/, '') + ':', texto: m[2] }); }
       else { fecha(); par.push(l); fecha(); } // cada linha é um parágrafo (cartas e endereçamentos ficam em linhas próprias)
-    }); fecha(); return out;
+    }); fechaTab(); fecha(); return out;
   }
   // **negrito** dentro do texto → segmentos
   const segs = t => String(t || '').split(/(\*\*[^*]+\*\*)/).filter(Boolean).map(s => /^\*\*.+\*\*$/.test(s) ? { b: true, s: s.slice(2, -2) } : { s });
