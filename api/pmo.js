@@ -885,8 +885,8 @@ async function maestroPainel({ forcar } = {}) {
     // v3.479: TAREFAS do cronograma — em atraso (fim passou e não concluída) e com tendência de atraso (vence em até 14 dias e está
     // 15pp+ abaixo do previsto, ou já devia ter começado e está em 0%)
     const _tar = (() => { const ts2 = Array.isArray(wbs[nome]) ? wbs[nome] : [], fol = ts2.filter((t, i) => !(ts2[i + 1] && (ts2[i + 1].level || 0) > (t.level || 0)));
-      const ok = t => t.status === 'Concluída' || t.status === 'Cancelada' || pctFolha(t) === 100, lim = addDias(hoje, 14), out = { atraso: [], risco: [] };
-      fol.forEach(t => { if (ok(t)) return; const fim = String(t.fim || '').slice(0, 10), ini = String(t.inicio || '').slice(0, 10), rp = pctFolha(t) || 0, pv = pctPrev(t);
+      const ok = t => /conclu|cancel/i.test(String(t.status || '')) || parseInt(t.pct || 0) >= 100, lim /* v3.481: mesma regra do Maestro (status/percentual da tarefa) — antes a tarefa com horas apontadas ≥ estimadas virava 100% e saía da lista de atraso */ = addDias(hoje, 14), out = { atraso: [], risco: [] };
+      fol.forEach(t => { if (ok(t)) return; const fim = String(t.fim || '').slice(0, 10), ini = String(t.inicio || '').slice(0, 10), rp = parseInt(t.pct || 0) || 0, pv = pctPrev(t);
         const nm = String(t.nome || t.tarefa || t.titulo || t.name || 'tarefa').substring(0, 70), resp = String(t.responsavel || t.recurso || t.resp || '').substring(0, 30);
         if (fim && fim < hoje) out.atraso.push({ nome: nm, resp, fim, dias: dias(fim), pct: rp });
         else if (fim && fim <= lim && ((pv != null && rp < pv - 15) || (ini && ini <= hoje && rp === 0))) out.risco.push({ nome: nm, resp, fim, pct: rp, previsto: pv }); });
