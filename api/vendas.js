@@ -933,6 +933,9 @@ async function handler(req, res) {
     floresta_importar: () => floresta().importar(payload),
     floresta_lote: () => floresta().lote(payload, req.sessao?.login),        // v3.442: remarketing / excluir em lote
     floresta_iara_fluxo: () => floresta().iaraFluxo(payload),                // v3.445: Fluxo IA = IA no HubSpot
+    floresta_ligacao: () => floresta().ligacao(payload, req.sessao?.login),                 // v3.463: 📞 entrar/sair da abordagem telefônica
+    floresta_ligacao_resultado: () => floresta().ligacaoResultado(payload, req.sessao?.login),
+    floresta_ligacao_placar: () => floresta().ligacaoPlacar(),
     floresta_abordagem: () => floresta().abordagemSalvar(payload),
     floresta_props_ia: () => floresta().propsIA(true),
     floresta_remarketing_lista: () => floresta().remarketingLista(),
