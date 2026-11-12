@@ -25,3 +25,5 @@ ID: 2026-10-11-tv-conferir-qualidade · Trilha: T4
 - 12/11/2026 · v3.474 · ok · — · conferir na TV com dados reais
 - [x] v3.475 · Qualidade (TV): cada cartão responde uma pergunta com um número grande e um "O que fazer"; termos mostram o R$ parado nos termos com pendência; QuickBooks deixa de somar "registros com erro" (somava meses + lançamentos + contas) e mostra quantos problemas há; o cartão de Projetos (repetia o slide de Projetos) deu lugar ao "Cadastro no HubSpot" (negócios abertos sem valor, por etapa — eles não entram no pipeline da tela de Vendas); selo de status no lugar do semáforo grande.
 - 12/11/2026 · v3.475 · ok · — · —
+- [x] v3.476 · gráfico "Evolução no ano" sobrepunha o título do painel na TV real (altura fixa em px): barras agora em % da altura real do painel, com espaço reservado para o valor em cima.
+- 12/11/2026 · v3.476 · ok · — · —

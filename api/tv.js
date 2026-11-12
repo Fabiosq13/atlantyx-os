@@ -245,14 +245,16 @@ function barra(p,marca){p=nz(p)?0:Math.max(0,Math.min(100,p));return '<div class
 function k(l,v,s,cls,extra){return '<div class="k '+(cls||'')+'"><div class="l">'+l+'</div><div class="v">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+(extra||'')+'</div>'}
 var MES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function grafico(m){ if(!m||!m.length)return '<div class="erro">Sem a série mensal do QuickBooks agora.</div>';
-  /* v3.474: barras em HTML (o SVG esticado deformava os textos do eixo) com o valor em cima de cada mês */
-  var mx=1,HB=140;m.forEach(function(x){mx=Math.max(mx,x.faturamento||0,Math.abs(x.lucro||0))});
-  var col=m.map(function(x){var mi=parseInt(String(x.mes).substring(5,7),10)-1,f=x.faturamento||0,l=x.lucro||0;
-    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:0"><div style="height:'+(HB+26)+'px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:6px">'
-     +'<div style="width:44%;display:flex;flex-direction:column;justify-content:flex-end"><div style="font-size:16px;color:#AAB6D8;text-align:center;white-space:nowrap">'+brl(f).replace('R$ ','')+'</div><div style="height:'+Math.max(2,Math.round(f/mx*HB))+'px;background:#00C4CC;border-radius:6px 6px 0 0;margin-top:4px"></div></div>'
-     +'<div style="width:28%;display:flex;flex-direction:column;justify-content:flex-end"><div style="height:'+Math.max(2,Math.round(Math.abs(l)/mx*HB))+'px;background:'+(l>=0?'#2EE6A6':'#FF5C7A')+';border-radius:6px 6px 0 0"></div></div></div>'
-     +'<div style="font-size:18px;color:#8E9BC0;margin-top:6px;border-top:1px solid #26335F;width:100%;text-align:center;padding-top:4px">'+(MES[mi]||x.mes)+'</div></div>'}).join('');
-  return '<div style="flex:1;min-height:0;display:flex;gap:10px;align-items:flex-end;padding-top:6px">'+col+'</div><div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px;"><span style="color:#00C4CC">■</span> faturamento (valor em cima) &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
+  /* v3.476: barras posicionadas por % da ALTURA REAL do painel (antes altura fixa em px estourava o painel e cobria o título) */
+  var mx=1;m.forEach(function(x){mx=Math.max(mx,x.faturamento||0,Math.abs(x.lucro||0))});
+  var col=m.map(function(x){var mi=parseInt(String(x.mes).substring(5,7),10)-1,f=x.faturamento||0,l=x.lucro||0,hf=Math.max(0.6,f/mx*80),hl=Math.max(0.6,Math.abs(l)/mx*80);
+    return '<div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">'
+     +'<div style="flex:1;position:relative;min-height:0">'
+     +'<div style="position:absolute;left:6%;width:50%;bottom:calc('+hf+'% + 4px);text-align:center;font-size:16px;color:#AAB6D8;white-space:nowrap">'+brl(f).replace('R$ ','')+'</div>'
+     +'<div style="position:absolute;left:6%;width:50%;bottom:0;height:'+hf+'%;background:#00C4CC;border-radius:6px 6px 0 0"></div>'
+     +'<div style="position:absolute;left:62%;width:30%;bottom:0;height:'+hl+'%;background:'+(l>=0?'#2EE6A6':'#FF5C7A')+';border-radius:6px 6px 0 0" title="'+brl(l)+'"></div></div>'
+     +'<div style="font-size:18px;color:#8E9BC0;border-top:1px solid #26335F;text-align:center;padding-top:4px">'+(MES[mi]||x.mes)+'</div></div>'}).join('');
+  return '<div style="flex:1;min-height:0;display:flex;gap:10px;margin-top:4px">'+col+'</div><div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px;"><span style="color:#00C4CC">■</span> faturamento (valor em cima) &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
 function brlI(v){return nz(v)?'—':(v<0?'−':'')+'R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')}var brlI0=brlI;
 function luz(f){return '<div class="luz">'+['vermelho','amarelo','verde'].map(function(c){return '<span style="background:'+(f===c?cor(c):'#1A2447')+';'+(f===c?'box-shadow:0 0 25.9px '+cor(c):'')+'"></span>'}).join('')+'</div>'}
 function clsF(f){return f==='verde'?'ok':f==='amarelo'?'at':f==='vermelho'?'cr':''}
