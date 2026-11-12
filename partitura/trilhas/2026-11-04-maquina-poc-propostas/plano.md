@@ -37,3 +37,5 @@
 - 12/11/2026 · v3.471 · ok · — · fundador testar a reescrita com 3 cenários na proposta real
 - [x] v3.472 · Word/PDF da proposta: tabela markdown (| a | b | com linha |---|) virava texto com os caracteres; agora vira tabela de verdade no modelo oficial (cabeçalho azul, zebra, valores alinhados à direita, alinhamento :-: / --: respeitado). "> texto" vira nota em itálico e "---" solto some.
 - 12/11/2026 · v3.472 · ok · — · —
+- [x] v3.473 · capítulo CORTADO (ex.: "Prazo e Forma de Pagamento" só com "…|Impl" e página em branco): o servidor detecta a resposta da IA cortada no limite e descarta o capítulo pela metade; capítulo com menos de 60 caracteres conta como em branco; ao fim da redação há uma 2ª passada automática só para os que faltaram; a última parte foi dividida em duas (suporte+pagamento / validade+aceite) e o limite subiu de 4000 para 5000 tokens.
+- 12/11/2026 · v3.473 · ok · — · na proposta já gerada: "Completar capítulos em branco"

@@ -601,9 +601,9 @@
   }
   function escolher(f) { PROP.formato = f; renderAnalise(); cronoRender(); }
   // v3.382 · redação por partes: cada parte é uma chamada própria (2 ao mesmo tempo, com repetição) — nenhum capítulo fica em branco
-  const RED_PARTES = [['escopo'], ['carta', 'apresentacao'], ['contexto', 'objetivos', 'diferenciais'], ['entregaveis', 'equipe'], ['resumo_escopo', 'investimento', 'rate_card', 'bonus'], ['premissas_exec', 'premissas_com'], ['garantias'], ['suporte', 'pagamento', 'validade', 'aceite']];
+  const RED_PARTES = [['escopo'], ['carta', 'apresentacao'], ['contexto', 'objetivos', 'diferenciais'], ['entregaveis', 'equipe'], ['resumo_escopo', 'investimento', 'rate_card', 'bonus'], ['premissas_exec', 'premissas_com'], ['garantias'], ['suporte', 'pagamento'], ['validade', 'aceite']];
   const RED_ORDEM = RED_PARTES.flat();
-  const _vazios = () => { const S = PROP.documento?.secoes || []; return RED_ORDEM.filter(k => !String(S.find(x => x.chave === k)?.conteudo || '').trim()); };
+  const _vazios = () => { const S = PROP.documento?.secoes || []; return RED_ORDEM.filter(k => String(S.find(x => x.chave === k)?.conteudo || '').trim().length < 60); }; // v3.473: capítulo cortado (só título/meia linha) conta como em branco
   let _redRodando = false;
   // v3.471: barra de andamento (pct 0–100; null = sem barra)
   const _barra = pct => pct == null ? '' : `<div style="height:7px;border-radius:5px;background:var(--bd);overflow:hidden;margin-top:7px;"><div style="height:100%;width:${Math.max(3, Math.min(100, pct))}%;background:linear-gradient(90deg,#00708A,#00C4CC);transition:width .6s;"></div></div>`;
@@ -651,6 +651,11 @@
           await espera(lim ? 45 : 5, lim ? 'Limite de uso da IA atingido, aguardando para continuar' : 'Tentando de novo'); prog(); } } };
     // v3.471: 3 partes ao mesmo tempo (antes 1 por vez — 10+ min); escopo (o mais longo) entra primeiro
     const fila = [...partes]; try { await Promise.all([0, 1, 2].map(async () => { while (fila.length) { if (erros.length >= 2 && feitas === erros.length) { erros.push('interrompido: as primeiras partes falharam com erro da IA'); break; } const p = fila.shift(); const rot = p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } })); } finally { clearInterval(relogio); }
+    // v3.473: capítulos que vieram cortados ou em branco → uma segunda passada automática só para eles
+    let falta1 = RED_ORDEM.filter(k => chavesAlvo.includes(k) && String(D.secoes.find(x => x.chave === k)?.conteudo || '').trim().length < 60);
+    if (falta1.length && erros.length < 3) { const p2 = RED_PARTES.map(p => p.filter(k => falta1.includes(k))).filter(p => p.length); partes.push(...p2);
+      for (const p of p2) { const rot = 'refazendo ' + p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }
+    clearInterval(relogio);
     D._erros = erros; renderDoc(); _redPct = null;
     const falta = _vazios(); let salvo = false; if (!falta.length && PROP.cliente) { try { await salvar(true); salvo = true; } catch (_) {} }
     const tempo = Math.round((Date.now() - t0) / 1000);

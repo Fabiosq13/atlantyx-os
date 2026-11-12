@@ -481,8 +481,13 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
   G.premissas_com += ' 8 a 12 premissas concretas.';
   const PROF = '\nNÍVEL DE DETALHE: texto completo e detalhado, pronto para enviar ao cliente, específico deste projeto (use os nomes, sistemas, áreas e números do briefing/escopo); nada de frases genéricas ou de placeholder; não resuma o escopo.';
   const FORMA = '\nFORMATAÇÃO DO "conteudo" (markdown simples, é convertido para o modelo oficial): parágrafos separados por linha em branco; subtítulo numa linha própria começando por "### "; marcadores com "- "; alíneas com "a) "; rótulo em negrito no início da linha com "**Rótulo:** texto". Sem tabelas em markdown.';
-  const pedir = async (chaves, extra) => json(await claudeStream(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
-    + `\n${extra ? 'Escreva PRIMEIRO a "matriz_responsabilidades" e depois as secoes. ' : ''}Devolva {${extra ? '"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}],' : ''}"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]}`, chaves.includes('escopo') ? 6000 : 4000, 100000));
+  // v3.473: detecta resposta CORTADA (limite de tokens/tempo): o JSON chega reparado e o último capítulo vem pela metade
+  // ("Prazo e Forma de Pagamento|Impl…") → esse capítulo é descartado para o navegador redigir de novo
+  const _parse = txt => { const t = String(txt || '').replace(/```json|```/g, '').trim(); const i = t.indexOf('{'), j = t.lastIndexOf('}');
+    let ok = false; try { JSON.parse(t.substring(i, j + 1)); ok = true; } catch (_) {} const r = json(txt);
+    if (!ok && Array.isArray(r.secoes) && r.secoes.length) { const ult = r.secoes.pop(); r._cortado = ult?.chave || true; } return r; };
+  const pedir = async (chaves, extra) => _parse(await claudeStream(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
+    + `\n${extra ? 'Escreva PRIMEIRO a "matriz_responsabilidades" e depois as secoes. ' : ''}Devolva {${extra ? '"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}],' : ''}"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]}`, chaves.includes('escopo') ? 6000 : 5000, 100000));
   // v3.382: o navegador pede por partes (cada parte é uma chamada própria, com repetição) — evita estourar o tempo e o limite da IA
   const MATRIZ_X = '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).';
   // v3.384: o Escopo (capítulo mais longo) é escrito em etapas: plano dos itens → itens de 3 em 3 → requisitos e fora do escopo
@@ -496,7 +501,7 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
     if (String(texto).trim().length < 40) throw new Error('A IA não devolveu o texto do escopo'); return { texto: String(texto).replace(/^```\w*\n?|```$/g, '').trim() }; }
   if (Array.isArray(chaves) && chaves.length) { const ks = chaves.filter(k => G[k]); if (!ks.length) throw new Error('capítulos inválidos');
     const r = await pedir(ks, ks.includes('garantias') ? MATRIZ_X : '');
-    const sec = (r.secoes || []).filter(x => ks.includes(x.chave) && String(x.conteudo || '').trim()).map(x => ({ chave: x.chave, titulo: TITULOS_CAP[x.chave] || x.chave, conteudo: String(x.conteudo) }));
+    const sec = (r.secoes || []).filter(x => ks.includes(x.chave) && String(x.conteudo || '').trim().length >= 60).map(x => ({ chave: x.chave, titulo: TITULOS_CAP[x.chave] || x.chave, conteudo: String(x.conteudo) }));
     if (!sec.length) throw new Error('A IA não devolveu o texto destes capítulos');
     return { parte: true, secoes: sec, matriz_responsabilidades: Array.isArray(r.matriz_responsabilidades) ? r.matriz_responsabilidades : null, formato: f.formato }; }
   const RES = await Promise.all(PARTES.map((p, i) => pedir(p, i === 3 ? '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).' : '').catch(e => ({ secoes: [], erro: e.message }))));
