@@ -34,3 +34,5 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 12/11/2026 · v3.465 · ok · — · —
 - [x] v3.466 · "Colocar no fluxo da IARA" grava os DOIS campos no contato: atendido_pela_ia = true E fluxo_de_atendimento = IA (tirar: false + Manual). O job da IARA não achava o lead porque fluxo_de_atendimento ficava vazio. A mensagem de confirmação mostra os campos gravados.
 - 12/11/2026 · v3.466 · ok · — · time confirmar no job da IARA com um contato de teste
+- [x] v3.467 · ao colocar no fluxo da IARA (Floresta e importação do Apollo) também grava abordagem = Geral — só para quem está com a abordagem vazia (não troca um FQ já escolhido)
+- 12/11/2026 · v3.467 · ok · — · —
