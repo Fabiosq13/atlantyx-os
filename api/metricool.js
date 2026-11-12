@@ -106,10 +106,19 @@ const _pegaNum = (obj, nomes) => {
   }
   return null;
 };
+function _textoPost(p) {
+  const direto = p.text || p.content || p.caption || p.commentary || p.message || p.description || p.shareCommentary || p.title;
+  if (typeof direto === 'string' && direto.trim()) return direto;
+  let melhor = ''; const varrer = (o, prof) => { if (!o || typeof o !== 'object' || prof > 2) return;
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v === 'string') { if (/text|content|caption|message|comment|descr|title|body/i.test(k) && !/url|link|id$|type|status|image|media|date/i.test(k) && !/^https?:/.test(v) && v.length > melhor.length) melhor = v; }
+      else if (v && typeof v === 'object') varrer(v, prof + 1); } };
+  varrer(p, 0); return melhor;
+}
 function _normPostMetrica(p) {
   return {
     id: p.id || p.postId || p.mediaId || p.urn || null,
-    texto: String(p.text || p.content || p.caption || p.commentary || p.message || '').substring(0, 300),
+    texto: _textoPost(p).substring(0, 300), // v3.484: o LinkedIn do Metricool não manda "text" — procura o texto em qualquer campo (até 2 níveis)
     data: p.date || p.publishedAt || p.publicationDate?.dateTime || p.publicationDate || p.created || p.timestamp || null,
     url: p.url || p.link || p.permalink || p.postUrl || null,
     impressoes: _pegaNum(p, ['impressions', 'impressionCount', 'impression_count', 'impressionsTotal', 'post_impressions', 'views', 'viewCount', 'videoViews', 'plays', 'reach', 'reachCount', 'organicImpressions']),

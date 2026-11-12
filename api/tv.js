@@ -184,7 +184,10 @@ async function montarDados() {
       redes.push({ rede: nome, posts: num(t.posts) ?? (d.posts || []).length, impressoes: num(t.impressoes) || 0, cliques: num(t.cliques) || 0, curtidas: num(t.curtidas) || 0, comentarios: num(t.comentarios) || 0, compartilhamentos: num(t.compartilhamentos) || 0, engajamento: eng, aviso: d.diagnostico?.api_ok === false ? 'sem acesso às métricas' : null });
       (d.posts || []).forEach(x => posts.push({ rede: nome, texto: String(x.texto || '').replace(/\s+/g, ' ').substring(0, 110), data: String(x.data || '').substring(0, 10), impressoes: num(x.impressoes) || 0, cliques: num(x.cliques) || 0, engajamento: (num(x.curtidas) || 0) + (num(x.comentarios) || 0) + (num(x.compartilhamentos) || 0) })); }
     const T = redes.reduce((a, r) => { ['posts', 'impressoes', 'cliques', 'engajamento', 'curtidas', 'comentarios', 'compartilhamentos'].forEach(k => { a[k] += r[k] || 0; }); return a; }, { posts: 0, impressoes: 0, cliques: 0, engajamento: 0, curtidas: 0, comentarios: 0, compartilhamentos: 0 });
-    return { redes, total: T, top: posts.sort((a, b) => (b.impressoes + b.engajamento * 10) - (a.impressoes + a.engajamento * 10)).slice(0, 4), erro: redes.every(r => r.erro) ? redes[0].erro : null }; })();
+    // v3.484: melhores publicações = a melhor de CADA rede primeiro (antes as 4 do LinkedIn ocupavam tudo) e depois as demais
+    const nota = x => x.impressoes + x.engajamento * 10, ord = posts.slice().sort((a, b) => nota(b) - nota(a)), top = [];
+    ['LinkedIn', 'Instagram', 'Facebook'].forEach(r => { const x = ord.find(y => y.rede === r); if (x) top.push(x); }); ord.forEach(x => { if (top.length < 4 && !top.includes(x)) top.push(x); });
+    return { redes, total: T, top: top.sort((a, b) => nota(b) - nota(a)).slice(0, 4), erro: redes.every(r => r.erro) ? redes[0].erro : null }; })();
   mkt.organico = organico;
   const rent = v(rt) ? { ...v(rt), erro: null } : { erro: erro(rt), projetos: [] };
   if (CF.nomes_projetos === false) rent.projetos = (rent.projetos || []).map((p, i) => ({ ...p, projeto: 'Projeto ' + (i + 1) }));
@@ -274,10 +277,12 @@ async function _comUltimoBom(d) {
   if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
   d.antigos = antigos; return d;
 }
+const FORMATO_TV = 484;
 async function dados(forcar) {
   const c = await kv('tv:dados');
-  if (!forcar && c && Date.now() - Date.parse(c.gerado_em) < CACHE_MS) return c;
-  try { const d = await _comUltimoBom(await montarDados()); await kv('tv:dados', d); return d; }
+  // v3.484: cache feito por uma versão anterior (sem os blocos novos: metas, estratégia) é refeito na hora, não espera os 10 min
+  if (!forcar && c && c.formato === FORMATO_TV && Date.now() - Date.parse(c.gerado_em) < CACHE_MS) return c;
+  try { const d = await _comUltimoBom(await montarDados()); d.formato = FORMATO_TV; await kv('tv:dados', d); return d; }
   catch (e) { if (c) return { ...c, aviso_cache: 'mostrando os últimos números salvos' }; throw e; }
 }
 
@@ -553,7 +558,7 @@ function mt(o){var c=cor(o.f),tx=o.f==='verde'?'no rumo':o.f==='amarelo'?'atenç
    +'<div style="font-size:18px;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(o.meta||'')+'</div>'
    +(nz(o.p)?'':'<div class="bar" style="margin-top:6px"><i style="width:'+Math.max(0,Math.min(100,o.p))+'%;background:'+(o.f?c:'#00C4CC')+'"></i>'+(nz(o.marca)?'':'<u style="left:'+Math.max(0,Math.min(100,o.marca))+'%"></u>')+'</div>')
    +'<div style="font-size:16px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(o.sub||'')+'</div></div>'}
-function sMetas(){var M=D.metas||{},F=M.fat,G=M.margem,A=M.anterior,V=M.vendas,S=M.saude||{},P=M.plano,fr=nz(M.fracao)?null:M.fracao;
+function sMetas(){if(!D.metas)return '<div style="margin:auto;font-size:30px;color:#8E9BC0">Atualizando as metas do ano… aparece na próxima carga da TV.</div>';var M=D.metas,F=M.fat,G=M.margem,A=M.anterior,V=M.vendas,S=M.saude||{},P=M.plano,fr=nz(M.fracao)?null:M.fracao;
   var n=function(v){return nz(v)?'—':Number(v).toLocaleString('pt-BR')};
   var T=[];
   // financeiras
@@ -603,7 +608,7 @@ function sMetas(){var M=D.metas||{},F=M.fat,G=M.margem,A=M.anterior,V=M.vendas,S
 function sObj(){var X=D.estr||{},O=X.okr,Sa=X.sala,PL=X.planejamento,P=(D.metas||{}).plano,Vi=P&&P.visao;
   var br=function(p,f){return '<div style="flex:1;height:12px;background:#1A2447;border-radius:7px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.max(0,Math.min(100,p||0))+'%;background:'+(f?cor(f):'#00C4CC')+'"></i></div>'};
   var top='<div style="display:flex;align-items:center;gap:24px;background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:16px 26px">'+(O&&O.saude?luz(O.saude):'')
-   +'<div style="flex:1;min-width:0"><div style="font-size:16px;color:#8E9BC0;letter-spacing:1.5px;text-transform:uppercase;font-weight:700">'+(O&&O.trimestre?'Foco de '+esc(O.trimestre):'Foco estratégico')+'</div>'
+   +'<div style="flex:1;min-width:0"><div style="font-size:16px;color:#8E9BC0;letter-spacing:1.5px;text-transform:uppercase;font-weight:700">'+(O&&O.trimestre?'Foco de '+esc(O.trimestre):'Foco estratégico')+(O&&O.em?' <span style="color:#00C4CC">· OKRs gerados em '+dtc(O.em)+(O.status_em?' · status medido em '+dtc(O.status_em):'')+'</span>':'')+'</div>'
    +'<div style="font-size:28px;font-weight:700;line-height:1.25;margin-top:4px;max-height:72px;overflow:hidden">'+esc((O&&O.tema)||(Sa&&Sa.decisao)||(PL&&PL.estrategia)||'Gere os OKRs em Planejamento → OKRs para aparecerem aqui.')+'</div></div></div>';
   var ob=O?(O.objetivos||[]).map(function(o,i){var f=o.farol;
      return '<div style="padding:12px 0;border-bottom:1px solid #1A2447"><div style="display:flex;align-items:center;gap:16px"><div style="width:44px;height:44px;border-radius:50%;background:'+(f?cor(f):'#1E2A52')+';color:#0A1022;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;flex:0 0 44px">O'+(i+1)+'</div>'
@@ -627,7 +632,7 @@ function sRis(){var X=D.estr||{},R=X.riscos,Sa=X.sala,M=D.metas||{},Fi=D.fin||{}
   var fs=function(sc){return sc>=6?'vermelho':sc>=3?'amarelo':'verde'};
   var box=function(n,r,c){return '<div style="text-align:center;padding:0 14px"><div style="font-size:44px;font-weight:800;color:'+c+';line-height:1">'+n+'</div><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">'+r+'</div></div>'};
   var top='<div style="display:flex;align-items:center;gap:24px;background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:14px 26px">'+luz(fn)
-   +'<div style="width:230px"><div style="font-size:16px;color:#8E9BC0;letter-spacing:1.5px;text-transform:uppercase;font-weight:700">Risco geral</div><div style="font-size:42px;font-weight:800;color:'+cor(fn)+'">'+esc(R?R.nivel:'—')+'</div></div>'
+   +'<div style="width:230px"><div style="font-size:16px;color:#8E9BC0;letter-spacing:1.5px;text-transform:uppercase;font-weight:700">Risco geral</div><div style="font-size:42px;font-weight:800;color:'+cor(fn)+'">'+esc(R?R.nivel:'—')+'</div><div style="font-size:16px;color:#00C4CC;font-weight:700;margin-top:2px">'+(R&&R.em?'análise de '+dtc(R.em):Sa?'Sala de Estratégia '+dtc(Sa.em):'sem análise gerada')+'</div></div>'
    +(R?box(R.matriz.criticos,'críticos','#FF5C7A')+box(R.matriz.monitorar,'monitorar','#FFB547')+box(R.matriz.aceitar,'aceitar','#2EE6A6'):'')
    +'<div style="flex:1;min-width:0;border-left:1px solid #1E2A52;padding-left:24px"><div style="font-size:15px;color:#FF9AAE;letter-spacing:1.5px;font-weight:800">RISCO Nº 1 · AGIR ESTA SEMANA</div><div style="font-size:20px;line-height:1.3;max-height:78px;overflow:hidden;margin-top:3px">'+esc(R?R.n1:'Gere a análise de riscos em Planejamento → Riscos.')+'</div></div></div>';
   var L=R?R.lista:((Sa&&Sa.riscos)||[]).map(function(r){return {risco:r.risco,mitigacao:r.mitigacao,score:null}});
