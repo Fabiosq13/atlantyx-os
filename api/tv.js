@@ -128,7 +128,7 @@ async function montarDados() {
         fat: { real: num(Pm.faturamento), prev: fP, meta: num(M.faturamento) }, gas: { real: num(Pm.gastos_totais), prev: pv(num(Pm.gastos_totais), dG), meta: num(M.gastos), menor: true },
         eb: { real: num(Pm.ebitda), prev: pv(num(Pm.ebitda), dR), meta: num(M.ebitda) }, luc: { real: num(Pm.lucro_liquido), prev: lP, meta: num(M.lucro) },
         mg: { real: num(Pm.margem_liquida_pct), prev: fP > 0 && lP != null ? Math.round(lP / fP * 1000) / 10 : null, meta: num(M.margem_pct ?? K.meta_margem?.pct), pct: true } }; })(),
-    fin: { erro: [erro(pr), erro(kp), erro(me)].filter(Boolean).join(' · ') || null, regime: K.regime || null,
+    fin: { erro: [erro(pr), erro(kp), erro(me), ...((K.erros || []).slice(0, 2))].filter(Boolean).join(' · ') || null, regime: K.regime || null,
       mes: { faturamento: realMes, meta_faturamento: metaMes, pct: metaMes ? Math.round(realMes / metaMes * 1000) / 10 : null, esperado: metaMes && frMes != null ? Math.round(metaMes * frMes) : null, fracao_decorrida: frMes,
         semaforo: semMeta(realMes, metaMes, frMes), meta_fonte: M.fonte?.faturamento || null,
         lucro: num(Pm.lucro_liquido), margem_pct: num(Pm.margem_liquida_pct), meta_margem_pct: num(K.meta_margem?.pct), semaforo_margem: K.semaforo_margem || null },
@@ -163,10 +163,30 @@ async function conferir() {
       realizado_ano: num(FA.realizado), meta_ano: num(FA.meta), pct_ano: num(FA.pct_atingido), meta_fonte: ME.meta?.fonte || 'Metas da Empresa ' + parseInt(hoje) },
     receber: { total: num(P.contasReceber?.total), vencido: num(P.contasReceber?.vencido), em_30d: num(P.contasReceber?.a_vencer_30d) }, pagar: { total: num(P.contasPagar?.total), vencido: num(P.contasPagar?.vencido) } } };
 }
+// v3.474: cada bloco guarda o ÚLTIMO dado bom — se o QuickBooks/HubSpot não responder nesta rodada (limite, demora),
+// a TV mostra o último número válido com a hora dele, em vez de cartões vazios com "—"
+const BLOCOS_OK = {
+  res: d => d.res && [d.res.fat?.real, d.res.gas?.real, d.res.luc?.real].some(v => v != null),
+  fin: d => d.fin && (d.fin.caixa != null || d.fin.ano?.faturamento != null || (d.fin.mensal || []).length),
+  com: d => !!d.com?.funil, mkt: d => d.mkt && !d.mkt.erro, proj: d => d.proj && !d.proj.erro,
+  qual_termos: d => d.qual?.termos?.abertos != null, qual_qb: d => d.qual?.qb?.corretas != null, qual_proj: d => d.qual?.projetos?.total != null };
+async function _comUltimoBom(d) {
+  let bom = {}; try { bom = (await kv('tv:ultimo_bom')) || {}; } catch (_) {}
+  const pega = { res: x => x.res, fin: x => x.fin, com: x => x.com, mkt: x => x.mkt, proj: x => x.proj, qual_termos: x => x.qual?.termos, qual_qb: x => x.qual?.qb, qual_proj: x => x.qual?.projetos };
+  const poe = { res: (x, v) => { x.res = v; }, fin: (x, v) => { x.fin = { ...v, erro: null }; }, com: (x, v) => { x.com = v; }, mkt: (x, v) => { x.mkt = v; }, proj: (x, v) => { x.proj = v; },
+    qual_termos: (x, v) => { x.qual = x.qual || {}; x.qual.termos = v; }, qual_qb: (x, v) => { x.qual = x.qual || {}; x.qual.qb = v; }, qual_proj: (x, v) => { x.qual = x.qual || {}; x.qual.projetos = v; } };
+  const antigos = []; let mudou = false;
+  for (const [b, ok] of Object.entries(BLOCOS_OK)) {
+    if (ok(d)) { bom[b] = { v: pega[b](d), em: d.gerado_em, mes: d.mes_ref }; mudou = true; }
+    else if (bom[b] && (b !== 'res' || bom[b].mes === d.mes_ref)) { poe[b](d, bom[b].v); antigos.push({ bloco: b, em: bom[b].em }); }
+  }
+  if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
+  d.antigos = antigos; return d;
+}
 async function dados(forcar) {
   const c = await kv('tv:dados');
   if (!forcar && c && Date.now() - Date.parse(c.gerado_em) < CACHE_MS) return c;
-  try { const d = await montarDados(); await kv('tv:dados', d); return d; }
+  try { const d = await _comUltimoBom(await montarDados()); await kv('tv:dados', d); return d; }
   catch (e) { if (c) return { ...c, aviso_cache: 'mostrando os últimos números salvos' }; throw e; }
 }
 
@@ -223,14 +243,14 @@ function barra(p,marca){p=nz(p)?0:Math.max(0,Math.min(100,p));return '<div class
 function k(l,v,s,cls,extra){return '<div class="k '+(cls||'')+'"><div class="l">'+l+'</div><div class="v">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+(extra||'')+'</div>'}
 var MES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function grafico(m){ if(!m||!m.length)return '<div class="erro">Sem a série mensal do QuickBooks agora.</div>';
-  var W=1000,H=330,pl=70,pb=40,pt=20,mx=1;m.forEach(function(x){mx=Math.max(mx,x.faturamento||0,Math.abs(x.lucro||0))});
-  var bw=(W-pl-10)/12,y=function(v){return pt+(H-pt-pb)*(1-v/mx)},y0=y(0),s='';
-  for(var g=0;g<=4;g++){var v=mx*g/4,yy=y(v);s+='<line x1="'+pl+'" x2="'+W+'" y1="'+yy+'" y2="'+yy+'" stroke="#1E2A52"/><text x="'+(pl-10)+'" y="'+(yy+6)+'" text-anchor="end" font-size="17" fill="#6E7BA0">'+brl(v).replace('R$ ','')+'</text>'}
-  m.forEach(function(x,i){var mi=parseInt(String(x.mes).substring(5,7),10)-1,cx=pl+i*bw;var f=x.faturamento||0,l=x.lucro||0;
-    s+='<rect x="'+(cx+bw*.14)+'" y="'+y(f)+'" width="'+(bw*.4)+'" height="'+Math.max(0,y0-y(f))+'" rx="4" fill="#00C4CC"/>';
-    s+='<rect x="'+(cx+bw*.56)+'" y="'+(l>=0?y(l):y0)+'" width="'+(bw*.3)+'" height="'+Math.abs(y0-y(Math.abs(l)))+'" rx="4" fill="'+(l>=0?'#2EE6A6':'#FF5C7A')+'"/>';
-    s+='<text x="'+(cx+bw/2)+'" y="'+(H-12)+'" text-anchor="middle" font-size="18" fill="#8E9BC0">'+(MES[mi]||x.mes)+'</text>'});
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;flex:1;min-height:0" preserveAspectRatio="none">'+s+'</svg><div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px;"><span style="color:#00C4CC">■</span> faturamento &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
+  /* v3.474: barras em HTML (o SVG esticado deformava os textos do eixo) com o valor em cima de cada mês */
+  var mx=1,HB=140;m.forEach(function(x){mx=Math.max(mx,x.faturamento||0,Math.abs(x.lucro||0))});
+  var col=m.map(function(x){var mi=parseInt(String(x.mes).substring(5,7),10)-1,f=x.faturamento||0,l=x.lucro||0;
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:0"><div style="height:'+(HB+26)+'px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:6px">'
+     +'<div style="width:44%;display:flex;flex-direction:column;justify-content:flex-end"><div style="font-size:16px;color:#AAB6D8;text-align:center;white-space:nowrap">'+brl(f).replace('R$ ','')+'</div><div style="height:'+Math.max(2,Math.round(f/mx*HB))+'px;background:#00C4CC;border-radius:6px 6px 0 0;margin-top:4px"></div></div>'
+     +'<div style="width:28%;display:flex;flex-direction:column;justify-content:flex-end"><div style="height:'+Math.max(2,Math.round(Math.abs(l)/mx*HB))+'px;background:'+(l>=0?'#2EE6A6':'#FF5C7A')+';border-radius:6px 6px 0 0"></div></div></div>'
+     +'<div style="font-size:18px;color:#8E9BC0;margin-top:6px;border-top:1px solid #26335F;width:100%;text-align:center;padding-top:4px">'+(MES[mi]||x.mes)+'</div></div>'}).join('');
+  return '<div style="flex:1;min-height:0;display:flex;gap:10px;align-items:flex-end;padding-top:6px">'+col+'</div><div style="font-size:18.4px;color:#8E9BC0;margin-top:6.5px;"><span style="color:#00C4CC">■</span> faturamento (valor em cima) &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
 function brlI(v){return nz(v)?'—':(v<0?'−':'')+'R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')}var brlI0=brlI;
 function luz(f){return '<div class="luz">'+['vermelho','amarelo','verde'].map(function(c){return '<span style="background:'+(f===c?cor(c):'#1A2447')+';'+(f===c?'box-shadow:0 0 25.9px '+cor(c):'')+'"></span>'}).join('')+'</div>'}
 function clsF(f){return f==='verde'?'ok':f==='amarelo'?'at':f==='vermelho'?'cr':''}
@@ -257,20 +277,23 @@ function cartao(o){var f=o.fmt||(o.pct?pct:brl),fr=farolDe(o),c=cor(fr),tx=fr===
 function nI(v){return nz(v)?'—':Number(v).toLocaleString('pt-BR')}
 function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};var MESN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];var mi=parseInt(String(D.mes_ref||'').substring(5,7),10)-1;
   var mc=clsF(M.semaforo_margem);
-  var Rs=F.res||{},fr0=Rs.frac,mn=(MESN[mi]||'mês');
+  var Rs=D.res||F.res||{},fr0=Rs.frac, /* v3.474: os cartões liam D.fin.res, mas o resultado do mês vem em D.res — por isso ficavam todos em "—" */mn=(MESN[mi]||'mês');
   var h='<div class="grade" style="grid-template-columns:repeat(5,1fr)">'
    +cartao({rot:'Faturamento · '+mn,real:Rs.fat&&Rs.fat.real,prev:Rs.fat&&Rs.fat.prev,meta:Rs.fat&&Rs.fat.meta,frac:fr0})
    +cartao({rot:'Gastos · '+mn,real:Rs.gas&&Rs.gas.real,prev:Rs.gas&&Rs.gas.prev,meta:Rs.gas&&Rs.gas.meta,menor:true})
    +cartao({rot:'EBITDA · '+mn,real:Rs.eb&&Rs.eb.real,prev:Rs.eb&&Rs.eb.prev,meta:Rs.eb&&Rs.eb.meta,frac:fr0})
    +cartao({rot:'Lucro · '+mn,real:Rs.luc&&Rs.luc.real,prev:Rs.luc&&Rs.luc.prev,meta:Rs.luc&&Rs.luc.meta,frac:fr0})
    +cartao({rot:'Margem · '+mn,real:Rs.mg&&Rs.mg.real,prev:Rs.mg&&Rs.mg.prev,meta:Rs.mg&&Rs.mg.meta,pct:true})+'</div>'
-   +'<div class="grade g4">'+cartao({rot:'Faturamento de '+(A.ano||''),real:A.faturamento,prev:A.projecao,meta:A.meta_faturamento,frac:A.fracao_decorrida,luz:A.semaforo})
-   +k('Caixa hoje',brl(F.caixa),'saldo bancário (QuickBooks)')
-   +k('A receber',brl(F.receber),'<span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d)))
-   +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks')+'</div>'
+   +'<div class="grade g4">'+(function(){var f=A.semaforo,pa=A.meta_faturamento&&!nz(A.faturamento)?A.faturamento/A.meta_faturamento*100:null; /* v3.474: compacto para sobrar altura ao gráfico */
+      return '<div class="k" style="display:flex;gap:18px;align-items:center">'+luz(f)+'<div style="flex:1;min-width:0"><div class="l">Faturamento de '+(A.ano||'')+'</div><div class="v '+clsF(f)+'" style="font-size:47px">'+brl(A.faturamento)+'</div><div class="s">'+(nz(pa)?'meta não cadastrada':pct(pa)+' de '+brl(A.meta_faturamento))+(nz(A.projecao)?'':' · fecha em '+brl(A.projecao))+'</div>'+(nz(pa)?'':barra(pa,nz(A.fracao_decorrida)?null:A.fracao_decorrida*100))+'</div></div>'})()
+   +k('Caixa hoje',brl(F.caixa),'saldo bancário (QuickBooks)','md')
+   +k('A receber',brl(F.receber),'<span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d)),'md')
+   +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks','md')+'</div>'
    +'<div class="painel" style="flex:1;min-height:0"><h3>Evolução no ano</h3>'+grafico(F.mensal)+'</div>'
    +'<div style="font-size:16px;color:#6E7BA0">QuickBooks'+(F.regime?' ('+esc(F.regime)+')':'')+' · Previsto = real + programado até o fim do mês (contas a pagar e '+(F.res&&F.res.regime==='caixa'?'faturas a receber':'termos a faturar')+') · farol: previsto contra a meta (ano: ritmo)</div>'
    +(F.erro?'<div class="erro">⚠ '+esc(F.erro)+'</div>':'');
+  var vaz=Rs.fat&&nz(Rs.fat.real)&&nz(Rs.gas&&Rs.gas.real)&&nz(Rs.luc&&Rs.luc.real);
+  if(vaz)h='<div style="padding:14px 20px;border-radius:12px;background:#2A1F12;border:1px solid #5C4320;color:#FFB547;font-size:21px">⚠ O QuickBooks não devolveu o resultado de '+esc(mn)+' agora'+(F.erro?' ('+esc(String(F.erro).substring(0,140))+')':'')+'. A tela tenta de novo em 10 minutos.</div>'+h;
   return h}
 // v3.280: o MESMO funil do Dashboard ao vivo (aba Vendas): pipeline aberto agora, em R$, todos os pipelines, mês atual
 function sCom(){var C=D.com||{},Fu=C.funil;
@@ -280,12 +303,12 @@ function sCom(){var C=D.com||{},Fu=C.funil;
   // v3.357: cartões de vendas no padrão do Dashboard (Real · Meta · % atingido · farol · Acumulado = tudo parado na etapa, de qualquer mês)
   var acha=function(re){for(var i=0;i<E.length;i++){var nm=String(E[i].nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();if(re.test(nm))return E[i]}return null};
   var ac=function(e,v){return !e||!e.agora?'—':nI(e.agora.qtd)+(v?' · '+brl(e.agora.valor):'')};
-  var et=function(rot,e){if(!e)return cartao({rot:rot,real:null,fmt:nI,semPrev:true});var mq=e.meta&&e.meta.qtd;return cartao({rot:rot,real:e.real&&e.real.qtd,fmt:nI,meta:mq||null,semPrev:true,luz:e.farol,ating:mq?e.real.qtd/mq*100:null,linhas:[['Conversão',(nz(e.conv_real)?'—':pct(e.conv_real))+(e.conv_meta?' / meta '+pct(e.conv_meta):'')],['Acumulado',ac(e)]]})};
+  var et=function(rot,e){if(!e)return cartao({rot:rot,real:null,fmt:nI,semPrev:true});var mq=e.meta&&e.meta.qtd?Math.ceil(e.meta.qtd):null;return cartao({rot:rot,real:e.real&&e.real.qtd,fmt:nI,meta:mq||null,semPrev:true,luz:e.farol,ating:mq?e.real.qtd/mq*100:null,linhas:[['Conversão',(nz(e.conv_real)?'—':pct(e.conv_real))+(e.conv_meta?' / meta '+pct(e.conv_meta):'')],['Acumulado',ac(e)]]})};
   var Lp=acha(/propost/),Ng=acha(/negocia/),Gn=null;for(var gi=0;gi<E.length;gi++)if(E[gi].ganho)Gn=E[gi];
   var h='<div class="grade" style="grid-template-columns:repeat(5,1fr)">'
    +et('Leads do mês',acha(/lead|prospec/))+et('Reuniões do mês',acha(/reuni|qualif/))
-   +(function(){if(!Lp)return cartao({rot:'Propostas do mês',real:null,semPrev:true});var mq=Lp.meta&&Lp.meta.qtd,mv=Lp.meta&&Lp.meta.valor,at=mq?Lp.real.qtd/mq*100:mv?Lp.real.valor/mv*100:null;
-     return cartao({rot:'Propostas do mês',real:Lp.real&&Lp.real.qtd,realTxt:nI(Lp.real&&Lp.real.qtd)+' · '+brl(Lp.real&&Lp.real.valor),meta:mv||mq||null,metaTxt:mv||mq?(mq?nI(mq):'—')+' · '+(mv?brl(mv):'—'):null,semPrev:true,luz:Lp.farol,ating:at,linhas:[['Conversão',(nz(Lp.conv_real)?'—':pct(Lp.conv_real))+(Lp.conv_meta?' / meta '+pct(Lp.conv_meta):'')],['Acumulado',ac(Lp,true)]]})})()
+   +(function(){if(!Lp)return cartao({rot:'Propostas do mês',real:null,semPrev:true});var mq=Lp.meta&&Lp.meta.qtd?Math.ceil(Lp.meta.qtd):null,mv=Lp.meta&&Lp.meta.valor,at=mq?Lp.real.qtd/mq*100:mv?Lp.real.valor/mv*100:null;
+     return cartao({rot:'Propostas do mês',real:Lp.real&&Lp.real.qtd,realTxt:nI(Lp.real&&Lp.real.qtd)+' · '+brl(Lp.real&&Lp.real.valor),meta:mv||mq||null,metaTxt:mv&&mq?nI(mq)+' · '+brl(mv):mq?nI(mq):mv?brl(mv):null,semPrev:true,luz:Lp.farol,ating:at,linhas:[['Conversão',(nz(Lp.conv_real)?'—':pct(Lp.conv_real))+(Lp.conv_meta?' / meta '+pct(Lp.conv_meta):'')],['Acumulado',ac(Lp,true)]]})})()
    +cartao({rot:'Pipeline aberto',real:A.valor,meta:R.pipeline_necessario||null,semPrev:true,luz:R.pipeline_necessario?(A.valor>=R.pipeline_necessario?'verde':A.valor>=R.pipeline_necessario*0.8?'amarelo':'vermelho'):null,linhas:[['Ponderado',brl(A.ponderado)]]})
    +cartao({rot:'Vendas fechadas',real:R.ganho&&R.ganho.valor,meta:R.meta,semPrev:true,luz:Gn&&Gn.farol,ating:nz(R.pct_meta)?null:R.pct_meta,linhas:[['Acum. negociação',ac(Ng,true)]]})+'</div>';
   var grad=[['#1f5fbf','#3d8bf0'],['#2569cc','#4a98f2'],['#2b7bd6','#4fb0ef'],['#1f9fb0','#3cc6c9'],['#18a57f','#36c99a'],['#14916b','#2fb989'],['#0f7d5b','#28a679']];
@@ -295,9 +318,10 @@ function sCom(){var C=D.com||{},Fu=C.funil;
     var larg=function(x){return 100-62*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
     var pc=e.pct_valor,f=nz(pc)?null:pc>=100?'verde':pc>=80?'amarelo':'vermelho';
     var sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s)'+(ag.sem_valor?' · '+ag.sem_valor+' sem valor':''));
-    var fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,mt=e.meta&&(e.meta.qtd||e.meta.valor),rl=e.meta&&e.meta.qtd?(e.real&&e.real.qtd):(e.real&&e.real.valor),atg=mt&&!nz(rl)?rl/mt*100:null,fm=e.meta&&e.meta.qtd?nI:brl;
-    var dir='<div style="display:flex;justify-content:space-between;font-weight:700;color:'+cor(fr)+'"><span><span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9.6px;background:'+cor(fr)+'"></span>'+(fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora da meta':'sem meta')+'</span><span>'+(nz(atg)?'—':pct(atg))+' atingido</span></div>'
-      +'<div style="font-size:18.4px;color:#AAB6D8;line-height:1.35;margin-top:2px">Qtd real <b style="color:#EAF0FF;font-size:24px">'+nI(e.real&&e.real.qtd)+'</b> · meta <b style="color:#EAF0FF;font-size:24px">'+(e.meta&&e.meta.qtd?nI(e.meta.qtd):'—')+'</b>'+(i>0?' · conv. <b style="color:#EAF0FF">'+(nz(e.conv_real)?'—':pct(e.conv_real))+'</b>'+(e.conv_meta?' (meta '+pct(e.conv_meta)+')':''):'')+(e.ganho?'':'<br>Acumulado <b style="color:#EAF0FF">'+nI(ag.qtd)+' · '+brl(ag.valor)+'</b>')+'</div>';
+    var gV=e.ganho&&R.meta;var fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,mqI=e.meta&&e.meta.qtd?Math.ceil(e.meta.qtd):null,mt=mqI||(e.meta&&e.meta.valor),rl=e.meta&&e.meta.qtd?(e.real&&e.real.qtd):(e.real&&e.real.valor),atg=mt&&!nz(rl)?rl/mt*100:null,fm=e.meta&&e.meta.qtd?nI:brl;if(gV&&!nz(R.pct_meta))atg=R.pct_meta;
+    /* v3.474: coluna da direita compacta (antes 3 linhas que se sobrepunham) — status e % numa linha, real × meta e conversão na outra */
+    var dir='<div style="display:flex;justify-content:space-between;gap:12px;font-weight:700;color:'+cor(fr)+';white-space:nowrap"><span><span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9px;background:'+cor(fr)+'"></span>'+(fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora da meta':'sem meta')+'</span><span>'+(nz(atg)?'—':pct(atg))+'</span></div>'
+      +(gV?'<div style="font-size:18px;color:#AAB6D8;margin-top:3px;white-space:nowrap">vendido <b style="color:#EAF0FF">'+brl(R.ganho&&R.ganho.valor)+'</b> de <b style="color:#EAF0FF">'+brl(R.meta)+'</b> · '+nI(e.real&&e.real.qtd)+' venda(s)</div>':'<div style="font-size:18px;color:#AAB6D8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">real <b style="color:#EAF0FF">'+nI(e.real&&e.real.qtd)+'</b> de <b style="color:#EAF0FF">'+(mqI?nI(mqI):'—')+'</b>'+(i>0?' · conv. <b style="color:#EAF0FF">'+(nz(e.conv_real)?'—':pct(e.conv_real))+'</b>'+(e.conv_meta?' / '+pct(e.conv_meta):''):'')+'</div>');
     var dirAntigo=e.meta&&e.meta.valor!=null&&(e.ganho||e.meta.fonte==='cadastrada')?'<span class="bola" style="display:inline-block;vertical-align:middle;margin-right:9.6px;background:'+cor(f)+'"></span>meta '+brl(Fu.decorrido_pct<100?e.meta.valor_ate_hoje:e.meta.valor)+(Fu.decorrido_pct<100?' até hoje':'')+' · <b class="'+clsF(f)+'">'+(nz(pc)?'—':pc+'%')+'</b>'
       :(!e.ganho&&ag.ponderado?'<span style="color:#8E9BC0">ponderado <b style="color:#AAB6D8">'+brl(ag.ponderado)+'</b>'+(e.probabilidade!=null?' · '+Math.round(e.probabilidade*100)+'% de chance':'')+'</span>':'');
     return '<div style="display:grid;grid-template-columns:345.6px 1fr 422.4px;gap:23px;align-items:center;flex:1;min-height:0">'
@@ -309,18 +333,21 @@ function sCom(){var C=D.com||{},Fu=C.funil;
    +'<div style="display:flex;gap:38.4px;font-size:18.4px;color:#8E9BC0;margin-top:8.6px">'+(Fu.perdidos?'<span>Perdidos em '+esc(Fu.rotulo||'')+': <b>'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')</span>':'')+(Fu.ticket?'<span>Ticket médio: <b>'+brl(Fu.ticket)+'</b></span>':'')+(Fu.lidos!=null?'<span>'+Fu.lidos+' negócio(s) lidos do HubSpot</span>':'')+'</div></div>'
    +(C.erro?'<div class="erro">⚠ '+esc(C.erro)+'</div>':'');
   return h}
-function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{};
+function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{},P=Q.projetos||{};
+  /* v3.474: 3 cartões (termos, QuickBooks, projetos) + faixa do faturamento do mês — antes 2 cartões com a tela vazia */
   function n(v){return v==null||v===''?'—':v}
-  function card(t,f,a,al,b,bl,lst,er){return '<div class="painel q"><div style="display:flex;align-items:center;gap:26.9px"><h3 style="flex:1;margin:0">'+t+'</h3>'+luz(f)+'</div>'
-    +'<div class="qn"><div><div class="v ok">'+n(a)+'</div><div class="s">'+al+'</div></div><div><div class="v '+(b>0?(f==='vermelho'?'cr':'at'):'ok')+'">'+n(b)+'</div><div class="s">'+bl+'</div></div></div>'
-    +'<div style="flex:1;min-height:0;overflow:hidden">'+lst+'</div>'+(er?'<div class="erro">⚠ '+esc(er)+'</div>':'')+'</div>'}
   function li(c,txt,q){return '<div class="lin"><span class="bola" style="background:'+c+'"></span><div class="n">'+esc(txt)+'</div><div class="q">'+q+'</div></div>'}
-  var fl=function(x,t){return x?li('#00C4CC',t+' ('+x.qtd+')',brl(x.valor)):''};
-  return '<div class="grade" style="grid-template-columns:1fr 1fr;flex:1;min-height:0">'
-   +card('Termos de faturamento',T.farol,T.corretos,'termos em aberto corretos',T.errados,'termos com pendência',
-     ((T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join('')||(T.errados===0?'<div class="s ok" style="font-size:23.8px;margin-top:10.8px">Todos os '+n(T.abertos)+' termos em aberto estão corretos.</div>':'')),T.erro)
-   +card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join('')||(B.com_erro===0?'<div class="s ok" style="font-size:23.8px;margin-top:10.8px">Conciliação, categorias, duplicidades e contas pagas: tudo certo.</div>':''),B.erro)
-   +'</div>'}
+  function card(t,f,a,al,b,bl,lst,er,ok){return '<div class="painel q" style="min-height:0"><div style="display:flex;align-items:center;gap:20px"><h3 style="flex:1;margin:0">'+t+'</h3>'+luz(f)+'</div>'
+    +'<div class="qn"><div><div class="v ok">'+n(a)+'</div><div class="s">'+al+'</div></div><div><div class="v '+(b>0?(f==='vermelho'?'cr':'at'):'ok')+'">'+n(b)+'</div><div class="s">'+bl+'</div></div></div>'
+    +'<div style="flex:1;min-height:0;overflow:hidden;margin-top:6px">'+(lst||(ok?'<div class="s ok" style="font-size:22px;margin-top:10px">✓ '+ok+'</div>':''))+'</div>'+(er?'<div class="erro">⚠ '+esc(er)+'</div>':'')+'</div>'}
+  var termos=card('Termos de faturamento',T.farol,T.corretos,'em aberto corretos',T.errados,'com pendência',(T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join(''),T.erro,T.errados===0?'Todos os '+n(T.abertos)+' termos em aberto estão corretos':'');
+  var qb=card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join(''),B.erro,B.com_erro===0?'Conciliação, categorias, duplicidades e contas pagas em dia':'');
+  var rp=P.rotulos||['Passaram da data de conclusão','Concluem este mês','Sem status report da semana'];
+  var pl=[[rp[0],P.com_bloqueio,'vermelho'],[rp[1],P.desatualizados,'amarelo'],[rp[2],P.sem_report,'amarelo']].filter(function(x){return x[1]>0}).map(function(x){return li(cor(x[2]),x[0],x[1])}).join('');
+  var pj=card('Projetos',P.farol,P.em_dia,'em dia',P.total==null?null:(P.atencao||0)+(P.atrasados||0),'atenção + atrasados',pl,P.erro,P.total?'Todos os '+P.total+' projetos em dia':'');
+  var fx=function(r,x,c){return '<div class="k" style="padding:16px 24px"><div class="l">'+r+'</div><div class="v" style="font-size:44px;'+(c?'color:'+c:'')+'">'+(x?brl(x.valor):'—')+'</div><div class="s">'+(x?x.qtd+' termo(s)':'')+'</div></div>'};
+  return '<div class="grade" style="grid-template-columns:1fr 1fr 1fr;flex:1;min-height:0">'+termos+qb+pj+'</div>'
+   +'<div class="grade g3">'+fx('Faturado no mês (NF emitida)',T.faturados_mes,'#2EE6A6')+fx('A faturar (elaboração → emissão)',T.a_faturar)+fx('Aguardando pagamento',T.aguardando_pagamento,'#FFB547')+'</div>'}
 function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
   var dt=function(s){return s?s.split('-').reverse().join('/'):'—'};
   var av=nz(R.avanco_medio)?'—':R.avanco_medio+'%';
@@ -345,27 +372,36 @@ function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
   return h}
 // v3.332: MARKETING DIGITAL — resultado de cada campanha e farol de leads (meta × realizado, pelo ritmo da campanha)
 function sMkt(){var M=D.mkt||{},L=M.campanhas||[],T=M.total||{};
-  if(!L.length)return '<div class="erro" style="margin:auto;font-size:28px">'+esc(M.erro||'Nenhuma campanha paga ativa agora.')+'</div>';
+  /* v3.474: linhas com altura fixa (antes uma campanha ocupava a tela toda), aviso quando não há campanha ativa e, ao lado, o funil do mês no HubSpot */
   var ctr=T.impressoes?(T.cliques/T.impressoes*100):null,n=function(v){return nz(v)?'—':Math.round(v).toLocaleString('pt-BR')};
-  var h='<div class="grade g4">'+k('Investido',brl(T.gasto),(M.ativas||0)+' campanha(s) ativa(s)','md')+k('Cliques no anúncio',n(T.cliques),nz(ctr)?'':'CTR '+pct(ctr)+' · '+n(T.impressoes)+' impressões','md')
-   +'<div class="k md" style="display:flex;gap:20px;align-items:center">'+luz(T.farol)+'<div style="min-width:0"><div class="l">Leads × meta</div><div class="v '+clsF(T.farol)+'">'+n(T.leads)+(T.meta?' <span style="font-size:30px;color:#8E9BC0">/ '+n(T.meta)+'</span>':'')+'</div><div class="s">'+(T.meta?'esperado até hoje '+String(Math.round(T.esperado*10)/10).replace('.',','):'cadastre a meta de leads das campanhas')+'</div></div></div>'
-   +k('Custo por lead',T.leads?brlI(T.gasto/T.leads):'—',T.leads?n(T.leads)+' lead(s) no período':'nenhum lead ainda','md')+'</div>';
-  var mx=8,ls=L.slice(0,mx);
-  h+='<div class="painel" style="flex:1;min-height:0"><h3>Campanhas · resultado e farol de leads (meta × realizado)</h3>'
-   +'<div class="lin" style="font-size:17px;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">CAMPANHA</div><div style="width:150px;text-align:right">INVESTIDO</div><div style="width:130px;text-align:right">CLIQUES</div><div style="width:440px;padding-left:30px">LEADS × META</div></div>'
-   +ls.map(function(c){var co=cor(c.farol),pm=nz(c.pct)?0:c.pct,esp=c.meta?Math.min(100,c.esperado/c.meta*100):null;
-     return '<div class="lin" style="flex:1;min-height:0"><span class="bola" style="width:30px;height:30px;background:'+co+';box-shadow:0 0 14px '+co+'"></span>'
+  var h='<div class="grade g4">'+k('Investido',brl(T.gasto),(M.ativas||0)+' campanha(s) ativa(s)','md')+k('Cliques no anúncio',n(T.cliques),nz(ctr)?(T.impressoes?n(T.impressoes)+' impressões':'sem impressões no período'):'CTR '+pct(ctr)+' · '+n(T.impressoes)+' impressões','md')
+   +'<div class="k md" style="display:flex;gap:20px;align-items:center">'+luz(T.farol)+'<div style="min-width:0"><div class="l">Leads × meta</div><div class="v '+clsF(T.farol)+'">'+n(T.leads)+(T.meta?' <span style="font-size:30px;color:#8E9BC0">/ '+n(T.meta)+'</span>':'')+'</div><div class="s">'+(T.meta?'esperado até hoje '+String(Math.round(T.esperado*10)/10).replace('.',','):'sem meta de leads cadastrada')+'</div></div></div>'
+   +k('Custo por lead',T.leads?brlI(T.gasto/T.leads):'—',T.leads?n(T.leads)+' lead(s) no período':'nenhum lead das campanhas ainda','md')+'</div>';
+  var mx=7,ls=L.slice(0,mx);
+  var lista=ls.map(function(c){var co=cor(c.farol),pm=nz(c.pct)?0:c.pct,esp=c.meta?Math.min(100,c.esperado/c.meta*100):null;
+     return '<div class="lin" style="padding:12px 0"><span class="bola" style="width:26px;height:26px;background:'+co+';box-shadow:0 0 12px '+co+'"></span>'
       +'<div class="n"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome)+'</div><div style="font-size:17px;color:#8E9BC0;font-weight:500">'+esc(c.rede)+' · '+esc(c.status)+(c.inicio?' · '+c.inicio.split('-').reverse().slice(0,2).join('/')+' a '+String(c.fim||'').split('-').reverse().slice(0,2).join('/'):'')+(c.local?' · 📍 '+esc(c.local):'')+'</div></div>'
-      +'<div style="width:150px;text-align:right" class="q">'+brl(c.gasto)+'</div><div style="width:130px;text-align:right" class="q">'+n(c.cliques)+'</div>'
-      +'<div style="width:440px;padding-left:30px">'+(c.meta?'<div style="display:flex;justify-content:space-between;font-size:22px"><b class="'+clsF(c.farol)+'">'+n(c.leads)+' de '+n(c.meta)+'</b><span class="'+clsF(c.farol)+'" style="font-weight:800">'+pm+'%</span></div>'+barra(pm,esp)
-        :'<div style="font-size:22px"><b>'+n(c.leads)+'</b> lead(s) <span style="color:#8E9BC0;font-size:17px">· sem meta cadastrada</span></div>')+'</div></div>'}).join('')
-   +(L.length>mx?'<div style="font-size:17px;color:#8E9BC0;margin-top:6px">+ '+(L.length-mx)+' campanha(s)</div>':'')+'</div>'
-   +'<div style="font-size:16px;color:#6E7BA0">Farol pelo ritmo da campanha: verde ≥ 100% dos leads esperados até hoje, amarelo ≥ 85%, vermelho abaixo · traço branco na barra = esperado até hoje</div>';
+      +'<div style="width:140px;text-align:right" class="q">'+brl(c.gasto)+'</div><div style="width:110px;text-align:right" class="q">'+n(c.cliques)+'</div>'
+      +'<div style="width:300px;padding-left:24px">'+(c.meta?'<div style="display:flex;justify-content:space-between;font-size:21px"><b class="'+clsF(c.farol)+'">'+n(c.leads)+' de '+n(c.meta)+'</b><span class="'+clsF(c.farol)+'" style="font-weight:800">'+pm+'%</span></div>'+barra(pm,esp)
+        :'<div style="font-size:21px"><b>'+n(c.leads)+'</b> lead(s) <span style="color:#8E9BC0;font-size:16px">· sem meta</span></div>')+'</div></div>'}).join('');
+  var vazio=!M.ativas?'<div style="margin:10px 0 4px;padding:14px 18px;border-radius:12px;background:#121C3C;font-size:21px;color:#FFB547">Nenhuma campanha paga ativa agora'+(L.length?' — abaixo as pausadas/encerradas dos últimos 7 dias':'')+'.</div>':'';
+  var esq='<div class="painel" style="min-height:0"><h3>Campanhas pagas · resultado e farol de leads</h3>'
+   +(L.length?'<div class="lin" style="font-size:16px;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">CAMPANHA</div><div style="width:140px;text-align:right">INVESTIDO</div><div style="width:110px;text-align:right">CLIQUES</div><div style="width:300px;padding-left:24px">LEADS × META</div></div>':'')
+   +vazio+lista+(L.length>mx?'<div style="font-size:17px;color:#8E9BC0;margin-top:6px">+ '+(L.length-mx)+' campanha(s)</div>':'')+(M.erro?'<div class="erro">⚠ '+esc(M.erro)+'</div>':'')+'</div>';
+  var Fu=(D.com||{}).funil,E=(Fu&&Fu.etapas)||[];
+  var dir='<div class="painel" style="min-height:0"><h3>Funil do mês no HubSpot'+(Fu&&Fu.rotulo?' · '+esc(Fu.rotulo):'')+'</h3>'
+   +(E.length?E.map(function(e){var r=e.real&&e.real.qtd,mq=e.meta&&e.meta.qtd?Math.ceil(e.meta.qtd):null,fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,p=mq&&!nz(r)?Math.min(100,r/mq*100):0;
+       return '<div style="padding:10px 0;border-bottom:1px solid #1A2447"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.nome)+'</span><span style="font-size:26px;font-weight:800;color:'+cor(fr)+'">'+nI(r)+'<span style="font-size:17px;color:#8E9BC0;font-weight:600"> / '+(mq?nI(mq):'—')+'</span></span></div>'+(mq?barra(p):'')+'</div>'}).join('')
+     :'<div class="erro">Funil do HubSpot indisponível agora.</div>')+'</div>';
+  h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:1.75fr 1fr;gap:23px">'+esq+dir+'</div>'
+   +'<div style="font-size:16px;color:#6E7BA0">Farol da campanha pelo ritmo: verde ≥ 100% dos leads esperados até hoje, amarelo ≥ 85%, vermelho abaixo · traço branco na barra = esperado até hoje · funil: real × meta do mês</div>';
   return h}
 var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing digital',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
-  var g=new Date(D.gerado_em);$('atu').textContent='números de '+g.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(D.aviso_cache?' · '+D.aviso_cache:'')+' · atualiza a cada 10 min'}
+  var g=new Date(D.gerado_em),NB={res:'resultado do mês',fin:'financeiro',com:'vendas',mkt:'marketing',proj:'projetos',qual_termos:'termos',qual_qb:'QuickBooks',qual_proj:'projetos'};
+  var an=(D.antigos||[]).map(function(a){return NB[a.bloco]+' de '+new Date(a.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+  $('atu').innerHTML='números de '+g.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(an.length?' · <span style="color:#FFB547">último dado válido: '+esc(an.join(', '))+'</span>':'')+(D.aviso_cache?' · '+esc(D.aviso_cache):'')+' · atualiza a cada 10 min'}
 function ir(n){if(!D||!SLIDES.length)return;idx=(n+SLIDES.length)%SLIDES.length;var sl=document.querySelectorAll('.slide');for(var i=0;i<sl.length;i++)sl[i].className='slide'+(i===idx?' on':'');
   var d=document.querySelectorAll('#dots span');for(var j=0;j<d.length;j++)d[j].className=j===idx?'on':'';$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];t0=Date.now()}
 function carregar(){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&dados=1&_='+Date.now());x.onload=function(){try{var r=JSON.parse(x.responseText);if(!r.success)throw new Error(r.error||'erro');D=r.dados;render()}catch(e){if(!D)$('palco').innerHTML='<div class="slide on"><div style="margin:auto;font-size:28.1px;color:#FFB547;text-align:center;">'+esc(e.message||'Sem conexão')+'<br><span style="font-size:21.6px;color:#8E9BC0">nova tentativa em 1 minuto</span></div></div>';setTimeout(carregar,60000)}};x.onerror=function(){setTimeout(carregar,60000)};x.send()}

@@ -8637,7 +8637,8 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
   const perd12 = deals.filter(d => porId[d.properties?.dealstage]?.perdido && (_tsHs(d.properties?.closedate) || 0) > ano);
   const media = l => { const c = l.filter(d => val(d) > 0); return c.length ? c.reduce((s, d) => s + val(d), 0) / c.length : null; };
   const ticket = Number(cad.ticket_medio) > 0 ? Number(cad.ticket_medio) : (media(ganhos12) || media(deals));
-  const taxaGanho = ganhos12.length + perd12.length >= 3 ? ganhos12.length / (ganhos12.length + perd12.length) : null;
+  // v3.474: com poucas perdas registradas no HubSpot a taxa saía ~100% (pipeline necessário = só o que falta) — exige 3+ ganhos E 3+ perdidos e limita a 60%
+  const taxaGanho = ganhos12.length >= 3 && perd12.length >= 3 ? Math.min(0.6, ganhos12.length / (ganhos12.length + perd12.length)) : null;
   // ── por coluna: agora (abertos) e período (entradas) ──
   const linhas = colunas.map(c => ({ id: c.id, nome: c.nome, ordem: c.ordem, probabilidade: c.probabilidade ?? null, ganho: !!c.ganho, etapas_hubspot: c.etapas.map(id => porId[id]?.nome).filter(Boolean),
     agora: { qtd: 0, valor: 0, ponderado: 0, sem_valor: 0 }, real: { qtd: 0, valor: 0 }, ids: [], ids_agora: [] }));
@@ -8703,7 +8704,7 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
   const tg = taxaGanho ?? 0.25;
   const resumo = { aberto, ganho: { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor) }, meta: metaFat != null ? round(metaFat) : null, meta_ate_hoje: metaFat != null ? round(metaFat * prop) : null,
     pct_meta: metaFat ? Math.round(ganhosPer.valor / metaFat * 100) : null, falta: falta != null ? round(falta) : null,
-    cobertura_pct: falta ? Math.round(aberto.ponderado / falta * 100) : null, taxa_ganho_pct: Math.round(tg * 100), taxa_ganho_fonte: taxaGanho != null ? `${ganhos12.length} ganhos × ${perd12.length} perdidos em 12 meses` : 'padrão 25% (menos de 3 negócios fechados em 12 meses)',
+    cobertura_pct: falta ? Math.round(aberto.ponderado / falta * 100) : null, taxa_ganho_pct: Math.round(tg * 100), taxa_ganho_fonte: taxaGanho != null ? `${ganhos12.length} ganhos × ${perd12.length} perdidos em 12 meses` : 'padrão 25% (menos de 3 ganhos e 3 perdidos registrados em 12 meses)',
     pipeline_necessario: falta ? round(falta / tg) : null, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) } };
   // ── leads captados pelo sistema no período ──
   let leads = null;
