@@ -45,10 +45,12 @@ function qualidade(T, eT, H, eH, PM, ePM, MA) {
   const out = {};
   { const todos = Object.entries(T?.colunas || {}).flatMap(([st, l]) => (l || []).map(t => ({ ...t, status: t.status || st })));
     const abertos = todos.filter(t => !['pago', 'concluido'].includes(t.status)), errados = abertos.filter(t => (t.pendencias_criticas || []).length);
-    const por = {}; errados.forEach(t => [...new Set((t.pendencias_criticas || []).map(p => p.tipo))].forEach(k => { por[k] = (por[k] || 0) + 1; }));
+    const vT = t => num(t.nf_soma) > 0 ? num(t.nf_soma) : (num(t.valor_total_termo) || 0);
+    const por = {}, porV = {}; errados.forEach(t => [...new Set((t.pendencias_criticas || []).map(p => p.tipo))].forEach(k => { por[k] = (por[k] || 0) + 1; porV[k] = (porV[k] || 0) + vT(t); }));
     const pe = abertos.length ? errados.length / abertos.length : 0;
     out.termos = { erro: eT, abertos: T ? abertos.length : null, corretos: T ? abertos.length - errados.length : null, errados: T ? errados.length : null,
-      motivos: Object.entries(por).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => ({ motivo: TIPO_TERMO[k] || k, qtd: n })),
+      motivos: Object.entries(por).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => ({ motivo: TIPO_TERMO[k] || k, qtd: n, valor: Math.round(porV[k] || 0) })),
+      valor_pendente: T ? Math.round(errados.reduce((a, t) => a + vT(t), 0)) : null, // v3.475: R$ travado nos termos com pendência
       farol: !T ? null : !errados.length ? 'verde' : pe <= 0.2 ? 'amarelo' : 'vermelho' }; }
   { const it = (H?.itens || []).filter(x => CHECKS_QB.includes(x.id) && x.qtd), alta = it.some(x => x.gravidade === 'alta');
     out.qb = { erro: eH || ((H?.erros || []).length ? H.erros.slice(0, 2).join(' · ') : null), checagens: CHECKS_QB.length, corretas: H ? CHECKS_QB.length - it.length : null, com_erro: H ? it.length : null,
@@ -333,21 +335,36 @@ function sCom(){var C=D.com||{},Fu=C.funil;
    +'<div style="display:flex;gap:38.4px;font-size:18.4px;color:#8E9BC0;margin-top:8.6px">'+(Fu.perdidos?'<span>Perdidos em '+esc(Fu.rotulo||'')+': <b>'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')</span>':'')+(Fu.ticket?'<span>Ticket médio: <b>'+brl(Fu.ticket)+'</b></span>':'')+(Fu.lidos!=null?'<span>'+Fu.lidos+' negócio(s) lidos do HubSpot</span>':'')+'</div></div>'
    +(C.erro?'<div class="erro">⚠ '+esc(C.erro)+'</div>':'');
   return h}
-function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{},P=Q.projetos||{};
-  /* v3.474: 3 cartões (termos, QuickBooks, projetos) + faixa do faturamento do mês — antes 2 cartões com a tela vazia */
+function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{},P=Q.projetos||{},Fu=(D.com||{}).funil;
+  /* v3.475: cada cartão responde UMA pergunta com UM número grande (o que precisa de ação), a lista diz o quê e quanto em R$ ou unidades —
+     sai a soma "registros com erro" (somava meses + lançamentos + contas, unidades diferentes) e o cartão de projetos (já tem slide próprio);
+     entra a qualidade do CRM (negócios sem valor distorcem o pipeline da tela de Vendas) */
   function n(v){return v==null||v===''?'—':v}
-  function li(c,txt,q){return '<div class="lin"><span class="bola" style="background:'+c+'"></span><div class="n">'+esc(txt)+'</div><div class="q">'+q+'</div></div>'}
-  function card(t,f,a,al,b,bl,lst,er,ok){return '<div class="painel q" style="min-height:0"><div style="display:flex;align-items:center;gap:20px"><h3 style="flex:1;margin:0">'+t+'</h3>'+luz(f)+'</div>'
-    +'<div class="qn"><div><div class="v ok">'+n(a)+'</div><div class="s">'+al+'</div></div><div><div class="v '+(b>0?(f==='vermelho'?'cr':'at'):'ok')+'">'+n(b)+'</div><div class="s">'+bl+'</div></div></div>'
-    +'<div style="flex:1;min-height:0;overflow:hidden;margin-top:6px">'+(lst||(ok?'<div class="s ok" style="font-size:22px;margin-top:10px">✓ '+ok+'</div>':''))+'</div>'+(er?'<div class="erro">⚠ '+esc(er)+'</div>':'')+'</div>'}
-  var termos=card('Termos de faturamento',T.farol,T.corretos,'em aberto corretos',T.errados,'com pendência',(T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join(''),T.erro,T.errados===0?'Todos os '+n(T.abertos)+' termos em aberto estão corretos':'');
-  var qb=card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join(''),B.erro,B.com_erro===0?'Conciliação, categorias, duplicidades e contas pagas em dia':'');
-  var rp=P.rotulos||['Passaram da data de conclusão','Concluem este mês','Sem status report da semana'];
-  var pl=[[rp[0],P.com_bloqueio,'vermelho'],[rp[1],P.desatualizados,'amarelo'],[rp[2],P.sem_report,'amarelo']].filter(function(x){return x[1]>0}).map(function(x){return li(cor(x[2]),x[0],x[1])}).join('');
-  var pj=card('Projetos',P.farol,P.em_dia,'em dia',P.total==null?null:(P.atencao||0)+(P.atrasados||0),'atenção + atrasados',pl,P.erro,P.total?'Todos os '+P.total+' projetos em dia':'');
-  var fx=function(r,x,c){return '<div class="k" style="padding:16px 24px"><div class="l">'+r+'</div><div class="v" style="font-size:44px;'+(c?'color:'+c:'')+'">'+(x?brl(x.valor):'—')+'</div><div class="s">'+(x?x.qtd+' termo(s)':'')+'</div></div>'};
-  return '<div class="grade" style="grid-template-columns:1fr 1fr 1fr;flex:1;min-height:0">'+termos+qb+pj+'</div>'
-   +'<div class="grade g3">'+fx('Faturado no mês (NF emitida)',T.faturados_mes,'#2EE6A6')+fx('A faturar (elaboração → emissão)',T.a_faturar)+fx('Aguardando pagamento',T.aguardando_pagamento,'#FFB547')+'</div>'}
+  function li(c,txt,q,sub){return '<div class="lin" style="padding:11px 0"><span class="bola" style="background:'+c+'"></span><div class="n">'+esc(txt)+(sub?'<div style="font-size:17px;color:#8E9BC0">'+sub+'</div>':'')+'</div><div class="q" style="font-size:28px">'+q+'</div></div>'}
+  function card(t,pergunta,f,num,rot,sub,lst,ok,er,acao){var c=f==='verde'?'ok':f==='amarelo'?'at':f==='vermelho'?'cr':'',st=f==='verde'?'em dia':f==='amarelo'?'atenção':f==='vermelho'?'crítico':'sem dado';
+    return '<div class="painel" style="min-height:0;border-top:5px solid '+cor(f)+'"><div style="display:flex;align-items:flex-start;gap:16px"><div style="flex:1;min-width:0"><h3 style="margin:0 0 4px">'+t+'</h3><div style="font-size:18px;color:#6E7BA0">'+pergunta+'</div></div>'
+      +'<div style="flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:6px 14px;border-radius:30px;background:#0A1022;border:1px solid '+cor(f)+';color:'+cor(f)+';font-weight:800;font-size:19px;text-transform:uppercase;letter-spacing:1px"><span class="bola" style="width:16px;height:16px;background:'+cor(f)+';box-shadow:0 0 12px '+cor(f)+'"></span>'+st+'</div></div>'
+      +'<div style="display:flex;align-items:baseline;gap:16px;margin:14px 0 4px"><div class="'+c+'" style="font-size:96px;font-weight:800;line-height:1">'+n(num)+'</div><div style="font-size:24px;font-weight:700">'+rot+'</div></div>'
+      +'<div style="font-size:20px;color:#AAB6D8;min-height:26px">'+(sub||'')+'</div>'
+      +'<div style="flex:1;min-height:0;overflow:hidden;margin-top:10px;border-top:1px solid #1E2A52">'+(lst||(ok?'<div class="ok" style="font-size:24px;margin-top:16px">✓ '+ok+'</div>':''))+'</div>'+(er?'<div class="erro">⚠ '+esc(er)+'</div>':'')
+      +(acao&&f&&f!=='verde'?'<div style="margin-top:10px;padding:11px 15px;border-radius:12px;background:#121C3C;font-size:19px;color:#EAF0FF"><b style="color:#00C4CC">O que fazer:</b> '+acao+'</div>':'')+'</div>'}
+  // 1) termos de faturamento: quantos travados e quanto dinheiro está parado neles
+  var termos=card('Termos de faturamento','Algum termo travado impedindo faturar ou receber?',T.farol,T.errados,T.errados===1?'termo com pendência':'termos com pendência',
+    T.abertos==null?'':(T.valor_pendente?'<b class="'+clsF(T.farol)+'">'+brl(T.valor_pendente)+'</b> parados · ':'')+n(T.corretos)+' de '+n(T.abertos)+' em aberto estão corretos',
+    (T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd,m.valor?brl(m.valor):'')}).join(''),T.errados===0?'Todos os '+n(T.abertos)+' termos em aberto estão corretos':'',T.erro,'Kanban de Faturamento → destravar os termos com pendência');
+  // 2) QuickBooks: quantos tipos de problema (cada um na sua unidade)
+  var qb=card('Contabilidade no QuickBooks','O fechamento do mês vai sair certo?',B.farol,B.com_erro,B.com_erro===1?'problema a corrigir':'problemas a corrigir',
+    B.checagens?(B.corretas+' de '+B.checagens+' verificações em dia'):'',
+    (B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join(''),B.com_erro===0?'Conciliação, categorias, duplicidades e contas pagas em dia':'',B.erro,'Financeiro → Higienização de dados, começando pelos itens em vermelho');
+  // 3) CRM (HubSpot): negócios abertos sem valor — o pipeline da tela de Vendas fica subestimado
+  var E=(Fu&&Fu.etapas)||[],ab=E.filter(function(e){return !e.ganho}),sv=0,tot=0;ab.forEach(function(e){var a=e.agora||{};sv+=a.sem_valor||0;tot+=a.qtd||0});
+  var fc=!Fu?null:!tot?'verde':sv/tot<=0.1?'verde':sv/tot<=0.3?'amarelo':'vermelho';
+  var crm=card('Cadastro no HubSpot','O pipeline da tela de Vendas é confiável?',fc,Fu?sv:null,sv===1?'negócio aberto sem valor':'negócios abertos sem valor',
+    Fu?(tot?Math.round(sv/tot*100)+'% dos '+tot+' negócios abertos · sem valor não entram no pipeline':'nenhum negócio aberto'):'',
+    ab.filter(function(e){return (e.agora||{}).sem_valor}).map(function(e){return li(cor(fc),e.nome,e.agora.sem_valor,'de '+e.agora.qtd+' na etapa')}).join(''),Fu&&tot?'Todos os negócios abertos têm valor':'',Fu?null:'Funil do HubSpot indisponível agora','preencher o valor estimado dos negócios no HubSpot (ou na Floresta de Vendas)');
+  var fx=function(r,x,c,d){return '<div class="k" style="padding:14px 24px;display:flex;align-items:center;gap:20px"><div style="flex:1;min-width:0"><div class="l">'+r+'</div><div class="s" style="margin-top:2px">'+d+'</div></div><div style="text-align:right"><div class="v" style="font-size:42px;margin:0;'+(c?'color:'+c:'')+'">'+(x?brl(x.valor):'—')+'</div><div class="s">'+(x?x.qtd+' termo(s)':'')+'</div></div></div>'};
+  return '<div class="grade" style="grid-template-columns:1fr 1fr 1fr;flex:1;min-height:0">'+termos+qb+crm+'</div>'
+   +'<div class="grade g3">'+fx('Faturado no mês',T.faturados_mes,'#2EE6A6','NF emitida neste mês')+fx('A faturar',T.a_faturar,null,'termos em elaboração, aprovação ou emissão')+fx('Aguardando pagamento',T.aguardando_pagamento,'#FFB547','NF enviada, cliente ainda não pagou')+'</div>'}
 function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
   var dt=function(s){return s?s.split('-').reverse().join('/'):'—'};
   var av=nz(R.avanco_medio)?'—':R.avanco_medio+'%';
