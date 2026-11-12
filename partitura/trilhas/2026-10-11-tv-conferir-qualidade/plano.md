@@ -29,3 +29,5 @@ ID: 2026-10-11-tv-conferir-qualidade · Trilha: T4
 - 12/11/2026 · v3.476 · ok · — · —
 - [x] v3.477 · TV com a fonte real (Montserrat, mais larga que a do teste): cartões do mês cortavam valores ("R$ 170 ...") e quebravam o status; valores 31px, status em selo e só o % à direita; lucro/EBITDA abaixo de zero contra meta positiva mostram "negativo" (antes −324,9% atingido); barra na cor do farol (gastos acima da meta ficava verde); mês abreviado; grades com colunas iguais (minmax) e textos da Qualidade quebram linha em vez de cortar. Testes agora renderizam com Montserrat local.
 - 12/11/2026 · v3.477 · ok · — · —
+- [x] v3.478 · funil da TV com 6+ etapas: faixas baixas e texto em 2 linhas vazando para a faixa de baixo; agora número e valor numa linha ("297 abertos · R$ 0"), faixa ocupa a linha inteira, nomes à esquerda centralizados; etapa sem meta mostra "sem meta para esta etapa"; o cartão "Leads do mês" escolhe a etapa de lead que tem meta (havia duas).
+- 12/11/2026 · v3.478 · ok · — · —
