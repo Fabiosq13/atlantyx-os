@@ -21,9 +21,9 @@ async function kv(k, v) {
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
 const CFG_PADRAO = { codigo: null, criado_em: null, rotacao_s: 25, slides: ['financeiro', 'comercial', 'qualidade'] };
-const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos'];
+const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos', 'projetos_tarefas'];
 // v3.152: o slide Qualidade entra nas TVs já configuradas (uma vez; depois vale o que o usuário salvar)
-const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
+const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (!c.v479) { const sl = [...(c.slides || [])]; const i = sl.indexOf('projetos'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'projetos_tarefas'); c.slides = [...new Set(sl)]; c.v479 = true; } /* v3.479: tarefas e rentabilidade por projeto */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
 const codigoNovo = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const b = crypto.randomBytes(12); let s = ''; for (const x of b) s += a[x % a.length]; return s; };
 const base = () => { const b = process.env.MEDIA_PUBLIC_BASE || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app'; return (b.startsWith('http') ? b : 'https://' + b).replace(/\/$/, ''); };
 
@@ -82,9 +82,22 @@ function termosResumo(T, mes) {
   const aPag = todos.filter(t => ['envio_nf', 'pagamento'].includes(t.status));
   return { faturados_mes: { qtd: fat.length, valor: soma(fat) }, a_faturar: { qtd: aFat.length, valor: soma(aFat) }, aguardando_pagamento: { qtd: aPag.length, valor: soma(aPag) } };
 }
+// v3.479: RENTABILIDADE por projeto (tela Custo por Projeto & Piso da Hora) — margem em R$/mês nos últimos 3 meses fechados
+// contra os 3 meses anteriores (tendência ▲/▼). Cálculo pesado (QuickBooks + Maestro): guardado por 6 horas.
+async function rentabilidade() {
+  const c = await kv('tv:rentab').catch(() => null); if (c && Date.now() - c.em < 6 * 3600e3) return c.v;
+  const hoje = new Date(Date.now() - 3 * 3600000), ym = d => d.toISOString().substring(0, 7), menos = n => { const d = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - n, 15)); return ym(d); };
+  const [A, B] = await Promise.all([chamar('financeiro', { action: 'custo_projetos', params: { meses: 3, mes_fim: menos(1) } }, 58000), chamar('financeiro', { action: 'custo_projetos', params: { meses: 3, mes_fim: menos(4) } }, 58000).catch(() => null)]);
+  const ant = Object.fromEntries(((B && B.projetos) || []).map(p => [p.projeto, p]));
+  const MS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], rot = (a, b) => MS[+a.slice(5) - 1] + ' a ' + MS[+b.slice(5) - 1] + '/' + b.slice(2, 4);
+  const v = { periodo: rot(menos(3), menos(1)), anterior: rot(menos(6), menos(4)), projetos: (A.projetos || []).filter(p => p.receita_mes > 0 || p.custo_direto_mes > 0).map(p => { const b = ant[p.projeto];
+    return { projeto: String(p.projeto).substring(0, 60), receita_mes: p.receita_mes, margem_mes: p.margem_mes, margem_pct: p.margem_pct, margem_mes_ant: b ? b.margem_mes : null, variacao: b ? Math.round((p.margem_mes - b.margem_mes) * 100) / 100 : null }; })
+    .sort((a, b) => b.margem_mes - a.margem_mes) };
+  await kv('tv:rentab', { em: Date.now(), v }).catch(() => {}); return v;
+}
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
@@ -92,14 +105,14 @@ async function montarDados() {
     chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config(), chamar('metricool', { action: 'patrocinado_listar' }, 40000),
     chamar('financeiro', { action: 'kpis_saude', params: {} }, 45000),
     // v3.479: ORGÂNICO — publicações do mês no Metricool (mesma fonte do Dashboard de Desempenho)
-    ...['linkedin', 'instagram', 'facebook'].map(rede => chamar('metricool', { action: 'metricas_posts', payload: { rede, inicio: mes + '-01', fim: hoje } }, 40000))]); // v3.357: previsto do mês (programado até o fim do mês)
+    ...['linkedin', 'instagram', 'facebook'].map(rede => chamar('metricool', { action: 'metricas_posts', payload: { rede, inicio: mes + '-01', fim: hoje } }, 40000)), rentabilidade()]); // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
   const MA = v(ma), CF = v(cf) || {}, rank = { vermelho: 0, amarelo: 1, verde: 2 };
   const proj = MA ? { erro: null, fonte: MA.fonte, resumo: MA.resumo, nomes: CF.nomes_projetos !== false,
       lista: MA.projetos.filter(p => p.ativo).sort((a, b) => (rank[a.farol] ?? 3) - (rank[b.farol] ?? 3) || String(a.conclusao || '9').localeCompare(String(b.conclusao || '9')))
-        .map((p, i) => ({ nome: CF.nomes_projetos !== false ? String(p.nome).substring(0, 60) : 'Projeto ' + (i + 1), gerente: CF.nomes_projetos !== false ? String(p.gerente || '').substring(0, 30) : '', conclusao: p.conclusao, pct: p.pct, planejado: p.planejado, desvio: p.desvio, farol: p.farol, dias_atraso: p.dias_atraso, motivo: p.origem === 'status report' ? 'farol do status report' + ((p.motivos || [])[0] ? ' · ' + p.motivos[0] : '') : ((p.motivos || [])[0] || null) })) }
+        .map((p, i) => ({ tarefas_atraso: p.tarefas_atraso || 0, tarefas_risco: p.tarefas_risco || 0, tarefas_atraso_lista: CF.nomes_projetos !== false ? (p.tarefas_atraso_lista || []) : [], tarefas_risco_lista: CF.nomes_projetos !== false ? (p.tarefas_risco_lista || []) : [], nome_real: String(p.nome), nome: CF.nomes_projetos !== false ? String(p.nome).substring(0, 60) : 'Projeto ' + (i + 1), gerente: CF.nomes_projetos !== false ? String(p.gerente || '').substring(0, 30) : '', conclusao: p.conclusao, pct: p.pct, planejado: p.planejado, desvio: p.desvio, farol: p.farol, dias_atraso: p.dias_atraso, motivo: p.origem === 'status report' ? 'farol do status report' + ((p.motivos || [])[0] ? ' · ' + p.motivos[0] : '') : ((p.motivos || [])[0] || null) })) }
     : (() => { const r = v(pm)?.resumo; return { erro: r ? null : 'Módulo de projetos: ' + (erro(ma) || 'sem resposta'), fonte: 'Base local do Atlantyx OS', resumo: r ? { total: r.total, verde: r.verde, amarelo: r.amarelo, vermelho: r.vermelho } : null, lista: [] }; })();
   const realMes = num(Pm.faturamento), metaMes = num(M.faturamento), frMes = num(M.fracao_decorrida);
   const qual = qualidade(v(tq), erro(tq), v(hg), erro(hg), v(pm), erro(pm), MA);
@@ -130,6 +143,9 @@ async function montarDados() {
     const T = redes.reduce((a, r) => { ['posts', 'impressoes', 'cliques', 'engajamento', 'curtidas', 'comentarios', 'compartilhamentos'].forEach(k => { a[k] += r[k] || 0; }); return a; }, { posts: 0, impressoes: 0, cliques: 0, engajamento: 0, curtidas: 0, comentarios: 0, compartilhamentos: 0 });
     return { redes, total: T, top: posts.sort((a, b) => (b.impressoes + b.engajamento * 10) - (a.impressoes + a.engajamento * 10)).slice(0, 4), erro: redes.every(r => r.erro) ? redes[0].erro : null }; })();
   mkt.organico = organico;
+  const rent = v(rt) ? { ...v(rt), erro: null } : { erro: erro(rt), projetos: [] };
+  if (CF.nomes_projetos === false) rent.projetos = (rent.projetos || []).map((p, i) => ({ ...p, projeto: 'Projeto ' + (i + 1) }));
+  proj.rentabilidade = rent; (proj.lista || []).forEach(p => { delete p.nome_real; });
   return { qual, proj, mkt, gerado_em: new Date().toISOString(), mes_ref: mes,
     // v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol (previsto = real + programado até o fim do mês)
     res: (() => { const KS = v(ks)?.kpis || null, cx = K.regime === 'caixa';
@@ -435,7 +451,36 @@ function sMkt(){var M=D.mkt||{},L=M.campanhas||[],T=M.total||{},O=M.organico||{}
   h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
    +'<div style="font-size:16px;color:#6E7BA0">Orgânico: Metricool, publicações de '+esc(mn)+' até hoje · taxa de engajamento = curtidas + comentários + compartilhamentos ÷ impressões · pago: Meta/LinkedIn Ads</div>';
   return h}
-var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing digital',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj};
+function sProjT(){var J=D.proj||{},L=(J.lista||[]).slice(),R=J.rentabilidade||{},RP=R.projetos||[];
+  /* v3.479: TAREFAS em atraso (vermelho) e com tendência de atraso (amarelo) por projeto + RENTABILIDADE por projeto em R$/mês com tendência */
+  var n=function(v){return nz(v)?'—':Number(v).toLocaleString('pt-BR')},dt=function(s){return s?s.split('-').reverse().slice(0,2).join('/'):''};
+  var ta=0,tr=0,pa=0;L.forEach(function(p){ta+=p.tarefas_atraso||0;tr+=p.tarefas_risco||0;if(p.tarefas_atraso)pa++});
+  var mT=0,mA=0,temA=false;RP.forEach(function(p){mT+=p.margem_mes||0;if(!nz(p.margem_mes_ant)){mA+=p.margem_mes_ant;temA=true}});var dv=temA?mT-mA:null;
+  var seta=function(v){return nz(v)||Math.abs(v)<1?'<span style="color:#8E9BC0">● estável</span>':v>0?'<span class="ok">▲ '+brl(v)+'</span>':'<span class="cr">▼ '+brl(Math.abs(v))+'</span>'};
+  var h='<div class="grade g4">'+k('Tarefas em atraso','<span class="'+(ta?'cr':'ok')+'">'+n(ta)+'</span>',pa?'em '+pa+' projeto(s) · data de fim já passou':'nenhuma tarefa vencida','md')
+   +k('Tendência de atraso','<span class="'+(tr?'at':'ok')+'">'+n(tr)+'</span>','vencem em até 14 dias e estão atrás do previsto','md')
+   +k('Rentabilidade dos projetos','<span class="'+(mT>=0?'ok':'cr')+'">'+brl(mT)+'</span>','por mês · '+(R.periodo?esc(R.periodo):'últimos 3 meses'),'md')
+   +k('Tendência da rentabilidade',seta(dv),temA?'contra '+brl(mA)+'/mês em '+esc(R.anterior||'o trimestre anterior'):'sem o trimestre anterior para comparar','md')+'</div>';
+  // tarefas por projeto
+  L.sort(function(a,b){return (b.tarefas_atraso||0)-(a.tarefas_atraso||0)||(b.tarefas_risco||0)-(a.tarefas_risco||0)});
+  var comT=L.filter(function(p){return p.tarefas_atraso||p.tarefas_risco});
+  var bdg=function(v,c){return '<span style="display:inline-block;min-width:46px;text-align:center;padding:2px 10px;border-radius:14px;font-weight:800;font-size:21px;background:'+(v?c:'#1A2447')+';color:'+(v?'#0A1022':'#6E7BA0')+'">'+v+'</span>'};
+  var lt=comT.slice(0,6).map(function(p){var it=(p.tarefas_atraso_lista||[]).slice(0,2).map(function(t){return '<div style="font-size:16px;color:#FF9AAE;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">● '+esc(t.nome)+(t.resp?' · '+esc(t.resp):'')+' · '+t.dias+'d de atraso</div>'}).join('')
+       +(p.tarefas_atraso_lista&&p.tarefas_atraso_lista.length?'':(p.tarefas_risco_lista||[]).slice(0,2).map(function(t){return '<div style="font-size:16px;color:#FFD08A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">● '+esc(t.nome)+(t.resp?' · '+esc(t.resp):'')+' · vence '+dt(t.fim)+' · '+t.pct+'% feito</div>'}).join(''));
+     return '<div style="display:flex;gap:14px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #1A2447"><div style="flex:1;min-width:0"><div style="font-size:22px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.nome)+'</div>'+it+'</div>'+bdg(p.tarefas_atraso||0,'#FF5C7A')+bdg(p.tarefas_risco||0,'#FFB547')+'</div>'}).join('');
+  var esq='<div class="painel" style="min-height:0"><div style="display:flex;align-items:center;gap:14px"><h3 style="flex:1;margin:0">Tarefas por projeto</h3><span style="font-size:15px;color:#FF5C7A;font-weight:700">■ ATRASO</span><span style="font-size:15px;color:#FFB547;font-weight:700">■ TENDÊNCIA</span></div>'
+   +'<div style="flex:1;min-height:0;overflow:hidden;margin-top:6px">'+(lt||(L.length?'<div class="ok" style="font-size:24px;margin-top:14px">✓ Nenhuma tarefa atrasada ou em risco nos '+L.length+' projetos ativos.</div>':'<div class="erro">'+esc(J.erro||'Sem projetos ativos no Maestro.')+'</div>'))+'</div>'
+   +(comT.length>6?'<div style="font-size:17px;color:#8E9BC0">+ '+(comT.length-6)+' projeto(s) com tarefas pendentes</div>':'')+'</div>';
+  // rentabilidade por projeto
+  var mx=1;RP.forEach(function(p){mx=Math.max(mx,Math.abs(p.margem_mes||0))});
+  var lr=RP.slice(0,8).map(function(p){var m=p.margem_mes||0,w=Math.round(Math.abs(m)/mx*100);
+     return '<div style="padding:8px 0;border-bottom:1px solid #1A2447"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline"><span style="font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">'+esc(p.projeto)+'</span><span style="white-space:nowrap"><b class="'+(m>=0?'ok':'cr')+'" style="font-size:24px">'+brl(m)+'</b><span style="font-size:16px;color:#8E9BC0"> /mês'+(nz(p.margem_pct)?'':' · '+pct(p.margem_pct))+'</span></span></div>'
+       +'<div style="display:flex;gap:12px;align-items:center;margin-top:5px"><div style="flex:1;height:9px;background:#1A2447;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+w+'%;background:'+(m>=0?'#2EE6A6':'#FF5C7A')+'"></i></div><span style="font-size:17px;white-space:nowrap;width:150px;text-align:right">'+seta(p.variacao)+'</span></div></div>'}).join('');
+  var dir='<div class="painel" style="min-height:0"><h3>Rentabilidade por projeto (margem R$/mês)</h3><div style="flex:1;min-height:0;overflow:hidden">'+(lr||'<div class="erro">'+esc(R.erro||'Sem dados de rentabilidade (Custo por Projeto).')+'</div>')+'</div></div>';
+  h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
+   +'<div style="font-size:16px;color:#6E7BA0">Tarefas: cronograma do Maestro (atraso = fim já passou e não concluída · tendência = vence em até 14 dias e está 15pp+ atrás do previsto ou não começou) · rentabilidade: tela Custo por Projeto (receita − impostos − folha apontada − custo fixo rateado), média mensal de '+esc(R.periodo||'3 meses')+' × '+esc(R.anterior||'trimestre anterior')+'</div>';
+  return h}
+var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing',qualidade:'Qualidade',projetos:'Projetos',projetos_tarefas:'Projetos · tarefas e rentabilidade'},REN={financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj,projetos_tarefas:sProjT};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
   var g=new Date(D.gerado_em),NB={res:'resultado do mês',fin:'financeiro',com:'vendas',mkt:'marketing',proj:'projetos',qual_termos:'termos',qual_qb:'QuickBooks',qual_proj:'projetos'};
@@ -471,7 +516,7 @@ async function handler(req, res) {
       config: async () => { const c = await config(); return { config: { ...c, link: c.codigo ? base() + '/tv/' + c.codigo : null } }; },
       gerar: async () => { const c = await config(); const n = { ...c, codigo: codigoNovo(), criado_em: new Date().toISOString() }; await kv('tv:config', n); return { config: { ...n, link: base() + '/tv/' + n.codigo } }; },
       revogar: async () => { const c = await config(); await kv('tv:config', { ...c, codigo: null, criado_em: null }); return { ok: true }; },
-      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
+      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, v479: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
         if (!Array.isArray(n.slides) || !n.slides.length) throw new Error('Escolha pelo menos um slide'); await kv('tv:config', n);
         /* v3.237: esconder nomes vale na hora (cache de 10 min) */ if (n.nomes_projetos !== c.nomes_projetos) { try { await kv('tv:dados', null); } catch (_) {} } return { config: { ...n, link: n.codigo ? base() + '/tv/' + n.codigo : null } }; },
       atualizar_dados: async () => ({ dados: await dados(true) }),

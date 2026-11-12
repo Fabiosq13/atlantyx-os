@@ -12319,6 +12319,7 @@ function tvRender() {
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Vendas (funil)</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSm"' + (c.slides.includes('marketing') ? ' checked' : '') + '/> Marketing digital (campanhas e farol de leads)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSq"' + (c.slides.includes('qualidade') ? ' checked' : '') + '/> Qualidade (termos e QuickBooks)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSp"' + (c.slides.includes('projetos') ? ' checked' : '') + '/> Projetos (lista com farol)</label>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSpt"' + (c.slides.includes('projetos_tarefas') ? ' checked' : '') + '/> Projetos · tarefas em atraso e rentabilidade</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;" title="Desmarque se a TV fica em área com visitantes — mostra Projeto 1, 2, 3…"><input type="checkbox" id="tvSn"' + (c.nomes_projetos !== false ? ' checked' : '') + '/> mostrar nomes dos projetos</label>'
     + '<button class="btn btn-g" onclick="tvSalvar()">💾 Salvar</button><button class="btn btn-g" onclick="tvAtualizar(this)">↻ Atualizar os números agora</button><button class="btn btn-p" onclick="tvConferir(this)">🔍 Conferir os números (abrir o caixa)</button></div></div></div><div id="tvConf"></div>'
     + (c.link ? '<div class="panel" style="margin-bottom:12px;"><div class="pb"><div style="font-size:10px;font-family:var(--M);text-transform:uppercase;color:var(--t2);margin-bottom:6px;">Prévia (como aparece na TV)</div><div style="position:relative;width:100%;max-width:960px;aspect-ratio:16/9;border-radius:10px;overflow:hidden;border:1px solid var(--bd);background:#070B18;"><iframe id="tvPrev" src="' + e(c.link) + '" style="position:absolute;inset:0;width:100%;height:100%;border:0;" loading="lazy" title="Prévia da TV"></iframe></div></div></div>' : '')
@@ -12332,7 +12333,7 @@ async function tvAcao(a) {
   try { const r = await tvApi(a); if (a === 'revogar') _tv = (await tvApi('config')).config; else _tv = r.config; tvRender(); toast(a === 'revogar' ? 'Link revogado' : 'Link da TV pronto', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 async function tvSalvar() {
-  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSm')?.checked && 'marketing', document.getElementById('tvSq')?.checked && 'qualidade', document.getElementById('tvSp')?.checked && 'projetos'].filter(Boolean);
+  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSm')?.checked && 'marketing', document.getElementById('tvSq')?.checked && 'qualidade', document.getElementById('tvSp')?.checked && 'projetos', document.getElementById('tvSpt')?.checked && 'projetos_tarefas'].filter(Boolean);
   try { _tv = (await tvApi('salvar', { rotacao_s: document.getElementById('tvRot').value, slides, nomes_projetos: !!document.getElementById('tvSn')?.checked })).config; tvRender(); toast('Salvo — a TV pega a mudança na próxima recarga (até 10 min) ou ao reabrir o link', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 // v3.152: abre cada número da TV até a origem — caixa (abertura + entradas − saídas), faturamento e % da meta
@@ -37167,7 +37168,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.479] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.480] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37183,7 +37184,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.479';
+window.__ATX_BUILD_ID__ = 'ATX-v3.480';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

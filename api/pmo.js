@@ -882,7 +882,17 @@ async function maestroPainel({ forcar } = {}) {
     if (tend === 'no ritmo' && desvio != null && desvio < -10) tend = 'tendência de atraso';
     const P = [desvio != null ? 'desvio ' + (desvio > 0 ? '+' : '') + desvio + 'pp (real ' + pctM + '% × previsto ' + planM + '%)' : 'sem avanço do cronograma'];
     const farol_sr = r?.farol || null, sr_dias = r?.data ? dias(r.data) : null;
-    return { nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, farol_calculado: farolCalc,
+    // v3.479: TAREFAS do cronograma — em atraso (fim passou e não concluída) e com tendência de atraso (vence em até 14 dias e está
+    // 15pp+ abaixo do previsto, ou já devia ter começado e está em 0%)
+    const _tar = (() => { const ts2 = Array.isArray(wbs[nome]) ? wbs[nome] : [], fol = ts2.filter((t, i) => !(ts2[i + 1] && (ts2[i + 1].level || 0) > (t.level || 0)));
+      const ok = t => t.status === 'Concluída' || t.status === 'Cancelada' || pctFolha(t) === 100, lim = addDias(hoje, 14), out = { atraso: [], risco: [] };
+      fol.forEach(t => { if (ok(t)) return; const fim = String(t.fim || '').slice(0, 10), ini = String(t.inicio || '').slice(0, 10), rp = pctFolha(t) || 0, pv = pctPrev(t);
+        const nm = String(t.nome || t.tarefa || t.titulo || t.name || 'tarefa').substring(0, 70), resp = String(t.responsavel || t.recurso || t.resp || '').substring(0, 30);
+        if (fim && fim < hoje) out.atraso.push({ nome: nm, resp, fim, dias: dias(fim), pct: rp });
+        else if (fim && fim <= lim && ((pv != null && rp < pv - 15) || (ini && ini <= hoje && rp === 0))) out.risco.push({ nome: nm, resp, fim, pct: rp, previsto: pv }); });
+      out.atraso.sort((a2, b2) => b2.dias - a2.dias); out.risco.sort((a2, b2) => a2.fim.localeCompare(b2.fim));
+      return { tarefas_atraso: out.atraso.length, tarefas_risco: out.risco.length, tarefas_atraso_lista: out.atraso.slice(0, 5), tarefas_risco_lista: out.risco.slice(0, 5) }; })();
+    return { ..._tar, nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, farol_calculado: farolCalc,
       farol_prazo, prazo_motivo: P.join(' · '), tendencia: tend, atraso_projetado: atrasoProj, previsao_fim: prevFim, dias_restantes: fimT ? _dd(fimT, hoje) : null, tem_cronograma: av.fonte === 'cronograma', prazo_inicio: inicioPrazo, prazo_fonte: temCron ? 'cronograma' : (fimCad ? 'cadastro' : (conclusao ? 'marcos' : null)), conclusao_cadastro: fimCad && fimCad !== conclusao ? fimCad : null, farol_sr, sr_data: r?.data ? String(r.data).slice(0, 10) : null, sr_dias, sr_desatualizado: sr_dias != null ? sr_dias > 14 : null, conclusao, inicio: inicioPrazo || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
   });
   const at = projetos.filter(p => p.ativo);
