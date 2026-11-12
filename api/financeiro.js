@@ -7289,12 +7289,22 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
     const nomesApt = [...new Set(apts.filter(a => L.includes(String(a.data || '').slice(0, 7))).map(a => String(a.projeto || a.Projeto || '').trim()).filter(Boolean))];
     for (const n of nomesApt) { const a = alvo(n); if (a) aptLig[n] = a; }
     apts = apts.map(a => { const n = String(a.projeto || a.Projeto || '').trim(), x = aptLig[n]; return x?.proj ? { ...a, projeto: x.proj } : a; }); }
+  // v3.462: projetos que NÃO começam com Oficial_ e são ALAVANCAS DE PRODUTO (Pipeline de Ideias: IA Sales, Connect IA…) —
+  // entram na lista de motores e, sem marcação, já vão para o motor Produtos
+  const alavancas = new Map(); { let ideias = []; try { ideias = (await (await getSql())`SELECT titulo FROM ideias`).map(r => chNorm(r.titulo)).filter(t => t.length >= 4); } catch (_) {}
+    const RXP = /\b(ia|ai|gpt|bot|agente|produto|plataforma|saas|app|sales|vendas ia|connect|maestro|sentinel|atlantyx os)\b/i;
+    const ofSet = new Set((oficiaisLista.length ? oficiaisLista.map(o => o.nome) : []).map(chNorm));
+    const nomes = new Set([...cad.map(p => String(p.nome || '').trim()), ...apts.filter(a => L.includes(String(a.data || '').slice(0, 7))).map(a => String(a.projeto || a.Projeto || '').trim())].filter(n => n && !/^oficial[_\s-]/i.test(n) && !ofSet.has(chNorm(n))));
+    for (const n of nomes) { const k = chNorm(n), ide = ideias.find(t => t === k || (t.length >= 5 && (k.includes(t) || t.includes(k)))); const isIA = RXP.test(n);
+      if (ide || isIA) alavancas.set(n, { nome: n, por: ide ? 'Pipeline de Ideias' : 'nome de produto' }); } }
+  const _motorProj = (pr, cli) => { const m = motorDoNome(mapa, pr, cli); if (m !== 'projetos') return m; const marcado = Object.keys(mapa).some(k => chNorm(pr) === k || chNorm(pr).includes(k)); return !marcado && alavancas.has(pr) ? 'produtos' : m; };
   const R = chApurar({ meses: L, folhas, apts, receitas, fixoMes, aliquota: aliq, metodo: metodo || cfgP.metodo || 'horas', utilizacao: (Number(utilizacao_pct ?? cfgP.utilizacao_pct) || 75) / 100,
     margem_alvo: (Number(margem_alvo_pct ?? cfgP.margem_alvo_pct) || 30) / 100, fixoManual: fixo_manual !== undefined && fixo_manual !== '' && fixo_manual != null ? Number(fixo_manual) : (cfgP.fixo_manual ?? null),
-    motorDe: (pr, cli) => motorDoNome(mapa, pr, cli) });
+    motorDe: (pr, cli) => _motorProj(pr, cli) });
   R.avisos = avisos.concat(R.avisos); R.aliquota_fonte = aliquota_pct != null && aliquota_pct !== '' ? 'informada' : cfgP.aliquota_pct != null ? 'configurada aqui' : cfgFin.aliquota_pct != null ? 'alíquota efetiva da DRE' : aliqQb ? 'impostos ÷ receita do QuickBooks no período' : 'padrão 16,15%';
   R.fixo_mes = fixoMes; R.mapa_motores = mapa; R.parametros = cfgP;
   R.clientes = [...new Set(receitas.map(r => r.cliente).filter(Boolean))].sort().map(c => ({ cliente: c, motor: motorDoNome(mapa, c), marcado: Object.keys(mapa).some(k => chNorm(c).includes(k) || k.includes(chNorm(c))) }));
+  R.alavancas = [...alavancas.values()].map(a => ({ ...a, motor: _motorProj(a.nome, '') }));
   R.apontamentos_ligados = Object.entries(aptLig).map(([nome, x]) => ({ nome, projeto: x.proj, como: x.como }));
   R.apontamentos_nomes = [...new Set(apts.filter(a => L.includes(String(a.data || '').slice(0, 7))).map(a => String(a.projeto || a.Projeto || '').trim()).filter(n => n && !/^oficial[_\s-]/i.test(n)))].sort();
   // v3.456: só projetos ATIVOS + concluídos que tiveram hora apontada ou receita no período

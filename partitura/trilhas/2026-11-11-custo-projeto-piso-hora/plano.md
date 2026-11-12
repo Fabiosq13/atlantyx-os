@@ -11,3 +11,5 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - 11/11/2026 · v3.457 · ok · — · —
 - [x] v3.460 · horas apontadas com nome antigo do projeto vão para o Oficial_ (palavra característica/sigla, só com vencedor único; ex.: "CPFL Projeto Xplann" → Oficial_Xplann, "Projeto Transmissão" → Oficial_Transmissão); quadro "🗂 Horas apontadas → projeto Oficial_" para trocar/manter separado (kv fin:apontamento_projeto)
 - 11/11/2026 · v3.460 · ok · — · fundador conferir as ligações automáticas (XPLANN_2026, Projeto Jelta - V2, Projeto cadastro também foram ligados)
+- [x] v3.462 · "Motor de cada cliente / projeto" inclui os projetos que não começam com Oficial_ e são alavancas de produto (casam com o Pipeline de Ideias ou têm nome de produto: IA, Sales, Connect, Maestro…) — 🚀 na lista, motor Produtos por padrão, editável
+- 12/11/2026 · v3.462 · ok · — · —
