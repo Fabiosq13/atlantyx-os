@@ -327,7 +327,7 @@ svg text{font-family:Montserrat,Calibri,Arial,sans-serif}
 </style></head><body><div id="app">
 <div class="top"><div class="logo"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" onerror="this.parentNode.innerHTML='ATLANT<b>Y</b>X'"></div><div class="tit" id="tit">Gestão à vista</div><div class="esp"></div><div><div class="rel" id="rel">--:--</div><div class="dt" id="dt"></div></div></div>
 <div class="palco" id="palco"><div class="slide on"><div style="margin:auto;font-size:32.4px;color:#8E9BC0;">Carregando os números…</div></div></div>
-<div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div><div style="font-size:13px;color:#3A4670;margin-left:6px">${esc0(versao())}</div></div></div><div class="prog" id="prog"></div>
+<div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div><div style="font-size:13px;color:#3A4670;margin-left:6px">${esc0(versao())}</div></div></div><div class="prog" id="prog"></div><div id="pz" style="display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(255,181,71,.15);border:1px solid #FFB547;color:#FFB547;border-radius:30px;padding:8px 26px;font:700 18px Montserrat,Arial,sans-serif;letter-spacing:1px;z-index:9">⏸ PAUSADO · clique para continuar</div>
 <script>
 var COD=${JSON.stringify(cod)},ROT=${Math.max(8, Math.min(180, +cfg.rotacao_s || 25))},SLIDES=${JSON.stringify((cfg.slides || []).filter(s => SLIDES_OK.indexOf(s) >= 0))};
 var D=null,idx=0,timer=null,t0=0;
@@ -671,9 +671,12 @@ function ir(n){if(!D||!SLIDES.length)return;idx=(n+SLIDES.length)%SLIDES.length;
   var d=document.querySelectorAll('#dots span');for(var j=0;j<d.length;j++)d[j].className=j===idx?'on':'';$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];t0=Date.now()}
 function carregar(){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&dados=1&_='+Date.now());x.onload=function(){try{var r=JSON.parse(x.responseText);if(!r.success)throw new Error(r.error||'erro');D=r.dados;render()}catch(e){if(!D)$('palco').innerHTML='<div class="slide on"><div style="margin:auto;font-size:28.1px;color:#FFB547;text-align:center;">'+esc(e.message||'Sem conexão')+'<br><span style="font-size:21.6px;color:#8E9BC0">nova tentativa em 1 minuto</span></div></div>';setTimeout(carregar,60000)}};x.onerror=function(){setTimeout(carregar,60000)};x.send()}
 function relogio(){var a=new Date();$('rel').textContent=a.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});$('dt').textContent=a.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',timeZone:'America/Sao_Paulo'});
-  if(D&&SLIDES.length>1){var f=(Date.now()-t0)/(ROT*1000);$('prog').style.width=Math.min(100,f*100)+'%';if(f>=1)ir(idx+1)}}
+  if(PAUSA)return;if(D&&SLIDES.length>1){var f=(Date.now()-t0)/(ROT*1000);$('prog').style.width=Math.min(100,f*100)+'%';if(f>=1)ir(idx+1)}}
 document.addEventListener('keydown',function(e){if(e.keyCode===39||e.keyCode===40)ir(idx+1);if(e.keyCode===37||e.keyCode===38)ir(idx-1);if(e.keyCode===13&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen()});
-document.addEventListener('click',function(){if(document.documentElement.requestFullscreen&&!document.fullscreenElement)document.documentElement.requestFullscreen()});
+/* v3.485: clique PAUSA a troca de slides; outro clique continua (a 1ª vez também entra em tela cheia) · espaço faz o mesmo */
+var PAUSA=false;function pausar(){PAUSA=!PAUSA;$('pz').style.display=PAUSA?'block':'none';if(!PAUSA)t0=Date.now()}
+document.addEventListener('click',function(){if(document.documentElement.requestFullscreen&&!document.fullscreenElement)document.documentElement.requestFullscreen();pausar()});
+document.addEventListener('keydown',function(e){if(e.keyCode===32){e.preventDefault();pausar()}});
 function ajusta(){document.documentElement.style.setProperty('--s',Math.min(innerWidth/1920,innerHeight/1080))}window.addEventListener('resize',ajusta);ajusta();
 t0=Date.now();carregar();setInterval(carregar,10*60000);setInterval(relogio,500);relogio();setTimeout(function(){location.reload()},6*3600000);
 </script></body></html>`;
