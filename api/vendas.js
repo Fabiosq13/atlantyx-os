@@ -968,6 +968,7 @@ async function handler(req, res) {
     floresta_iara_enviar: () => floresta().iaraEnviar(payload, req.sessao?.login),
     floresta_apollo: () => floresta().apolloBuscar(payload),                 // v3.441: leads frios do Apollo
     floresta_importar: () => floresta().importar(payload),
+    floresta_enriquecer: () => floresta().enriquecer(payload), // v3.503: e-mail e celular pelo Apollo (gasta créditos)
     floresta_apollo_listas: async () => { const d = await _apolloBuscar(payload, 'listas'); return { listas: d.listas || [], aviso: d.aviso_chave || null }; }, // v3.470
     floresta_lote: () => floresta().lote(payload, req.sessao?.login),        // v3.442: remarketing / excluir em lote
     floresta_iara_fluxo: () => floresta().iaraFluxo(payload),                // v3.445: Fluxo IA = IA no HubSpot
