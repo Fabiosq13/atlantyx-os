@@ -75,12 +75,12 @@
   // ── Perfis ──
   function rPerfis() {
     const n = {}; S.usuarios.forEach(u => { n[u.perfil_id] = (n[u.perfil_id] || 0) + 1; });
-    $('acsApp_s0perfis').innerHTML = cab('🏷 Perfis', 'Cada perfil é um conjunto de telas. "Administrador" vê tudo e gerencia o acesso.', '<button class="btn btn-gn" onclick="ACESSO.perfilForm()">+ Novo perfil</button>')
+    $('acsApp_s0perfis').innerHTML = cab('🏷 Perfis', 'Cada perfil é um conjunto de telas. "Administrador" vê tudo e gerencia o acesso.', '<button class="btn" onclick="ACESSO.perfilVendas()" title="Cria (ou atualiza) o perfil Vendas: só o menu S7 · Vendas Ativo">+ Perfil Vendas</button> <button class="btn btn-gn" onclick="ACESSO.perfilForm()">+ Novo perfil</button>')
       + `<div class="panel"><div class="pb"><table style="width:100%;border-collapse:collapse;font-size:11.5px;">
       <tr style="text-align:left;color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="padding:6px;">Perfil</th><th style="padding:6px;">Descrição</th><th style="padding:6px;">Telas</th><th style="padding:6px;">Usuários</th><th></th></tr>
       ${S.perfis.map(p => `<tr style="border-top:1px solid var(--bd);"><td style="padding:7px 6px;font-weight:700;">${esc(p.nome)}${p.admin ? ' <span class="tag on">admin</span>' : ''}</td><td style="padding:7px 6px;color:var(--t2);">${esc(p.descricao || '')}</td>
         <td style="padding:7px 6px;">${p.admin ? 'todas' : (p.telas || []).length + ' de ' + S.telas.filter(t => t.ativa !== false).length}</td><td style="padding:7px 6px;">${n[p.id] || 0}</td>
-        <td style="padding:7px 6px;text-align:right;white-space:nowrap;"><button class="btn" style="font-size:10px;" onclick="ACESSO.perfilForm('${p.id}')">✎ Editar</button> <button class="btn" style="font-size:10px;" onclick="nav('s0perfiltelas', document.querySelector('.sbi[onclick*=\\'s0perfiltelas\\']'))">▦ Telas</button> ${p.id === 'perfil_admin' ? '' : `<button class="btn" style="font-size:10px;color:var(--red);" onclick="ACESSO.perfilExcluir('${p.id}')">🗑</button>`}</td></tr>`).join('')}
+        <td style="padding:7px 6px;text-align:right;white-space:nowrap;">${p.admin ? '' : `<button class="btn" style="font-size:10px;" onclick="ACESSO.associar('${p.id}')" title="Escolher quais usuários existentes passam a usar este perfil">👥 Associar usuários</button> `}<button class="btn" style="font-size:10px;" onclick="ACESSO.perfilForm('${p.id}')">✎ Editar</button> <button class="btn" style="font-size:10px;" onclick="nav('s0perfiltelas', document.querySelector('.sbi[onclick*=\\'s0perfiltelas\\']'))">▦ Telas</button> ${p.id === 'perfil_admin' ? '' : `<button class="btn" style="font-size:10px;color:var(--red);" onclick="ACESSO.perfilExcluir('${p.id}')">🗑</button>`}</td></tr>`).join('')}
       </table></div></div><div id="acsPerfForm"></div>`;
   }
   function perfilForm(id) {
@@ -134,5 +134,38 @@
     } catch (e) { nota(e.message, 'error'); }
   }
 
-  window.ACESSO = { abrir, usuarioForm, usuarioSalvar, usuarioExcluir, trocarPerfil, perfilForm, perfilSalvar, perfilExcluir, sincronizar, telasSalvar, coluna, matrizSalvar };
+  // v3.489: PERFIL VENDAS (1 clique) — só as telas do menu "S7 · Vendas Ativo" (+ Inside Sales, se quiser) e ASSOCIAR USUÁRIOS
+  async function perfilVendas() {
+    const menu = typeof _telasDoMenu === 'function' ? _telasDoMenu() : [];
+    const vendas = menu.filter(t => /VENDAS ATIVO/i.test(t.grupo || ''));
+    if (!vendas.length) { nota('Não achei o menu Vendas no menu lateral — recarregue a página', 'error'); return; }
+    const inside = menu.filter(t => /INSIDE SALES/i.test(t.grupo || ''));
+    const comInside = inside.length && confirm('Perfil Vendas: ' + vendas.length + ' telas do menu "S7 · Vendas Ativo".\n\nIncluir também o menu "S11 · Inside Sales + Voz IA" (' + inside.length + ' telas)?\n\nOK = incluir · Cancelar = só Vendas');
+    try { await api('telas_sincronizar', { telas: menu }); } catch (_) {}
+    const telas = [...vendas, ...(comInside ? inside : [])].map(t => t.id);
+    const ex = S.perfis.find(p => !p.admin && /^vendas$/i.test(String(p.nome || '').trim()));
+    try { const r = await api('perfil_salvar', { perfil: { id: ex ? ex.id : undefined, nome: 'Vendas', descricao: 'Só o menu Vendas' + (comInside ? ' e Inside Sales' : '') + ' (CRM, funil, propostas)', admin: false, telas } });
+      nota('Perfil Vendas ' + (ex ? 'atualizado' : 'criado') + ' com ' + telas.length + ' telas'); await carregarTudo(); rPerfis(); associar(r.id || ex?.id || (S.perfis.find(p => /^vendas$/i.test(p.nome)) || {}).id);
+    } catch (e) { nota(e.message, 'error'); }
+  }
+  function associar(pid) {
+    const p = S.perfis.find(x => x.id === pid); if (!p) return; const eu = (window.__atxAuth?.usuario?.login) || '';
+    const L = S.usuarios.filter(u => u.login !== eu);
+    $('acsPerfForm').innerHTML = `<div class="panel" style="margin-top:12px;border:1px solid var(--blue);"><div class="ph"><div class="pt">👥 Usuários com o perfil "${esc(p.nome)}"</div></div><div class="pb">
+      <div style="font-size:11px;color:var(--t2);margin-bottom:8px;">Marque quem passa a usar este perfil. Cada usuário tem um perfil só — quem for marcado sai do perfil atual. Vale no próximo login ou ao recarregar a página.</div>
+      ${L.length ? L.map(u => `<label style="display:flex;gap:10px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--bd);font-size:12px;"><input type="checkbox" class="acsAss" data-id="${u.id}" ${u.perfil_id === pid ? 'checked' : ''}/>
+        <b style="min-width:130px;">${esc(u.login)}</b><span style="flex:1;color:var(--t2);">${esc(u.nome || '')}</span><span style="font-size:10px;color:var(--t3);">hoje: ${nomePerfil(u.perfil_id)}</span></label>`).join('') : '<div style="font-size:12px;color:var(--t3);">Nenhum outro usuário cadastrado.</div>'}
+      <div style="display:flex;gap:8px;margin-top:12px;"><button class="btn btn-gn" onclick="ACESSO.associarSalvar('${pid}')">Salvar</button><button class="btn" onclick="document.getElementById('acsPerfForm').innerHTML=''">Fechar</button></div></div></div>`;
+  }
+  async function associarSalvar(pid) {
+    const marc = Array.from(document.querySelectorAll('.acsAss')).filter(c => c.checked).map(c => c.dataset.id), nomeP = (S.perfis.find(p => p.id === pid) || {}).nome;
+    const mudar = S.usuarios.filter(u => marc.includes(u.id) && u.perfil_id !== pid), tirar = S.usuarios.filter(u => !marc.includes(u.id) && u.perfil_id === pid && document.querySelector('.acsAss[data-id="' + u.id + '"]'));
+    if (tirar.length) { const outro = S.perfis.find(p => !p.admin && p.id !== pid); if (!outro) { nota('Para tirar alguém deste perfil, escolha o novo perfil dele em Usuários × Perfil', 'error'); return; }
+      if (!confirm(tirar.map(u => u.login).join(', ') + ' vai(ão) para o perfil "' + outro.nome + '". Confirmar?')) return; }
+    try { for (const u of mudar) await api('usuario_salvar', { usuario: { ...u, perfil_id: pid } });
+      for (const u of tirar) await api('usuario_salvar', { usuario: { ...u, perfil_id: S.perfis.find(p => !p.admin && p.id !== pid).id } });
+      nota((mudar.length ? mudar.length + ' usuário(s) agora com o perfil ' + nomeP : 'Nenhuma mudança') + (tirar.length ? ' · ' + tirar.length + ' saiu(ram)' : '')); await carregarTudo(); rPerfis();
+    } catch (e) { nota(e.message, 'error'); }
+  }
+  window.ACESSO = { perfilVendas, associar, associarSalvar, abrir, usuarioForm, usuarioSalvar, usuarioExcluir, trocarPerfil, perfilForm, perfilSalvar, perfilExcluir, sincronizar, telasSalvar, coluna, matrizSalvar };
 })();
