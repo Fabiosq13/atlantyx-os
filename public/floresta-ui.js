@@ -80,7 +80,7 @@
       <label style="font-size:11px;display:flex;gap:4px;align-items:center;"><input type="checkbox" ${filtro.atrasados ? 'checked' : ''} onchange="FLORESTA.f('atrasados',this.checked)"/> só estourados</label>
       <label style="font-size:11px;display:flex;gap:4px;align-items:center;"><input type="checkbox" ${filtro.decisores ? 'checked' : ''} onchange="FLORESTA.f('decisores',this.checked)"/> só decisores</label>
       <span style="flex:1;"></span>
-      <button class="btn" style="font-size:10.5px;color:#22d3a3;border-color:#22d3a3;" onclick="FLORESTA.apollo()">🧲 Gerar leads frios (Apollo)</button>
+      <button class="btn" style="font-size:10.5px;color:#22d3a3;border-color:#22d3a3;" onclick="FLORESTA.apollo()" title="Abre a busca no Apollo: ❄️ Frios (busca por perfil) ou 🌡 Mornos (suas listas de intenção de compra)">🧲 Gerar leads (Apollo) · frios e 🌡 mornos</button>
       <button class="btn" style="font-size:10.5px;" title="Lê agora as conversas novas da IARA no HubSpot: avisa o Ademir por e-mail, move os cards e atualiza telefone/e-mail. Roda sozinho a cada hora." onclick="FLORESTA.iaraRetornos()">🤖 Retornos da IARA</button>
       <button class="btn btn-p" id="flIaBtn" style="font-size:10.5px;" onclick="FLORESTA.ia()">🤖 IA: decidir os estourados</button>
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.sla()">⏱ Tempos limite</button>
