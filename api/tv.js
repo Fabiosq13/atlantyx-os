@@ -137,7 +137,7 @@ async function estrategiaTv() {
 }
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es, cla] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
@@ -148,7 +148,8 @@ async function montarDados() {
     ...['linkedin', 'instagram', 'facebook'].map(rede => chamar('metricool', { action: 'metricas_posts', payload: { rede, inicio: mes + '-01', fim: hoje } }, 40000)), rentabilidade(),
     // v3.482: metas anuais (funil do ANO, ano anterior para o crescimento, plano estratégico vigente) e estratégia (OKRs, riscos)
     chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'ano', ref: String(ano), pipeline: 'todos' } }, 58000), chamar('financeiro', { action: 'metas_empresa_status', params: { ano: ano - 1, com_crm: false } }, 45000),
-    chamar('estrategia', { action: 'plano_estr_obter' }, 30000), estrategiaTv()]); // v3.357: previsto do mês (programado até o fim do mês)
+    chamar('estrategia', { action: 'plano_estr_obter' }, 30000), estrategiaTv(),
+    chamar('financeiro', { action: 'clientes_ano', params: { ano } }, 45000)]); // v3.487: clientes ativos/novos no ano (QuickBooks) // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -203,9 +204,10 @@ async function montarDados() {
       margem: ME.margem ? { meta: num(ME.margem.meta_pct), real: num(ME.margem.realizado_pct), dif: num(ME.margem.diferenca_pp), lucro_meta: num(ME.margem.lucro_meta), lucro_real: num(ME.margem.lucro_realizado), farol: ME.margem.semaforo && ME.margem.semaforo !== 'cinza' ? ME.margem.semaforo : null } : null,
       carteira: ME.carteira ? { prevista: num(ME.carteira.prevista), cobre_pct: num(ME.carteira.cobre_pct) } : null, fracao: num(ME.fracao_ano),
       anterior: ant != null ? { ano: ano - 1, faturamento: ant, lucro: num(MA_.realizado?.lucro_liquido), margem: num(MA_.realizado?.margem_pct) } : null,
-      saude: v(ks) ? { semaforo: KS.semaforo || null, runway: num(KS.runway_meses), runway_farol: KS.runway_semaforo || null, liquidez: num(KS.liquidez_corrente), caixa: num(KS.saldo_caixa), burn: num(KS.burn_rate_mensal) } : null,
+      saude: v(ks) ? { semaforo: KS.semaforo || null, runway: num(KS.runway_meses), runway_farol: KS.runway_semaforo || null, cobertura_meses: num(KS.cobertura_caixa_meses), liquidez: num(KS.liquidez_corrente), caixa: num(KS.saldo_caixa), burn: num(KS.burn_rate_mensal) } : null,
+      clientes: v(cla)?.clientes || null, clientes_erro: erro(cla),
       vendas: FY.etapas ? { ganho: FY.resumo?.ganho || null, meta: num(FY.resumo?.meta), cobertura: num(FY.resumo?.cobertura_pct), taxa: num(FY.resumo?.taxa_ganho_pct), perdidos: FY.resumo?.perdidos || null,
-        aberto: FY.resumo?.aberto ? { qtd: FY.resumo.aberto.qtd, valor: FY.resumo.aberto.valor } : null, ticket: num(FY.meta_base?.ticket_medio), leads: FY.leads || null, etapas: etA, decorrido: num(FY.periodo?.decorrido_pct) } : null,
+        aberto: FY.resumo?.aberto ? { qtd: FY.resumo.aberto.qtd, valor: FY.resumo.aberto.valor, ponderado: FY.resumo.aberto.ponderado } : null, ticket: num(FY.meta_base?.ticket_medio), leads: FY.leads || null, etapas: etA, decorrido: num(FY.periodo?.decorrido_pct) } : null,
       plano: VIG ? { nome: _tx(VIG.nome, 40), horizonte: _tx(VIG.horizonte, 10), versao: PE.vigente.versao, metas: VIG.metas, total: SIM?.total ? { faturamento: SIM.total.faturamento, contratos: SIM.total.contratos, leads_mes: SIM.total.leads_mes, reunioes_mes: SIM.total.reunioes_mes } : null,
         alavancas: VIG.alavancas.filter(a => a.status !== 'pausada' && (a.receita_meta || a.peso_campanha)).map(a => { const lin = (SIM?.linhas || []).find(l => l.id === a.id) || {}, r = (REA?.alavancas || []).find(x => x.id === a.id) || {};
           return { nome: _tx(a.nome, 60), status: a.status, receita_meta: a.receita_meta, receita_real: a.receita_realizada, contratos: lin.contratos || 0, leads_ano: lin.leads || 0, leads_90d: r.leads_90d ?? null, reunioes_90d: r.reunioes_90d ?? null }; }).slice(0, 9), visao: VIG.visao || null, prioridades: (VIG.prioridades || []).slice(0, 5).map(x => _tx(x, 130)) } : null };
@@ -263,12 +265,12 @@ const BLOCOS_OK = {
   fin: d => d.fin && (d.fin.caixa != null || d.fin.ano?.faturamento != null || (d.fin.mensal || []).length),
   com: d => !!d.com?.funil, mkt: d => d.mkt && !d.mkt.erro, proj: d => d.proj && !d.proj.erro,
   qual_termos: d => d.qual?.termos?.abertos != null, qual_qb: d => d.qual?.qb?.corretas != null, qual_proj: d => d.qual?.projetos?.total != null,
-  metas_vendas: d => !!d.metas?.vendas, estr: d => !!(d.estr && (d.estr.okr || d.estr.riscos || d.estr.planejamento || d.estr.sala)) };
+  metas_vendas: d => !!d.metas?.vendas, metas_clientes: d => !!d.metas?.clientes, estr: d => !!(d.estr && (d.estr.okr || d.estr.riscos || d.estr.planejamento || d.estr.sala)) };
 async function _comUltimoBom(d) {
   let bom = {}; try { bom = (await kv('tv:ultimo_bom')) || {}; } catch (_) {}
-  const pega = { res: x => x.res, fin: x => x.fin, com: x => x.com, mkt: x => x.mkt, proj: x => x.proj, qual_termos: x => x.qual?.termos, qual_qb: x => x.qual?.qb, qual_proj: x => x.qual?.projetos, metas_vendas: x => x.metas?.vendas, estr: x => x.estr };
+  const pega = { res: x => x.res, fin: x => x.fin, com: x => x.com, mkt: x => x.mkt, proj: x => x.proj, qual_termos: x => x.qual?.termos, qual_qb: x => x.qual?.qb, qual_proj: x => x.qual?.projetos, metas_vendas: x => x.metas?.vendas, metas_clientes: x => x.metas?.clientes, estr: x => x.estr };
   const poe = { res: (x, v) => { x.res = v; }, fin: (x, v) => { x.fin = { ...v, erro: null }; }, com: (x, v) => { x.com = v; }, mkt: (x, v) => { x.mkt = v; }, proj: (x, v) => { x.proj = v; },
-    qual_termos: (x, v) => { x.qual = x.qual || {}; x.qual.termos = v; }, qual_qb: (x, v) => { x.qual = x.qual || {}; x.qual.qb = v; }, qual_proj: (x, v) => { x.qual = x.qual || {}; x.qual.projetos = v; }, metas_vendas: (x, v) => { x.metas = x.metas || {}; x.metas.vendas = v; }, estr: (x, v) => { x.estr = v; } };
+    qual_termos: (x, v) => { x.qual = x.qual || {}; x.qual.termos = v; }, qual_qb: (x, v) => { x.qual = x.qual || {}; x.qual.qb = v; }, qual_proj: (x, v) => { x.qual = x.qual || {}; x.qual.projetos = v; }, metas_vendas: (x, v) => { x.metas = x.metas || {}; x.metas.vendas = v; }, metas_clientes: (x, v) => { x.metas = x.metas || {}; x.metas.clientes = v; }, estr: (x, v) => { x.estr = v; } };
   const antigos = []; let mudou = false;
   for (const [b, ok] of Object.entries(BLOCOS_OK)) {
     if (ok(d)) { bom[b] = { v: pega[b](d), em: d.gerado_em, mes: d.mes_ref }; mudou = true; }
@@ -277,7 +279,7 @@ async function _comUltimoBom(d) {
   if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
   d.antigos = antigos; return d;
 }
-const FORMATO_TV = 484;
+const FORMATO_TV = 487;
 async function dados(forcar) {
   const c = await kv('tv:dados');
   // v3.484: cache feito por uma versão anterior (sem os blocos novos: metas, estratégia) é refeito na hora, não espera os 10 min
@@ -571,18 +573,17 @@ function sMetas(){if(!D.metas)return '<div style="margin:auto;font-size:30px;col
   var gM=A&&A.faturamento>0&&F&&F.meta?(F.meta/A.faturamento-1)*100:null,base=F?(nz(F.projecao)?F.real:F.projecao):null,gP=A&&A.faturamento>0&&!nz(base)?(base/A.faturamento-1)*100:null;
   T.push({rot:'Crescimento × '+(A?A.ano:'ano anterior'),real:nz(gP)?'—':(gP>=0?'+':'')+pct(gP),meta:nz(gM)?(A?M.ano-1+': '+brl(A.faturamento):'sem o ano anterior no QuickBooks'):'meta implícita '+(gM>=0?'+':'')+pct(gM)+' ('+brl(F.meta)+' × '+brl(A.faturamento)+')',
     f:nz(gP)||nz(gM)?null:fq(base/F.meta),semTx:'sem base',sub:F&&!nz(F.projecao)?'projeção do ano no ritmo atual × faturamento de '+(A?A.ano:''):'faturamento até hoje × ano anterior'});
-  // clientes e vendas
-  var E=(V&&V.etapas)||[],eg=E.filter(function(e){return e.ganho})[0]||{},el=E.filter(function(e){return e.contatos})[0]||null,dec=V&&!nz(V.decorrido)?V.decorrido:fr;
-  var gq=V&&V.ganho?V.ganho.qtd:null,gv=V&&V.ganho?V.ganho.valor:null,mq=eg.meta_qtd,mv=!nz(eg.meta_valor)?eg.meta_valor:(V?V.meta:null);
-  T.push({rot:'Novos contratos (ganhos)',real:n(gq),meta:mq?'meta '+n(Math.ceil(mq))+' no ano'+(nz(eg.meta_qtd_hoje)?'':' · '+n(Math.round(eg.meta_qtd_hoje))+' até hoje'):'sem meta de quantidade no funil',f:mq?(eg.farol||fq(gq/Math.max(0.1,eg.meta_qtd_hoje||mq))):null,p:mq?gq/mq*100:null,marca:dec,
-    sub:'negócios ganhos no HubSpot em '+M.ano+(V&&V.ticket?' · ticket médio '+brl(V.ticket):'')});
-  T.push({rot:'Receita de vendas ganhas',real:brl(gv),meta:mv?'meta '+brl(mv)+' · '+pct(gv/mv*100):'sem meta',f:mv?fq(gv/Math.max(1,(eg.meta_valor_hoje||mv*(dec!=null?dec/100:1)))):null,p:mv?gv/mv*100:null,marca:dec,
-    sub:'valor dos negócios ganhos no ano'+(V&&V.perdidos&&V.perdidos.qtd?' · '+n(V.perdidos.qtd)+' perdidos ('+brl(V.perdidos.valor)+')':'')});
-  T.push(el?{rot:'Leads no ano',real:n(el.real_qtd),meta:el.meta_qtd?'meta '+n(Math.ceil(el.meta_qtd))+' · '+pct(el.real_qtd/el.meta_qtd*100):'sem meta de leads no funil',f:el.farol,p:el.meta_qtd?el.real_qtd/el.meta_qtd*100:null,marca:dec,
-    sub:'contatos criados no HubSpot'+(V.leads&&V.leads.total?' · '+n(V.leads.total)+' pelo site/campanhas ('+n(V.leads.reunioes)+' reuniões)':'')}:{rot:'Leads no ano',real:V&&V.leads?n(V.leads.total):'—',meta:'leads captados pelo sistema',sub:V&&V.leads?n(V.leads.reunioes)+' reuniões marcadas':''});
-  var cb=V?V.cobertura:null;
-  T.push({rot:'Cobertura do pipeline',real:nz(cb)?'—':pct(cb),meta:V&&V.aberto?n(V.aberto.qtd)+' negócios abertos · '+brl(V.aberto.valor):'',f:nz(cb)?null:cb>=100?'verde':cb>=70?'amarelo':'vermelho',p:cb,semTx:'sem dado',
-    sub:'pipeline ponderado ÷ o que falta da meta'+(V&&!nz(V.taxa)?' · taxa de ganho '+V.taxa+'%':'')});
+  // clientes e vendas — v3.487: clientes pelo QuickBooks (quem pagou no ano); pipeline contra o que FALTA faturar depois da carteira
+  var E=(V&&V.etapas)||[],dec=V&&!nz(V.decorrido)?V.decorrido:fr,C0=M.clientes,Ca=M.carteira&&!nz(M.carteira.prevista)?M.carteira.prevista:0;
+  T.push(C0?{rot:'Clientes ativos '+M.ano,real:n(C0.ativos),meta:C0.ativos_ano_anterior?n(C0.ativos_ano_anterior)+' em '+(M.ano-1)+' ('+(C0.ativos-C0.ativos_ano_anterior>=0?'+':'')+(C0.ativos-C0.ativos_ano_anterior)+')':'',f:C0.ativos_ano_anterior?fq(C0.ativos/C0.ativos_ano_anterior,1,0.85):null,semTx:'sem base',
+    sub:'com receita no ano (QuickBooks)'+(C0.sem_receita_este_ano?' · '+C0.sem_receita_este_ano+' de '+(M.ano-1)+' ainda sem receita':'')}:{rot:'Clientes ativos '+M.ano,real:'—',meta:M.clientes_erro?'QuickBooks não respondeu':'',semTx:'sem dado'});
+  T.push(C0?{rot:'Clientes novos '+M.ano,real:n(C0.novos),meta:C0.novos?'receita '+brl(C0.receita_novos)+(C0.receita_total?' · '+pct(C0.receita_novos/C0.receita_total*100)+' do faturado':''):'nenhum cliente novo faturou no ano',f:null,semTx:'sem meta',
+    sub:'faturaram em '+M.ano+' e não em '+(M.ano-1)}:{rot:'Clientes novos '+M.ano,real:'—',semTx:'sem dado'});
+  var c5=C0?C0.concentracao_top5_pct:null;
+  T.push({rot:'Concentração (5 maiores)',real:nz(c5)?'—':pct(c5),meta:C0&&!nz(C0.maior_pct)?'maior cliente: '+pct(C0.maior_pct)+' da receita':'',f:nz(c5)?null:c5<=60?'verde':c5<=75?'amarelo':'vermelho',p:c5,semTx:'sem dado',sub:'% da receita do ano nos 5 maiores · verde até 60%'});
+  var fal=F&&!nz(F.falta)?Math.max(0,F.falta-Ca):null,pond=V&&V.aberto?V.aberto.ponderado:null,cb=nz(fal)||nz(pond)?null:fal<=0?null:pond/fal*100;
+  T.push({rot:'Pipeline × o que falta',real:nz(fal)?'—':fal<=0?'coberta':pct(cb),meta:V&&V.aberto?n(V.aberto.qtd)+' negócios abertos · '+brl(V.aberto.valor):'',f:nz(fal)?null:fal<=0?'verde':cb>=100?'verde':cb>=70?'amarelo':'vermelho',p:fal>0?cb:100,semTx:'sem dado',
+    sub:nz(fal)?'':fal<=0?'a carteira prevista já cobre a meta do ano':'pipeline ponderado ÷ '+brl(fal)+' (meta − faturado − carteira)'});
   var fs=T.map(function(t){return t.f}),cv=fs.filter(function(f){return f==='verde'}).length,ca=fs.filter(function(f){return f==='amarelo'}).length,cr=fs.filter(function(f){return f==='vermelho'}).length;
   var placar='<div style="display:flex;align-items:center;gap:26px;background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:12px 26px">'
    +'<div style="font-size:22px;font-weight:800;flex:1">Metas de '+M.ano+' <span style="font-size:18px;color:#8E9BC0;font-weight:600">· '+(fr!=null?pct(fr)+' do ano decorrido':'')+'</span></div>'
@@ -593,17 +594,17 @@ function sMetas(){if(!D.metas)return '<div style="margin:auto;font-size:30px;col
   var li=function(f,r,v,s){return '<div class="lin" style="padding:5px 0;font-size:20px"><span class="bola" style="background:'+cor(f)+'"></span><div class="n">'+r+(s?'<div style="font-size:15px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s+'</div>':'')+'</div><div class="q" style="font-size:24px">'+v+'</div></div>'};
   var C=M.carteira,rw=S.runway;
   var ind='<div class="painel" style="min-height:0"><h3>Indicadores-chave</h3><div style="flex:1;min-height:0;overflow:hidden">'
-   +(C?li(nz(C.cobre_pct)?null:C.cobre_pct>=100?'verde':C.cobre_pct>=70?'amarelo':'vermelho','Carteira prevista até dez',brl(C.prevista),nz(C.cobre_pct)?'marcos, sustentações e faturas a receber':'cobre '+pct(C.cobre_pct)+' do que falta da meta'):'')
+   +(C?li(nz(C.cobre_pct)?null:C.cobre_pct>=100?'verde':C.cobre_pct>=70?'amarelo':'vermelho','Carteira prevista até dez',brl(C.prevista),(nz(C.cobre_pct)?'marcos, sustentações e faturas a receber':'cobre '+pct(C.cobre_pct)+' do que falta')+(F&&!nz(F.por_mes)&&F.falta>0?' · falta '+brl(F.por_mes)+'/mês':'')):'')
    +(F&&!nz(F.projecao_carteira)?li(F.meta?fq(F.projecao_carteira/F.meta,1,0.9):null,'Fechamento com a carteira',brl(F.projecao_carteira),'realizado + carteira prevista × meta '+brl(F.meta)):'')
-   +(F&&!nz(F.por_mes)&&F.falta>0?li(null,'Preciso faturar por mês',brl(F.por_mes),'para bater a meta nos '+F.meses_rest+' meses restantes'):'')
-   +li(S.runway_farol||null,'Runway de caixa',nz(rw)?'—':rw>=999?'sem queima':String(rw).replace('.',',')+' meses','caixa '+brl(S.caixa)+(nz(S.liquidez)?'':' · liquidez '+String(S.liquidez).replace('.',',')))
+   +li(S.runway_farol||null,'Caixa',nz(rw)?'—':rw>=999?(nz(S.cobertura_meses)?'sem queima':String(S.cobertura_meses).replace('.',',')+' mês'):String(rw).replace('.',',')+' meses',(rw>=999?'sem queima · saldo '+brl(S.caixa)+' cobre esse tanto de gastos':'runway: meses até o caixa acabar · saldo '+brl(S.caixa)))
+   +(V?li(null,'Leads e vendas no HubSpot em '+M.ano,n(V.leads?V.leads.total:null)+' leads',(V.leads?n(V.leads.reunioes)+' reuniões marcadas · ':'')+n(V.ganho?V.ganho.qtd:0)+' negócio(s) marcado(s) como ganho'+(V.ganho&&V.ganho.qtd?'':' — o CRM não está registrando os fechamentos')):'')
    +'</div></div>';
   // alavancas do plano
   var al=P?(P.alavancas||[]).filter(function(a){return a.receita_meta}).slice(0,6).map(function(a){var rit=a.leads_ano?a.leads_ano/4:null,q=rit&&!nz(a.leads_90d)?a.leads_90d/rit:null,f=nz(q)?null:q>=1?'verde':q>=0.5?'amarelo':'vermelho';
      return '<div class="lin" style="padding:7px 0;font-size:19px"><span class="bola" style="background:'+cor(f)+'"></span><div class="n">'+esc(a.nome)+'<div style="font-size:15px;color:#8E9BC0">meta '+brl(a.receita_meta)+' · '+n(a.contratos)+' contrato(s)'+(nz(a.receita_real)?'':' · realizado '+brl(a.receita_real))+'</div></div><div class="q" style="font-size:22px;text-align:right">'+n(a.leads_90d)+'<span style="font-size:15px;color:#8E9BC0"> / '+(rit?n(Math.ceil(rit)):'—')+' leads</span></div></div>'}).join(''):'';
   var pl='<div class="painel" style="min-height:0"><h3>'+(P?esc(P.nome)+' · alavancas — leads em 90 dias × ritmo necessário':'Plano estratégico')+'</h3><div style="flex:1;min-height:0;overflow:hidden">'+(al||'<div class="erro">Nenhum plano estratégico aprovado (Estratégia → Plano estratégico).</div>')+'</div></div>';
   h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:23px">'+ind+pl+'</div>'
-   +'<div style="font-size:15px;color:#6E7BA0">Financeiras: QuickBooks + Metas da Empresa ('+(D.fin&&D.fin.regime?'regime '+esc(D.fin.regime):'')+') · clientes e vendas: funil de '+M.ano+' no HubSpot com as metas do funil · farol: realizado × esperado até hoje (verde ≥ 100%, amarelo ≥ 85%) · alavancas: verde = leads de 90 dias no ritmo do plano, amarelo ≥ metade'+(M.erro?' · ⚠ '+esc(M.erro):'')+'</div>';
+   +'<div style="font-size:15px;color:#6E7BA0">Financeiras: QuickBooks + Metas da Empresa ('+(D.fin&&D.fin.regime?'regime '+esc(D.fin.regime):'')+') · clientes: QuickBooks (receita por cliente no ano) · pipeline: HubSpot, contra o que falta faturar depois da carteira · farol: realizado × esperado até hoje (verde ≥ 100%, amarelo ≥ 85%) · alavancas: verde = leads de 90 dias no ritmo do plano, amarelo ≥ metade'+(M.erro?' · ⚠ '+esc(M.erro):'')+'</div>';
   return h}
 function sObj(){var X=D.estr||{},O=X.okr,Sa=X.sala,PL=X.planejamento,P=(D.metas||{}).plano,Vi=P&&P.visao;
   var br=function(p,f){return '<div style="flex:1;height:12px;background:#1A2447;border-radius:7px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.max(0,Math.min(100,p||0))+'%;background:'+(f?cor(f):'#00C4CC')+'"></i></div>'};

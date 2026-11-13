@@ -292,6 +292,7 @@ async function handler(req, res) {
       pagamentos_soltos:     () => pagamentosSoltos(params),     // v3.308: pagamentos de conta sem conta a pagar ligada
       pagamento_solto_vincular: () => pagamentoSoltoVincular(params), // v3.308: liga (só com clique do usuário, reconferido aqui)
       resultado_kpis:        () => resultadoKpis(params), // v3.112: faturamento, lucro, margens e EBITDA (período + ano)
+      clientes_ano:          () => clientesAno(params), // v3.487: clientes ativos/novos no ano (QuickBooks) para a TV
       metas_empresa_status:  () => metasEmpresaStatus(params), // v3.113: metas do ano (faturamento e % de lucro), falta, semáforo e CRM
       metas_empresa_salvar:  () => metasEmpresaSalvar(params),
       metas_empresa_ler:     () => metasEmpresaLer(params),
@@ -10715,6 +10716,20 @@ async function _fv2Clientes(ini, fim, met, token) {
 }
 const _fv2QbBase = () => process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
 
+// v3.487: CLIENTES DO ANO pelo QuickBooks (relatório Receita por Cliente) — ativos no ano, ativos no ano anterior, NOVOS
+// (com receita no ano e sem receita no ano anterior), receita dos novos e concentração. Só totais — sem nome de cliente.
+async function clientesAno({ ano, metodo } = {}) {
+  const met = _met(metodo), token = await qbToken(), hoje = _hojeBR(), a = parseInt(ano) || parseInt(hoje);
+  const fimA = hoje < `${a}-12-31` ? hoje : `${a}-12-31`;
+  const [A, B] = await Promise.all([_fv2Clientes(`${a}-01-01`, fimA, met, token), _fv2Clientes(`${a - 1}-01-01`, `${a - 1}-12-31`, met, token)]);
+  const nm = c => String(c.id || c.cliente || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  const atv = A.filter(c => c.receita > 0), ant = new Set(B.filter(c => c.receita > 0).map(nm)), novos = atv.filter(c => !ant.has(nm(c)));
+  const tot = atv.reduce((s, c) => s + c.receita, 0), top5 = [...atv].sort((x, y) => y.receita - x.receita).slice(0, 5).reduce((s, c) => s + c.receita, 0);
+  const perdidos = B.filter(c => c.receita > 0 && !atv.some(x => nm(x) === nm(c))).length;
+  return { clientes: { ano: a, ativos: atv.length, ativos_ano_anterior: ant.size, novos: novos.length, receita_novos: round(novos.reduce((s, c) => s + c.receita, 0)), receita_total: round(tot),
+    sem_receita_este_ano: perdidos, concentracao_top5_pct: tot > 0 ? Math.round(top5 / tot * 1000) / 10 : null, maior_pct: tot > 0 && atv.length ? Math.round(Math.max(...atv.map(c => c.receita)) / tot * 1000) / 10 : null,
+    regime: met === 'Cash' ? 'caixa' : 'competência', ate: fimA } };
+}
 async function finV2({ tela = 'executiva', data_inicio, data_fim, mes, ano, metodo } = {}) {
   if (!qbConfigurado()) return { fin_v2: { tela, erro: 'QuickBooks não conectado' } };
   const met = _met(metodo), P = _fv2Periodo({ data_inicio, data_fim, mes, ano }), cfg = await _fv2Cfg(), L = cfg.limites;
