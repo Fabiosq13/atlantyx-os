@@ -75,7 +75,7 @@
   // ── Perfis ──
   function rPerfis() {
     const n = {}; S.usuarios.forEach(u => { n[u.perfil_id] = (n[u.perfil_id] || 0) + 1; });
-    $('acsApp_s0perfis').innerHTML = cab('🏷 Perfis', 'Cada perfil é um conjunto de telas. "Administrador" vê tudo e gerencia o acesso.', '<button class="btn" onclick="ACESSO.perfilVendas()" title="Cria (ou atualiza) o perfil Vendas: só o menu S7 · Vendas Ativo">+ Perfil Vendas</button> <button class="btn btn-gn" onclick="ACESSO.perfilForm()">+ Novo perfil</button>')
+    $('acsApp_s0perfis').innerHTML = cab('🏷 Perfis', 'Cada perfil é um conjunto de telas. "Administrador" vê tudo e gerencia o acesso.', '<button class="btn" onclick="ACESSO.perfilVendas()" title="Cria (ou atualiza) o perfil Vendas: só o menu S7 · Vendas Ativo">+ Perfil Vendas</button> <button class="btn" onclick="ACESSO.perfilFinanceiro()" title="Cria (ou atualiza) o perfil Financeiro: só o menu S1 · Financeiro">+ Perfil Financeiro</button> <button class="btn btn-gn" onclick="ACESSO.perfilForm()">+ Novo perfil</button>')
       + `<div class="panel"><div class="pb"><table style="width:100%;border-collapse:collapse;font-size:11.5px;">
       <tr style="text-align:left;color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="padding:6px;">Perfil</th><th style="padding:6px;">Descrição</th><th style="padding:6px;">Telas</th><th style="padding:6px;">Usuários</th><th></th></tr>
       ${S.perfis.map(p => `<tr style="border-top:1px solid var(--bd);"><td style="padding:7px 6px;font-weight:700;">${esc(p.nome)}${p.admin ? ' <span class="tag on">admin</span>' : ''}</td><td style="padding:7px 6px;color:var(--t2);">${esc(p.descricao || '')}</td>
@@ -148,6 +148,17 @@
       nota('Perfil Vendas ' + (ex ? 'atualizado' : 'criado') + ' com ' + telas.length + ' telas'); await carregarTudo(); rPerfis(); associar(r.id || ex?.id || (S.perfis.find(p => /^vendas$/i.test(p.nome)) || {}).id);
     } catch (e) { nota(e.message, 'error'); }
   }
+  // v3.490: PERFIL FINANCEIRO (1 clique) — só as telas do menu "S1 · Financeiro"
+  async function perfilFinanceiro() {
+    const menu = typeof _telasDoMenu === 'function' ? _telasDoMenu() : [];
+    const fin = menu.filter(t => /^S1 · FINANCEIRO/i.test(t.grupo || ''));
+    if (!fin.length) { nota('Não achei o menu Financeiro no menu lateral — recarregue a página', 'error'); return; }
+    try { await api('telas_sincronizar', { telas: menu }); } catch (_) {}
+    const ex = S.perfis.find(p => !p.admin && /^financeiro$/i.test(String(p.nome || '').trim()));
+    try { const r = await api('perfil_salvar', { perfil: { id: ex ? ex.id : undefined, nome: 'Financeiro', descricao: 'Só o menu Financeiro (caixa, contas, faturamento, QuickBooks)', admin: false, telas: fin.map(t => t.id) } });
+      nota('Perfil Financeiro ' + (ex ? 'atualizado' : 'criado') + ' com ' + fin.length + ' telas'); await carregarTudo(); rPerfis(); associar(r.id || ex?.id || (S.perfis.find(p => /^financeiro$/i.test(p.nome)) || {}).id);
+    } catch (e) { nota(e.message, 'error'); }
+  }
   function associar(pid) {
     const p = S.perfis.find(x => x.id === pid); if (!p) return; const eu = (window.__atxAuth?.usuario?.login) || '';
     const L = S.usuarios.filter(u => u.login !== eu);
@@ -167,5 +178,5 @@
       nota((mudar.length ? mudar.length + ' usuário(s) agora com o perfil ' + nomeP : 'Nenhuma mudança') + (tirar.length ? ' · ' + tirar.length + ' saiu(ram)' : '')); await carregarTudo(); rPerfis();
     } catch (e) { nota(e.message, 'error'); }
   }
-  window.ACESSO = { perfilVendas, associar, associarSalvar, abrir, usuarioForm, usuarioSalvar, usuarioExcluir, trocarPerfil, perfilForm, perfilSalvar, perfilExcluir, sincronizar, telasSalvar, coluna, matrizSalvar };
+  window.ACESSO = { perfilVendas, perfilFinanceiro, associar, associarSalvar, abrir, usuarioForm, usuarioSalvar, usuarioExcluir, trocarPerfil, perfilForm, perfilSalvar, perfilExcluir, sincronizar, telasSalvar, coluna, matrizSalvar };
 })();
