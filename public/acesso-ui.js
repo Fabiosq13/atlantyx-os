@@ -22,6 +22,13 @@
     if (menu.length && (S.telas.length < menu.length || menu.some(m => !S.telas.some(x => x.id === m.id)))) {
       try { const r = await api('telas_sincronizar', { telas: menu }); S.telas = r.telas || S.telas; } catch (_) {}
     }
+    // v3.491: os perfis PRONTOS (Vendas e Financeiro) passam a existir sozinhos — antes só apareciam depois de clicar no botão em Perfis
+    if (!S._prontos && menu.length) { S._prontos = true; let criou = false;
+      for (const [nome, rx, desc] of [['Vendas', /VENDAS ATIVO/i, 'Só o menu Vendas (CRM, funil, propostas)'], ['Financeiro', /^S1 · FINANCEIRO/i, 'Só o menu Financeiro (caixa, contas, faturamento, QuickBooks)']]) {
+        if (S.perfis.some(p => String(p.nome || '').trim().toLowerCase() === nome.toLowerCase())) continue;
+        const telas = menu.filter(t => rx.test(t.grupo || '')).map(t => t.id); if (!telas.length) continue;
+        try { await api('perfil_salvar', { perfil: { nome, descricao: desc, admin: false, telas } }); criou = true; } catch (_) {} }
+      if (criou) { const u = await api('usuarios_listar'); S.usuarios = u.usuarios || S.usuarios; S.perfis = u.perfis || S.perfis; } }
   }
   async function abrir(p) {
     const box = $('acsApp_' + p); if (!box) return;
