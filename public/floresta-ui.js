@@ -190,6 +190,7 @@
         ${D.props_ia?.abordagem ? `<div style="font-size:9.5px;color:var(--t3);margin-top:8px;text-transform:uppercase;">Abordagem</div><div id="flAbTags" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${(D.props_ia.abordagem_opcoes || []).length ? D.props_ia.abordagem_opcoes.map(o => `<label class="fl-chip" style="cursor:pointer;"><input type="${D.props_ia.abordagem_unica ? 'radio' : 'checkbox'}" name="flAbR" value="${esc(o.v)}" ${String(c.abordagem || '').split(', ').includes(o.l) ? 'checked' : ''} style="margin:0 3px 0 0;vertical-align:-1px;"/>${esc(o.l)}</label>`).join('') : `<input class="fi" id="flAbTxt" value="${esc(c.abordagem || '')}" style="max-width:260px;"/>`}<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="FLORESTA.abordagem('${esc(c.id)}')">Salvar no HubSpot</button></div>` : ''}
       </div>` : ''}
       ${ligBox(c)}
+      <div style="margin-top:10px;border:1px solid var(--bd);border-radius:10px;padding:9px 11px;"><div style="display:flex;align-items:center;gap:6px;"><b style="flex:1;">💬 Conversa e histórico (HubSpot)</b><button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="FLORESTA.conversa('${esc(c.id)}')">↻</button></div><div id="flConv" style="margin-top:6px;max-height:260px;overflow:auto;color:var(--t3);">Carregando…</div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;">
         <div><span style="color:var(--t3);">Etapa:</span> ${e.icone} ${esc(e.nome)}</div><div><span style="color:var(--t3);">No HubSpot:</span> ${esc(c.etapa_hs || '—')}</div>
         <div><span style="color:var(--t3);">Na etapa há:</span> <b style="color:${corSla(c)};">${c.dias ?? '?'} dias</b>${c.sla ? ' (limite ' + c.sla + ')' : ''}</div><div><span style="color:var(--t3);">Último contato:</span> ${dt(c.ultimo_contato)}</div>
@@ -208,7 +209,7 @@
         ${wa ? `<a class="btn" style="font-size:10.5px;text-decoration:none;color:#25d366;border-color:#25d366;" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
         ${c.email ? `<a class="btn" style="font-size:10.5px;text-decoration:none;" href="mailto:${esc(c.email)}">E-mail</a>` : ''}
         <button class="btn btn-g" style="font-size:10.5px;margin-left:auto;" onclick="document.getElementById('flModal').remove()">Fechar</button></div></div>`;
-    document.body.appendChild(m);
+    document.body.appendChild(m); conversa(c.id);
   }
   async function soltar(para) {
     const id = arrastando; arrastando = null; if (!id) return; const c = D.cards.find(x => x.id === id); if (!c || c.etapa === para) return;
@@ -340,7 +341,15 @@
       nota(r.novos + ' conversa(s) da IARA tratada(s)' + (r.email?.ok ? ' · e-mail enviado para ' + r.email.para : r.email?.erro ? ' · e-mail NÃO enviado: ' + r.email.erro : '') + ((r.itens || []).some(i => i.erro) ? ' · com avisos (veja o Log)' : ''), r.email?.ok === false ? 'error' : 'success');
       (r.itens || []).forEach(i => { try { addLog(i.erro ? 'warn' : 'ok', '[IARA] ' + i.nome + ' (' + (i.empresa || '') + '): ' + i.desfecho + (i.acao ? ' · ' + i.acao : '') + (i.mudou?.length ? ' · ' + i.mudou.join(', ') : '') + (i.erro ? ' · ' + i.erro : '')); } catch (_) {} });
       await carregar(true); } catch (e) { nota(e.message, 'error'); } }
-  window.FLORESTA = { iaraRetornos, ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
+  // v3.496: conversa do card (resumo da IARA, notas e mensagens registradas no HubSpot)
+  async function conversa(id) { const box = $('flConv'); if (!box) return; box.textContent = 'Carregando…';
+    try { const r = await api('floresta_conversa', { card_id: id }); const ic = { iara: '🤖', nota: '📝', whats_app: '💬', whatsapp: '💬', sms: '✉️', linkedin_message: '🔗' };
+      const res = (r.contatos || []).filter(k => k.resumo).map(k => `<div style="margin-bottom:8px;"><div style="font-size:9.5px;text-transform:uppercase;color:var(--pu);">Resumo da IARA · ${esc(k.nome)}${k.atendido ? ' · atendido pela IA' : ''}</div><div style="white-space:pre-wrap;line-height:1.5;color:var(--t1);">${esc(k.resumo)}</div></div>`).join('');
+      const its = (r.itens || []).map(i => `<div style="border-top:1px solid var(--bd);padding:6px 0;"><div style="font-size:9.5px;color:var(--t3);">${ic[i.tipo] || '💬'} ${esc(i.tipo === 'iara' ? 'Retorno da IARA' : i.tipo === 'nota' ? 'Nota' : i.tipo)} · ${i.quando ? new Date(i.quando).toLocaleString('pt-BR').substring(0, 16) : ''}</div><div style="white-space:pre-wrap;line-height:1.5;color:var(--t1);">${esc(i.texto)}</div></div>`).join('');
+      const cont = (r.contatos || []).map(k => esc(k.nome) + (k.telefone ? ' · ' + esc(k.telefone) : '') + (k.fluxo ? ' · fluxo ' + esc(k.fluxo) : '')).join('<br>');
+      box.innerHTML = (res || its ? res + its : `<div style="color:var(--gold);">${esc(r.aviso || 'Nada registrado no HubSpot ainda.')}</div>`) + (cont ? `<div style="margin-top:6px;font-size:9.5px;color:var(--t3);">Contatos do card: ${cont}</div>` : '');
+    } catch (e) { box.textContent = 'Não consegui ler o HubSpot: ' + e.message; } }
+  window.FLORESTA = { conversa, iaraRetornos, ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
     abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
     painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, ver, congelar, ia, iaUm, decidir, wa, mail, sla, _d: () => D };
 })();
