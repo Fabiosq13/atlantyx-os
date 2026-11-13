@@ -81,6 +81,7 @@
       <label style="font-size:11px;display:flex;gap:4px;align-items:center;"><input type="checkbox" ${filtro.decisores ? 'checked' : ''} onchange="FLORESTA.f('decisores',this.checked)"/> só decisores</label>
       <span style="flex:1;"></span>
       <button class="btn" style="font-size:10.5px;color:#22d3a3;border-color:#22d3a3;" onclick="FLORESTA.apollo()">🧲 Gerar leads frios (Apollo)</button>
+      <button class="btn" style="font-size:10.5px;" title="Lê agora as conversas novas da IARA no HubSpot: avisa o Ademir por e-mail, move os cards e atualiza telefone/e-mail. Roda sozinho a cada hora." onclick="FLORESTA.iaraRetornos()">🤖 Retornos da IARA</button>
       <button class="btn btn-p" id="flIaBtn" style="font-size:10.5px;" onclick="FLORESTA.ia()">🤖 IA: decidir os estourados</button>
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.sla()">⏱ Tempos limite</button>
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.carregar(true)">↻ Atualizar</button>
@@ -333,7 +334,13 @@
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })); a.download = 'remarketing-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
       nota(L.length + ' pessoa(s) — suba no Meta, LinkedIn ou na campanha de e-mail'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
-  window.FLORESTA = { ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
+  // v3.495: retorno das conversas da IARA (o mesmo job que roda de hora em hora)
+  async function iaraRetornos() { nota('Lendo as conversas novas da IARA no HubSpot…', 'info');
+    try { const r = await api('iara_retornos', {}); if (!r.novos) { nota('Nenhuma conversa nova da IARA nas últimas 26 horas'); return; }
+      nota(r.novos + ' conversa(s) da IARA tratada(s)' + (r.email?.ok ? ' · e-mail enviado para ' + r.email.para : r.email?.erro ? ' · e-mail NÃO enviado: ' + r.email.erro : '') + ((r.itens || []).some(i => i.erro) ? ' · com avisos (veja o Log)' : ''), r.email?.ok === false ? 'error' : 'success');
+      (r.itens || []).forEach(i => { try { addLog(i.erro ? 'warn' : 'ok', '[IARA] ' + i.nome + ' (' + (i.empresa || '') + '): ' + i.desfecho + (i.acao ? ' · ' + i.acao : '') + (i.mudou?.length ? ' · ' + i.mudou.join(', ') : '') + (i.erro ? ' · ' + i.erro : '')); } catch (_) {} });
+      await carregar(true); } catch (e) { nota(e.message, 'error'); } }
+  window.FLORESTA = { iaraRetornos, ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
     abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
     painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, ver, congelar, ia, iaUm, decidir, wa, mail, sla, _d: () => D };
 })();

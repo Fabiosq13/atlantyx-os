@@ -13,7 +13,8 @@ import { comGuarda } from '../lib/qa-guard.js';
 //   estrategia_salvar / estrategia_listar / estrategia_sugerir / premissas / premissas_salvar
 import { calcularFormatos, PARAMS_PADRAO, FORMATOS } from '../lib/proposta-calc.js';
 import { lerPlanoVigente, planoInicial } from '../lib/plano-estrategico.js';
-import { criarFloresta } from '../lib/floresta.js';   // v3.440: Floresta de Vendas
+import { criarFloresta } from '../lib/floresta.js';
+import { criarIaraRetorno } from '../lib/iara-retorno.js';   // v3.495: retorno das conversas da IARA   // v3.440: Floresta de Vendas
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 let _sql = null;
@@ -879,6 +880,7 @@ async function _apolloBuscar(params, acao) { // v3.441: mesma busca da tela de p
     throw new Error(/401|API_KEY_INVALID|Invalid API key/i.test(e) ? 'Chave do Apollo inválida (401). ' + (params.api_key ? 'A chave salva no navegador (Credenciais → API Key do Apollo) ' + (process.env.APOLLO_API_KEY ? 'e a do servidor estão' : 'está') + ' recusadas: gere uma nova no Apollo (Settings → Integrations → API) e salve.' : 'A APOLLO_API_KEY da Vercel foi recusada: gere uma nova no Apollo (Settings → Integrations → API) e troque na Vercel.') : e); }
   return out;
 }
+let _iaraRet = null; const iaraRetorno = () => (_iaraRet = _iaraRet || criarIaraRetorno({ hs: _hs, getSql, claude, todoCriar: _todoCriar, floresta: floresta(), normTelefone: _normTel }));
 let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar, normTelefone: _normTel, apolloBuscar: _apolloBuscar }));
 function _normTel(v) { let p = String(v || '').replace(/\D/g, ''); if (!p) return null; if (p.startsWith('00')) p = p.slice(2); if (p.length === 10 || p.length === 11) p = '55' + p; if (!/^55\d{10,11}$/.test(p)) return /^\d{11,15}$/.test(p) && !p.startsWith('55') ? p : null; return p; }
 
@@ -886,6 +888,9 @@ async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   // v3.440: cron diário (dias úteis) — a IA revê quem estourou o tempo limite e enche a FILA DE APROVAÇÃO (não executa nada)
+  // v3.495: de hora em hora — conversas novas da IARA: avisa o vendedor, move o card e atualiza o HubSpot
+  if (req.method === 'GET' && req.query?.cron === 'iara_retorno') {
+    try { const r = await iaraRetorno().processar({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta') {
     try { const r = await floresta().analisarIA({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
@@ -953,6 +958,7 @@ async function handler(req, res) {
     leads_esquecidos: () => leadsEsquecidos(payload), // v3.422
     floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
     floresta_ia: () => floresta().analisarIA(payload),
+    iara_retornos: () => iaraRetorno().processar({ horas: payload.horas || 26, simular: !!payload.simular }), // v3.495: rodar agora (ou simular sem gravar)
     floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
     floresta_mover: () => floresta().mover(payload, req.sessao?.login),
     floresta_cfg: () => floresta().cfgSalvar(payload),

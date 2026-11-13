@@ -289,6 +289,10 @@
     {
       "path": "/api/vendas?cron=floresta",
       "schedule": "13 11 * * 1-5"
+    },
+    {
+      "path": "/api/vendas?cron=iara_retorno",
+      "schedule": "25 * * * *"
     }
   ],
   "headers": [
