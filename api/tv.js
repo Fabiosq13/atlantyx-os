@@ -279,7 +279,7 @@ async function _comUltimoBom(d) {
   if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
   d.antigos = antigos; return d;
 }
-const FORMATO_TV = 487;
+const FORMATO_TV = 487; // (fotos usam o mesmo pacote de dados)
 async function dados(forcar) {
   const c = await kv('tv:dados');
   // v3.484: cache feito por uma versão anterior (sem os blocos novos: metas, estratégia) é refeito na hora, não espera os 10 min
@@ -326,10 +326,11 @@ function pagina(cfg, cod) {
 .cr3 .ln.re b{color:var(--c)}.cr3 .ln.ac{background:#121C3C;border-radius:10px;padding:5px 10px;margin:0 -10px;flex-direction:column;align-items:stretch;gap:0}.cr3 .ln.ac b{text-align:right;white-space:normal;font-size:30px}
 .cr3 .bar{margin-top:6px}
 svg text{font-family:Montserrat,Calibri,Arial,sans-serif}
-</style></head><body><div id="app">
-<div class="top"><div class="logo"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" onerror="this.parentNode.innerHTML='ATLANT<b>Y</b>X'"></div><div class="tit" id="tit">Gestão à vista</div><div class="esp"></div><div><div class="rel" id="rel">--:--</div><div class="dt" id="dt"></div></div></div>
+.fbar{display:flex;gap:8px;margin-right:26px;opacity:.28;transition:opacity .3s}.fbar:hover{opacity:1}.fbar button{background:#0F1630;border:1px solid #26335F;color:#C9D3EE;border-radius:20px;padding:7px 14px;font:600 15px Montserrat,Arial,sans-serif;cursor:pointer}.fbar button:hover{border-color:#00C4CC;color:#fff}.fbar button.on{background:#FFB547;color:#1a1200;border-color:#FFB547}
+#fmod{position:fixed;inset:0;background:rgba(3,6,14,.78);z-index:10;align-items:center;justify-content:center}#fmod .cx{background:#0F1630;border:1px solid #26335F;border-radius:18px;padding:24px 28px;width:760px;max-height:80vh;overflow:auto;font-family:Montserrat,Arial,sans-serif;color:#EAF0FF}#fmod .it{display:flex;align-items:center;gap:14px;padding:11px 12px;border-bottom:1px solid #1A2447;cursor:pointer;border-radius:10px;font-size:19px}#fmod .it:hover{background:#16204A}</style></head><body><div id="app">
+<div class="top"><div class="logo"><img src="/logo-atlantyx-branco.png" alt="Atlantyx" onerror="this.parentNode.innerHTML='ATLANT<b>Y</b>X'"></div><div class="tit" id="tit">Gestão à vista</div><div class="esp"></div><div id="fb" class="fbar"><button onclick="fGravar(event)" title="Grava os números de todos os painéis agora">📸 Gravar foto</button><button onclick="fHist(event)" title="Fotos gravadas, por data">🕘 Histórico</button><button id="fSem" onclick="fSemana(event)" title="Mostra os painéis gravados na semana anterior (tecla C alterna)">⇄ Semana anterior</button></div><div><div class="rel" id="rel">--:--</div><div class="dt" id="dt"></div></div></div>
 <div class="palco" id="palco"><div class="slide on"><div style="margin:auto;font-size:32.4px;color:#8E9BC0;">Carregando os números…</div></div></div>
-<div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div><div style="font-size:13px;color:#3A4670;margin-left:6px">${esc0(versao())}</div></div></div><div class="prog" id="prog"></div><div id="pz" style="display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(255,181,71,.15);border:1px solid #FFB547;color:#FFB547;border-radius:30px;padding:8px 26px;font:700 18px Montserrat,Arial,sans-serif;letter-spacing:1px;z-index:9">⏸ PAUSADO · clique para continuar</div>
+<div class="pe"><div class="dots" id="dots"></div><div class="esp"></div><div id="atu"></div><div style="font-size:13px;color:#3A4670;margin-left:6px">${esc0(versao())}</div></div></div><div class="prog" id="prog"></div><div id="fban" style="display:none;position:fixed;top:0;left:0;right:0;background:#FFB547;color:#1a1200;text-align:center;font:800 19px Montserrat,Arial,sans-serif;padding:7px 0;z-index:8;letter-spacing:.5px"></div><div id="fmod" style="display:none"></div><div id="ftoast" style="display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#0F1630;border:1px solid #00C4CC;color:#EAF0FF;border-radius:14px;padding:12px 24px;font:600 19px Montserrat,Arial,sans-serif;z-index:9"></div><div id="pz" style="display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(255,181,71,.15);border:1px solid #FFB547;color:#FFB547;border-radius:30px;padding:8px 26px;font:700 18px Montserrat,Arial,sans-serif;letter-spacing:1px;z-index:9">⏸ PAUSADO · clique para continuar</div>
 <script>
 var COD=${JSON.stringify(cod)},ROT=${Math.max(8, Math.min(180, +cfg.rotacao_s || 25))},SLIDES=${JSON.stringify((cfg.slides || []).filter(s => SLIDES_OK.indexOf(s) >= 0))};
 var D=null,idx=0,timer=null,t0=0;
@@ -670,7 +671,7 @@ function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '
   $('atu').innerHTML='números de '+g.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(an.length?' · <span style="color:#FFB547">último dado válido: '+esc(an.join(', '))+'</span>':'')+(D.aviso_cache?' · '+esc(D.aviso_cache):'')+' · atualiza a cada 10 min'}
 function ir(n){if(!D||!SLIDES.length)return;idx=(n+SLIDES.length)%SLIDES.length;var sl=document.querySelectorAll('.slide');for(var i=0;i<sl.length;i++)sl[i].className='slide'+(i===idx?' on':'');
   var d=document.querySelectorAll('#dots span');for(var j=0;j<d.length;j++)d[j].className=j===idx?'on':'';$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];t0=Date.now()}
-function carregar(){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&dados=1&_='+Date.now());x.onload=function(){try{var r=JSON.parse(x.responseText);if(!r.success)throw new Error(r.error||'erro');D=r.dados;render()}catch(e){if(!D)$('palco').innerHTML='<div class="slide on"><div style="margin:auto;font-size:28.1px;color:#FFB547;text-align:center;">'+esc(e.message||'Sem conexão')+'<br><span style="font-size:21.6px;color:#8E9BC0">nova tentativa em 1 minuto</span></div></div>';setTimeout(carregar,60000)}};x.onerror=function(){setTimeout(carregar,60000)};x.send()}
+function carregar(){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&dados=1&_='+Date.now());x.onload=function(){try{var r=JSON.parse(x.responseText);if(!r.success)throw new Error(r.error||'erro');VIVO=r.dados;if(MODO!=='foto'){D=VIVO;render()}}catch(e){if(!D)$('palco').innerHTML='<div class="slide on"><div style="margin:auto;font-size:28.1px;color:#FFB547;text-align:center;">'+esc(e.message||'Sem conexão')+'<br><span style="font-size:21.6px;color:#8E9BC0">nova tentativa em 1 minuto</span></div></div>';setTimeout(carregar,60000)}};x.onerror=function(){setTimeout(carregar,60000)};x.send()}
 function relogio(){var a=new Date();$('rel').textContent=a.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});$('dt').textContent=a.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',timeZone:'America/Sao_Paulo'});
   if(PAUSA)return;if(D&&SLIDES.length>1){var f=(Date.now()-t0)/(ROT*1000);$('prog').style.width=Math.min(100,f*100)+'%';if(f>=1)ir(idx+1)}}
 document.addEventListener('keydown',function(e){if(e.keyCode===39||e.keyCode===40)ir(idx+1);if(e.keyCode===37||e.keyCode===38)ir(idx-1);if(e.keyCode===13&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen()});
@@ -678,12 +679,49 @@ document.addEventListener('keydown',function(e){if(e.keyCode===39||e.keyCode===4
 var PAUSA=false;function pausar(){PAUSA=!PAUSA;$('pz').style.display=PAUSA?'block':'none';if(!PAUSA)t0=Date.now()}
 document.addEventListener('click',function(){if(document.documentElement.requestFullscreen&&!document.fullscreenElement)document.documentElement.requestFullscreen();pausar()});
 document.addEventListener('keydown',function(e){if(e.keyCode===32){e.preventDefault();pausar()}});
+/* v3.488: FOTOS — gravar os painéis, histórico por data e, com 1 clique, a semana anterior; tecla C alterna ao vivo × gravação */
+var VIVO=null,FOTO=null,FINFO=null,MODO='vivo';
+function fGet(q,cb){var x=new XMLHttpRequest();x.open('GET','/api/tv?t='+encodeURIComponent(COD)+'&'+q+'&_='+Date.now());x.onload=function(){var r;try{r=JSON.parse(x.responseText)}catch(e){r={success:false,error:'resposta inválida'}}cb(r)};x.onerror=function(){cb({success:false,error:'sem conexão'})};x.send()}
+function fToast(t){var e=$('ftoast');e.innerHTML=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(function(){e.style.display='none'},4000)}
+function fData(s){var d=new Date(s);return d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',timeZone:'America/Sao_Paulo'})+' às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'})}
+function fModo(m){MODO=m;D=m==='foto'&&FOTO?FOTO:VIVO;$('fban').style.display=m==='foto'?'block':'none';
+  $('fban').innerHTML=m==='foto'&&FINFO?'📸 GRAVAÇÃO de '+esc(fData(FINFO.em))+(FINFO.rotulo?' · '+esc(FINFO.rotulo):'')+' — clique em ⇄ ou tecle C para ver o AO VIVO':'';
+  $('fSem').className=m==='foto'?'on':'';$('fSem').textContent=m==='foto'?'⇄ Voltar ao vivo':(FOTO?'⇄ Ver gravação':'⇄ Semana anterior');if(D)render()}
+function fAbrir(id){fGet('foto='+encodeURIComponent(id),function(r){if(!r.success||!r.dados){fToast('⚠ '+esc(r.error||'foto sem dados'));return}FOTO=r.dados;FINFO=r.foto;fFechar();fModo('foto')})}
+function fGravar(e){e.stopPropagation();var rot=prompt('Gravar foto de todos os painéis agora. Nome da gravação (opcional, ex.: Reunião semanal):','Reunião semanal');if(rot===null)return;
+  fToast('📸 Gravando os painéis…');fGet('gravar=1&rotulo='+encodeURIComponent(rot||''),function(r){if(!r.success){fToast('⚠ '+esc(r.error||'erro'));return}fToast(r.repetida?'Já existe uma foto de agora há pouco ('+esc(fData(r.foto.em))+')':'✓ Foto gravada: '+esc(fData(r.foto.em)))})}
+function fFechar(){var m=$('fmod');m.style.display='none';m.innerHTML=''}
+function fHist(e){e.stopPropagation();fGet('fotos=1',function(r){var L=r.fotos||[],m=$('fmod');
+  m.innerHTML='<div class="cx" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;margin-bottom:12px"><div style="font-size:26px;font-weight:800;flex:1">🕘 Fotos da gestão à vista</div><button onclick="fFechar()" style="background:none;border:1px solid #26335F;color:#C9D3EE;border-radius:10px;padding:6px 12px;font-size:16px;cursor:pointer">✕</button></div>'
+   +'<div class="it" data-m="vivo" onclick="fFechar();fModo(this.dataset.m)"><span style="font-size:22px">🟢</span><div style="flex:1"><b>Ao vivo</b><div style="font-size:15px;color:#8E9BC0">números atualizados a cada 10 min</div></div></div>'
+   +(L.length?L.map(function(f){return '<div class="it" data-id="'+f.id+'" onclick="fAbrir(this.dataset.id)"><span style="font-size:22px">📸</span><div style="flex:1"><b>'+esc(fData(f.em))+'</b><div style="font-size:15px;color:#8E9BC0">'+esc(f.rotulo||'sem nome')+(f.por==='sistema'?' · gravada no sistema':'')+'</div></div>'+(FINFO&&FINFO.id===f.id?'<span style="color:#FFB547;font-size:15px">aberta</span>':'')+'</div>'}).join(''):'<div style="padding:16px 12px;color:#8E9BC0;font-size:18px">Nenhuma foto gravada ainda. Clique em 📸 Gravar foto no fim da reunião.</div>')+'</div>';
+  m.onclick=function(ev){ev.stopPropagation();fFechar()};m.style.display='flex'})}
+function fSemana(e){if(e)e.stopPropagation();if(MODO==='foto'){fModo('vivo');return}if(FOTO){fModo('foto');return}
+  fGet('fotos=1',function(r){var L=r.fotos||[];if(!L.length){fToast('Nenhuma foto gravada ainda — use 📸 Gravar foto');return}
+    var lim=Date.now()-5*864e5,f=L.filter(function(x){return Date.parse(x.em)<=lim})[0]||L.filter(function(x){return Date.parse(x.em)<=Date.now()-864e5})[0]||L[0];
+    if(Date.parse(f.em)>lim)fToast('Sem foto da semana anterior — abrindo a mais antiga recente: '+esc(fData(f.em)));fAbrir(f.id)})}
+document.addEventListener('keydown',function(e){if(e.keyCode===67)fSemana()});
 function ajusta(){document.documentElement.style.setProperty('--s',Math.min(innerWidth/1920,innerHeight/1080))}window.addEventListener('resize',ajusta);ajusta();
 t0=Date.now();carregar();setInterval(carregar,10*60000);setInterval(relogio,500);relogio();setTimeout(function(){location.reload()},6*3600000);
 </script></body></html>`;
 }
 const paginaErro = msg => `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Atlantyx · TV</title><meta name="robots" content="noindex"></head><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#070B18;color:#EAF0FF;font-family:Montserrat,Arial,sans-serif;text-align:center;"><div><div style="font-size:5vh;font-weight:800;letter-spacing:.4vw;">ATLANTYX</div><div style="font-size:2.6vh;margin-top:2vh;color:#8E9BC0;">${msg}</div></div></body></html>`;
 
+// v3.488: FOTOS DA GESTÃO À VISTA — grava os números de todos os painéis (o mesmo pacote que a TV mostra) com data/hora, para
+// comparar o ao vivo com a última reunião. Índice em kv 'tv:fotos' (até 104 = 2 anos semanais) e cada foto em 'tv:foto:<id>'.
+const FOTOS_MAX = 104;
+async function fotosListar() { return ((await kv('tv:fotos')) || []).sort((a, b) => String(b.em).localeCompare(String(a.em))); }
+async function fotoGravar({ rotulo = '', por = 'tv' } = {}) {
+  const L = await fotosListar(); const ult = L[0];
+  if (ult && Date.now() - Date.parse(ult.em) < 120000) return { foto: ult, repetida: true }; // 2 cliques seguidos = 1 foto
+  const d = await dados(false); const id = Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+  const f = { id, em: new Date().toISOString(), dados_de: d.gerado_em || null, rotulo: String(rotulo || '').replace(/[<>]/g, '').substring(0, 60), por };
+  await kv('tv:foto:' + id, d); const n = [f, ...L];
+  const sobra = n.slice(FOTOS_MAX); if (sobra.length) { const sql = await getSql(); for (const x of sobra) { try { await sql`DELETE FROM kv_store WHERE key = ${'tv:foto:' + x.id}`; } catch (_) {} } }
+  await kv('tv:fotos', n.slice(0, FOTOS_MAX)); return { foto: f };
+}
+async function fotoObter(id) { if (!/^[a-z0-9]{6,24}$/.test(String(id))) throw new Error('foto inválida'); const L = await fotosListar(); const f = L.find(x => x.id === id); if (!f) throw new Error('foto não encontrada'); return { foto: f, dados: await kv('tv:foto:' + id) }; }
+async function fotoApagar(id) { const L = await fotosListar(); await kv('tv:fotos', L.filter(x => x.id !== id)); const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key = ${'tv:foto:' + String(id)}`; return { ok: true }; }
 async function handler(req, res) {
   const q = req.query || Object.fromEntries(new URL(req.url || '/', 'http://x').searchParams);
   try {
@@ -692,6 +730,11 @@ async function handler(req, res) {
       const valido = RX_COD.test(cod) && cfg.codigo && crypto.timingSafeEqual(Buffer.from(cod.padEnd(40)), Buffer.from(String(cfg.codigo).padEnd(40)));
       res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Robots-Tag', 'noindex'); res.setHeader('Referrer-Policy', 'no-referrer');
       if (q.dados) { if (!valido) return res.status(404).json({ success: false, error: 'Link da TV inválido ou revogado' }); return res.status(200).json({ success: true, dados: await dados(false) }); }
+      // v3.488: fotos (gravar / listar / abrir) pelo próprio link da TV
+      if (q.fotos || q.foto || q.gravar) { if (!valido) return res.status(404).json({ success: false, error: 'Link da TV inválido ou revogado' });
+        if (q.gravar) return res.status(200).json({ success: true, ...(await fotoGravar({ rotulo: q.rotulo, por: 'tv' })) });
+        if (q.foto) return res.status(200).json({ success: true, ...(await fotoObter(String(q.foto))) });
+        return res.status(200).json({ success: true, fotos: await fotosListar() }); }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       if (!valido) return res.status(404).send(paginaErro('Este link da TV foi revogado ou não existe.<br>Gere um novo em Dashboard › Gestão à vista (TV).'));
       return res.status(200).send(pagina(cfg, cod));
@@ -706,6 +749,7 @@ async function handler(req, res) {
         /* v3.237: esconder nomes vale na hora (cache de 10 min) */ if (n.nomes_projetos !== c.nomes_projetos) { try { await kv('tv:dados', null); } catch (_) {} } return { config: { ...n, link: n.codigo ? base() + '/tv/' + n.codigo : null } }; },
       atualizar_dados: async () => ({ dados: await dados(true) }),
       conferir: () => conferir(),
+      fotos_listar: async () => ({ fotos: await fotosListar() }), foto_gravar: () => fotoGravar({ rotulo: b.rotulo, por: 'sistema' }), foto_apagar: () => fotoApagar(b.id), // v3.488
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
