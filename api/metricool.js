@@ -646,22 +646,69 @@ async function patrocinadoAlinharTexto({ id, aplicar = true } = {}) {
 // v3.483: ARTE DOS POSTS ORGÂNICOS NO PADRÃO DO ANÚNCIO PAGO — a foto genérica do Ideogram (sem mensagem) sai; entra a mesma
 // arte da última campanha paga: manchete DOR + SOLUÇÃO com destaques, 4 benefícios com ✓, tela do sistema e chamada no rodapé.
 // A IA tira a manchete do próprio post (a oferta é a do post). Falhou a IA → manchete do título/1ª frase do post.
-async function arteOrganica({ texto = '', titulo = '', oferta = '', variacao = null } = {}) {
+// v3.486: ARTE DO POST ORGÂNICO — composições VARIADAS (pergunta, lista, antes × depois, citação, gráfico, celular, passos) no
+// mesmo nível visual da arte paga, paleta da marca que varia, e SEMPRE com a faixa da oferta + QR code para a página de captura
+// da oferta da campanha (captura.html com título/subtítulo da oferta e UTM da rede). A IA escolhe o layout que conta o post e
+// evita repetir os 3 últimos. Sem IA → layout "pergunta" com a 1ª frase do post.
+const _KV_OFERTA = 'mkt:oferta_campanha', _KV_ARTE_ULT = 'mkt:arte:ultimos';
+async function ofertaAtual() { const o = (await _kvMc(_KV_OFERTA).catch(() => null)) || {}; return { texto: o.texto || '', titulo: o.titulo || '', sub: o.sub || '', em: o.em || null }; }
+async function ofertaSalvar({ texto = '' } = {}) {
+  const t = String(texto || '').trim().substring(0, 400); if (!t) { await _kvMc(_KV_OFERTA, { texto: '', em: new Date().toISOString() }); return { ok: true, limpa: true }; }
+  let titulo = t.substring(0, 60), sub = '';
+  try { const j = JSON.parse(String(await _claudeAuto('Você resume ofertas B2B em título de página de captura. Responde só JSON.', `OFERTA: ${t}\nDevolva {"titulo":"até 55 caracteres, o que a pessoa ganha (ex.: Mapa de Oportunidades com IA, grátis)","sub":"até 60 caracteres, como/quando recebe (ex.: no seu WhatsApp em 1 dia útil, sem reunião)"}`, 200)).replace(/```json|```/g, '').trim());
+    titulo = String(j.titulo || titulo).substring(0, 60); sub = String(j.sub || '').substring(0, 70); } catch (_) {}
+  const o = { texto: t, titulo, sub, em: new Date().toISOString() }; await _kvMc(_KV_OFERTA, o); return { ok: true, ...o };
+}
+// v3.486: ROTEIRO DO VÍDEO EM 1ª PESSOA (o fundador falando para a câmera, 40–60 s) + legenda + oferta da faixa com QR
+async function videoRoteiro({ tema = '', oferta = '' } = {}) {
+  const OF = await ofertaAtual(); const ofTxt = String(oferta || OF.texto || OFERTA_LP);
+  const sys = `Você é roteirista de vídeos curtos de LinkedIn para o Fabio Quintanilha, CEO e fundador da Atlantyx (17 anos em dados e IA para empresas médias e grandes). ${ICP_TEXTO} Responde só JSON.`;
+  const usr = `TEMA: ${String(tema || 'onde dados e IA cortam custo e aceleram decisão').substring(0, 600)}\nOFERTA (aparece na faixa com QR code na parte final do vídeo): ${ofTxt}
+Escreva a FALA do Fabio para a câmera, em 1ª pessoa, 110 a 150 palavras (40–60 segundos):
+1) gancho nos primeiros 5 segundos (uma frase que nomeia uma dor real do diretor);
+2) um aprendizado concreto dos projetos (sem citar cliente nem número inventado);
+3) o que muda quando se resolve;
+4) fechamento chamando para a oferta: "aponte a câmera para o QR code" ou "o link está no primeiro comentário".
+Frases curtas, fáceis de falar. Sem jargão técnico.
+Devolva JSON: {"fala":"texto da fala com quebras de linha entre as frases","legenda":"legenda do post (60–120 palavras, 1ª pessoa, termina com 'Comente QUERO que eu te mando o link' e, na linha seguinte, 'Ou use o link no primeiro comentário.')","oferta_titulo":"a oferta em até 48 caracteres","oferta_sub":"como/quando recebe, até 55 caracteres","gancho_tela":"frase do gancho para a tela, até 60 caracteres"}`;
+  const j = JSON.parse(String(await _claudeAuto(sys, usr, 1100)).replace(/```json|```/g, '').trim());
+  const of_t = String(j.oferta_titulo || OF.titulo || 'Mapa de Oportunidades com IA, grátis').substring(0, 60), of_s = String(j.oferta_sub || OF.sub || 'no seu WhatsApp em 1 dia útil').substring(0, 70);
+  const cam = 'video-' + new Date().toISOString().slice(0, 10);
+  return { fala: String(j.fala || ''), legenda: String(j.legenda || ''), gancho_tela: String(j.gancho_tela || '').substring(0, 70), oferta_titulo: of_t, oferta_sub: of_s,
+    url_qr: lpUrl({ titulo: OF.titulo || of_t, sub: OF.sub || of_s, rede: 'video', campanha: cam }), link_comentario: lpUrl({ titulo: OF.titulo || of_t, sub: OF.sub || of_s, rede: 'linkedin', campanha: cam }) };
+}
+function lpUrl({ titulo = '', sub = '', rede = 'qr', campanha = '' } = {}) {
   const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
-  let j = null;
-  try { const sys = 'Você é diretor de criação B2B da Atlantyx (dados, indicadores e IA para empresas médias e grandes). Transforma um post de rede social na ARTE que acompanha o post: para o executivo no feed nomeando a dor que ele sente agora e entregando a solução/oferta do próprio post. Responde só JSON.';
-    const usr = `POST:\n${String(texto).substring(0, 1500)}\n${oferta ? 'OFERTA DO POST: ' + oferta + '\n' : ''}
-${ARTE_REGRA().replace(/a oferta da página/g, 'a oferta do post')}
-Regras extras: a manchete resume ESTE post (mesma dor, mesma oferta); nunca cite cliente, número inventado ou resultado prometido; sem termo técnico (nada de ETL, pipeline, dashboard, BI).
-Devolva JSON: {"manchete":"…","beneficios":["…","…","…","…"],"rodape":"chamada curta para o rodapé, até 26 caracteres, ex.: DIAGNÓSTICO GRÁTIS · LINK NO POST"}`;
-    j = JSON.parse(String(await _claudeAuto(sys, usr, 500)).replace(/```json|```/g, '').trim()); } catch (e) { console.warn('[arte organica] IA:', e.message); }
-  const prim = String(titulo || String(texto).split(/\n|[.!?]\s/)[0] || 'Seus dados podem decidir mais rápido').replace(/\*/g, '').substring(0, 70).toUpperCase();
-  const man = String(j?.manchete || ('**' + prim + '**')).substring(0, 120);
-  const ben = (Array.isArray(j?.beneficios) ? j.beneficios : ['Decisão com número certo', 'Margem sob controle', 'Grátis e sem reunião', 'Resposta em 1 dia útil']).map(x => String(x).substring(0, 34)).filter(Boolean).slice(0, 4);
-  const v = variacao == null ? Math.floor(Math.random() * 3) : variacao;
-  const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'arte_padrao', payload: { manchete: man, beneficios: ben, rodape: String(j?.rodape || 'Saiba mais no link do post').substring(0, 30), variacao: v, origem: 'arte-organica' } }) });
-  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success || !d.url) throw new Error(d.error || 'arte não montada (HTTP ' + r.status + ')');
-  return { url: d.url, manchete: man, beneficios: ben };
+  const q = new URLSearchParams(); if (titulo) q.set('t', titulo); if (sub) q.set('s', sub);
+  q.set('utm_source', String(rede || 'qr').toLowerCase()); q.set('utm_medium', 'qrcode'); q.set('utm_campaign', String(campanha || ('org-' + new Date().toISOString().slice(0, 10))).substring(0, 40));
+  return base + '/captura.html?' + q.toString();
+}
+async function arteOrganica({ texto = '', titulo = '', oferta = '', rede = 'linkedin', campanha = '', variacao = null } = {}) {
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  const OF = await ofertaAtual(); const ofTxt = String(oferta || OF.texto || OFERTA_LP);
+  const ult = ((await _kvMc(_KV_ARTE_ULT).catch(() => null)) || []).slice(0, 3);
+  let d = null;
+  try { const sys = 'Você é diretor de arte B2B da Atlantyx (dados, indicadores e IA para empresas médias e grandes; público: donos e C-levels). Cria a ARTE que acompanha um post de rede social: uma composição clara, com UMA mensagem, que faz o executivo parar no feed. Responde só JSON.';
+    const usr = `POST:\n${String(texto).substring(0, 1500)}\nOFERTA DA CAMPANHA (vai na faixa de baixo, com QR code para a página): ${ofTxt}
+Escolha o LAYOUT que melhor conta ESTE post (evite repetir: ${ult.join(', ') || 'nenhum'}):
+- pergunta: {"titulo":"pergunta provocadora, até 90 caracteres","apoio":"1 frase, até 110"}
+- lista: {"titulo":"até 70 car. (ex.: 3 sinais de que…)","itens":["3 ou 4 itens, até 45 car. cada"]}
+- antes_depois: {"titulo":"até 60","antes":["3 itens, até 34 car."],"depois":["3 itens, até 34 car."]}
+- citacao: {"citacao":"frase do fundador em 1ª pessoa, até 150 car., opinião forte tirada do post"}
+- grafico: {"titulo":"até 70","apoio":"até 90","rotulo":"marco da curva, até 24 car. (ex.: decisão no dia 1)","rotulo_base":"até 22 (ex.: como está hoje)"}
+- celular: {"titulo":"até 70, o que a pessoa recebe","itens":["3 benefícios, até 28 car."],"conversa":["4 mensagens curtas de WhatsApp alternando cliente/Atlantyx, até 60 car. cada"]}
+- passos: {"titulo":"até 70","apoio":"até 90 (opcional)","itens":["3 passos, até 32 car."]}
+Regras: marque com **asteriscos duplos** 1 a 3 trechos do título/citação (a dor e o ganho). Português do Brasil, linguagem de negócio, sem termo técnico (ETL, pipeline, dashboard, BI), sem cliente, sem número de resultado inventado.
+Devolva JSON: {"layout":"…", …campos do layout…, "tag":"tema em 2 a 3 palavras", "oferta_titulo":"a oferta em até 50 car. com **destaque**", "oferta_sub":"como/quando recebe, até 55 car."}`;
+    d = JSON.parse(String(await _claudeAuto(sys, usr, 700)).replace(/```json|```/g, '').trim()); } catch (e) { console.warn('[arte organica] IA:', e.message); }
+  if (!d || !d.layout) d = { layout: 'pergunta', titulo: '**' + String(titulo || String(texto).split(/\n|[.!?]\s/)[0] || 'Sua empresa decide com o número certo?').replace(/\*/g, '').substring(0, 80) + '**', tag: 'Dados e decisão' };
+  if (!d.oferta_titulo) d.oferta_titulo = OF.titulo ? '**' + OF.titulo + '**' : '**Mapa de Oportunidades com IA**, grátis';
+  if (!d.oferta_sub) d.oferta_sub = OF.sub || 'no seu WhatsApp em 1 dia útil, sem reunião';
+  const url_qr = lpUrl({ titulo: String(OF.titulo || d.oferta_titulo).replace(/\*/g, ''), sub: String(OF.sub || d.oferta_sub).replace(/\*/g, ''), rede, campanha });
+  const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'arte_organica', payload: { dados: d, url_qr, variacao: variacao == null ? Math.floor(Math.random() * 1000) : variacao, origem: 'arte-organica' } }) });
+  const m = await r.json().catch(() => ({})); if (!r.ok || !m.success || !m.url) throw new Error(m.error || 'arte não montada (HTTP ' + r.status + ')');
+  try { await _kvMc(_KV_ARTE_ULT, [d.layout, ...ult].slice(0, 3)); } catch (_) {}
+  return { url: m.url, layout: d.layout, url_qr, dados: d };
 }
 async function patrocinadoArteSugerir({ id } = {}) {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id));
@@ -1638,7 +1685,7 @@ async function filaProcessar({ lote } = {}) {
       // v2.72: a cena vem do próprio post (escrita pela IA junto com o texto). Sem ela, deriva do
       // texto do post — nunca mais só do "ângulo" em 3 palavras, que deixava o Ideogram inventar.
       // v3.483: arte no padrão do anúncio pago (manchete + benefícios + tela do sistema); só cai na foto do Ideogram se a arte falhar
-      try { const ar = await arteOrganica({ texto: it.texto, oferta: it.oferta });
+      try { const ar = await arteOrganica({ texto: it.texto, rede: (Array.isArray(it.redes) ? it.redes[0] : String(it.redes || '').replace(/[{}"]/g, '').split(',')[0]) || 'linkedin', campanha: 'auto-' + it.data });
         const prox = it.apenas_rascunho ? 'fim' : 'agendar';
         await sql`UPDATE autocampanha_fila SET imagem_url = ${ar.url}, etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
         return { id: it.id, etapa: 'imagem', ok: true, proxima: prox, arte: 'padrao' };
@@ -1780,6 +1827,10 @@ async function _espelharPessoal(body, { TOKEN, USERID, BLOGID }) {
   const temLi = (body.providers || []).some(p => String(p.network || p).toUpperCase() === 'LINKEDIN'); if (!temLi || body.draft) return null;
   const c = await _liPessoalCfg(); if (!c.ativo || !c.blog_id || String(c.blog_id) === String(BLOGID)) return null;
   const copia = { ...body, providers: [{ network: 'LINKEDIN' }] }; delete copia.instagramData; delete copia.facebookData;
+  // v3.486: no perfil pessoal o texto sai em 1ª pessoa (o fundador falando), não na voz da empresa
+  try { if (String(body.text || '').length > 40) { const t = String(await _claudeAuto('Você reescreve posts de LinkedIn da empresa Atlantyx para o perfil pessoal do fundador, Fabio Quintanilha (CEO). Responde só com o texto final.',
+    `Reescreva em 1ª PESSOA, como o Fabio falando ("eu vejo", "nos projetos que conduzi", "na Atlantyx a gente…"), tom de quem conversa com um par; mesmo assunto, mesma pergunta ou chamada final, mesmo tamanho (±15%), mesmas quebras de linha. Não invente fato, número nem cliente. Não use hashtag.\n\nPOST:\n${String(body.text).substring(0, 2500)}`, 900)).trim();
+    if (t.length > 40 && t.length <= 3000) copia.text = t; } } catch (_) {}
   try { const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${c.blog_id}`, TOKEN, 'POST', copia); return { ok: true, blog_id: c.blog_id, metricool_id: r?.data?.id || r?.id || null }; }
   catch (e) { console.warn('[metricool] LinkedIn pessoal:', e.message); return { ok: false, blog_id: c.blog_id, erro: String(e.message).substring(0, 200) }; }
 }
@@ -1998,6 +2049,9 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
   for (const slot of alvos) {
     try {
       const trilha = _plv ? escolherTrilha(_plv.plano, slot.data + '_' + slot.hora) : null;
+      // v3.486: MIX 4 × 1 — 4 posts de conteúdo (valor, pergunta específica no fim) para 1 de oferta (dor → oferta da campanha + "comente PALAVRA")
+      const _dia = Math.floor(Date.parse(slot.data + 'T12:00:00Z') / 864e5), _ehOferta = _dia % 5 === 0;
+      const _OFc = await ofertaAtual().catch(() => ({})), _ofCamp = (_OFc.texto || (trilha ? trilha.oferta : '') || OFERTA_LP), _palavra = ['MAPA', 'QUERO', 'DADOS', 'DIAGNÓSTICO'][_dia % 4];
       const system = `Você escreve posts de LinkedIn para a Atlantyx — consultoria brasileira de dados e IA, 17 anos de mercado, clientes como CPFL Energia, Enel e Caixa Capitalização. ${ICP_TEXTO}
 
 REGRAS:
@@ -2008,11 +2062,14 @@ REGRAS:
 - Nunca invente cliente, número ou caso que não foi informado.
 - Português do Brasil, tom de quem entende do assunto falando com um par.
 
-O MAIS IMPORTANTE — o post precisa gerar LEAD, não só curtida:
-- Termine OFERECENDO algo concreto em troca de uma conversa: um diagnóstico de 30 min, um checklist, uma segunda opinião sobre um problema específico. Algo que o leitor ganha.
-- A última frase aponta para o link: "O link está no primeiro comentário" (LinkedIn reduz alcance de link no corpo).
-- Não escreva a URL no texto — o sistema coloca o link no comentário.
-- Proibido terminar só com pergunta retórica ou "o que você acha?" — isso gera engajamento e zero lead.
+${_ehOferta ? `ESTE POST É DE OFERTA (1 a cada 5 posts):
+- Apresente a dor e feche com a OFERTA DA CAMPANHA: ${_ofCamp}. Diga em 1 frase o que a pessoa ganha.
+- Chamada de comentário: "Comente ${_palavra} que eu te mando o link" — e, na linha seguinte, "Ou use o link no primeiro comentário."
+- Não escreva a URL no texto — o sistema coloca o link no comentário.`
+: `ESTE POST É DE CONTEÚDO (4 a cada 5 posts — é o que faz a página ganhar seguidores e alcance):
+- Entregue valor de verdade: uma opinião forte, um aprendizado de projeto (sem citar cliente), um erro comum e como evitar, um bastidor.
+- NÃO venda, NÃO ofereça diagnóstico, NÃO fale "link no comentário".
+- Termine com UMA pergunta específica que um diretor responde com a experiência dele (ex.: "Na sua empresa, o fechamento sai antes ou depois do dia 10?") — nunca "o que você acha?".`}
 
 IMAGEM — escreva também, EM INGLÊS, a descrição de UMA cena fotográfica que ilustre ESTE post especificamente.
 Deve ser concreta e do mundo corporativo real: salas de controle de energia, subestações, turbinas eólicas, data centers,
@@ -2041,6 +2098,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.${trilha ? '\n' + briefi
         utm_campaign: `${trilha ? 'alv-' + trilha.id + '_' : ''}${slot.data}_${slot.hora.replace(':', '')}`, utm_content: (j.angulo || '').substring(0, 40).replace(/\s+/g, '-').toLowerCase() });
       j.link = `${base}/captura.html?${utm.toString()}`;
       j.comentario = `${j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) + ' → ' : ''}${j.link}`;
+      if (!_ehOferta) { j.comentario = null; j.oferta = null; } // v3.486: post de conteúdo não leva link nem oferta (o QR da arte continua levando à página)
       // v2.30: cada rede tem o seu caminho para o link.
       //  LinkedIn  → link no 1º comentário (preserva alcance)
       //  Instagram → link no texto NÃO é clicável; o caminho é "link na bio" + o link visível
@@ -2049,13 +2107,13 @@ Evite repetir o mesmo ângulo de outros posts da semana.${trilha ? '\n' + briefi
       const temIg = redesAlvo.some(r => /instagram/i.test(r));
       const temFb = redesAlvo.some(r => /facebook/i.test(r));
       const temLi = redesAlvo.some(r => /linkedin/i.test(r));
-      if (temIg) {
+      if (temIg && _ehOferta) {
         const utmIg = new URLSearchParams({ ...Object.fromEntries(utm), utm_source: 'instagram' });
         j.link_instagram = `${base}/captura.html?${utmIg.toString()}`;
         j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim()
           + `\n\n${cta_instagram || ('👉 ' + (j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) : 'Receba grátis seu Mapa de Oportunidades com IA') + ': ' + String(j.link_instagram).replace(/^https?:\/\//, ''))}`; // v3.32: CTA configurado (sem "link na bio")
         j.link_bio = `${base}/captura.html?utm_source=instagram&utm_medium=bio`;
-      } else if (temFb && !temLi) {
+      } else if (temFb && !temLi && _ehOferta) {
         j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim() + `\n\n👉 ${j.link}`;
       }
 
@@ -2199,7 +2257,9 @@ async function handler(req, res) {
     patrocinado_status:     () => patrocinadoStatus(req),
     patrocinado_diagnostico: () => patrocinadoDiagnostico(), // v3.176
     patrocinado_copy:       () => patrocinadoCopy(payload),
-    arte_post: () => arteOrganica(payload), // v3.483
+    arte_post: () => arteOrganica(payload), // v3.483 · v3.486: composições variadas + QR
+    video_roteiro: () => videoRoteiro(payload), // v3.486: post em vídeo (1ª pessoa)
+    oferta_obter: () => ofertaAtual(), oferta_salvar: () => ofertaSalvar(payload), lp_url: async () => { const o = await ofertaAtual(); return { url: lpUrl({ titulo: payload.titulo || o.titulo, sub: payload.sub || o.sub, rede: payload.rede, campanha: payload.campanha }), oferta: o }; }, // v3.486
     linkedin_pessoal_obter: () => liPessoalObter(), linkedin_pessoal_salvar: () => liPessoalSalvar(payload), // v3.483
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
     geo_local_resolver:     () => geoLocalResolver(payload), // v3.316: confere o local da campanha geolocalizada (não cria nada)
@@ -2343,7 +2403,7 @@ async function handler(req, res) {
               if (!resp.ok) problemas.push(`${url.substring(0,60)} — HTTP ${resp.status} (o Metricool não consegue baixar)`);
               else if (ct.includes('text/html')) problemas.push(`${url.substring(0,60)} — devolveu HTML em vez de mídia (link de página, não do arquivo?)`);
               else if (tipo === 'REEL' && !/video\/(mp4|quicktime)/.test(ct)) problemas.push(`${url.substring(0,60)} — Reel exige vídeo MP4 ou MOV, veio "${ct}"${ct.includes('webm') ? ' (gravação WebM do navegador: o Instagram não aceita — grave/converta em MP4)' : ''}`);
-              else if (tipo !== 'REEL' && ct && !ct.includes('image')) problemas.push(`${url.substring(0,60)} — esperado imagem, veio "${ct}"`);
+              else if (tipo !== 'REEL' && ct && !ct.includes('image') && !(tipo === 'POST' && /video\/(mp4|quicktime)/.test(ct))) problemas.push(`${url.substring(0,60)} — esperado imagem, veio "${ct}"`);
               else if (tam && tam < 1024) problemas.push(`${url.substring(0,60)} — arquivo muito pequeno (${tam} bytes), pode estar corrompido`);
             } catch (e) {
               problemas.push(`${url.substring(0,60)} — inacessível (${e.name === 'AbortError' ? 'tempo esgotado' : e.message})`);

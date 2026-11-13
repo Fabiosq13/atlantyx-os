@@ -2943,7 +2943,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div class="cp-top">
       <div style="min-width:0;flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de aprovação</div>
         <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Gerado → Revisão → Aprovado → Agendado → Publicado · Stories e Reels ficam dentro da campanha (✎ no card)</div></div>
-      <button class="btn btn-g" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool e agenda 3 publicações otimizadas">🤖 Auto-campanha IA</button>
+      <button class="btn btn-g" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool e agenda 3 publicações otimizadas">🤖 Auto-campanha IA</button><button class="btn btn-g" onclick="videoPostAbrir()" title="Grave na hora (câmera + teleprompter) ou envie um vídeo seu em 1ª pessoa — o sistema coloca a oferta com QR code no final e publica">🎥 Post em vídeo</button>
       <details class="kb-cfg"><summary class="btn btn-g">⚙ Configurar</summary>
         <div class="kb-menu">
           <button class="btn btn-g" onclick="escolherMarcaMetricool()" title="Em qual marca/página do Metricool publicar">🏢 <span id="marcaAtivaLabel">Página de publicação</span></button><button class="btn btn-g" onclick="liPessoalConfigurar()" title="Publicar também no seu perfil pessoal do LinkedIn, no mesmo horário">👤 <span id="liPessoalLabel">LinkedIn pessoal</span></button>
@@ -3225,6 +3225,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div class="fg"><label class="fl">Contexto adicional</label>
               <textarea class="fta" id="cCtx" style="min-height:55px;" placeholder="Ex: Focar em empresas que anunciaram novo ERP..."></textarea>
             </div>
+            <div class="fg"><label class="fl" title="Vai no QR code de todas as artes (página de captura com esta oferta) e no post de oferta (1 a cada 5)">Oferta da campanha (QR code e post de oferta)</label>
+              <input class="fi" id="cOferta" onchange="ofertaCampanhaSalvar(this.value)" placeholder="Vazio = Mapa de Oportunidades com IA, grátis, no WhatsApp em 1 dia útil"/>
+              <div id="cOfertaInfo" style="font-size:10px;color:var(--t3);margin-top:3px;"></div></div>
             <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:8px;cursor:pointer;" title="Depois da narrativa e da copy, o sistema já monta o Carrossel (roteiro, artes e texto na arte) e o Reel (roteiro, artes, vídeo e hospedagem). Nada é publicado sem você agendar.">
               <input type="checkbox" id="cAutoFormatos" checked/> Gerar automaticamente <b>imagem</b>, <b>Stories</b>, <b>Carrossel</b> e <b>Reel</b> ao criar (~15 imagens)</label>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -8530,6 +8533,14 @@ async function liPessoalConfigurar() {
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function _liPessoalLabel() { try { const d = await mcApi('linkedin_pessoal_obter', {}); const el = document.getElementById('liPessoalLabel'); if (el) el.textContent = d.ativo && d.blog_id ? 'LinkedIn pessoal ✓' : 'LinkedIn pessoal'; } catch (_) {} }
+// v3.486: POST EM VÍDEO EM 1ª PESSOA (public/video-post.js, carregado sob demanda)
+function videoPostAbrir() { if (window.VIDEOPOST) return VIDEOPOST.abrir(); const sc = document.createElement('script'); sc.src = '/video-post.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); sc.onload = () => VIDEOPOST.abrir(); sc.onerror = () => toast('Não carreguei o módulo de vídeo', 'error'); document.head.appendChild(sc); }
+// v3.486: OFERTA DA CAMPANHA — título/subtítulo da página de captura que o QR code das artes abre (e a oferta do post de oferta)
+async function ofertaCampanhaSalvar(v) { const i = document.getElementById('cOfertaInfo'); if (i) i.textContent = 'Salvando a oferta…';
+  try { const d = await mcApi('oferta_salvar', { texto: v || '' }); if (i) i.innerHTML = d.limpa ? 'Usando a oferta padrão (Mapa de Oportunidades).' : '✓ Página do QR: <b>' + _patE(d.titulo) + '</b>' + (d.sub ? ' — ' + _patE(d.sub) : ''); }
+  catch (e) { if (i) i.textContent = 'Não salvei a oferta: ' + e.message; } }
+async function _ofertaCampanhaCarregar() { try { const d = await mcApi('oferta_obter', {}); const el = document.getElementById('cOferta'); if (el && !el.value && d.texto) el.value = d.texto;
+  const i = document.getElementById('cOfertaInfo'); if (i && d.titulo) i.innerHTML = '✓ Página do QR: <b>' + _patE(d.titulo) + '</b>' + (d.sub ? ' — ' + _patE(d.sub) : ''); } catch (_) {} }
 function _atualizaLabelMarca() {
   if (!window._liPesLido) { window._liPesLido = true; _liPessoalLabel(); }
   const el = document.getElementById('marcaAtivaLabel');
@@ -22550,6 +22561,7 @@ async function salvarPublicacoes() {
 async function verificarMetricool(force) {
   if (!force && _mcConfigurado !== null) return _mcConfigurado;
   if (!window._liPesLido && document.getElementById('liPessoalLabel')) { window._liPesLido = true; _liPessoalLabel(); } // v3.483
+  if (!window._ofLido && document.getElementById('cOferta')) { window._ofLido = true; _ofertaCampanhaCarregar(); } // v3.486
   try {
     const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'status' }) });
@@ -36044,7 +36056,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
       _prog(`✍ Escrevendo posts ${plano.length + 1}–${Math.min(plano.length + 3, _nPosts)} de ${_nPosts}...`, 0.35 * plano.length / _nPosts);
       const _ctx = _ctxBase + (plano.length ? ' NÃO repita os temas já planejados: ' + plano.map(p => p.titulo).join('; ') + '.' : '');
       const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'campanha_auto', payload: { metricas_resumo: metricasResumo, contexto: _ctx, redes: _redes } }) });
+        body: JSON.stringify({ action:'campanha_auto', payload: { metricas_resumo: metricasResumo, contexto: _ctx, redes: _redes, oferta: document.getElementById('cOferta')?.value || '' } }) });
       const d = await r.json().catch(() => ({ success: false, error: 'resposta inválida (HTTP ' + r.status + ')' }));
       if (!d.success || !d.posts?.length) {
         _falhasSeguidas++; window._acFaltouMotivo = d.error || 'IA sem posts';
@@ -37191,7 +37203,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.485] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.486] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37207,7 +37219,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.485';
+window.__ATX_BUILD_ID__ = 'ATX-v3.486';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

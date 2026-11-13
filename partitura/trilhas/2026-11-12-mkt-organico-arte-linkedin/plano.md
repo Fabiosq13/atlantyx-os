@@ -9,3 +9,5 @@
 
 ## Registro da Batida
 - 2026-11-12 · feito (v3.483) · bloqueio: fundador criar a 2ª marca no Metricool com o perfil pessoal · próximo: conferir as primeiras artes no ar
+- [x] v3.486: artes orgânicas com 7 composições e 4 paletas (lib/arte-organica.js), faixa da oferta + QR code para a página de captura da oferta da campanha (campo "Oferta da campanha"); mix 4 conteúdo × 1 oferta com "Comente QUERO"; texto em 1ª pessoa no LinkedIn pessoal; Post em vídeo em 1ª pessoa (public/video-post.js: gravar com teleprompter ou enviar, faixa da oferta + QR na parte final, publica LinkedIn/Facebook/Reel)
+- 2026-11-12 · feito (v3.486) · Interseção T1: dependência "qrcode" no package.json · próximo: fundador testar o vídeo no Chrome

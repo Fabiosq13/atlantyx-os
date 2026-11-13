@@ -61,9 +61,11 @@ async function handler(req, res) {
 Sua tarefa: planejar 3 publicações de MÁXIMA CONVERSÃO (gerar cliques e reuniões agendadas), combinando:
 (a) benchmarks de mercado B2B (LinkedIn: ter-qui 9h-11h30 e 17h; Instagram: ter/qui 11h-13h e 18h-19h; Facebook: qua-qui 9h-12h; evitar seg cedo e sex tarde),
 (b) as MÉTRICAS REAIS da conta fornecidas abaixo (dias/horários e temas que mais performaram têm prioridade sobre o benchmark).
-Cada copy: max 110 palavras, específica da Atlantyx, com dado concreto, SEM clichês (proibido: revolucionar, disruptivo, game-changer), terminando com a OFERTA DO DIAGNÓSTICO GRATUITO (abaixo). ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})}
-OFERTA (obrigatória em TODO post): ${OFERTA(payload)}.
-Como usar a oferta: o post apresenta uma dor ou um dado concreto e FECHA convidando para o diagnóstico gratuito, dizendo em 1 frase o que a pessoa ganha (ex.: "você sai com as oportunidades priorizadas"). Não feche com "agende uma reunião" genérico nem só com opinião. Não prometa prazo, preço nem entregável que não esteja na oferta.
+Cada copy: max 110 palavras, específica da Atlantyx, SEM clichês (proibido: revolucionar, disruptivo, game-changer), sem cliente nem número inventado. ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})}
+MIX DE CONTEÚDO (v3.486 — o que faz a página ganhar seguidores e alcance): os posts 1 e 2 são de CONTEÚDO e o post 3 é de OFERTA.
+- CONTEÚDO: entregue valor (opinião forte, aprendizado de projeto sem citar cliente, erro comum e como evitar, bastidor). NÃO venda, NÃO ofereça diagnóstico, sem link. Termine com UMA pergunta específica que um diretor responde com a experiência dele (nunca "o que você acha?").
+- OFERTA (só o post 3): apresente a dor e feche com a OFERTA DA CAMPANHA: ${OFERTA(payload)} — diga em 1 frase o que a pessoa ganha e chame para comentar: "Comente QUERO que eu te mando o link". Não prometa prazo, preço nem entregável que não esteja na oferta.
+A arte de cada post leva um QR code para a página da oferta — não precisa repetir a oferta nos posts de conteúdo.
 Responda APENAS JSON válido.`;
         const usr = `MÉTRICAS DA CONTA (Metricool, últimos 30 dias):
 ${metricas_resumo || '(sem dados suficientes — use apenas benchmarks de mercado B2B)'}
@@ -72,8 +74,8 @@ CONTEXTO ADICIONAL: ${contexto || 'captação de leads e reuniões para a Atlant
 REDES-ALVO: ${redes.join(', ')}
 
 Gere exatamente este JSON:
-{"posts":[{"titulo":"nome curto da publicação","texto":"copy completa pronta para publicar (max 110 palavras, terminando com o convite para o diagnóstico gratuito)","dia_semana":"segunda|terca|quarta|quinta|sexta","hora":"HH:MM","justificativa":"1 frase: por que este slot/tema converte (cite a métrica ou benchmark)","prompt_imagem":"cena visual em inglês 40-60 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, ambiente corporativo com dados/dashboards"}]}
-Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor → prova/case → convite direto ao diagnóstico gratuito), e TODOS terminam com a oferta do diagnóstico gratuito.`;
+{"posts":[{"titulo":"nome curto da publicação","texto":"copy completa pronta para publicar (max 110 palavras; conteúdo termina com pergunta específica, oferta termina com a oferta e \"Comente QUERO\")","dia_semana":"segunda|terca|quarta|quinta|sexta","hora":"HH:MM","justificativa":"1 frase: por que este slot/tema converte (cite a métrica ou benchmark)","prompt_imagem":"cena visual em inglês 40-60 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, ambiente corporativo com dados/dashboards"}]}
+Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares; posts 1 e 2 de CONTEÚDO (terminam com pergunta específica) e o post 3 de OFERTA (termina com a oferta da campanha e "Comente QUERO"). Inclua em cada post "papel":"conteudo" ou "oferta".`;
         // v3.64: 3 posts completos + oferta levam ~30s — com o limite antigo de 25s o 2º lote caía e a autocampanha
         // de 7 dias gerava só os 3 primeiros posts (1 dia). Agora 52s (a função tem 60s).
         const rr = await claude(sys, usr, 3000, 52000);
