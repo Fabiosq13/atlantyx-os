@@ -958,7 +958,8 @@ async function handler(req, res) {
     leads_esquecidos: () => leadsEsquecidos(payload), // v3.422
     floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
     floresta_ia: () => floresta().analisarIA(payload),
-    floresta_conversa: () => floresta().conversa(payload), // v3.496: resumo, notas e mensagens do HubSpot no card
+    floresta_conversa: () => floresta().conversa(payload),
+    floresta_rascunho: () => floresta().rascunho(payload), // v3.501: e-mail ou WhatsApp escrito pela IA para a decisão // v3.496: resumo, notas e mensagens do HubSpot no card
     iara_retornos: () => iaraRetorno().processar({ horas: payload.horas || 26, simular: !!payload.simular }), // v3.495: rodar agora (ou simular sem gravar)
     floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
     floresta_mover: () => floresta().mover(payload, req.sessao?.login),
