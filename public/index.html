@@ -12730,6 +12730,23 @@ async function gerarImagemCampanha() {
 
   if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   result.innerHTML = '<div style="color:var(--blue);font-size:11px;text-align:center;padding:30px;">Gerando imagens no Ideogram (~15s)...</div>';
+  // v3.494: IMAGEM PRINCIPAL no estilo novo (composição escolhida pela IA a partir da copy + faixa da oferta com QR code); Ideogram só se falhar
+  try {
+    const v0 = campAtiva?.data?.copy?.versoes?.[0] || {};
+    const textoPost = [document.getElementById('edHeadline')?.value || v0.headline || '', document.getElementById('edSubheadline')?.value || v0.subheadline || '', document.getElementById('edCorpo')?.value || v0.corpo || v0.texto || ''].filter(Boolean).join('\n');
+    if (textoPost.trim().length > 20) {
+      result.innerHTML = '<div style="color:var(--blue);font-size:11px;text-align:center;padding:30px;">Montando ' + Math.min(qtd, 2) + ' arte(s) no estilo da marca (~20 s)...</div>';
+      const urls = []; for (let k = 0; k < Math.min(qtd, 2); k++) { try { const a = await mcApi('arte_post', { texto: textoPost, titulo: document.getElementById('edHeadline')?.value || v0.headline || '', rede: String(canal).toLowerCase(), campanha: campAtiva?.nome || '' }); if (a.url) urls.push(a.url); } catch (e) { addLog('warn', '[Imagem] estilo novo: ' + e.message); } }
+      if (urls.length) {
+        if (campAtiva) { campAtiva.imagens = urls.map((u, i) => ({ url: u, aprovada: i === 0, ts: new Date().toISOString(), estilo: 'novo' })); window._campanhaAtual = campAtiva; }
+        const tag = document.getElementById('imgTagCamp'); if (tag) { tag.textContent = urls.length + ' arte(s) gerada(s)'; tag.className = 'tag live'; }
+        result.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin-bottom:10px;">' + urls.length + ' ARTE(S) NO ESTILO DA MARCA — COM QR CODE DA OFERTA</div><div style="display:grid;grid-template-columns:repeat(' + Math.min(urls.length, 2) + ',1fr);gap:8px;">'
+          + urls.map((url, i) => '<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid ' + (i === 0 ? 'var(--green)' : 'var(--bd)') + ';" id="imgCard_' + i + '"><img src="' + url + '" style="width:100%;display:block;"/><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:7px;display:flex;gap:5px;"><button class="btn btn-gn" style="flex:1;font-size:9px;padding:3px;" data-url="' + url + '" data-idx="' + i + '" onclick="aprovarImagem(this.dataset.url, this.dataset.idx, event)">Aprovar no Kanban</button><a href="' + url + '" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a></div></div>').join('') + '</div>';
+        addLog('ok', '[Imagem] ' + urls.length + ' arte(s) no estilo novo — campanha: ' + (campAtiva?.nome || '')); toast(urls.length + ' arte(s) prontas. Clique Aprovar na preferida.', 'success');
+        if (btn) { btn.disabled = false; btn.textContent = '◆ Gerar no Ideogram'; } return;
+      }
+    }
+  } catch (e) { addLog('warn', '[Imagem] estilo novo falhou: ' + e.message); }
 
   try {
     const r = await fetch('/api/image-gen', {
@@ -15265,6 +15282,7 @@ function _fmtStatus(k, est, txt) {
   box.style.display = 'block';
   box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><b style="font-size:11.5px;flex:1;">Formatos automáticos</b>'
     + (_qtdArteMarca() ? '<button class="btn btn-or" style="font-size:9.5px;padding:2px 8px;" title="Gera com IA as artes que ficaram sem imagem (arte de marca) ou cuja imagem expirou, e regrava o texto" onclick="refazerArtesMarca()" ' + (window._fmtRodando ? 'disabled' : '') + '>🎨 Refazer com IA (' + _qtdArteMarca() + ')</button>' : '')
+    + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" title="Refaz imagem, stories, carrossel e reel no estilo novo da marca (com QR code da oferta)" onclick="refazerEstiloNovo()" ' + (window._fmtRodando ? 'disabled' : '') + '>🎨 Refazer no estilo novo</button>'
     + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="gerarFormatosAutomaticos(true)" ' + (window._fmtRodando ? 'disabled' : '') + '>↻ Gerar o que falta</button></div>'
     + _FMT_ETAPAS.map(([id, nome]) => { const e = window._fmtAuto[id] || { est: 'wait', txt: 'aguardando' };
       return '<div style="display:flex;gap:8px;font-size:11px;padding:3px 0;"><span style="color:' + cor[e.est] + ';width:12px;font-weight:700;">' + ic[e.est] + '</span><span style="width:130px;">' + nome + '</span><span style="color:' + (e.est === 'err' ? 'var(--red)' : 'var(--t2)') + ';flex:1;min-width:0;">' + String(e.txt || '').replace(/</g, '&lt;') + '</span></div>'; }).join('');
@@ -15273,6 +15291,14 @@ function _fmtStatus(k, est, txt) {
 function _pecasCampanha(c) { c = c || (typeof campAtiva !== 'undefined' && campAtiva) || {}; return { stories: c.stories || [], carr: c.carrossel?.slides || [], reel: c.reel?.slides || [] }; }
 const _pecaRefazer = x => x && (x.arte_marca || x.imagem_expirada || (_ehEfemeraCli(x.imagem_url) && _urlFixada[x.imagem_url]?.expirada));
 function _qtdArteMarca(c) { c = c || (typeof campAtiva !== 'undefined' && campAtiva) || {}; const p = _pecasCampanha(c); return [...p.stories, ...p.carr, ...p.reel].filter(_pecaRefazer).length + (c.imagens || []).filter(x => x && (x.arte_marca || x.expirada)).length; }
+// v3.494: refaz todas as peças da campanha aberta no estilo novo (mantém os textos/roteiros; troca só as artes e o vídeo)
+async function refazerEstiloNovo() {
+  const c = campAtiva; if (!c) return toast('Abra uma campanha primeiro', 'error'); if (window._fmtRodando) return toast('Os formatos já estão sendo gerados', 'info');
+  if (!confirm('Refazer a imagem principal, os stories, o carrossel e o reel desta campanha no estilo novo da marca (com QR code da oferta)?\n\nOs textos e roteiros ficam como estão; só as artes e o vídeo são refeitos.')) return;
+  const p = _pecasCampanha(c); [...p.stories, ...p.carr, ...p.reel].forEach(x => { delete x.imagem_url; delete x.imagem_composta; delete x.arte_pronta; delete x.arte_marca; });
+  if (c.reel) { delete c.reel.video_url; delete c.reel.video_url_publica; } window._reelBlob = null; c.imagens = [];
+  try { salvarCampanhaLocal(c); } catch (_) {} await gerarFormatosAutomaticos(true);
+}
 async function refazerArtesMarca() {
   const c = campAtiva; if (!c) return toast('Abra a campanha primeiro', 'error');
   if (window._fmtRodando) return toast('Os formatos já estão sendo gerados', 'info');
@@ -15310,9 +15336,26 @@ async function refazerArtesMarca() {
   _fmtStatus('img', (window._fmtAuto.img || {}).est || 'ok', (window._fmtAuto.img || {}).txt || '');
 }
 // gera as artes que faltam, `conc` por vez; devolve a lista de falhas com o motivo real
+// v3.494: PEÇAS NO ESTILO NOVO (mesmo das artes dos posts) — Stories 9:16, Carrossel 1:1 e Reel 9:16 com o texto já gravado
+// na arte, paleta única por campanha (série coerente) e QR code da oferta na última peça. Ideogram só se a arte falhar.
+let _ofQrCache = null;
+async function _ofertaQr() { if (_ofQrCache && Date.now() - _ofQrCache.em < 600000) return _ofQrCache.d;
+  try { const d = await mcApi('lp_url', { rede: 'instagram', campanha: (campAtiva?.nome || 'campanha').toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 30) }); _ofQrCache = { em: Date.now(), d }; return d; } catch (_) { return null; } }
+function _pecaTipo(it) { const c = campAtiva || {}; for (const [t, L] of [['story', c.stories], ['carrossel', c.carrossel?.slides], ['reel', c.reel?.slides]]) { const i = (L || []).indexOf(it); if (i >= 0) return { tipo: t, i, total: L.length }; } return null; }
+async function _artePeca(it) {
+  const k = _pecaTipo(it); if (!k) return false;
+  const pal = campAtiva._paleta || (campAtiva._paleta = ['petroleo', 'oceano', 'grafite', 'aurora'][Math.floor(Math.random() * 4)]);
+  const ult = k.i === k.total - 1, cta = it.papel === 'cta' || ult;
+  const dados = { tipo: k.tipo, n: k.i + 1, total: k.total, texto: (k.tipo === 'carrossel' ? it.titulo : it.texto_tela) || it.titulo || '', apoio: k.tipo === 'carrossel' ? (it.apoio || '') : '', cta: k.tipo === 'story' && !cta ? (it.cta_sticker || '') : '', papel: cta ? 'cta' : k.i === 0 ? 'gancho' : 'meio' };
+  let url_qr = ''; if (cta) { const o = await _ofertaQr(); if (o?.url) { url_qr = o.url; dados.oferta_titulo = o.oferta?.titulo || 'Mapa de Oportunidades com IA, grátis'; dados.oferta_sub = o.oferta?.sub || 'no seu WhatsApp em 1 dia útil, sem reunião'; } }
+  const r = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'arte_peca', payload: { dados, url_qr, paleta: pal, variacao: k.i + (k.tipo === 'reel' ? 1 : 0) } }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success || !d.url) throw new Error(d.error || 'arte não montada');
+  it.imagem_url = d.url; it.arte_pronta = true; if (k.tipo !== 'reel') it.imagem_composta = d.url; delete it.arte_marca; delete it.arte_motivo; return true;
+}
 async function _artesParalelo(itens, formato, aoTerminar, conc = 3) {
   const falhas = []; let prox = 0;
   const um = async () => { while (prox < itens.length) { const i = prox++; const it = itens[i]; if (it.imagem_url) continue;
+    try { if (await _artePeca(it)) { try { aoTerminar && aoTerminar(); } catch (_) {} continue; } } catch (e) { addLog('warn', '[Artes] estilo novo falhou (' + e.message + ') — usando o Ideogram'); } // v3.494
     try {
       const r = await fetch('/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: it.prompt_imagem || (formato === 'ASPECT_9_16' ? 'vertical corporate scene, dark navy and electric blue, clean center' : 'square corporate abstract scene, dark navy and electric blue, clean bottom third'), formato, estilo: 'DESIGN', quantidade: 1 }) });
@@ -36478,6 +36521,7 @@ async function gerarArtesStories() {
   for (let i = 0; i < st.length; i++) {
     _statusPainel('story', 'run', 'Gerando arte ' + (i+1) + ' de ' + st.length + ' no Ideogram (9:16)...', 'Cada arte leva ~15 s. Não feche esta aba.', (i / st.length) * 100);
     if (st[i].imagem_url) continue;
+    try { if (await _artePeca(st[i])) { _renderStoryPack(); try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'stories arte ' + (i+1)); } catch(_) {} continue; } } catch (e) { addLog('warn', '[Stories] estilo novo falhou: ' + e.message); } // v3.494
     try {
       const r = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ prompt: st[i].prompt_imagem || ('vertical corporate scene, dark navy and electric blue, clean center'), formato: 'ASPECT_9_16', estilo: 'DESIGN', quantidade: 1 }) });
@@ -36656,6 +36700,7 @@ async function gerarArtesCarrossel() {
   for (let i = 0; i < sl.length; i++) {
     _statusPainel('carr', 'run', 'Gerando arte ' + (i+1) + ' de ' + sl.length + ' no Ideogram (1:1)...', 'Não feche a aba.', (i / sl.length) * 100);
     if (sl[i].imagem_url) continue;
+    try { if (await _artePeca(sl[i])) { _renderCarrossel(); try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'carrossel arte ' + (i+1)); } catch(_) {} continue; } } catch (e) { addLog('warn', '[Carrossel] estilo novo falhou: ' + e.message); } // v3.494
     try { const r = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt: sl[i].prompt_imagem || 'square corporate abstract scene, dark navy and electric blue, clean bottom third', formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1 }) });
       const d = await r.json(); sl[i].imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || ''; _renderCarrossel();
       try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'carrossel arte ' + (i+1)); } catch(_) {}
@@ -36799,6 +36844,7 @@ async function gerarArtesReel() {
   _reelSet('Gerando artes 9:16...', 'Artes');
   for (let i = 0; i < sl.length; i++) {
     if (sl[i].imagem_url) continue;
+    try { if (await _artePeca(sl[i])) { _renderReel(); _reelSet('Arte ' + (i+1) + '/' + sl.length + ' ok', null, ((i+1) / sl.length) * 100); try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'reel arte ' + (i+1)); } catch(_) {} continue; } } catch (e) { addLog('warn', '[Reel] estilo novo falhou: ' + e.message); } // v3.494
     try {
       const r = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ prompt: sl[i].prompt_imagem || 'vertical corporate scene, dark navy and electric blue, clean center', formato: 'ASPECT_9_16', estilo: 'DESIGN', quantidade: 1 }) });
@@ -36914,10 +36960,11 @@ async function _montarVideoReelCore() {
   const drawSlide = (i, tLocal, alpha) => {
     const im = imgs[i]; ctx.save(); ctx.globalAlpha = alpha;
     // cover-fit + Ken Burns (zoom 1.0 → 1.10, leve deslocamento alternado)
-    const p = Math.min(1, tLocal / DUR), z = 1 + 0.10 * p, dir = i % 2 ? -1 : 1;
+    const _pr = !!sl[i].arte_pronta, p = Math.min(1, tLocal / DUR), z = 1 + (_pr ? 0.025 : 0.10) * p, dir = i % 2 ? -1 : 1; // v3.494: arte com texto pronto → zoom leve, sem texto por cima
     const sc = Math.max(W / im.width, H / im.height) * z, dw = im.width * sc, dh = im.height * sc;
-    const dx = (W - dw) / 2 + dir * 18 * p, dy = (H - dh) / 2 - 12 * p;
+    const dx = (W - dw) / 2 + (_pr ? 0 : dir * 18 * p), dy = (H - dh) / 2 - (_pr ? 0 : 12 * p);
     ctx.drawImage(im, dx, dy, dw, dh);
+    if (_pr) { ctx.restore(); return; }
     // vinheta p/ legibilidade
     const g = ctx.createLinearGradient(0, H * 0.25, 0, H); g.addColorStop(0, 'rgba(5,7,15,0)'); g.addColorStop(0.55, 'rgba(5,7,15,0.35)'); g.addColorStop(1, 'rgba(5,7,15,0.85)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -37203,7 +37250,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.493] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.494] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37219,7 +37266,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.493';
+window.__ATX_BUILD_ID__ = 'ATX-v3.494';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

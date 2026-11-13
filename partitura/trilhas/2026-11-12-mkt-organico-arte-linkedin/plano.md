@@ -13,3 +13,5 @@
 - 2026-11-12 · feito (v3.486) · Interseção T1: dependência "qrcode" no package.json · próximo: fundador testar o vídeo no Chrome
 - [x] v3.492: rastreador de visitantes do Apollo (appId público fornecido pelo fundador) na página de captura public/captura.html
 - 2026-11-13 · feito (v3.492) · sem bloqueio · próximo: fundador cadastrar o domínio atlantyx-os.vercel.app no Apollo e rodar "Test connection"
+- [x] v3.494: Campanha completa (Formatos automáticos) no estilo novo — imagem principal via arte_post; Stories/Carrossel/Reel via arte_peca (lib/arte-organica.js arteSerieSvg: paleta única por campanha, texto gravado, contador, QR da oferta na última peça); vídeo do Reel não sobrepõe texto em arte pronta; botão "🎨 Refazer no estilo novo"
+- 2026-11-13 · feito (v3.494) · sem bloqueio · próximo: fundador refazer a campanha aberta e conferir

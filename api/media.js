@@ -202,6 +202,21 @@ async function handler(req, res) {
       await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, ${String(origem).substring(0, 40)})`;
       return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length, layout: a.layout };
     },
+    // v3.494: PEÇA DE SÉRIE (Stories/Reel 9:16, Carrossel 1:1) no estilo novo, com o texto já gravado e QR na última
+    arte_peca:      async () => {
+      const { dados = {}, url_qr = '', paleta, variacao = 0, origem = 'arte-serie' } = payload;
+      const path = await import('path'); const fsm = await import('fs'); const { fileURLToPath } = await import('url');
+      const dirFontes = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
+      process.env.FONTCONFIG_PATH = dirFontes; process.env.FONTCONFIG_FILE = path.join(dirFontes, 'fonts.conf');
+      const sharp = (await import('sharp')).default; const { arteSerieSvg } = await import('../lib/arte-organica.js');
+      let qr = null; if (/^https:\/\//.test(String(url_qr))) { const QR = (await import('qrcode')).default; const q = QR.create(String(url_qr), { errorCorrectionLevel: 'M' }), n = q.modules.size; qr = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => !!q.modules.get(i, j))); }
+      const a = arteSerieSvg({ ...dados, qr }, { paleta, variacao });
+      const camadas = []; try { const lg = await sharp(fsm.readFileSync(path.join(dirFontes, 'logo-atlantyx-branco.png'))).resize({ height: a.logo.h }).toBuffer(); camadas.push({ input: lg, left: a.logo.x, top: a.logo.y }); } catch (_) {}
+      const out = await sharp(Buffer.from(a.svg)).composite(camadas).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+      const sql = await getSql(); const id = novoId();
+      await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, ${String(origem).substring(0, 40)})`;
+      return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length };
+    },
     // v3.486: matriz do QR code (o navegador desenha o QR no vídeo)
     qr_matriz:      async () => { const QR = (await import('qrcode')).default; const q = QR.create(String(payload.url || ''), { errorCorrectionLevel: 'M' }), n = q.modules.size; let bits = ''; for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) bits += q.modules.get(i, j) ? '1' : '0'; return { n, bits }; },
     // v3.483: ARTE NO PADRÃO DO ANÚNCIO PAGO (lib/arte-padrao.js) — manchete com destaques, benefícios com ✓, tela do sistema e rodapé
