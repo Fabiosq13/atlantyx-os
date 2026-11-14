@@ -1,6 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { K_VIGENTE, planoResumoTexto } from '../lib/plano-estrategico.js'; // v3.240
 import { salvarHistorico, listarHistorico, obterHistorico } from '../lib/historico-s1.js';
+import * as AC from '../lib/acoes-sistema.js'; // v3.510: kanban de Ações do sistema
 // api/s1-intel.js
 // S1 · Inteligência Estratégica Contínua da Atlantyx
 // Os agentes analisam a própria empresa — riscos, finanças, mercado, posicionamento
@@ -19,6 +20,11 @@ async function handler(req, res) {
     // v3.90: histórico do planejamento (todas as telas S1)
     if (action === 'historico_listar') return res.status(200).json({ success: true, itens: await listarHistorico(req.body.tipos || req.body.tipo, req.body.limite) });
     if (action === 'historico_obter') { const h = await obterHistorico(req.body.id); return h ? res.status(200).json({ success: true, item: h }) : res.status(404).json({ success: false, error: 'Versão não encontrada' }); }
+
+    // v3.510: KANBAN DE AÇÕES DO SISTEMA — propostas da IA; aprovada = executada pelo próprio sistema (lista fechada de executores)
+    if (action === 'acoes_listar') return res.status(200).json({ success: true, itens: await AC.listar(), catalogo: AC.catalogo() });
+    if (action === 'acoes_decidir') { try { return res.status(200).json({ success: true, item: await AC.decidir(req.body, req.sessao?.login || req.usuario || '') }); } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); } }
+    if (action === 'acoes_criar') { try { return res.status(200).json({ success: true, item: await AC.criarManual(req.body, req.sessao?.login || '') }); } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); } }
 
     const acoes = {
       diagnostico_completo:    () => diagnosticoCompleto(contexto),
@@ -41,7 +47,9 @@ async function handler(req, res) {
     const corpo = Object.values(resultado || {}).find(v => v && typeof v === 'object');
     if (corpo?.erro === 'JSON inválido') return res.status(502).json({ success: false, error: 'A IA devolveu uma resposta que não deu para ler — clique de novo em gerar.' });
     const historico_id = await salvarHistorico(action, resultado, req.sessao?.login); // v3.90
-    return res.status(200).json({ success: true, action, historico_id, fontes_dados: _ultimasFontes, ...resultado });
+    let acoes_propostas = 0; // v3.510: a análise de marketing vira ações no kanban (proposta — nada executa sem aprovar)
+    if (action === 'analise_marketing' && Array.isArray(resultado?.marketing?.acoes)) { try { acoes_propostas = (await AC.propor(resultado.marketing.acoes, { fonte: 'analise_marketing', historico_id, por: req.sessao?.login })).criadas.length; } catch (e) { console.warn('[acoes]', e.message); } }
+    return res.status(200).json({ success: true, action, historico_id, acoes_propostas, fontes_dados: _ultimasFontes, ...resultado });
 
   } catch (error) {
     console.error('[ERRO s1-intel]', error.message);
@@ -477,9 +485,15 @@ Retorne:
   "plano_90_dias": [{"quando": "mês 1|mês 2|mês 3", "acao": "...", "dono_sugerido": "...", "indicador": "..."}],
   "orcamento_sugerido": {"total_mes": "R$ (sugestão)", "distribuicao": [{"canal": "...", "valor": "R$"}]},
   "kpis": [{"kpi": "...", "meta": "...", "frequencia": "semanal|mensal"}],
-  "riscos": ["..."]
-}`;
-  const r = await claude(system, user, 3000);
+  "riscos": ["..."],
+  "acoes": [{"tipo": "todo|oferta|posts_rascunho", "titulo": "verbo no infinitivo, até 100 caracteres", "porque": "1 frase com o dado que justifica", "impacto": "Alto|Médio|Baixo", "prazo_dias": 7, "params": {}}]
+}
+REGRAS DE "acoes" (4 a 8 itens, as mais importantes do plano_90_dias e do diagnóstico):
+- tipo "todo": tarefa para uma pessoa (params: {"texto": "...", "responsavel": "papel ou nome", "notas": "..."}) — use para o que exige decisão, contato externo ou trabalho humano.
+- tipo "oferta": trocar a oferta das campanhas (params: {"texto": "oferta em 1-2 frases: o que a pessoa ganha, sem prazo/preço/entregável que não exista"}). No máximo 1.
+- tipo "posts_rascunho": gerar posts como RASCUNHO nos horários vagos (params: {"tema": "tema/ângulo dos posts", "qtd": 3}). No máximo 1.
+- Não proponha anúncio pago, envio de mensagem a leads, nem nada fora desses 3 tipos; o fundador aprova cada ação e o sistema executa.`;
+  const r = await claude(system, user, 3500);
   return { marketing: parseJSON(r) };
 }
 // ── PLANEJAMENTO ESTRATÉGICO ──────────────────────────────────────────────────
