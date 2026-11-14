@@ -293,6 +293,10 @@
     {
       "path": "/api/vendas?cron=iara_retorno",
       "schedule": "25 * * * *"
+    },
+    {
+      "path": "/api/vendas?cron=abordagem_todo",
+      "schedule": "40 * * * *"
     }
   ],
   "headers": [

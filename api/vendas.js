@@ -867,6 +867,12 @@ async function _todoCriar(itens, origem) {
   await m.default({ method: 'POST', body: { action: 'criar_lote', itens, origem_ia: origem, contexto: 'Floresta de Vendas' }, query: {}, headers: {}, url: '/api/todo' }, res);
   if (!out || out.success === false) throw new Error(out?.error || 'To-do sem resposta'); return out;
 }
+async function _todoAcao(action, body) { // v3.505: To-do em processo (listar tarefas e concluir)
+  const m = await import('./todo.js'); let out = null;
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(o) { out = o; return this; }, setHeader() {}, end() { return this; } };
+  await m.default({ method: 'POST', body: { action, ...body }, query: {}, headers: {}, url: '/api/todo' }, res);
+  if (!out || out.success === false) throw new Error(out?.error || 'To-do sem resposta'); return out;
+}
 async function _apolloBuscar(params, acao) { // v3.441: mesma busca da tela de prospecção (people_search, sem crédito) · v3.470: listas do Apollo (mornos)
   acao = acao || (params.lista_id ? 'lista_pessoas' : 'people_search');
   const m = await import('./apollo.js'); let out = null, st = 200;
@@ -881,7 +887,7 @@ async function _apolloBuscar(params, acao) { // v3.441: mesma busca da tela de p
   return out;
 }
 let _iaraRet = null; const iaraRetorno = () => (_iaraRet = _iaraRet || criarIaraRetorno({ hs: _hs, getSql, claude, todoCriar: _todoCriar, floresta: floresta(), normTelefone: _normTel }));
-let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar, normTelefone: _normTel, apolloBuscar: _apolloBuscar }));
+let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar, todoListar: () => _todoAcao('listar', {}), todoConcluir: (id, por) => _todoAcao('salvar', { id, concluido: true }), normTelefone: _normTel, apolloBuscar: _apolloBuscar }));
 function _normTel(v) { let p = String(v || '').replace(/\D/g, ''); if (!p) return null; if (p.startsWith('00')) p = p.slice(2); if (p.length === 10 || p.length === 11) p = '55' + p; if (!/^55\d{10,11}$/.test(p)) return /^\d{11,15}$/.test(p) && !p.startsWith('55') ? p : null; return p; }
 
 async function handler(req, res) {
@@ -891,6 +897,8 @@ async function handler(req, res) {
   // v3.495: de hora em hora — conversas novas da IARA: avisa o vendedor, move o card e atualiza o HubSpot
   if (req.method === 'GET' && req.query?.cron === 'iara_retorno') {
     try { const r = await iaraRetorno().processar({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
+  if (req.method === 'GET' && req.query?.cron === 'abordagem_todo') { // v3.505: de hora em hora — tarefas de abordagem no To-do ganham rascunho na fila de decisões
+    try { const r = await floresta().abordagemTodo({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta') {
     try { const r = await floresta().analisarIA({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
@@ -969,6 +977,7 @@ async function handler(req, res) {
     floresta_apollo: () => floresta().apolloBuscar(payload),                 // v3.441: leads frios do Apollo
     floresta_importar: () => floresta().importar(payload),
     floresta_linkedin_enviar: () => floresta().linkedinEnviar(payload), // v3.504: convite LinkedIn via PhantomBuster, só com clique
+    floresta_abordagem_todo: () => floresta().abordagemTodo(payload), // v3.505: rodar agora (ou simular)
     floresta_enriquecer: () => floresta().enriquecer(payload), // v3.503: e-mail e celular pelo Apollo (gasta créditos)
     floresta_apollo_listas: async () => { const d = await _apolloBuscar(payload, 'listas'); return { listas: d.listas || [], aviso: d.aviso_chave || null }; }, // v3.470
     floresta_lote: () => floresta().lote(payload, req.sessao?.login),        // v3.442: remarketing / excluir em lote

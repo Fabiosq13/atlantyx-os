@@ -53,3 +53,4 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 2026-11-13 · v3.502 · botão do Apollo renomeado: "🧲 Gerar leads (Apollo) · frios e 🌡 mornos" (o fundador não achava a opção Mornos) · sem bloqueio · próximo: —
 - 13/11/2026 · v3.503 · Enriquecimento Apollo: revelar e-mail e celular na importação (opcional) e botão 📇 Buscar e-mail e celular nos cards marcados · sem bloqueio · testar com créditos reais
 - 13/11/2026 · v3.504 · Convite LinkedIn na Floresta: IA escreve (≤280), usuário revisa e envia 1 a 1 pelo PhantomBuster · sem bloqueio · exige PHANTOM_* na Vercel
+- 14/11/2026 · v3.505 · Abordagem automática das tarefas do To-do: cron horário acha tarefas de abordagem (manuais/robôs) ligadas a lead do funil, IA escreve o rascunho e cai em Decisões (aprovar/enviar manual); IARA via Fluxo IA · sem bloqueio · conferir acertos do casamento tarefa→lead
