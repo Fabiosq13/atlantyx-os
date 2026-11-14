@@ -253,6 +253,22 @@ async function _tarefasResolver(pedido, tarefas, origem_ia, contexto, usuario) {
 async function tarefasCriar({ itens, origem_ia, contexto, _usuario }) { // ação direta (botão "Criar tarefas" das telas de estratégia)
   const r = await chamar('todo', { action: 'criar_lote', itens, origem_ia: origem_ia || 'ATLAS', contexto, por: _usuario }); return { criadas: r.criadas || [], ignoradas_duplicadas: r.ignoradas_duplicadas || 0 };
 }
+// v3.506: o ATLAS enxerga os LEADS DO FUNIL (Floresta de Vendas), com nome, para ajudar a montar a abordagem. Só nome, empresa, cargo, etapa e
+// sinais (tem e-mail/telefone/LinkedIn, IARA, resumo) — e-mail e telefone em si NÃO vão para o prompt. Cache de 5 min.
+const _nrm = x => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const PEDE_LEADS = /\b(leads?|funil|abord\w*|prospec\w*|contato|contatos|floresta|oportunidade|negoci\w*|iara|decisor\w*|follow.?up|cad[eê]ncia|e-?mail para|whatsapp|linkedin|cold|morno|frio|quente)\b/i;
+let _cacheLeads = null;
+async function leadsFunil(mensagem) {
+  const m = String(mensagem || '');
+  if (!_cacheLeads || Date.now() - _cacheLeads.em > 5 * 60000) { const r = await chamar('vendas', { action: 'floresta', payload: {} }); _cacheLeads = { em: Date.now(), cards: r.cards || r.floresta?.cards || [], etapas: r.etapas || r.floresta?.etapas || [] }; }
+  const C = _cacheLeads.cards.filter(c => c.nome && c.etapa !== 'cliente'), tx = _nrm(m);
+  const citado = c => { const n = _nrm(c.nome); return n.split(' ').length >= 2 && tx.includes(n); };
+  const itens = [...C.filter(citado), ...C.filter(c => !citado(c)).sort((a, b) => (b.valor || 0) - (a.valor || 0) || (a.dias ?? 999) - (b.dias ?? 999))].slice(0, 120);
+  const f = c => ({ nome: c.nome, empresa: c.empresa || undefined, cargo: c.cargo || undefined, tipo: c.tipo === 'negocio' ? 'negócio' : 'contato', etapa: c.etapa, dias_na_etapa: c.dias ?? undefined, valor: c.valor || undefined, ultimo_contato: c.ultimo_contato || undefined, origem: c.origem || undefined,
+    decisor: c.decisor || undefined, tem_email: !!c.email, tem_telefone: !!c.telefone, no_fluxo_iara: !!c.no_fluxo_ia, desfecho_iara: c.iara_desfecho || undefined, resumo_conversa: c.resumo_sdr ? String(c.resumo_sdr).substring(0, citado(c) ? 700 : 160) : undefined, dono: c.dono || undefined });
+  const porEtapa = {}; C.forEach(c => { porEtapa[c.etapa] = (porEtapa[c.etapa] || 0) + 1; });
+  return { total: C.length, por_etapa: porEtapa, mostrados: itens.length, leads: itens.map(f) };
+}
 async function chat({ conversa_id, mensagem, voz, persona, contexto_extra, titulo_extra, _usuario }) {
   const sql = await getSql(); const m = String(mensagem || '').trim(); if (!m) throw new Error('Escreva ou fale a sua pergunta');
   let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
@@ -284,7 +300,9 @@ PREMISSAS E METAS DA EMPRESA: ${prem}
 PLANO ESTRATÉGICO VIGENTE: ${plano ? JSON.stringify(plano.sintese).substring(0, 2000) : '(nenhum)'}
 RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { mes: ctx.financeiro?.mes, ano: ctx.financeiro?.ano }, comercial: { meta_mes_pct: ctx.financeiro?.mes?.pct ?? null, meta_ano_pct: ctx.financeiro?.ano?.pct ?? null } })}` : null;
   const hojeBR = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
-  const bruto = await claude((sysNorte || system) + INSTR_TAREFAS(hojeBR), [...hist, { role: 'user', content: m }], voz ? 900 : 2200);
+  let blocoLeads = ''; if (quem === 'atlas' && (PEDE_LEADS.test(m) || PEDE_LEADS.test(String(contexto_extra || '').substring(0, 400)))) { try { const L = await leadsFunil(m + ' ' + String(contexto_extra || '').substring(0, 600));
+    blocoLeads = `\n\nLEADS DO FUNIL DE VENDAS (Floresta/HubSpot — ${L.total} no funil, ${L.mostrados} abaixo, os citados pelo nome primeiro; por etapa: ${JSON.stringify(L.por_etapa)}): ${JSON.stringify(L.leads)}\nUse esses leads, pelo NOME, para ajudar a montar a abordagem (canal, ângulo, mensagem, ordem de prioridade), com o contexto do negócio e do que a Atlantyx vende. Não invente dados do lead: se faltar, diga. Se o lead citado não estiver na lista, avise. E-mail e telefone não estão aqui por privacidade — o sistema os usa no envio. Se recomendar uma abordagem e criar tarefa, escreva o NOME COMPLETO do lead no texto (ex.: "Enviar e-mail para Fulano de Tal (Empresa) — retomar a proposta"): o sistema liga a tarefa ao lead e já deixa o rascunho pronto para você aprovar na Floresta.`; } catch (e) { blocoLeads = '\n\n(Os leads do funil não puderam ser lidos agora: ' + String(e.message).substring(0, 80) + ')'; } }
+  const bruto = await claude((sysNorte || system) + blocoLeads + INSTR_TAREFAS(hojeBR), [...hist, { role: 'user', content: m }], voz ? 900 : 2200);
   const X = _extrairBlocoTarefas(bruto); let resposta = X.texto; // v3.410
   const T = await _tarefasResolver(m, X.tarefas, quem === 'norte' ? 'NORTE' : 'ATLAS', titulo_extra ? 'tela ' + titulo_extra : 'chat', _usuario);
   if (T.tarefas_criadas?.length) resposta += '\n\n✅ **' + T.tarefas_criadas.length + ' tarefa(s) criada(s) no To-do:**\n' + T.tarefas_criadas.map(x => '- ' + x.texto + (x.responsavel ? ' — ' + x.responsavel : '') + (x.data ? ' · ' + x.data.split('-').reverse().join('/') : '')).join('\n') + (T.tarefas_duplicadas ? '\n(' + T.tarefas_duplicadas + ' já existia(m) e não foi(ram) duplicada(s))' : '');

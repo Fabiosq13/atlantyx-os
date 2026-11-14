@@ -54,3 +54,4 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 13/11/2026 · v3.503 · Enriquecimento Apollo: revelar e-mail e celular na importação (opcional) e botão 📇 Buscar e-mail e celular nos cards marcados · sem bloqueio · testar com créditos reais
 - 13/11/2026 · v3.504 · Convite LinkedIn na Floresta: IA escreve (≤280), usuário revisa e envia 1 a 1 pelo PhantomBuster · sem bloqueio · exige PHANTOM_* na Vercel
 - 14/11/2026 · v3.505 · Abordagem automática das tarefas do To-do: cron horário acha tarefas de abordagem (manuais/robôs) ligadas a lead do funil, IA escreve o rascunho e cai em Decisões (aprovar/enviar manual); IARA via Fluxo IA · sem bloqueio · conferir acertos do casamento tarefa→lead
+- 14/11/2026 · v3.506 · ATLAS enxerga os leads do funil pelo nome (sem e-mail/telefone no prompt) ao falar de lead/funil/abordagem; tarefas que ele cria citam o nome completo e o robô do To-do deixa o rascunho pronto · sem bloqueio · T3/estrategia.js
