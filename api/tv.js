@@ -137,7 +137,7 @@ async function estrategiaTv() {
 }
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es, cla] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es, cla, kpA] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
@@ -149,7 +149,8 @@ async function montarDados() {
     // v3.482: metas anuais (funil do ANO, ano anterior para o crescimento, plano estratégico vigente) e estratégia (OKRs, riscos)
     chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'ano', ref: String(ano), pipeline: 'todos' } }, 58000), chamar('financeiro', { action: 'metas_empresa_status', params: { ano: ano - 1, com_crm: false } }, 45000),
     chamar('estrategia', { action: 'plano_estr_obter' }, 30000), estrategiaTv(),
-    chamar('financeiro', { action: 'clientes_ano', params: { ano } }, 45000)]); // v3.487: clientes ativos/novos no ano (QuickBooks) // v3.357: previsto do mês (programado até o fim do mês)
+    chamar('financeiro', { action: 'clientes_ano', params: { ano } }, 45000),
+    chamar('financeiro', { action: 'resultado_kpis', params: { ano, _max_idade: 300 } }, 45000)]); // v3.507: resultado do ANO (acumulado até hoje) com a meta anual // v3.487: clientes ativos/novos no ano (QuickBooks) // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -215,6 +216,12 @@ async function montarDados() {
   const estr = v(es) || { erro: erro(es) };
   return { qual, proj, mkt, metas, estr, gerado_em: new Date().toISOString(), mes_ref: mes,
     // v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol (previsto = real + programado até o fim do mês)
+    // v3.507: os mesmos KPIs do mês, agora no ANO — real acumulado até hoje contra a meta anual (previsto = real no ritmo do ano)
+    resa: (() => { const KA = v(kpA)?.resultado || null; if (!KA || !KA.periodo_res) return null; const P = KA.periodo_res, Ma = KA.metas_periodo || {}, fr = num(Ma.fracao_decorrida), rit = x => x == null || !(fr > 0.04) ? null : Math.round(num(x) / fr);
+      return { regime: KA.regime || null, frac: fr, ano,
+        fat: { real: num(P.faturamento), prev: rit(P.faturamento), meta: num(Ma.faturamento) }, gas: { real: num(P.gastos_totais), prev: rit(P.gastos_totais), meta: num(Ma.gastos), menor: true },
+        eb: { real: num(P.ebitda), prev: rit(P.ebitda), meta: num(Ma.ebitda) }, luc: { real: num(P.lucro_liquido), prev: rit(P.lucro_liquido), meta: num(Ma.lucro) },
+        mg: { real: num(P.margem_liquida_pct), prev: null, meta: num(Ma.margem_pct ?? KA.meta_margem?.pct), pct: true } }; })(),
     res: (() => { const KS = v(ks)?.kpis || null, cx = K.regime === 'caixa';
       const dF = KS ? num(cx ? KS.contas_receber_mes : KS.receita_prevista_mes) : null, dG = KS ? num(KS.contas_pagar_mes) : null, dR = dF != null && dG != null ? dF - dG : null;
       const pv = (r, d) => r == null || d == null ? null : r + d;
@@ -279,7 +286,7 @@ async function _comUltimoBom(d) {
   if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
   d.antigos = antigos; return d;
 }
-const FORMATO_TV = 487; // (fotos usam o mesmo pacote de dados)
+const FORMATO_TV = 507; // (fotos usam o mesmo pacote de dados)
 async function dados(forcar) {
   const c = await kv('tv:dados');
   // v3.484: cache feito por uma versão anterior (sem os blocos novos: metas, estratégia) é refeito na hora, não espera os 10 min
@@ -325,6 +332,7 @@ function pagina(cfg, cod) {
 .cr3 .ln b{font-size:31px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cr3 .ln.re b{color:var(--c)}.cr3 .ln.ac{background:#121C3C;border-radius:10px;padding:5px 10px;margin:0 -10px;flex-direction:column;align-items:stretch;gap:0}.cr3 .ln.ac b{text-align:right;white-space:normal;font-size:30px}
 .cr3 .bar{margin-top:6px}
+.cr3 .dc{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}.cr3 .col{min-width:0;display:flex;flex-direction:column;gap:4px}.cr3 .col+.col{border-left:1px solid #1E2A52;padding-left:22px}.cr3 .col .h{font-size:15px;color:#8E9BC0;font-weight:700;text-transform:uppercase;letter-spacing:1px}.cr3 .col .ln{flex-direction:column;align-items:flex-start;gap:0;padding:4px 0}.cr3 .col .ln b{font-size:23px;max-width:100%;overflow:visible;text-overflow:clip}.cr3 .col .st{flex-direction:column;align-items:flex-start;gap:2px}.cr3 .col .st b{font-size:26px}.cr3 .col .pill{font-size:13px;padding:2px 9px}.cr3:has(.dc){padding:16px 18px}.cr3 .dc .col+.col{padding-left:16px}.cr3 .dc{gap:0 16px}
 svg text{font-family:Montserrat,Calibri,Arial,sans-serif}
 .fbar{display:flex;gap:8px;margin-right:26px;opacity:.28;transition:opacity .3s}.fbar:hover{opacity:1}.fbar button{background:#0F1630;border:1px solid #26335F;color:#C9D3EE;border-radius:20px;padding:7px 14px;font:600 15px Montserrat,Arial,sans-serif;cursor:pointer}.fbar button:hover{border-color:#00C4CC;color:#fff}.fbar button.on{background:#FFB547;color:#1a1200;border-color:#FFB547}
 #fmod{position:fixed;inset:0;background:rgba(3,6,14,.78);z-index:10;align-items:center;justify-content:center}#fmod .cx{background:#0F1630;border:1px solid #26335F;border-radius:18px;padding:24px 28px;width:760px;max-height:80vh;overflow:auto;font-family:Montserrat,Arial,sans-serif;color:#EAF0FF}#fmod .it{display:flex;align-items:center;gap:14px;padding:11px 12px;border-bottom:1px solid #1A2447;cursor:pointer;border-radius:10px;font-size:19px}#fmod .it:hover{background:#16204A}</style></head><body><div id="app">
@@ -379,21 +387,29 @@ function cartao(o){var f=o.fmt||(o.pct?pct:brl),fr=farolDe(o),c=cor(fr),tx=fr===
    +ln('Real',o.realTxt||f(o.real),'re')+(o.semPrev?'':ln('Previsto',f(o.prev)))+ln('Meta',o.metaTxt||(nz(o.meta)?'—':f(o.meta)))
    +(o.linhas||[]).map(function(x){return ln(x[0],x[1],'ac')}).join('')
    +(!nz(at)&&!neg?'<div class="bar"><i style="width:'+Math.max(0,Math.min(100,at))+'%;background:'+(fr?c:'#00C4CC')+'"></i></div>':'')+'</div>'}
+/* v3.507: UM cartão por indicador com o MÊS e o ANO lado a lado (antes: 10 cartões) — Real · Previsto · Meta · % atingido e farol de cada período */
+function subCol(o,lab){var f=o.fmt||(o.pct?pct:brl),fr=farolDe(o),c=cor(fr),tx=fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora':'sem meta';
+  var at=!nz(o.meta)&&o.meta&&!nz(o.real)?o.real/o.meta*100:null,neg=!o.pct&&!nz(o.real)&&o.real<0&&o.meta>0,atT=neg?'negativo':nz(at)?'—':pct(at);
+  var ln=function(r,v,cl){return '<div class="ln '+(cl||'')+'"><small>'+r+'</small><b>'+v+'</b></div>'};
+  return '<div class="col" style="--c:'+c+'"><div class="h">'+esc(lab)+'</div><div class="st"><span class="pill">'+tx+'</span><b>'+atT+'</b></div>'
+   +ln('Real',o.pct?pct(o.real):f(o.real),'re')+(o.semPrev?'':ln('Previsto',f(o.prev)))+ln('Meta',nz(o.meta)?'—':f(o.meta))
+   +(!nz(at)&&!neg?'<div class="bar"><i style="width:'+Math.max(0,Math.min(100,at))+'%;background:'+(fr?c:'#00C4CC')+'"></i></div>':'')+'</div>'}
+function cartaoDuplo(rot,om,oa,labM,labA){var fr=farolDe(oa&&oa.meta!=null?oa:om),c=cor(fr);
+  return '<div class="cr3" style="--c:'+c+'"><div class="t"><i></i>'+esc(rot)+'</div><div class="dc">'+subCol(om,labM)+(oa?subCol(oa,labA):'<div class="col"><div class="h">'+esc(labA)+'</div><div style="font-size:18px;color:#8E9BC0">indisponível agora</div></div>')+'</div></div>'}
 function nI(v){return nz(v)?'—':Number(v).toLocaleString('pt-BR')}
 function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};var MESN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];var mi=parseInt(String(D.mes_ref||'').substring(5,7),10)-1;
   var mc=clsF(M.semaforo_margem);
   var Rs=D.res||F.res||{},fr0=Rs.frac,MESC=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'], /* v3.474: os cartões liam D.fin.res, mas o resultado do mês vem em D.res — por isso ficavam todos em "—" */mn=(MESC[mi]||'mês');
+  var Ra=D.resa||{},an=Ra.ano||A.ano||'',mM=function(o,x){o=o||{};return Object.assign({real:o.real,prev:o.prev,meta:o.meta,frac:fr0},x||{})},mA=function(o,x){return D.resa?Object.assign({real:o&&o.real,prev:o&&o.prev,meta:o&&o.meta,frac:Ra.frac,semPrev:!(o&&!nz(o.prev))},x||{}):null};
   var h='<div class="grade" style="grid-template-columns:repeat(5,minmax(0,1fr))">'
-   +cartao({rot:'Faturamento · '+mn,real:Rs.fat&&Rs.fat.real,prev:Rs.fat&&Rs.fat.prev,meta:Rs.fat&&Rs.fat.meta,frac:fr0})
-   +cartao({rot:'Gastos · '+mn,real:Rs.gas&&Rs.gas.real,prev:Rs.gas&&Rs.gas.prev,meta:Rs.gas&&Rs.gas.meta,menor:true})
-   +cartao({rot:'EBITDA · '+mn,real:Rs.eb&&Rs.eb.real,prev:Rs.eb&&Rs.eb.prev,meta:Rs.eb&&Rs.eb.meta,frac:fr0})
-   +cartao({rot:'Lucro · '+mn,real:Rs.luc&&Rs.luc.real,prev:Rs.luc&&Rs.luc.prev,meta:Rs.luc&&Rs.luc.meta,frac:fr0})
-   +cartao({rot:'Margem · '+mn,real:Rs.mg&&Rs.mg.real,prev:Rs.mg&&Rs.mg.prev,meta:Rs.mg&&Rs.mg.meta,pct:true})+'</div>'
-   +'<div class="grade g4">'+(function(){var f=A.semaforo,pa=A.meta_faturamento&&!nz(A.faturamento)?A.faturamento/A.meta_faturamento*100:null; /* v3.474: compacto para sobrar altura ao gráfico */
-      return '<div class="k" style="display:flex;gap:18px;align-items:center">'+luz(f)+'<div style="flex:1;min-width:0"><div class="l">Faturamento de '+(A.ano||'')+'</div><div class="v '+clsF(f)+'" style="font-size:47px">'+brl(A.faturamento)+'</div><div class="s">'+(nz(pa)?'meta não cadastrada':pct(pa)+' de '+brl(A.meta_faturamento))+(nz(A.projecao)?'':' · fecha em '+brl(A.projecao))+'</div>'+(nz(pa)?'':barra(pa,nz(A.fracao_decorrida)?null:A.fracao_decorrida*100))+'</div></div>'})()
-   +k('Caixa hoje',brl(F.caixa),'saldo bancário (QuickBooks)','md')
-   +k('A receber',brl(F.receber),'<span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d)),'md')
-   +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks','md')+'</div>'
+   +cartaoDuplo('Faturamento',mM(Rs.fat),mA(Ra.fat),mn,String(an))
+   +cartaoDuplo('Gastos',mM(Rs.gas,{menor:true}),mA(Ra.gas,{menor:true}),mn,String(an))
+   +cartaoDuplo('EBITDA',mM(Rs.eb),mA(Ra.eb),mn,String(an))
+   +cartaoDuplo('Lucro',mM(Rs.luc),mA(Ra.luc),mn,String(an))
+   +cartaoDuplo('Margem',mM(Rs.mg,{pct:true}),mA(Ra.mg,{pct:true,semPrev:true}),mn,String(an))+'</div>'
+   +'<div class="k" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;padding:14px 26px"><div><div class="l">Caixa hoje</div><div class="v md" style="font-size:40px">'+brl(F.caixa)+'</div></div>'
+   +'<div><div class="l">A receber</div><div class="v md" style="font-size:40px">'+brl(F.receber)+'</div><div class="s"><span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d))+'</div></div>'
+   +'<div><div class="l">A pagar</div><div class="v md" style="font-size:40px">'+brl(F.pagar)+'</div></div></div>'
    +'<div class="painel" style="flex:1;min-height:0"><h3>Evolução no ano</h3>'+grafico(F.mensal)+'</div>'
    +'<div style="font-size:16px;color:#6E7BA0">QuickBooks'+(F.regime?' ('+esc(F.regime)+')':'')+' · Previsto = real + programado até o fim do mês (contas a pagar e '+(F.res&&F.res.regime==='caixa'?'faturas a receber':'termos a faturar')+') · farol: previsto contra a meta (ano: ritmo)</div>'
    +(F.erro?'<div class="erro">⚠ '+esc(F.erro)+'</div>':'');
