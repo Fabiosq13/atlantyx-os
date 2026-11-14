@@ -43,3 +43,4 @@ ID: 2026-10-11-tv-conferir-qualidade · Trilha: T4
 - 2026-11-13 · v3.488 · TV: 📸 Gravar foto (todos os painéis, com nome), 🕘 Histórico por data e ⇄ Semana anterior (1 clique; tecla C alterna ao vivo × gravação); fotos em kv tv:fotos / tv:foto:<id>, até 104 · sem bloqueio · próximo: —
 - 14/11/2026 · v3.507 · TV, slide Financeiro: KPIs anuais (faturamento, gastos, EBITDA, lucro, margem) com meta anual, mês e ano lado a lado em 5 cartões (antes 10 + 4) · sem bloqueio · T4 api/tv.js
 - 14/11/2026 · v3.508 · TV: Objetivos+Riscos viram o slide Estratégia (9→8 slides); Metas anuais sem a linha financeira (já no Financeiro); slides de Projetos intactos · sem bloqueio · T4
+- 14/11/2026 · v3.509 · TV, slide Vendas: foco em resultado × meta (3 painéis: vendas fechadas × meta, pipeline × necessário, movimento) e funil com real/meta, % atingido, marca do esperado e conversão por etapa (antes 5 cartões + faixa) · sem bloqueio · T4
