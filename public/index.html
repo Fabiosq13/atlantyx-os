@@ -7670,7 +7670,17 @@ async function runIntel(action, resultId, btnId, extraCtx = {}) {
 
   addLog('info', '[S1-Intel] Executando: ' + action);
 
-  const data = await api('/api/s1-intel', 'POST', { action, contexto: extraCtx });
+  const _t0 = Date.now();
+  let data = await api('/api/s1-intel', 'POST', { action, contexto: extraCtx });
+  // v3.511: a conexão do celular caiu antes da resposta (o servidor segue gerando e grava no histórico) → espera e recupera a análise pronta
+  if (!data) {
+    if (result) result.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:20px;text-align:center;">A conexão caiu, mas o servidor continua gerando. Recuperando a análise do histórico…</div>';
+    for (let i = 0; i < 24 && !data; i++) {
+      await new Promise(r => setTimeout(r, 7500));
+      try { const l = await api('/api/s1-intel', 'POST', { action: 'historico_listar', tipo: action, limite: 1 }); const h = l?.itens?.[0];
+        if (h && Date.parse(h.criado_em) >= _t0 - 5000) { const o = await api('/api/s1-intel', 'POST', { action: 'historico_obter', id: h.id }); if (o?.item?.dados) data = { success: true, action, historico_id: h.id, ...o.item.dados }; } } catch (_) {}
+    }
+  }
 
   if (btn) { btn.disabled = false; btn.textContent = btn.dataset.rotulo || btn.textContent.replace('  Analisando...', '↻ Atualizar'); }
 
@@ -37256,7 +37266,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.510] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.511] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37272,7 +37282,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.510';
+window.__ATX_BUILD_ID__ = 'ATX-v3.511';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
