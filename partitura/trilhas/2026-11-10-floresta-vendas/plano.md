@@ -58,3 +58,4 @@ Pedido do fundador (10/11/2026): visão de floresta com todos os contatos e neg�
 - 14/11/2026 · v3.510 · Kanban 'Ações do sistema' (4.3): análise de marketing devolve ações (todo/oferta/posts_rascunho), vão para o kanban como proposta; aprovar = o sistema executa (lista fechada; posts só rascunho, sem anúncio pago); histórico via s1_historico + 'ver análise' · sem bloqueio · testar com Metricool real
 - 14/11/2026 · v3.511 · Análise de IA (S1): se a conexão do celular cai, a tela recupera o resultado pronto do histórico · sem bloqueio
 - 15/11/2026 · v3.513 · Metas do funil: referência de mercado B2B realista (lead→reunião 10%, reunião→proposta 40%, proposta→negociação 60%, negociação→venda 50%; proposta→venda 30% sem negociação) · usuário precisa clicar 'Sugerir' e Salvar em Metas por etapa
+- 15/11/2026 · v3.514 · Metas por etapa: botão '⚡ Aplicar e salvar' (sugere pelo faturamento do mês, ticket e conversão de mercado e já grava) · sem bloqueio
