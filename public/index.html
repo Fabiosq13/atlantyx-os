@@ -33931,10 +33931,12 @@ async function pendContatos(id) {
 //   dados B2B, venda consultiva) combinada com o histórico do ano no HubSpot quando há volume (≥ 10 na etapa de base),
 //   sempre dentro da faixa de referência. Preenche os campos; só grava no "Salvar metas".
 const _FN_REF = [ // tipo da etapa → conversão a partir da etapa anterior [mínimo, referência, máximo] em %
-  { re: /reuni|qualif|diagnost|descoberta/, nome: 'lead → reunião', faixa: [10, 15, 25] },
-  { re: /propost|orcament|cotac/, nome: 'reunião → proposta', faixa: [25, 40, 55] },
-  { re: /negocia|contrato|juridic/, nome: 'proposta → negociação', faixa: [40, 60, 75] },
-  { re: /ganh|fechad/, nome: 'negociação/proposta → venda', faixa: [20, 35, 50] }];
+  // v3.513: referência de mercado B2B para venda consultiva de projeto grande (ciclo longo, vários decisores): ~1,2% ponta a ponta
+  { re: /reuni|qualif|diagnost|descoberta/, nome: 'lead → reunião', faixa: [5, 10, 15] },
+  { re: /propost|orcament|cotac/, nome: 'reunião → proposta', faixa: [30, 40, 50] },
+  { re: /negocia|contrato|juridic/, nome: 'proposta → negociação', faixa: [45, 60, 70] },
+  { re: /ganh|fechad/, nome: 'negociação → venda', faixa: [35, 50, 60] }];
+const _FN_REF_PROP_VENDA = { nome: 'proposta → venda (sem etapa de negociação)', faixa: [20, 30, 40] }; // quando a venda sai direto da proposta
 async function funilMetasSugerir() {
   const D = _fn.dados, box = document.getElementById('fnSug'); if (!D?.etapas || !box) return;
   const metaMes = D.meta_base?.faturamento_periodo != null ? D.meta_base.faturamento_periodo / ({ mes: 1, trimestre: 3, ano: 12 }[D.periodo.tipo] || 1) : null;
@@ -33947,6 +33949,7 @@ async function funilMetasSugerir() {
   const E = D.etapas, hq = id => H?.etapas?.find(x => x.id === id)?.real?.qtd ?? null;
   // tipo de cada etapa (a primeira é sempre o topo); etapas sem tipo ficam fora da cadeia
   const linhas = E.map((e, i) => ({ e, i, ref: i === 0 ? null : (e.ganho ? _FN_REF[3] : _FN_REF.slice(0, 3).find(r => r.re.test(sem(e.nome)))) }));
+  { const gl = linhas.find(l => l.e.ganho), ant = gl && linhas.slice(0, gl.i).reverse().find(l => l.ref); if (gl && ant && /propost|orcament|cotac/.test(sem(ant.e.nome))) gl.ref = _FN_REF_PROP_VENDA; } // v3.513: sem negociação, a venda sai direto da proposta
   const cadeia = linhas.filter(l => l.i === 0 || l.ref);
   let base = null;
   for (const l of cadeia) {
@@ -37266,7 +37269,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.512] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.513] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37282,7 +37285,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.512';
+window.__ATX_BUILD_ID__ = 'ATX-v3.513';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
