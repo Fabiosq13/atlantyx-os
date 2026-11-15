@@ -1,7 +1,7 @@
 // public/custo-hora-ui.js — v3.455 · Custo por Projeto, rateio do fixo e piso do valor-hora (tela S3)
 (function () {
   let D = null, carregando = false;
-  const P = { meses: 3, metodo: 'horas', utilizacao_pct: '', margem_alvo_pct: '', fixo_manual: '', aliquota_pct: '' };
+  const P = { meses: 3, metodo: 'horas', utilizacao_pct: '', margem_alvo_pct: '', fixo_manual: '', aliquota_pct: '', encargos_pct: '', ferramentas_mes: '', dias_uteis: '' };
   const E = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const R$ = v => v == null ? '—' : fmtBRLcompleto(v), pc = v => v == null ? '—' : String(v).replace('.', ',') + '%', h = v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR') + ' h';
   const MOT = { projetos: '🧩 Projetos', produtos: '📦 Produtos', pessoas: '👥 Alocação' };
@@ -12,7 +12,7 @@
     b.innerHTML = '<div style="padding:20px;color:var(--t3);font-size:12px;">Apurando folha (Maestro), horas apontadas, despesas e faturas (QuickBooks)…</div>';
     try { const q = {}; for (const [k, v] of Object.entries(P)) if (v !== '' && v != null) q[k] = v;
       D = await finApi('custo_projetos', q, { timeoutMs: 90000 });
-      const pr = D.parametros || {}; ['utilizacao_pct', 'margem_alvo_pct', 'fixo_manual', 'aliquota_pct'].forEach(k => { if (P[k] === '' && pr[k] != null) P[k] = pr[k]; }); if (pr.metodo && !q.metodo) P.metodo = pr.metodo;
+      const pr = D.parametros || {}; ['utilizacao_pct', 'margem_alvo_pct', 'fixo_manual', 'aliquota_pct', 'encargos_pct', 'ferramentas_mes', 'dias_uteis'].forEach(k => { if (P[k] === '' && pr[k] != null) P[k] = pr[k]; }); if (pr.metodo && !q.metodo) P.metodo = pr.metodo;
       render(); }
     catch (e) { b.innerHTML = '<div style="padding:16px;color:var(--red);font-size:12px;">Erro: ' + E(e.message) + '</div>'; }
     finally { carregando = false; }
@@ -40,6 +40,16 @@
       + card('Utilização real', pc(S.utilizacao_real_pct), h(S.horas_projetos_mes) + ' de ' + h(S.capacidade_mes) + ' · internas ' + h(S.horas_internas_mes))
       + '</div><div style="font-size:10.5px;color:var(--t3);margin-bottom:16px;line-height:1.5;">Piso = custo total do mês ÷ horas vendáveis ÷ (1 − impostos). Abaixo do piso cada hora vendida dá prejuízo. Preço-alvo = custo total ÷ horas ÷ (1 − impostos − margem-alvo). '
       + 'O piso "realizado" usa as horas que de fato foram apontadas em projetos; o "na utilização-alvo" usa a capacidade do time × a utilização que você quer (mais horas vendidas → piso menor). Fixo pesa ' + pc(S.fator_fixo_pct) + ' sobre a folha.</div>';
+    // v3.516: CUSTO POR PESSOA-DIA
+    if (D.pessoa_dia) { const PD = D.pessoa_dia, pp = PD.parametros || {}, mdn = PD.media || {};
+      html += '<div style="font-weight:700;font-size:13px;margin:4px 0 8px;">📅 Custo por pessoa-dia — quanto a Atlantyx gasta para uma pessoa trabalhar um dia</div>'
+        + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">' + card('Média · por dia útil', R$(mdn.custo_dia_util), 'pagamento + encargos + ferramentas ÷ ' + pp.dias_uteis + ' dias', 'var(--blue)')
+        + card('Média · por dia vendido', R$(mdn.custo_dia_vendido), 'o que cada dia em projeto precisa cobrir (' + h(mdn.dias_projeto_mes).replace(' h', '') + ' dias/mês em projeto)', 'var(--gold)') + '</div>'
+        + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">Encargos % ' + inp('encargos_pct', '0 (PJ)', 64) + ' Ferramentas + nuvem R$/mês (total) ' + inp('ferramentas_mes', pp.ferramentas_mes_total ? String(Math.round(pp.ferramentas_mes_total)) : 'do QuickBooks', 100) + ' Dias úteis/mês ' + inp('dias_uteis', String(pp.dias_uteis), 50)
+        + ' <span style="color:var(--t3);">ferramentas: ' + E(pp.ferramentas_fonte) + ' · rateadas igualmente entre ' + mdn.pessoas + ' pessoa(s) · depois de mudar, ↻ Recalcular</span></div>'
+        + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t3);text-align:right;"><th style="text-align:left;padding:5px;">Profissional</th><th>Pagamento/mês</th><th>Encargos</th><th>Ferramentas</th><th>Custo/mês</th><th>Pessoa-dia (útil)</th><th>Dias em projeto/mês</th><th>Pessoa-dia (vendido)</th></tr>'
+        + (PD.pessoas || []).map(x => '<tr style="border-top:1px solid var(--bd);text-align:right;"><td style="text-align:left;padding:5px;"><b>' + E(x.nome) + '</b></td><td>' + R$(x.pagamento_mes) + '</td><td>' + R$(x.encargos_mes) + '</td><td>' + R$(x.ferramentas_mes) + '</td><td>' + R$(x.custo_mes) + '</td><td><b>' + R$(x.custo_dia_util) + '</b></td><td>' + (x.dias_projeto_mes || '—') + '</td><td><b>' + (x.custo_dia_vendido != null ? R$(x.custo_dia_vendido) : '—') + '</b></td></tr>').join('') + '</table></div>'
+        + '<div style="font-size:10.5px;color:var(--t3);margin:6px 0 16px;line-height:1.5;">Pessoa-dia (útil) = (pagamento ou PJ + encargos + ferramentas e nuvem) ÷ dias úteis do mês. Pessoa-dia (vendido) = o mesmo custo ÷ dias efetivamente apontados em projeto (horas ÷ 8) — é o piso do que cobrar por dia vendido sem a estrutura. Aluguel e administrativo não entram aqui (estão no piso do valor-hora).</div>'; }
     // MOTORES
     if ((D.motores || []).length) html += '<div style="font-weight:700;font-size:13px;margin:4px 0 8px;">⚙ Por motor</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
       + D.motores.map(m => card(MOT[m.motor] || m.motor, R$(m.margem_mes), 'receita ' + R$(m.receita_mes) + ' · margem ' + pc(m.margem_pct) + ' · ' + h(m.horas_mes), m.margem_mes >= 0 ? 'var(--green)' : 'var(--red)')).join('') + '</div>';
@@ -84,7 +94,7 @@
   }
   async function salvarMotores() { const motores = {}; document.querySelectorAll('.chMot').forEach(s => { if (s.value !== 'projetos' || s.dataset.t === 'alavanca') motores[s.dataset.n] = s.value; });
     try { await finApi('custo_projetos_cfg', { motores }); toast('Motores salvos — a receita desses clientes muda de motor em todas as telas', 'success'); carregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
-  async function salvarPar() { const parametros = {}; ['utilizacao_pct', 'margem_alvo_pct', 'aliquota_pct', 'fixo_manual'].forEach(k => { parametros[k] = P[k] === '' ? null : Number(String(P[k]).replace(',', '.')); }); parametros.metodo = P.metodo;
+  async function salvarPar() { const parametros = {}; ['utilizacao_pct', 'margem_alvo_pct', 'aliquota_pct', 'fixo_manual', 'encargos_pct', 'ferramentas_mes', 'dias_uteis'].forEach(k => { parametros[k] = P[k] === '' ? null : Number(String(P[k]).replace(',', '.')); }); parametros.metodo = P.metodo;
     try { await finApi('custo_projetos_cfg', { parametros }); toast('Parâmetros salvos como padrão', 'success'); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
   async function salvarRec() { const receita_map = {}; document.querySelectorAll('.chRec').forEach(s => { if (s.value) receita_map[s.dataset.r] = s.value; }); if (!Object.keys(receita_map).length) return toast('Escolha o projeto de pelo menos uma receita', 'error');
     try { await finApi('custo_projetos_cfg', { receita_map }); toast('Ligações salvas', 'success'); carregar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }

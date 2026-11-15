@@ -2,7 +2,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
 import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, casarCadastradas as impCasarCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
-import { apurar as chApurar, norm as chNorm } from '../lib/custo-hora.js'; // v3.455
+import { apurar as chApurar, norm as chNorm, pessoaDia as chPessoaDia } from '../lib/custo-hora.js'; // v3.455
 import * as PAGC from '../lib/pag-colab.js'; // v3.455: folha de colaboradores (Maestro)
 import { termoPendencias, etapaPrazo, previsaoPagamento } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
@@ -7216,7 +7216,7 @@ export function motorDoNome(map, ...nomes) { // projeto ou cliente marcado → m
   const ns = nomes.map(chNorm).filter(Boolean); for (const n of ns) for (const [k, m] of Object.entries(map || {})) if (k && (n === k || n.includes(k) || (k.length >= 5 && k.includes(n)))) return m;
   const t = nomes.join(' '); return CAM_RX_PROJ.pessoas.test(t) ? 'pessoas' : FV2_RX.produtos.test(t) ? 'produtos' : 'projetos';
 }
-async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pct, fixo_manual, aliquota_pct, mes_fim } = {}) {
+async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pct, fixo_manual, aliquota_pct, mes_fim, encargos_pct, ferramentas_mes, dias_uteis } = {}) {
   const cfgP = (await _kvFin(K_CH_CFG).catch(() => null)) || {}, mapa = (await _kvFin(K_MOTOR_CLI).catch(() => null)) || {};
   const hoje = _hojeBR(), n = Math.min(12, Math.max(1, parseInt(meses) || 3));
   const fimM = /^\d{4}-\d{2}$/.test(mes_fim || '') ? mes_fim : _addMesesData(hoje.substring(0, 7) + '-01', -1).substring(0, 7);
@@ -7233,12 +7233,12 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
     for (const m of L) folhas[m] = PAGC.linhas(ana, apts, st, m).map(l => ({ nome: l.nome, cargo: l.cargo, valor: l.valor, horas: l.horas, vh: l.vh })); }
   catch (e) { avisos.push('Maestro (folha e apontamentos) indisponível: ' + e.message); }
   // 2) QuickBooks: fixo do mês e receita (faturas)
-  const fixoMes = {}; let receitas = [], aliqQb = null;
+  const fixoMes = {}, ferrQb = {}; let receitas = [], aliqQb = null; // v3.516: ferrQb = despesas de software/nuvem por mês
   if (qbConfigurado()) { try { const token = await qbToken(), cfg = await _fv2Cfg();
       const pl = await qbPL(ini, fimD, token, '&summarize_column_by=Month', 'Accrual'); const F = _fv2Folhas(pl); let recT = 0, impT = 0;
       F.cols.slice(1).forEach((t, i) => { const col = (pl.Columns?.Column || [])[i + 1], sd = (col?.MetaData || []).find(x => x.Name === 'StartDate')?.Value; const mes = sd ? sd.substring(0, 7) : L[i]; if (!L.includes(mes)) return;
         let desp = 0; for (const f of F.folhas) { const v = f.cols[i] || 0; if (!v) continue; if (f.grupo === 'Income') { recT += v; continue; } if (f.grupo === 'OtherIncome') continue; const c = _camClasse(f.nome, f.grupo, cfg);
-          if (c.classe === 'imposto') { impT += v; continue; } if (c.classe === 'retirada') continue; desp += v; }
+          if (c.classe === 'imposto') { impT += v; continue; } if (c.classe === 'retirada') continue; desp += v; if (/software|licen[cç]|assinatura|subscri|cloud|nuvem|\baws\b|amazon web|azure|google (cloud|workspace)|microsoft|office ?365|hosting|hospedagem|vercel|\bneon\b|anthropic|openai|github|atlassian|jira|slack|zoom|saas|ferramenta|tecnologia da informa/i.test(f.nome)) ferrQb[mes] = (ferrQb[mes] || 0) + v; }
         const folha = (folhas[mes] || []).reduce((s, l) => s + (Number(l.valor) || 0), 0); fixoMes[mes] = round(Math.max(0, desp - folha)); });
       if (recT > 0 && impT > 0) aliqQb = impT / recT;
       // receita: faturas do período, linhas sem imposto
@@ -7304,6 +7304,8 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
     motorDe: (pr, cli) => _motorProj(pr, cli) });
   R.avisos = avisos.concat(R.avisos); R.aliquota_fonte = aliquota_pct != null && aliquota_pct !== '' ? 'informada' : cfgP.aliquota_pct != null ? 'configurada aqui' : cfgFin.aliquota_pct != null ? 'alíquota efetiva da DRE' : aliqQb ? 'impostos ÷ receita do QuickBooks no período' : 'padrão 16,15%';
   R.fixo_mes = fixoMes; R.mapa_motores = mapa; R.parametros = cfgP;
+  { const nf = L.filter(m => ferrQb[m] != null).length, mediaF = nf ? L.reduce((x, m) => x + (ferrQb[m] || 0), 0) / L.length : 0; // v3.516: custo por pessoa-dia
+    R.pessoa_dia = chPessoaDia(R, { encargos_pct: encargos_pct ?? cfgP.encargos_pct ?? 0, ferramentas_mes: ferramentas_mes !== undefined && ferramentas_mes !== '' ? ferramentas_mes : (cfgP.ferramentas_mes ?? null), ferramentas_qb_mes: mediaF, dias_uteis: dias_uteis || cfgP.dias_uteis || 21 }); }
   R.clientes = [...new Set(receitas.map(r => r.cliente).filter(Boolean))].sort().map(c => ({ cliente: c, motor: motorDoNome(mapa, c), marcado: Object.keys(mapa).some(k => chNorm(c).includes(k) || k.includes(chNorm(c))) }));
   R.alavancas = [...alavancas.values()].map(a => ({ ...a, motor: _motorProj(a.nome, '') }));
   R.apontamentos_ligados = Object.entries(aptLig).map(([nome, x]) => ({ nome, projeto: x.proj, como: x.como }));
