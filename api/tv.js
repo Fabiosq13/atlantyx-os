@@ -135,9 +135,11 @@ async function estrategiaTv() {
       valor: _tx(r.impacto_financeiro_estimado, 40), mitigacao: _tx(r.mitigacao, 150), dono: _tx(r.responsavel, 20), prazo: _tx(r.prazo_mitigacao, 14), status: _tx(r.status, 16) })).sort((a, b) => b.score - a.score).slice(0, 8) } : null;
   return out;
 }
+// v3.512: real e meta (quantidade e R$) de uma etapa em outro período (trimestre/ano), casando pela ordem da etapa
+function _pe(F, ordem) { const L = (F?.etapas || []).find(x => x.ordem === ordem); return L ? { qtd: L.real?.qtd ?? null, meta_qtd: L.meta?.qtd ?? null, valor: L.real?.valor ?? null, meta_valor: L.meta?.valor ?? null } : null; }
 async function montarDados() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
-  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es, cla, kpA] = await Promise.allSettled([
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf, mk, ks, oLi, oIg, oFb, rt, fnA, meA, pe, es, cla, kpA, fnT] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
@@ -150,7 +152,8 @@ async function montarDados() {
     chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'ano', ref: String(ano), pipeline: 'todos' } }, 58000), chamar('financeiro', { action: 'metas_empresa_status', params: { ano: ano - 1, com_crm: false } }, 45000),
     chamar('estrategia', { action: 'plano_estr_obter' }, 30000), estrategiaTv(),
     chamar('financeiro', { action: 'clientes_ano', params: { ano } }, 45000),
-    chamar('financeiro', { action: 'resultado_kpis', params: { ano, _max_idade: 300 } }, 45000)]); // v3.507: resultado do ANO (acumulado até hoje) com a meta anual // v3.487: clientes ativos/novos no ano (QuickBooks) // v3.357: previsto do mês (programado até o fim do mês)
+    chamar('financeiro', { action: 'resultado_kpis', params: { ano, _max_idade: 300 } }, 45000),
+    chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'trimestre', ref: ano + '-T' + Math.ceil(parseInt(mes.substring(5)) / 3), pipeline: 'todos' } }, 58000)]); // v3.512: funil do TRIMESTRE · v3.507: resultado do ANO (acumulado até hoje) com a meta anual // v3.487: clientes ativos/novos no ano (QuickBooks) // v3.357: previsto do mês (programado até o fim do mês)
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
@@ -242,7 +245,8 @@ async function montarDados() {
     com: { erro: erro(fn), indisponivel: FN.indisponivel || null,
       funil: FN.etapas ? { rotulo: FN.periodo?.rotulo, decorrido_pct: FN.periodo?.decorrido_pct, pipeline: FN.pipeline?.nome || '', lidos: FN.total_negocios_lidos ?? null, resumo: FN.resumo || {}, leads: FN.leads || null, perdidos: FN.perdidos || null,
         ticket: FN.meta_base?.ticket_medio ?? null, movimentos: FN.resumo?.movimentos || null,
-        etapas: FN.etapas.map(L => ({ nome: L.nome, ordem: L.ordem, ganho: !!L.ganho, agora: L.agora, real: L.real, farol: L.farol, conv_real: L.conv_real, conv_meta: L.conv_meta, conv_base: L.conv_base, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, qtd: L.meta.qtd, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
+        per: { tri: v(fnT)?.periodo?.rotulo || null, ano: v(fnA)?.periodo?.rotulo || null }, vendas_per: { tri: { real: v(fnT)?.resumo?.ganho?.valor ?? null, meta: v(fnT)?.resumo?.meta ?? null }, ano: { real: v(fnA)?.resumo?.ganho?.valor ?? null, meta: v(fnA)?.resumo?.meta ?? null } },
+        etapas: FN.etapas.map(L => ({ tri: _pe(v(fnT), L.ordem), ano: _pe(v(fnA), L.ordem), nome: L.nome, ordem: L.ordem, ganho: !!L.ganho, agora: L.agora, real: L.real, farol: L.farol, conv_real: L.conv_real, conv_meta: L.conv_meta, conv_base: L.conv_base, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, qtd: L.meta.qtd, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
   };
 }
 // v3.152: CONFERIR — abre cada número da TV até a origem (só no sistema, com login; a página da TV continua só com totais)
@@ -286,7 +290,7 @@ async function _comUltimoBom(d) {
   if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
   d.antigos = antigos; return d;
 }
-const FORMATO_TV = 507; // (fotos usam o mesmo pacote de dados)
+const FORMATO_TV = 512; // (fotos usam o mesmo pacote de dados)
 async function dados(forcar) {
   const c = await kv('tv:dados');
   // v3.484: cache feito por uma versão anterior (sem os blocos novos: metas, estratégia) é refeito na hora, não espera os 10 min
@@ -428,43 +432,48 @@ function sCom(){var C=D.com||{},Fu=C.funil;
   // 1) vendas fechadas × meta
   var vr=R.ganho&&R.ganho.valor,vm=R.meta,pv=nz(R.pct_meta)?(vm&&!nz(vr)?vr/vm*100:null):R.pct_meta,esp=vm&&dec!=null?vm*dec/100:null;
   var fV=(Gn&&Gn.farol&&Gn.farol!=='sem_meta')?Gn.farol:fq2(esp?vr/esp:(pv!=null?pv/100:null)),cV=cor(fV);
-  var pA='<div class="cr3" style="--c:'+cV+';gap:6px;padding:16px 24px"><div class="t"><i></i>Vendas fechadas × meta · '+rot+'<span style="flex:1"></span><span class="pill" style="color:'+cV+'">'+(fV==='verde'?'no rumo':fV==='amarelo'?'atenção':fV==='vermelho'?'fora da meta':'sem meta')+'</span></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px"><div style="min-width:0"><div style="font-size:60px;font-weight:800;line-height:1.05;color:'+cV+';white-space:nowrap">'+brl(vr)+'</div><div style="font-size:21px;color:#AAB6D8">meta <b style="color:#EAF0FF">'+brl(vm)+'</b> · '+nI(R.ganho&&R.ganho.qtd)+' venda(s)</div></div>'
-   +'<div style="text-align:right"><div style="font-size:66px;font-weight:800;line-height:1;color:'+cV+'">'+(nz(pv)?'—':pct(pv))+'</div><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">da meta</div></div></div>'
+  var pA='<div class="cr3" style="--c:'+cV+';gap:6px;padding:11px 22px"><div class="t"><i></i>Vendas fechadas × meta · '+rot+'<span style="flex:1"></span><span class="pill" style="color:'+cV+'">'+(fV==='verde'?'no rumo':fV==='amarelo'?'atenção':fV==='vermelho'?'fora da meta':'sem meta')+'</span></div>'
+   +'<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px"><div style="min-width:0"><div style="font-size:46px;font-weight:800;line-height:1.05;color:'+cV+';white-space:nowrap">'+brl(vr)+'</div><div style="font-size:21px;color:#AAB6D8">meta <b style="color:#EAF0FF">'+brl(vm)+'</b> · '+nI(R.ganho&&R.ganho.qtd)+' venda(s)</div></div>'
+   +'<div style="text-align:right"><div style="font-size:50px;font-weight:800;line-height:1;color:'+cV+'">'+(nz(pv)?'—':pct(pv))+'</div><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">da meta</div></div></div>'
    +barra(pv,dec)+'<div style="font-size:17px;color:#AAB6D8">'+(esp!=null?'esperado até hoje <b style="color:#EAF0FF">'+brl(esp)+'</b> · ':'')+(vm&&!nz(vr)?(vr>=vm?'<span class="ok">meta batida</span>':'falta <b style="color:#EAF0FF">'+brl(vm-vr)+'</b>'):'')+'</div></div>';
   // 2) pipeline aberto × necessário
   var pn=R.pipeline_necessario,cb=pn&&!nz(A.valor)?A.valor/pn*100:null,fP=pn?fq2(A.valor/pn):null,cP=cor(fP);
-  var pB='<div class="cr3" style="--c:'+cP+';gap:6px;padding:16px 24px"><div class="t"><i></i>Pipeline aberto × necessário<span style="flex:1"></span><span class="pill" style="color:'+cP+'">'+(fP==='verde'?'coberto':fP==='amarelo'?'quase':fP==='vermelho'?'insuficiente':'sem meta')+'</span></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px"><div style="min-width:0"><div style="font-size:60px;font-weight:800;line-height:1.05;color:'+cP+';white-space:nowrap">'+brl(A.valor)+'</div><div style="font-size:21px;color:#AAB6D8">precisa de <b style="color:#EAF0FF">'+brl(pn)+'</b> para a meta</div></div>'
-   +'<div style="text-align:right"><div style="font-size:66px;font-weight:800;line-height:1;color:'+cP+'">'+(nz(cb)?'—':pct(cb))+'</div><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">cobertura</div></div></div>'
+  var pB='<div class="cr3" style="--c:'+cP+';gap:6px;padding:11px 22px"><div class="t"><i></i>Pipeline aberto × necessário<span style="flex:1"></span><span class="pill" style="color:'+cP+'">'+(fP==='verde'?'coberto':fP==='amarelo'?'quase':fP==='vermelho'?'insuficiente':'sem meta')+'</span></div>'
+   +'<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px"><div style="min-width:0"><div style="font-size:46px;font-weight:800;line-height:1.05;color:'+cP+';white-space:nowrap">'+brl(A.valor)+'</div><div style="font-size:21px;color:#AAB6D8">precisa de <b style="color:#EAF0FF">'+brl(pn)+'</b> para a meta</div></div>'
+   +'<div style="text-align:right"><div style="font-size:50px;font-weight:800;line-height:1;color:'+cP+'">'+(nz(cb)?'—':pct(cb))+'</div><div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:1px">cobertura</div></div></div>'
    +barra(cb)+'<div style="font-size:17px;color:#AAB6D8">ponderado pela chance de cada etapa: <b style="color:#EAF0FF">'+brl(A.ponderado)+'</b>'+(nz(R.taxa_ganho_pct)?' · taxa de ganho '+pct(R.taxa_ganho_pct):'')+'</div></div>';
   // 3) movimento do funil
   var mv=function(rot2,m){return !m?'':'<div style="display:flex;align-items:center;gap:12px;white-space:nowrap"><span style="width:96px;font-size:14px;color:#8E9BC0;text-transform:uppercase;letter-spacing:.6px;font-weight:700;white-space:normal;line-height:1.1">'+rot2+'</span><span style="font-size:30px;color:#2EE6A6;font-weight:800">▲ '+m.positivos+'</span><span style="font-size:14px;color:#AAB6D8;width:92px">avançaram'+(m.ganhos?'<br>('+m.ganhos+' ganho'+(m.ganhos>1?'s':'')+')':'')+'</span><span style="font-size:30px;color:#FF5C7A;font-weight:800">▼ '+m.negativos+'</span><span style="font-size:15px;color:#AAB6D8">recuaram'+(m.perdidos?'<br>('+m.perdidos+' perdido'+(m.perdidos>1?'s':'')+')':'')+'</span></div>'};
-  var pC='<div class="cr3" style="--c:#2D3B6B;gap:8px;padding:16px 24px"><div class="t"><i style="background:#6E7BA0;box-shadow:none"></i>Movimento no funil</div>'
+  var pC='<div class="cr3" style="--c:#2D3B6B;gap:8px;padding:11px 22px"><div class="t"><i style="background:#6E7BA0;box-shadow:none"></i>Movimento no funil</div>'
    +(MV&&!MV.erro?mv('Últimos 7 dias',MV.semana)+mv('No mês',MV.mes):'<div style="font-size:18px;color:#8E9BC0">sem leitura de movimento agora</div>')
    +'<div style="font-size:17px;color:#AAB6D8;margin-top:auto">'+(Fu.ticket?'ticket médio <b style="color:#EAF0FF">'+brl(Fu.ticket)+'</b>':'')+(Fu.perdidos?' · perdidos em '+rot+': <b style="color:#EAF0FF">'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')':'')+'</div></div>';
   var h='<div style="display:grid;grid-template-columns:1.25fr 1.25fr 1fr;gap:20px">'+pA+pB+pC+'</div>';
-  // 4) funil: faixa = pipeline de hoje · direita = resultado do mês × meta
-  var FG={verde:['#0f8a52','#2fcf86'],amarelo:['#b7791f','#f6b84b'],vermelho:['#b4233c','#ef5a6f']};
-  var linhas=E.map(function(e,i){var g=FG[e.farol]||['#3b4a6b','#5d6f96'],ag=e.agora||{},val=ag.valor||0,gV=!!e.ganho&&!!R.meta;
-    var larg=function(x){return 100-58*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
-    var MVc=MV&&MV.por_coluna&&MV.por_coluna[e.ordem],sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s)'+(ag.sem_valor?' · '+ag.sem_valor+' sem valor':''));
+  // 4) v3.512: FUNIL GRANDE — cada faixa traz, em QUANTIDADE, realizado / meta do MÊS, do TRIMESTRE e do ANO; à esquerda a etapa e o movimento, à direita conversão e pipeline de hoje
+  var now=new Date(Date.now()-3*3600000),yy=now.getUTCFullYear(),mm=now.getUTCMonth(),qi=Math.floor(mm/3)*3,
+      fT=(now-Date.UTC(yy,qi,1))/(Date.UTC(yy,qi+3,1)-Date.UTC(yy,qi,1))*100,fA=(now-Date.UTC(yy,0,1))/(Date.UTC(yy+1,0,1)-Date.UTC(yy,0,1))*100;
+  var qn=function(v){return nz(v)?'—':nI(v)};
+  var cel=function(lbl,real,meta,frac,sub2){var ok=!nz(real)&&meta,q=ok&&frac>0?real/(meta*frac/100):null,f=ok?fq2(q):null,c=f?cor(f):'#EAF0FF',pc=ok?Math.max(0,Math.min(100,real/meta*100)):0;
+    return '<div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:0 10px;border-left:1px solid rgba(255,255,255,.14)">'
+     +'<div style="font-size:14px;letter-spacing:1.3px;text-transform:uppercase;color:#B9C7EE;font-weight:700">'+lbl+'</div>'
+     +'<div style="white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1"><b style="font-size:40px;font-weight:800;color:'+c+';text-shadow:0 1px 6px rgba(0,0,0,.35)">'+qn(real)+'</b>'+(meta?'<span style="font-size:24px;color:#C9D5F5;font-weight:600"> / '+qn(Math.ceil(meta))+'</span>':'<span style="font-size:16px;color:#9FB0DD"> sem meta</span>')+'</div>'
+     +(meta?'<div style="height:7px;border-radius:4px;background:rgba(0,0,0,.38);position:relative;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:'+pc+'%;background:'+(f?c:'#00C4CC')+';border-radius:4px"></i></div>':'')
+     +(sub2?'<div style="font-size:14.5px;color:#C9D5F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sub2+'</div>':'')+'</div>'};
+  var VP=Fu.vendas_per||{},mk=function(x){return nz(x)?'—':'R$ '+(x>=1e6?(x/1e6).toFixed(2).replace('.',',')+' mi':Math.round(x/1000)+' mil')};
+  var linhas=E.map(function(e,i){var ag=e.agora||{},val=ag.valor||0,T=e.tri||{},An=e.ano||{},mq=e.meta&&e.meta.qtd?e.meta.qtd:null;
+    var larg=function(x){return 100-44*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
+    var MVc=MV&&MV.por_coluna&&MV.por_coluna[e.ordem],sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s) · '+brl(val));
     if(MVc&&!e.ganho&&(MVc.semana.entrou_avancando||MVc.semana.entrou_recuando))sub='<span style="color:#2EE6A6">▲'+MVc.semana.entrou_avancando+'</span> <span style="color:#FF5C7A">▼'+MVc.semana.entrou_recuando+'</span> 7d · '+sub;
-    var fr=e.farol&&e.farol!=='sem_meta'?e.farol:null,c=cor(fr),mq=e.meta&&e.meta.qtd?Math.ceil(e.meta.qtd):null,tem=gV||!!mq;
-    var real=gV?R.ganho&&R.ganho.valor:(e.real&&e.real.qtd),meta=gV?R.meta:mq,atg=gV?pv:(mq&&!nz(real)?real/mq*100:null);
-    var espQ=gV?dec:(e.meta&&e.meta.qtd&&e.meta.qtd_ate_hoje!=null?e.meta.qtd_ate_hoje/e.meta.qtd*100:dec);
-    var cv=(i>0&&!e.ganho)||e.ganho?'conversão <b style="color:#EAF0FF">'+(nz(e.conv_real)?'—':pct(e.conv_real))+'</b>'+(e.conv_meta?' · meta <b style="color:#EAF0FF">'+pct(e.conv_meta)+'</b>':''):'';
-    var dir=tem?'<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;white-space:nowrap"><span style="font-size:34px;font-weight:800;color:'+c+';font-variant-numeric:tabular-nums">'+(gV?brl(real):nI(real))+'<span style="font-size:21px;color:#8E9BC0;font-weight:600"> / '+(gV?brl(meta):nI(meta))+'</span></span><span style="font-size:30px;font-weight:800;color:'+c+'">'+(nz(atg)?'—':pct(atg))+'</span></div>'
-        +'<div class="bar" style="margin:4px 0"><i style="width:'+Math.max(0,Math.min(100,atg||0))+'%;background:'+(fr?c:'#00C4CC')+'"></i>'+(nz(espQ)?'':'<u style="left:'+Math.max(0,Math.min(100,espQ))+'%"></u>')+'</div>'
-        +'<div style="font-size:16.5px;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:'+c+';font-weight:700">'+(fr==='verde'?'no rumo':fr==='amarelo'?'atenção':fr==='vermelho'?'fora da meta':'')+'</span>'+(cv?' · '+cv:'')+'</div>'
-      :'<div style="font-size:30px;font-weight:800;color:#EAF0FF">'+nI(e.real&&e.real.qtd)+'<span style="font-size:18px;color:#6E7BA0;font-weight:600"> no mês</span></div><div style="font-size:15.5px;color:#6E7BA0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">sem meta · Dashboard → Vendas → ✎ Metas por etapa</div>';
-    return '<div style="display:grid;grid-template-columns:300px 1fr 540px;gap:22px;align-items:stretch;flex:1 1 0;min-height:0;overflow:hidden">'
-     +'<div style="display:flex;flex-direction:column;justify-content:center;min-width:0"><div style="font-size:24px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15">'+esc(e.nome)+(e.ganho?' ✓':'')+'</div><div style="font-size:16px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sub+'</div></div>'
-     +'<div style="height:100%;max-height:92px;clip-path:polygon('+a+'% 0,'+(100-a)+'% 0,'+(100-bq)+'% 100%,'+bq+'% 100%);background:linear-gradient(180deg,'+g[1]+','+g[0]+');display:flex;align-items:center;justify-content:center"><div style="white-space:nowrap;line-height:1"><b style="font-size:34px;font-weight:800">'+nI(e.ganho?(e.real&&e.real.qtd):ag.qtd)+'</b> <span style="font-size:18px;font-weight:600;opacity:.92">'+(e.ganho?'ganhos':'abertos')+' · '+brl(val)+'</span></div></div>'
-     +'<div style="display:flex;flex-direction:column;justify-content:center;min-width:0">'+dir+'</div></div>'}).join('');
-  var cab='<div style="display:grid;grid-template-columns:300px 1fr 540px;gap:22px;font-size:14.5px;color:#6E7BA0;text-transform:uppercase;letter-spacing:1.3px;font-weight:700;margin-bottom:4px"><span>Etapa</span><span style="text-align:center">Pipeline hoje · abertos agora (qualquer mês)</span><span>Resultado de '+rot+' × meta</span></div>';
-  h+='<div class="painel" style="flex:1;min-height:0;padding:14px 24px">'+cab+'<div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:6px">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
-   +(Fu.lidos!=null?'<div style="font-size:15px;color:#6E7BA0;margin-top:6px">'+Fu.lidos+' negócio(s) lidos do HubSpot · metas cadastradas em Dashboard → Vendas → ✎ Metas por etapa · a marca na barra é o esperado até hoje</div>':'')+'</div>'
+    var bg=e.ganho?['#17a566','#0a6b42']:['hsl('+(212-i*(40/Math.max(1,n-1)))+',72%,'+(46-i*2)+'%)','hsl('+(214-i*(40/Math.max(1,n-1)))+',70%,'+(30-i*1.5)+'%)'];
+    var g1=e.ganho&&R.meta?mk(R.ganho&&R.ganho.valor)+' / '+mk(R.meta):'',g2=e.ganho&&VP.tri&&VP.tri.meta?mk(VP.tri.real)+' / '+mk(VP.tri.meta):'',g3=e.ganho&&VP.ano&&VP.ano.meta?mk(VP.ano.real)+' / '+mk(VP.ano.meta):'';
+    var cv=(i>0||e.ganho)?'<div style="font-size:15px;color:#8E9BC0;text-transform:uppercase;letter-spacing:.8px;font-weight:700">conversão</div><div style="font-size:30px;font-weight:800;line-height:1.05;color:#EAF0FF">'+(nz(e.conv_real)?'—':pct(e.conv_real))+(e.conv_meta?'<span style="font-size:18px;color:#8E9BC0;font-weight:600"> / '+pct(e.conv_meta)+'</span>':'')+'</div>':'<div style="font-size:15px;color:#6E7BA0">topo do funil</div>';
+    return '<div style="display:grid;grid-template-columns:280px 1fr 190px;gap:20px;align-items:stretch;flex:'+(e.ganho?'1.5':'1')+' 1 0;min-height:0">'
+     +'<div style="display:flex;flex-direction:column;justify-content:center;min-width:0"><div style="font-size:26px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15">'+esc(e.nome)+(e.ganho?' ✓':'')+'</div><div style="font-size:16px;color:#8E9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sub+'</div></div>'
+     +'<div style="filter:drop-shadow(0 6px 10px rgba(0,0,0,.45));min-height:0"><div style="height:100%;clip-path:polygon('+a+'% 0,'+(100-a)+'% 0,'+(100-bq)+'% 100%,'+bq+'% 100%);background:linear-gradient(180deg,rgba(255,255,255,.22) 0,rgba(255,255,255,0) 22%),linear-gradient(180deg,'+bg[0]+','+bg[1]+');display:flex;align-items:stretch;justify-content:center;padding:6px '+(a+3)+'%">'
+       +cel('Mês',e.ganho?(e.real&&e.real.qtd):(e.real&&e.real.qtd),mq,dec,g1)+cel('Trimestre',T.qtd,T.meta_qtd,fT,g2)+cel('Ano',An.qtd,An.meta_qtd,fA,g3)+'</div></div>'
+     +'<div style="display:flex;flex-direction:column;justify-content:center;min-width:0">'+cv+'</div></div>'}).join('');
+  var cab='<div style="display:grid;grid-template-columns:280px 1fr 190px;gap:20px;font-size:14.5px;color:#6E7BA0;text-transform:uppercase;letter-spacing:1.3px;font-weight:700;margin-bottom:6px"><span>Etapa · pipeline hoje</span><span style="text-align:center">Realizado / meta em quantidade · mês · trimestre · ano</span><span>Conversão real / meta</span></div>';
+  h+='<div class="painel" style="flex:1;min-height:0;padding:12px 24px">'+cab+'<div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:5px">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
+   +(Fu.lidos!=null?'<div style="font-size:14.5px;color:#6E7BA0;margin-top:6px">'+Fu.lidos+' negócio(s) lidos do HubSpot · metas em Dashboard → Vendas → ✎ Metas por etapa · cor do número = ritmo contra o esperado até hoje</div>':'')+'</div>'
    +(C.erro?'<div class="erro">⚠ '+esc(C.erro)+'</div>':'');
   return h}
 function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{},P=Q.projetos||{},Fu=(D.com||{}).funil;
