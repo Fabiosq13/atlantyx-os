@@ -324,23 +324,39 @@
     funilRender();
   }
   function funilPeriodo(d) { FUNIL_DIAS = +d || 90; funilRender(); }
+  // v3.515: clicar num card do funil de propostas abre a lista das propostas que o compõem
+  const FUNIL_FILTROS = { ativas: ['Propostas ativas', p => ['rascunho', 'enviada', 'negociacao'].includes(p.status)], aberto: ['Valor em aberto', p => ['enviada', 'negociacao'].includes(p.status)],
+    conversao: ['Taxa de conversão — propostas enviadas', p => p.status !== 'rascunho'], tempo: ['Tempo até fechar — propostas ganhas', p => p.status === 'ganha'],
+    rascunho: ['Rascunho', p => p.status === 'rascunho'], enviada: ['Enviadas', p => p.status === 'enviada'], negociacao: ['Em negociação', p => p.status === 'negociacao'], ganha: ['Fechadas (ganhas)', p => p.status === 'ganha'], perdida: ['Perdidas', p => p.status === 'perdida'] };
+  function funilDet(chave) {
+    const F = FUNIL_FILTROS[chave]; if (!F || !FUNIL || !FUNIL.lista) return;
+    const corte = Date.now() - FUNIL_DIAS * 864e5, t = v => v ? new Date(v).getTime() : NaN;
+    const L = FUNIL.lista.filter(p => (t(p.enviada_em) || t(p.criado_em)) >= corte && F[1](p)).sort((a, b) => (+b.valor_total || 0) - (+a.valor_total || 0));
+    document.getElementById('vdFunilModal')?.remove();
+    const m = document.createElement('div'); m.id = 'vdFunilModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = e => { if (e.target === m) m.remove(); };
+    const dt = v => v ? new Date(v).toLocaleDateString('pt-BR') : '—';
+    m.innerHTML = `<div class="panel" style="max-width:900px;width:100%;"><div style="display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">${esc(F[0])} — últimos ${FUNIL_DIAS} dias</b><span style="font-size:10.5px;color:var(--t3);">${L.length} proposta(s) · ${R(L.reduce((a, p) => a + (+p.valor_total || 0), 0))}</span><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById('vdFunilModal').remove()">✕</button></div>
+      <div style="overflow:auto;max-height:70vh;margin-top:10px;">${L.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t3);text-align:left;"><th style="padding:5px;">Cliente</th><th>Proposta</th><th>Etapa</th><th style="text-align:right;">Valor</th><th>Enviada</th><th></th></tr>`
+        + L.map(p => `<tr style="border-top:1px solid var(--bd);"><td style="padding:5px;font-weight:600;">${esc(p.cliente || '—')}</td><td>${esc(p.titulo || '—')}</td><td>${esc((FUNIL_ETAPAS.find(e => e[0] === p.status) || [0, p.status])[1])}</td><td style="text-align:right;white-space:nowrap;">${R(+p.valor_total || 0)}</td><td>${dt(p.enviada_em || p.criado_em)}</td><td><button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="document.getElementById('vdFunilModal').remove();nav('s7propostas');setTimeout(()=>VD.abrirProp('${esc(p.id)}'),500)">Abrir</button></td></tr>`).join('') + '</table>' : '<div style="color:var(--t3);font-size:11px;padding:12px;">Nenhuma proposta neste recorte.</div>'}</div></div>`;
+    document.body.appendChild(m);
+  }
   function funilRender() {
     const el = $('funil-propostas'); if (!el) return;
     const per = `<div class="seg">${[30, 60, 90].map(d => `<button class="${d === FUNIL_DIAS ? 'on' : ''}" onclick="VD.funilPeriodo(${d})">${d}d</button>`).join('')}</div>`;
     const cab = `<div class="ph"><div class="pt">📊 Funil de Propostas</div><span style="font-size:10px;color:var(--t2);flex:1;">propostas que entraram no funil nos últimos ${FUNIL_DIAS} dias</span>${per}</div>`;
-    const card = (cor, t, v, s) => `<div class="kpi" style="border-left:3px solid ${cor};"><div class="kl">${t}</div><div class="kv" style="color:${cor};">${v}</div><div class="ks">${s || ''}</div></div>`;
+    const card = (cor, t, v, s, k) => `<div class="kpi" ${k ? `onclick="VD.funilDet('${k}')" title="Clique para ver as propostas" ` : ''}style="${k ? 'cursor:pointer;' : ''}border-left:3px solid ${cor};"><div class="kl">${t}</div><div class="kv" style="color:${cor};">${v}</div><div class="ks">${s || ''}</div></div>`;
     let corpo;
     if (!FUNIL) corpo = '<div style="font-size:11px;color:var(--t3);padding:8px 0;">Calculando o funil...</div>';
     else if (FUNIL.erro) corpo = `<div style="display:flex;gap:10px;align-items:center;"><span style="color:var(--red);font-size:11px;flex:1;">⚠ ${esc(FUNIL.erro)}</span><button class="btn btn-g" onclick="VD.funilCarregar()">↻ Tentar novamente</button></div>`;
     else {
       const f = calcularFunilPropostas(FUNIL.lista, FUNIL_DIAS), tot = FUNIL_ETAPAS.reduce((a, [k]) => a + f.etapas[k].qtd, 0);
       const cConv = f.conversao == null ? 'var(--t3)' : f.conversao >= 30 ? 'var(--green)' : f.conversao >= 15 ? 'var(--gold)' : 'var(--red)';
-      const dist = FUNIL_ETAPAS.map(([k, n, c]) => { const e = f.etapas[k]; return `<div style="font-size:10.5px;"><div style="display:flex;justify-content:space-between;gap:6px;"><span style="color:${c};font-weight:600;">${n}</span><b>${e.qtd}</b></div>${barra(e.qtd, tot, c)}<div style="color:var(--t3);font-size:9.5px;margin-top:2px;">${R(e.valor)}</div></div>`; }).join('');
+      const dist = FUNIL_ETAPAS.map(([k, n, c]) => { const e = f.etapas[k]; return `<div style="font-size:10.5px;cursor:pointer;" title="Clique para ver as propostas" onclick="VD.funilDet('${k}')"><div style="display:flex;justify-content:space-between;gap:6px;"><span style="color:${c};font-weight:600;">${n}</span><b>${e.qtd}</b></div>${barra(e.qtd, tot, c)}<div style="color:var(--t3);font-size:9.5px;margin-top:2px;">${R(e.valor)}</div></div>`; }).join('');
       corpo = `<div class="kg k5" style="margin:0;">
-          ${card('var(--blue)', 'Propostas ativas', f.ativas, `rascunho ${f.etapas.rascunho.qtd} · enviada ${f.etapas.enviada.qtd} · negociação ${f.etapas.negociacao.qtd}`)}
-          ${card('var(--gold)', 'Valor em aberto', R(f.aberto), `${f.qtdAberto} proposta(s) enviada(s) ou em negociação`)}
-          ${card(cConv, 'Taxa de conversão', f.conversao == null ? '—' : P(f.conversao), `${f.ganhas} fechada(s) ÷ ${f.enviadas} enviada(s)`)}
-          ${card('var(--pu)', 'Tempo médio até fechar', f.tempo_medio == null ? '—' : N(f.tempo_medio) + ' dias', f.qtdCiclos ? `do envio à assinatura · ${f.qtdCiclos} proposta(s) ganha(s)` : 'sem propostas ganhas no período')}
+          ${card('var(--blue)', 'Propostas ativas', f.ativas, `rascunho ${f.etapas.rascunho.qtd} · enviada ${f.etapas.enviada.qtd} · negociação ${f.etapas.negociacao.qtd}`, 'ativas')}
+          ${card('var(--gold)', 'Valor em aberto', R(f.aberto), `${f.qtdAberto} proposta(s) enviada(s) ou em negociação`, 'aberto')}
+          ${card(cConv, 'Taxa de conversão', f.conversao == null ? '—' : P(f.conversao), `${f.ganhas} fechada(s) ÷ ${f.enviadas} enviada(s)`, 'conversao')}
+          ${card('var(--pu)', 'Tempo médio até fechar', f.tempo_medio == null ? '—' : N(f.tempo_medio) + ' dias', f.qtdCiclos ? `do envio à assinatura · ${f.qtdCiclos} proposta(s) ganha(s)` : 'sem propostas ganhas no período', 'tempo')}
           <div class="kpi"><div class="kl">Distribuição por etapa</div><div style="display:grid;gap:5px;margin-top:4px;">${dist}</div></div></div>
         <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Conversão = fechadas (ganhas) ÷ enviadas (enviada, em negociação, ganha ou perdida) no período. Valor em aberto = soma das propostas enviadas ou em negociação. Dados das propostas salvas — sem consulta externa.</div>`;
     }
@@ -1466,7 +1482,7 @@
     } catch (e) { nota('Erro: ' + e.message, 'error'); $('vzRes').innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; } fim();
   }
 
-  window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
+  window.VD = { funilDet, painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
     chatAplicarTodas, aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo, simAbrir, simFechar, simSet, simRender, simAplicar, simPadrao };
 })();

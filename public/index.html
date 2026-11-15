@@ -31320,7 +31320,10 @@ function vendasCardsRender() {
       return _resCartaoV2({ rot: 'RFPs', tip: '**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect). Sem meta cadastrada.', real: v, fmt: n, meta: null, semPrev: true, linhas: [['Acumulado', '—']] }); })(),
   ];
   box.innerHTML = cards.join('');
-  box.querySelectorAll('.res-card').forEach(c => { c.style.cursor = 'pointer'; c.onclick = ev => { if (ev.target.closest('.tip-i, a, button')) return; dashAba('vendas'); }; });
+  // v3.515: cada card abre o detalhamento (negócios, empresas e contatos) em vez de só trocar de aba
+  const abrir = [() => lead && funilFaixa(lead.id, 'periodo'), () => reu && funilFaixa(reu.id, 'periodo'), () => prop && funilFaixa(prop.id, 'periodo'),
+    () => funilLista('Pipeline aberto — todas as etapas', E.filter(L => !L.ganho && !L.contatos).flatMap(L => L.ids_agora || [])), () => gan && funilFaixa(gan.id, 'periodo'), () => nav('s2rfps')];
+  box.querySelectorAll('.res-card').forEach((c, i) => { c.style.cursor = 'pointer'; c.onclick = ev => { if (ev.target.closest('.tip-i, a, button')) return; try { (abrir[i] || (() => dashAba('vendas')))(); } catch (_) { dashAba('vendas'); } }; });
 }
 document.addEventListener('DOMContentLoaded', () => { try { const k = document.getElementById('kRfp'); if (k) new MutationObserver(() => { if (_fn.dados) vendasCardsRender(); }).observe(k, { childList: true, characterData: true, subtree: true }); } catch (_) {} }); // v3.355: RFPs chegam depois
 // v3.123: cartão com a meta do período ao lado — barra de atingimento, marcador do "esperado até hoje" no mês em curso e semáforo
@@ -33874,16 +33877,27 @@ function funilRender() {
     + '<span>Ticket médio: <b>' + (mb.ticket_medio ? _fnR(mb.ticket_medio) : '—') + '</b> (' + _fnE(mb.ticket_fonte || '') + ')</span>'
     + '<span>Meta do Ganho = meta de faturamento do período' + (mb.cadastro_etapas ? '; demais etapas com meta cadastrada em ✎ Metas por etapa' : ' (metas das outras etapas só se cadastradas em ✎ Metas por etapa)') + '</span></div>';
 }
-async function funilFaixa(id) {
+async function funilFaixa(id, visao) { // v3.515: visao 'agora' | 'periodo' força a lista (os cards do Dashboard usam o período)
   const D = _fn.dados; const e = (D?.etapas || []).find(x => x.id === id); if (!e) return;
   if (e.contatos) { const u = D.hubspot_portal ? 'https://app.hubspot.com/contacts/' + D.hubspot_portal + '/objects/0-1/views/all/list' : null; toast(e.real.qtd + ' contato(s) criados no período · ' + e.agora.qtd + ' em fase de lead no HubSpot', 'info'); if (u) window.open(u, '_blank', 'noopener'); return; } // v3.364
-  const negs = (_fn.visao === 'agora' ? (e.ids_agora || []) : e.ids).map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
+  const negs = ((visao || _fn.visao) === 'agora' ? (e.ids_agora || []) : e.ids).map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
   document.getElementById('fnModal')?.remove();
   const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
   const _pc = _fn.modo === 'valor' ? e.pct_valor : e.pct_qtd, _f = _pc == null ? 'sem_meta' : _pc >= 100 ? 'verde' : _pc >= 80 ? 'amarelo' : 'vermelho';
   m.innerHTML = '<div class="panel" style="max-width:1100px;width:100%;"><div style="display:flex;align-items:center;gap:8px;"><span class="fn-luz" style="background:' + _fnLuz[_f] + ';"></span><b style="font-size:13px;">' + _fnE(e.nome) + ' — ' + D.periodo.rotulo + '</b><span style="font-size:10.5px;color:var(--t3);">' + negs.length + ' negócio(s) · ' + _fnR(e.real.valor) + '</span><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div><div id="fnModalCorpo" style="margin-top:10px;"><div class="fv2-load">Buscando empresas e contatos no HubSpot…</div></div></div>';
   document.body.appendChild(m);
   if (!negs.length) { document.getElementById('fnModalCorpo').innerHTML = '<div style="color:var(--t3);font-size:11px;padding:10px;">Nenhum negócio nesta faixa no período.</div>'; return; }
+  let ct = {}; try { ct = (await finApi('funil_contatos', { ids: negs.slice(0, 100).map(n => n.id) })).negocios || {}; } catch (er) { toast('Contatos indisponíveis: ' + er.message, 'error'); }
+  _fnTabela(negs, ct, D.hubspot_portal, document.getElementById('fnModalCorpo'), true);
+}
+// v3.515: lista de negócios de um card que não é uma etapa só (pipeline aberto = todas as etapas abertas)
+async function funilLista(titulo, ids) {
+  const D = _fn.dados; if (!D) return; const negs = (ids || []).map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
+  document.getElementById('fnModal')?.remove();
+  const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
+  m.innerHTML = '<div class="panel" style="max-width:1100px;width:100%;"><div style="display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">' + _fnE(titulo) + '</b><span style="font-size:10.5px;color:var(--t3);">' + negs.length + ' negócio(s) · ' + _fnR(negs.reduce((a, n) => a + (n.valor || 0), 0)) + '</span><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div><div id="fnModalCorpo" style="margin-top:10px;"><div class="fv2-load">Buscando empresas e contatos no HubSpot…</div></div></div>';
+  document.body.appendChild(m);
+  if (!negs.length) { document.getElementById('fnModalCorpo').innerHTML = '<div style="color:var(--t3);font-size:11px;padding:10px;">Nenhum negócio neste card.</div>'; return; }
   let ct = {}; try { ct = (await finApi('funil_contatos', { ids: negs.slice(0, 100).map(n => n.id) })).negocios || {}; } catch (er) { toast('Contatos indisponíveis: ' + er.message, 'error'); }
   _fnTabela(negs, ct, D.hubspot_portal, document.getElementById('fnModalCorpo'), true);
 }
@@ -37275,7 +37289,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.514] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.515] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37291,7 +37305,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.514';
+window.__ATX_BUILD_ID__ = 'ATX-v3.515';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
