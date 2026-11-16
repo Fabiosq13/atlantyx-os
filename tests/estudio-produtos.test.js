@@ -49,3 +49,11 @@ test('simulador: DSO maior piora o caixa mínimo sem mudar a margem', () => {
 test('simulador: sem premissa ou sem linhas não quebra', () => {
   assert.ok(simular({ horizonte: 12 }, PR, EST, { custo_pessoa_dia: '' }).avisos.length); assert.ok(simular({ horizonte: 6, linhas: [] }, PR, EST, P).avisos.length);
 });
+import { sensibilidade, comparar } from '../lib/estudio-simulador.js';
+test('sensibilidade: custo +10% reduz margem, prazo ×2 reduz caixa mínimo sem mexer na margem', () => {
+  const c = { horizonte: 12, linhas: [{ esteira_id: 'e1', entradas_mes: 1 }] }, s = sensibilidade(c, PR, EST, P);
+  assert.ok(s.variacoes[0].delta.margem_bruta_pct < 0); assert.equal(s.variacoes[1].delta.margem_bruta_pct, 0); assert.ok(s.variacoes[1].delta.caixa_minimo < 0);
+});
+test('comparar limita a 3 cenários', () => {
+  const c = { horizonte: 6, linhas: [{ esteira_id: 'e1', entradas_mes: 1 }] }; assert.equal(comparar([c, c, c, c], PR, EST, P).length, 3);
+});

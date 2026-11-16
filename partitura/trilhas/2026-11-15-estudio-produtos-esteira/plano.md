@@ -10,7 +10,7 @@ ID: 2026-11-15-estudio-produtos-esteira · Trilha: T4/T3 · Aprovado por: Fabio
 ## Fase 3 — Simulador de cenário
 - [x] lib/estudio-simulador.js (coortes mensais: margem por oferta, caixa acumulado, break-even, ROI, ocupação, ARR, semáforos, margem × caixa) + aba Simulador com cenários salvos (sim:cenarios)
 ## Fase 4 — Comparação e sensibilidade
-- [ ] a fazer
+- [x] comparar até 3 cenários, duplicar cenário, sensibilidade (custo +10%, prazo ×2, conversão ×0,5)
 ## Fase 5 — Teste de escala e catálogo versionado
 - [ ] a fazer
 ## Fase 6 — IA de estratégia e finanças
@@ -28,3 +28,4 @@ ID: 2026-11-15-estudio-produtos-esteira · Trilha: T4/T3 · Aprovado por: Fabio
 | 15/11/2026 | Fase 1 entregue (v3.519) | Parte 3 (campanhas/ofertas) ainda não iniciada | Fase 2: esteira |
 | 15/11/2026 | Fase 2 entregue (v3.520) | — | Fase 3: simulador de cenário |
 | 15/11/2026 | Fase 3 entregue (v3.521) | — | Fase 4: comparação de 3 cenários e sensibilidade |
+| 15/11/2026 | Fase 4 entregue (v3.522) | — | Fase 5: teste de escala e catálogo |
