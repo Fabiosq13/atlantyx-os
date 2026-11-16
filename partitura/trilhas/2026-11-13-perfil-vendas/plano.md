@@ -11,3 +11,4 @@
 - [x] v3.491: perfis Vendas e Financeiro criados sozinhos ao abrir as telas de Acesso (antes dependiam do clique no botão em Perfis e não apareciam no seletor de Usuários × Perfil)
 - 2026-11-13 · feito (v3.491) · sem bloqueio · próximo: fundador escolher o perfil de cada usuário
 - v3.527 Floresta: enriquecer e-mail e celular do Apollo por identificador; importar sempre enriquece (trilha 2026-11-16-floresta-enriquecer-apollo)
+- v3.528 Floresta: filtros por campanha e área de atuação (hs_analytics_source_data_1 / industry do contato)
