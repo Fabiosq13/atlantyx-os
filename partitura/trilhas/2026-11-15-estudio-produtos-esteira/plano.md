@@ -16,10 +16,12 @@ ID: 2026-11-15-estudio-produtos-esteira · Trilha: T4/T3 · Aprovado por: Fabio
 ## Fase 6 — IA de estratégia e finanças
 - [x] lib/estudio-ia.js + ação sim_ia (somente leitura) + painel no Simulador + cron mensal margem × caixa (compara simulado × realizado, grava só sim:log)
 ## Fase 7 — Dados reais e exportação
-- [ ] a fazer
+- [x] financeiro (QuickBooks): prazo de recebimento, CAC, EBITDA e recorrência reais lado a lado; valor anterior em sim:log; exportação markdown com legenda "hipótese a validar"
+- [ ] Funil/conversões do CRM (HubSpot) — pendente, depende da T2 (Interseção)
 
 ## Interseções
 - T5: contratos das chaves sim:* em partitura/contratos/ (a registrar)
+- T2: funil e CAC por degrau vindos do HubSpot (ainda não ligado)
 - T6: DSO, custo e margem realizados (fase 7)
 - T1: entrada de cron `/api/estrategia?cron=margem_caixa_mensal` (dia 5, 11h UTC) adicionada em vercel.json — T1 deve conferir
 
@@ -32,3 +34,4 @@ ID: 2026-11-15-estudio-produtos-esteira · Trilha: T4/T3 · Aprovado por: Fabio
 | 15/11/2026 | Fase 4 entregue (v3.522) | — | Fase 5: teste de escala e catálogo |
 | 15/11/2026 | Fase 5 entregue (v3.523) | Máximo de produtos de 2027 ainda não definido (pergunta 4) | Fase 6: IA de estratégia e finanças |
 | 15/11/2026 | Fase 6 entregue (v3.524) | — | Fase 7: dados reais (CRM e financeiro) e exportação |
+| 15/11/2026 | Fase 7 entregue (v3.525), exceto CRM | HubSpot (T2) | Conferir com dados reais em produção |

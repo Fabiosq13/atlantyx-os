@@ -73,3 +73,12 @@ test('catálogo congelado exige proposta aprovada, que só vale uma vez', async 
   await EX.exigirProposta({ kv }, { proposta_id: id }, null); await assert.rejects(EX.exigirProposta({ kv }, { proposta_id: id }, null));
   await EX.exigirProposta({ kv }, {}, { status: 'pausado' });
 });
+import { exportar } from '../lib/estudio-ia.js';
+test('exportação marca hipótese e não quebra', () => {
+  const sim = simular({ horizonte: 6, linhas: [{ esteira_id: 'e1', entradas_mes: 1 }] }, PR, EST, P), md = exportar(sim, P, { nome: 'T' }, EST);
+  assert.match(md, /hipótese a validar/); assert.match(md, /Margem por oferta/); assert.throws(() => exportar({ avisos: ['x'] }, P, {}, []));
+});
+test('alterar premissa registra o valor anterior no histórico', async () => {
+  const { premissasSalvar } = await import('../lib/estudio-produtos.js'); const kv = mkKv();
+  await premissasSalvar({ kv }, { premissas: { custo_pessoa_dia: 300 } }, 'f'); const lg = await kv('sim:log'); assert.equal(lg[0].mudancas.find(m => m.campo === 'custo_pessoa_dia').de, 276.56);
+});
