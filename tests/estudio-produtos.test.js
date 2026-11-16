@@ -35,3 +35,17 @@ test('esteira: mudar a ordem muda o resultado', () => {
   const e = { cac_entrada: 3000, passagens: { AB: { conversao_pct: 40, cac: 500 }, BC: { conversao_pct: 25, cac: 800 } } };
   const x = calcularEsteira({ ...e, degraus: { A: 'a', B: 'b', C: 'c' } }, PR, P), y = calcularEsteira({ ...e, degraus: { A: 'a', B: 'c', C: 'b' } }, PR, P); assert.notEqual(x.margem_esperada_por_entrante, y.margem_esperada_por_entrante);
 });
+import { simular } from '../lib/estudio-simulador.js';
+const EST = [{ id: 'e1', nome: 'E', degraus: { A: 'a', B: 'b', C: 'c' }, cac_entrada: 3000, passagens: { AB: { conversao_pct: 50, meses: 1, cac: 500 }, BC: { conversao_pct: 20, meses: 3, cac: 800 } } }];
+test('simulador: roda 12 meses, caixa e margem coerentes', () => {
+  const r = simular({ horizonte: 12, pessoas_disponiveis: 3, linhas: [{ esteira_id: 'e1', entradas_mes: 1 }] }, PR, EST, P);
+  assert.equal(r.meses.length, 12); assert.ok(r.resumo.receita > 0); assert.ok(r.resumo.caixa_minimo <= 0); assert.ok(r.meses[0].ocupacao_pct > 0);
+  assert.ok(Math.abs(r.resumo.margem_bruta - (r.resumo.receita - r.resumo.custo_direto)) < 1);
+});
+test('simulador: DSO maior piora o caixa mínimo sem mudar a margem', () => {
+  const base = { horizonte: 12, linhas: [{ esteira_id: 'e1', entradas_mes: 1 }] }, a = simular(base, PR, EST, P), b = simular({ ...base, premissas: { dso_mult: 3 } }, PR, EST, P);
+  assert.equal(a.resumo.margem_bruta, b.resumo.margem_bruta); assert.ok(b.resumo.caixa_minimo < a.resumo.caixa_minimo);
+});
+test('simulador: sem premissa ou sem linhas não quebra', () => {
+  assert.ok(simular({ horizonte: 12 }, PR, EST, { custo_pessoa_dia: '' }).avisos.length); assert.ok(simular({ horizonte: 6, linhas: [] }, PR, EST, P).avisos.length);
+});

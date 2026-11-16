@@ -5,7 +5,7 @@ import * as RT from '../lib/estrategia-roteiro.js';
 import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
 import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
-import * as EP from '../lib/estudio-produtos.js'; // v3.519: Estúdio de Produtos e Esteira (fase 1)
+import * as EP from '../lib/estudio-produtos.js'; import * as ES from '../lib/estudio-simulador.js'; // v3.519: Estúdio de Produtos e Esteira (fase 1)
 import { moatObter, moatAnalisar, moatTeseSalvar, moatResumoTexto, K_MOAT } from '../lib/moat.js';   // v3.439
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,

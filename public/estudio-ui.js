@@ -11,10 +11,10 @@
     const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
-  let D = null, ed = null, ee = null, aba = 'produtos', tmr = null;
+  let D = null, ed = null, ee = null, CEN = [], cs = { nome: 'Cenário 1', horizonte: 12, pessoas_disponiveis: '', premissas: {}, linhas: [{}] }, RS = null, aba = 'produtos', tmr = null;
   const COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
   const PUB = { grande: 'Grande', medio: 'Médio', atuais: 'Clientes atuais' };
-  const ABAS = [['produtos', 'Produtos', 1], ['esteira', 'Esteira', 1], ['simulador', 'Simulador', 0], ['escala', 'Teste de escala', 0], ['catalogo', 'Catálogo', 0]];
+  const ABAS = [['produtos', 'Produtos', 1], ['esteira', 'Esteira', 1], ['simulador', 'Simulador', 1], ['escala', 'Teste de escala', 0], ['catalogo', 'Catálogo', 0]];
 
   async function abrir() { await carregar(); }
   async function carregar() {
@@ -25,8 +25,8 @@
     const b = $('epApp'); if (!b || !D) return;
     let h = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">' + ABAS.map(([k, t, ok]) => '<button class="btn ' + (aba === k ? 'btn-p' : 'btn-g') + '" style="font-size:11px;' + (ok ? '' : 'opacity:.5;') + '" ' + (ok ? 'onclick="EP.aba(\'' + k + '\')"' : 'disabled title="Próxima fase"') + '>' + t + (ok ? '' : ' · em breve') + '</button>').join('') + '</div>';
     h += premissasHtml();
-    h += aba === 'esteira' ? (ee ? esteiraEditor() : esteiraLista()) : (ed ? editorHtml() : listaHtml());
-    b.innerHTML = h; if (ed && aba === 'produtos') previa(); if (ee && aba === 'esteira') previaE();
+    h += aba === 'simulador' ? simHtml() : aba === 'esteira' ? (ee ? esteiraEditor() : esteiraLista()) : (ed ? editorHtml() : listaHtml());
+    b.innerHTML = h; if (ed && aba === 'produtos') previa(); if (ee && aba === 'esteira') previaE(); if (aba === 'simulador') simular();
   }
   const fld = (k, v, w, ph) => '<input class="fi" id="epp_' + k + '" style="width:' + (w || 80) + 'px;margin:0;font-size:11px;" value="' + E(v ?? '') + '" placeholder="' + (ph || '') + '">';
   function premissasHtml() {
@@ -115,16 +115,55 @@
     passagens: { AB: { conversao_pct: g('ab_conv'), meses: g('ab_meses'), cac: g('ab_cac'), gatilho: g('ab_gat') }, BC: { conversao_pct: g('bc_conv'), meses: g('bc_meses'), cac: g('bc_cac'), gatilho: g('bc_gat') } } }; }
   let tE = null;
   function previaE() { clearTimeout(tE); tE = setTimeout(async () => { const box = $('epPreviaE'); if (!box) return; try { const x = lerE(); if (!x.nome) x.nome = 'prévia'; box.innerHTML = '<b>Cálculo ao vivo</b><br>' + resumoE((await api('sim_esteira_previa', x)).calculo); } catch (e) { box.innerHTML = '<span style="color:var(--red)">' + E(e.message) + '</span>'; } }, 250); }
+  const PC = v => v == null ? '—' : N(v) + '%';
+  function simHtml() {
+    const c = cs, ln = i => c.linhas[i] || {}, esteiras = D.esteiras || [];
+    const selE = i => '<select class="fi" id="sc_e' + i + '" style="width:auto;max-width:200px;margin:0;font-size:11px;" onchange="EP.sim()"><option value="">— esteira —</option>' + esteiras.map(e => '<option value="' + e.id + '"' + (ln(i).esteira_id === e.id ? ' selected' : '') + '>' + E(e.nome) + '</option>').join('') + '</select>';
+    const f = (id, v, w, ph) => '<input class="fi" id="sc_' + id + '" style="width:' + (w || 60) + 'px;margin:0;font-size:11px;" value="' + E(v ?? '') + '" placeholder="' + (ph || '') + '" oninput="EP.sim()">';
+    let h = '<div style="font-size:11px;line-height:2.3;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;margin-bottom:12px;">Cenário ' + f('nome', c.nome, 160) + ' Horizonte <select class="fi" id="sc_hor" style="width:auto;margin:0;font-size:11px;" onchange="EP.sim()">' + [6, 12, 24, 36].map(x => '<option' + (+c.horizonte === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select> meses · Pessoas disponíveis ' + f('pes', c.pessoas_disponiveis, 40) + '<br>';
+    for (let i = 0; i < 3; i++) h += 'Esteira ' + (i + 1) + ' ' + selE(i) + ' entradas/mês ' + f('n' + i, ln(i).entradas_mes, 40) + ' começa no mês ' + f('i' + i, ln(i).inicio_mes, 35, '0') + '<br>';
+    h += 'Ajustes: custo/pessoa-dia R$ ' + f('cpd', c.premissas.custo_pessoa_dia, 65, N(D.premissas.custo_pessoa_dia)) + ' · multiplicador de conversão ' + f('cm', c.premissas.conversao_mult, 40, '1') + ' · de prazo de recebimento ' + f('dm', c.premissas.dso_mult, 40, '1') + ' · de custo ' + f('km', c.premissas.custo_mult, 40, '1')
+      + ' <button class="btn btn-p" style="font-size:11px;" onclick="EP.salvarCen()">Salvar cenário</button></div>';
+    if (CEN.length) h += '<div style="font-size:11px;margin-bottom:10px;">Salvos: ' + CEN.map(x => '<button class="btn btn-g" style="font-size:10px;" onclick="EP.abrirCen(\'' + x.id + '\')">' + E(x.nome) + ' (' + x.horizonte + 'm)</button><button class="btn btn-g" style="font-size:10px;" onclick="EP.delCen(\'' + x.id + '\')">×</button>').join(' ') + '</div>';
+    return h + '<div id="simRes"><div style="color:var(--t3);font-size:12px;padding:12px;">Escolha uma esteira e as entradas por mês para simular.</div></div>';
+  }
+  function lerCen() { const g = id => $('sc_' + id)?.value ?? ''; const linhas = [0, 1, 2].map(i => ({ esteira_id: g('e' + i) || null, entradas_mes: g('n' + i), inicio_mes: g('i' + i) })).filter(l => l.esteira_id);
+    cs = { id: cs.id, nome: g('nome'), horizonte: g('hor'), pessoas_disponiveis: g('pes'), premissas: { custo_pessoa_dia: g('cpd'), conversao_mult: g('cm'), dso_mult: g('dm'), custo_mult: g('km') }, linhas: linhas.length ? linhas : [{}] }; return cs; }
+  function grafico(ms) {
+    const W = 640, Hh = 150, a = ms.map(x => x.caixa_acumulado), b = ms.map(x => x.margem_acumulada), v = a.concat(b, [0]), mn = Math.min(...v), mx = Math.max(...v), sp = (mx - mn) || 1, X = i => 30 + i * (W - 40) / Math.max(1, ms.length - 1), Y = y => 10 + (mx - y) / sp * (Hh - 20);
+    const pl = (arr, cor) => '<polyline fill="none" stroke="' + cor + '" stroke-width="2" points="' + arr.map((y, i) => X(i) + ',' + Y(y)).join(' ') + '"/>';
+    return '<svg viewBox="0 0 ' + W + ' ' + Hh + '" style="width:100%;max-width:700px;"><line x1="30" x2="' + W + '" y1="' + Y(0) + '" y2="' + Y(0) + '" stroke="var(--bd)" stroke-dasharray="4"/>' + pl(b, 'var(--blue)') + pl(a, 'var(--gold)') + '<text x="32" y="12" font-size="9" fill="var(--blue)">margem acumulada</text><text x="130" y="12" font-size="9" fill="var(--gold)">caixa acumulado</text><text x="2" y="' + (Y(0) + 3) + '" font-size="8" fill="var(--t3)">0</text></svg>';
+  }
+  let tS = null;
+  function simular() { clearTimeout(tS); tS = setTimeout(async () => { const box = $('simRes'); if (!box) return; const c = lerCen(); if (!c.linhas[0]?.esteira_id) return;
+    try { RS = (await api('sim_simular', { cenario: c })).resultado; box.innerHTML = resHtml(RS); } catch (e) { box.innerHTML = '<span style="color:var(--red)">' + E(e.message) + '</span>'; } }, 350); }
+  function resHtml(r) {
+    const S = r.resumo; let h = r.avisos?.length ? '<div style="color:var(--gold);font-size:11px;margin-bottom:8px;">' + r.avisos.map(E).join('<br>') + '</div>' : ''; if (!S) return h;
+    const sem = [['Margem', S.semaforos.margem], ['EBITDA (estimativa)', S.semaforos.ebitda], ['Recorrência (ARR)', S.semaforos.arr], ['Caixa', S.semaforos.caixa]];
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + sem.map(([t, s]) => '<div style="flex:1;min-width:190px;background:var(--bg3);border:1px solid var(--bd);border-left:4px solid ' + COR[s.cor] + ';border-radius:10px;padding:8px 10px;font-size:11px;"><b>' + t + '</b><div style="color:var(--t2);">' + E(s.motivo) + '</div></div>').join('') + '</div>';
+    const k = (t, v) => '<div style="flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:7px 10px;"><div style="font-size:9.5px;color:var(--t3);">' + t + '</div><div style="font-size:15px;font-weight:800;">' + v + '</div></div>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + k('Receita', R(S.receita)) + k('Margem bruta', R(S.margem_bruta) + ' · ' + PC(S.margem_bruta_pct)) + k('EBITDA estimado', R(S.ebitda_estimado) + ' · ' + PC(S.ebitda_estimado_pct)) + k('Caixa mínimo', R(S.caixa_minimo) + (S.mes_caixa_minimo ? ' (mês ' + S.mes_caixa_minimo + ')' : '')) + k('Break-even', S.mes_break_even ? 'mês ' + S.mes_break_even : (S.caixa_minimo < 0 ? 'não no período' : 'sem queda')) + k('ROI em ' + S.horizonte + ' meses', PC(S.roi_pct)) + k('Investimento total', R(S.investimento_total)) + '</div>';
+    if (S.contratar) h += '<div style="font-size:11px;margin-bottom:8px;color:var(--gold);">⚠ Ocupação passa do limite no mês ' + S.contratar.mes + ' (' + PC(S.contratar.ocupacao_pct) + '). ' + (S.contratar.recorrencia_cobre ? 'A recorrência cobre a contratação.' : 'Não há recorrência que cubra uma contratação: só contratar com contrato recorrente.') + '</div>';
+    h += '<div style="font-weight:700;font-size:12px;margin:8px 0 4px;">Margem × caixa</div>' + grafico(r.meses) + (S.meses_descompasso.length ? '<div style="font-size:11px;color:var(--red);">Descompasso: margem acumulada positiva e caixa acumulado negativo nos meses ' + S.meses_descompasso.join(', ') + '.</div>' : '');
+    h += '<div style="font-weight:700;font-size:12px;margin:10px 0 4px;">Margem por oferta</div><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t3);font-size:10px;text-align:right;"><th style="text-align:left;">Oferta</th><th>Receita</th><th>Custo</th><th>Margem</th><th>%</th></tr>' + r.por_oferta.map(o => '<tr style="border-top:1px solid var(--bd);text-align:right;"><td style="text-align:left;">' + E(o.nome) + '</td><td>' + R(o.receita) + '</td><td>' + R(o.custo) + '</td><td>' + R(o.margem) + '</td><td>' + PC(o.margem_pct) + '</td></tr>').join('') + '</table>';
+    h += (r.esteiras || []).map(x => '<div style="font-size:11px;margin-top:8px;"><b>' + E(x.esteira) + '</b>: CAC por cliente que entra ' + R(x.calculo.cac_total_por_entrante) + ' · LTV÷CAC ' + N(x.calculo.ltv_cac) + ' · payback ' + (x.calculo.payback_meses == null ? '—' : N(x.calculo.payback_meses) + ' meses') + '</div>').join('');
+    h += '<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;">Mês a mês</summary><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);text-align:right;"><th>Mês</th><th>Receita</th><th>Custo</th><th>Margem</th><th>CAC</th><th>Recebido</th><th>Fluxo</th><th>Caixa acum.</th><th>Ocupação</th></tr>'
+      + r.meses.map(m => '<tr style="border-top:1px solid var(--bd);text-align:right;' + (m.descompasso ? 'background:rgba(231,76,60,.08);' : '') + '"><td>' + m.mes + '</td><td>' + R(m.receita) + '</td><td>' + R(m.custo_direto) + '</td><td>' + R(m.margem_bruta) + '</td><td>' + R(m.cac) + '</td><td>' + R(m.caixa_entrada) + '</td><td>' + R(m.fluxo_caixa) + '</td><td><b>' + R(m.caixa_acumulado) + '</b></td><td>' + PC(m.ocupacao_pct) + '</td></tr>').join('') + '</table></div></details>';
+    h += '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;">Como foi calculado</summary><ul style="font-size:10.5px;color:var(--t2);margin-left:18px;">' + Object.entries(r.formulas).map(([a, b]) => '<li><b>' + E(a) + ':</b> ' + E(b) + '</li>').join('') + '</ul></details>';
+    return h;
+  }
   const num = id => $(id)?.value ?? '';
   async function salvarPrem() {
     const g = k => num('epp_' + k), premissas = { custo_pessoa_dia: g('custo_pessoa_dia'), margem_piso_pct: g('margem_piso_pct'), margem_meta_pct: g('margem_meta_pct'), impostos_pct: g('impostos_pct'), comissao_pct: g('comissao_pct'), custo_max_entrada: g('custo_max_entrada'), contrato_minimo_grandes: g('contrato_minimo_grandes'), limite_ocupacao_pct: g('limite_ocupacao_pct'), dias_uteis_mes: g('dias_uteis_mes'), dso_dias: { grande: g('dso_grande'), medio: g('dso_medio') } };
     premissas.origem = { ...(D.premissas.origem || {}) }; for (const k of ['custo_pessoa_dia', 'margem_piso_pct', 'margem_meta_pct', 'custo_max_entrada', 'contrato_minimo_grandes', 'limite_ocupacao_pct', 'dias_uteis_mes']) if (String(premissas[k]) !== String(D.premissas[k] ?? '')) premissas.origem[k] = 'informado pelo fundador';
     try { D = await api('sim_premissas_salvar', { premissas }); nota('Premissas salvas'); render(); } catch (e) { nota(e.message, 'error'); } }
   async function salvarProd() { try { D = await api('sim_produto_salvar', ler()); ed = null; nota('Produto salvo'); render(); } catch (e) { nota(e.message, 'error'); } }
-  window.EP = { previaE, novaE: () => { ee = { publico: 'medio', degraus: {}, passagens: { AB: {}, BC: {} } }; render(); }, editarE: id => { ee = JSON.parse(JSON.stringify(D.esteiras.find(x => x.id === id))); render(); }, cancelarE: () => { ee = null; render(); },
+  window.EP = { sim: simular, salvarCen: async () => { try { CEN = (await api('sim_cenario_salvar', lerCen())).cenarios; cs.id = CEN.at(-1)?.id; nota('Cenário salvo'); render(); } catch (e) { nota(e.message, 'error'); } },
+    abrirCen: id => { cs = JSON.parse(JSON.stringify(CEN.find(x => x.id === id))); render(); }, delCen: async id => { try { CEN = (await api('sim_cenario_excluir', { id })).cenarios; render(); } catch (e) { nota(e.message, 'error'); } },
+    previaE, novaE: () => { ee = { publico: 'medio', degraus: {}, passagens: { AB: {}, BC: {} } }; render(); }, editarE: id => { ee = JSON.parse(JSON.stringify(D.esteiras.find(x => x.id === id))); render(); }, cancelarE: () => { ee = null; render(); },
     salvarE: async () => { try { D = await api('sim_esteira_salvar', lerE()); ee = null; nota('Esteira salva'); render(); } catch (e) { nota(e.message, 'error'); } },
     excluirE: async id => { if (!confirm('Excluir esta esteira?')) return; try { D = await api('sim_esteira_excluir', { id }); render(); } catch (e) { nota(e.message, 'error'); } },
-    abrir, aba: k => { aba = k; ed = null; ee = null; render(); }, salvarPrem, salvarProd, previa,
+    abrir, aba: async k => { aba = k; ed = null; ee = null; if (k === 'simulador') { try { CEN = (await api('sim_cenarios')).cenarios; } catch (_) {} } render(); }, salvarPrem, salvarProd, previa,
     novo: () => { ed = { publico: 'medio', degrau: 'A', tipo: 'entrada', status: 'rascunho', periodicidade: 'unico' }; render(); }, editar: id => { ed = D.produtos.find(x => x.id === id); render(); }, cancelar: () => { ed = null; render(); },
     acao: async (id, acao) => { try { D = await api('sim_produto_acao', { id, acao }); render(); } catch (e) { nota(e.message, 'error'); } },
     sementes: async () => { try { D = await api('sim_sementes'); nota('Exemplos carregados — hipótese a validar'); render(); } catch (e) { nota(e.message, 'error'); } } };
