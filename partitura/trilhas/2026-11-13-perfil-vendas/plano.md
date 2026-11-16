@@ -13,3 +13,4 @@
 - v3.527 Floresta: enriquecer e-mail e celular do Apollo por identificador; importar sempre enriquece (trilha 2026-11-16-floresta-enriquecer-apollo)
 - v3.528 Floresta: filtros por campanha e área de atuação (hs_analytics_source_data_1 / industry do contato)
 - v3.529 Floresta: sobrenome revelado do Apollo grava no HubSpot (api/apollo.js enrich_batch devolve first/last name — aditivo, T2 informada)
+- v3.530 Floresta: IARA de voz (Retell) liga os leads do caminho B por clique e devolve o resultado (trilha 2026-11-16-floresta-ligacao-voz)
