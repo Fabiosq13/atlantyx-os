@@ -12,3 +12,4 @@
 - 2026-11-13 · feito (v3.491) · sem bloqueio · próximo: fundador escolher o perfil de cada usuário
 - v3.527 Floresta: enriquecer e-mail e celular do Apollo por identificador; importar sempre enriquece (trilha 2026-11-16-floresta-enriquecer-apollo)
 - v3.528 Floresta: filtros por campanha e área de atuação (hs_analytics_source_data_1 / industry do contato)
+- v3.529 Floresta: sobrenome revelado do Apollo grava no HubSpot (api/apollo.js enrich_batch devolve first/last name — aditivo, T2 informada)

@@ -463,6 +463,8 @@ async function handler(req, res) {
           nome:         lead.nome,
           linkedin_url: person?.linkedin_url || null,
           email:        person?.email || null,
+          first_name:   person?.first_name || null,
+          last_name:    person?.last_name || null,
           revealed:     person?.revealed_for_current_team || false,
           body_sent:    { id: lead.apollo_id },
         };
