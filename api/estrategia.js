@@ -1,7 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
-import * as RT from '../lib/estrategia-roteiro.js';
+import * as RT from '../lib/estrategia-roteiro.js'; import * as JN from '../lib/estrategia-jornada.js'; // v3.526: jornada das 6 reuniões
 import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
 import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
@@ -617,6 +617,11 @@ async function naoFazerImportarPlano(usuario) { // traz os "não fazer" da sínt
   const L = RT.naoFazerNormalizar([...novos, ...atual]); await kv(RT.K_NAO_FAZER, { itens: L, em: new Date().toISOString(), por: usuario || null });
   return { nao_fazer: L, importados: novos.length };
 }
+async function jornadaObter() {
+  const so = await kv(RT.K_SOCIOS), r = RT.roteiroNormalizar(await kv(RT.K_ROTEIRO)), st = RT.roteiroStatus(r, { socios: RT.socStatus(so || {}) });
+  return { jornada: JN.jornadaGerar(await kv(JN.K_JORNADA), st) };
+}
+async function jornadaSalvar(b, usuario) { const E = JN.jornadaAplicar(await kv(JN.K_JORNADA), b, usuario); await kv(JN.K_JORNADA, E); return jornadaObter(); }
 async function calendarioObter() { return { calendario: RT.calendarioGerar(await kv(RT.K_CALENDARIO)), checklist: RT.CHECKLIST_REVISAO, gatilhos_tipos: RT.GATILHOS, horizonte: RT.HORIZONTE }; }
 async function calendarioSalvar(b, usuario) { const E = RT.calendarioAplicar(await kv(RT.K_CALENDARIO), b, usuario); await kv(RT.K_CALENDARIO, E); return { calendario: RT.calendarioGerar(E) }; }
 // realizado do semestre (até hoje) pelos motores do financeiro (fin_v2) — receita e margem por motor; caixa atual do contexto
@@ -751,6 +756,7 @@ async function handler(req, res) {
       nao_fazer_importar_plano: () => (soFundador(req), naoFazerImportarPlano(usuario)),
       nao_fazer_checar: async () => ({ conflitos: RT.naoFazerChecar((await kv(RT.K_NAO_FAZER))?.itens, [b.titulo, b.texto].filter(Boolean).join(' \n ').substring(0, 6000)) }),
       revisao_calendario: () => (soFundador(req), calendarioObter()), revisao_calendario_salvar: () => (soFundador(req), calendarioSalvar(b, usuario)),
+      jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
       socios_obter: () => (soFundador(req), sociosObter(usuario)), socios_salvar: () => (soFundador(req), sociosSalvar(b, usuario)), socios_acordo: () => (soFundador(req), sociosAcordo(b, usuario)), // v3.342
       cadeiras_salvar: () => (soFundador(req), cadeirasSalvar(b, usuario)), pessoal_salvar: () => (soFundador(req), pessoalSalvar(b, usuario)),
       orcamento_obter: () => (soFundador(req), orcamentoObter(b)), orcamento_salvar: () => (soFundador(req), orcamentoSalvar(b, usuario)),

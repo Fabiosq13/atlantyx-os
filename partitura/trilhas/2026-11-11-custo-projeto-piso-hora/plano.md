@@ -23,3 +23,4 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - 15/11/2026 · v3.523 · Estúdio fase 5: teste de escala (7 perguntas, pontuação, sugestão, decisão do fundador, histórico) e catálogo versionado com congelar/descongelar · BPM-ID 2026-11-15-estudio-produtos-esteira
 - 15/11/2026 · v3.524 · Estúdio fase 6: IA de estratégia e finanças (somente leitura) com a pergunta de margem × caixa e cron mensal simulado × realizado · BPM-ID 2026-11-15-estudio-produtos-esteira
 - 15/11/2026 · v3.525 · Estúdio fase 7: dados reais do financeiro ao lado das premissas (histórico preservado) e exportação do cenário para o conselho · BPM-ID 2026-11-15-estudio-produtos-esteira
+- v3.526 jornada das 6 reuniões na Trilha guiada e Business Plan nos check-ins (trilha 2026-11-16-jornada-planejamento)

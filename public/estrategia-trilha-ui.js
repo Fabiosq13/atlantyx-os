@@ -15,7 +15,7 @@
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'A IA demorou demais — tente de novo' : 'HTTP ' + r.status }));
     if (!d.success) throw Object.assign(new Error(d.error || 'falha'), { codigo: d.codigo, faltam: d.faltam }); return d;
   }
-  let box = null, sub = 'roteiro', D = null, sel = 1, sug = {}, NF = null, CAL = null, ORC = null, regrasAbertas = false;
+  let JOR = null, box = null, sub = 'roteiro', D = null, sel = 1, sug = {}, NF = null, CAL = null, ORC = null, regrasAbertas = false;
   const COR = { vazia: 'var(--t3)', rascunho: 'var(--gold)', validada: 'var(--green,#22d3a3)' };
   const chip = (t, c) => `<span style="font-size:9.5px;font-family:var(--M);text-transform:uppercase;padding:1px 6px;border-radius:8px;border:1px solid ${c};color:${c};white-space:nowrap;">${esc(t)}</span>`;
 
@@ -36,11 +36,11 @@
           <button class="btn btn-g" style="font-size:10.5px;" onclick="ESTT.regras()">${regrasAbertas ? '▴' : '▾'} Regras de ouro do método</button></div>
         ${regrasAbertas ? `<ol style="margin:10px 0 0;padding-left:20px;font-size:11.5px;line-height:1.6;color:var(--t2);">${D.regras_ouro.map(r => `<li>${esc(r)}</li>`).join('')}</ol>` : ''}
       </div></div>
-      <div class="seg" id="esttAbas" style="margin-bottom:10px;">${[['socios', '👥 Sócios e o seu papel'], ['roteiro', '① 11 perguntas'], ['nao', '✖ O que NÃO fazer (' + (D.nao_fazer || []).filter(x => x.ativo).length + ')'], ['calendario', '📅 Calendário de revisão'], ['orcamento', '💰 Orçamento semestral']].map(([k, t]) => `<button class="${k === sub ? 'on' : ''}" onclick="ESTT.sub('${k}')">${t}</button>`).join('')}</div>
+      <div class="seg" id="esttAbas" style="margin-bottom:10px;">${[['socios', '👥 Sócios e o seu papel'], ['jornada', '🧭 Jornada 2027 (6 reuniões)'], ['roteiro', '① 11 perguntas'], ['nao', '✖ O que NÃO fazer (' + (D.nao_fazer || []).filter(x => x.ativo).length + ')'], ['calendario', '📅 Calendário de revisão'], ['orcamento', '💰 Orçamento semestral']].map(([k, t]) => `<button class="${k === sub ? 'on' : ''}" onclick="ESTT.sub('${k}')">${t}</button>`).join('')}</div>
       <div id="esttCorpo"></div>`;
     corpo();
   }
-  function corpo() { if (sub === 'socios') socios(); else if (sub === 'roteiro') roteiro(); else if (sub === 'nao') naoFazer(); else if (sub === 'calendario') calendario(); else orcamento(); }
+  function corpo() { if (sub === 'socios') socios(); else if (sub === 'jornada') jornada(); else if (sub === 'roteiro') roteiro(); else if (sub === 'nao') naoFazer(); else if (sub === 'calendario') calendario(); else orcamento(); }
 
   // ── ① roteiro de 11 perguntas ──
   function roteiro() {
@@ -172,6 +172,35 @@
   function gatilho() { const d = $('gtDesc').value.trim(); if (!d) return nota('Descreva o que aconteceu', 'error'); calSalvar({ gatilho: { tipo: $('gtTipo').value, descricao: d } }, 'Gatilho registrado'); }
   function gatilhoResolver(id) { const d = prompt('Qual foi a decisão? (ex.: revisão feita em dd/mm, estratégia mantida)'); if (d == null) return; calSalvar({ gatilho_resolver: { id, decisao: d } }, 'Decisão registrada'); }
 
+
+  // ── 🧭 jornada das 6 reuniões (v3.526) ──
+  async function jornada() {
+    if (!JOR) { $('esttCorpo').innerHTML = '<div style="padding:20px;color:var(--t3);font-size:11px;">Carregando a jornada…</div>'; try { JOR = (await api('jornada_obter')).jornada; } catch (e) { $('esttCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;">${esc(e.message)}</div>`; return; } }
+    const J = JOR;
+    $('esttCorpo').innerHTML = `<div class="panel" style="margin-bottom:10px;"><div class="pb" style="font-size:11.5px;line-height:1.6;"><b>${J.feitas} de ${J.total} reuniões feitas.</b> Ordem do método: diagnóstico → alavancas → produtos → simulação e Business Plan → metas → conselho. Metas só depois da simulação.${J.proxima ? ` Próxima: <b>reunião ${J.proxima}</b>.` : ' Jornada completa.'}</div></div>
+      ${J.reunioes.map(r => `<div class="panel" style="margin-bottom:10px;"><div class="pb">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><input type="checkbox" ${r.feito ? 'checked' : ''} onchange="ESTT.jorFeito('${r.id}',this.checked)" aria-label="reunião feita">
+          <b style="font-size:13px;">Reunião ${r.n} · ${esc(r.titulo)}</b><span style="font-size:10.5px;color:var(--t3);">${esc(r.duracao)}</span>${chip(r.feito ? 'feita ' + dataBR(r.realizada_em) : r.n === J.proxima ? 'próxima' : 'pendente', r.feito ? 'var(--green,#22d3a3)' : r.n === J.proxima ? 'var(--gold)' : 'var(--t3)')}
+          <span style="margin-left:auto;font-size:10.5px;color:var(--t2);">checklist ${r.progresso}%</span></div>
+        ${r.alertas.map(a => `<div style="font-size:11px;color:var(--gold);margin-top:4px;">⚠ ${esc(a)}</div>`).join('')}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px;font-size:11px;line-height:1.55;color:var(--t2);">
+          <div><b>Telas</b><br>${r.telas.map(esc).join('<br>')}${r.perguntas.length ? `<br>Perguntas do roteiro: ${r.perguntas_estado.map(p => `${p.n} (${p.estado})`).join(', ')}` : ''}</div>
+          <div><b>Entradas</b><br>${r.entradas.map(esc).join('<br>')}</div>
+          <div><b>Decisões esperadas</b><br>${r.decisoes.map(esc).join('<br>')}</div>
+          <div><b>Ações</b><br>${r.acoes.map(esc).join('<br>')}</div></div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;">${r.checklist.map(c => `<label style="font-size:11px;display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" ${c.ok ? 'checked' : ''} onchange="ESTT.jorCheck('${r.id}','${c.chave}',this.checked)">${esc(c.texto)}</label>`).join('')}</div>
+        <div style="margin-top:8px;"><label class="fl" for="jd_${r.id}">Registrar decisão tomada</label><div style="display:flex;gap:6px;"><input class="fi" id="jd_${r.id}" placeholder="decisão em uma frase" style="flex:1;"><button class="btn btn-g" onclick="ESTT.jorDecisao('${r.id}')">＋ Registrar</button></div>
+          ${r.decisoes.map(d => `<div style="border-top:1px solid var(--bd);padding:4px 2px;font-size:11.5px;display:flex;gap:8px;align-items:center;"><span style="font-family:var(--M);font-size:10px;color:var(--t3);">${quando(d.em)}</span><span style="flex:1;">${esc(d.texto)}</span><button class="btn" style="font-size:10px;" onclick="ESTT.jorDecisaoDel('${r.id}','${d.id}')">remover</button></div>`).join('')}</div>
+        <details style="margin-top:6px;"${r.notas ? ' open' : ''}><summary style="font-size:10.5px;color:var(--t3);cursor:pointer;">notas</summary><textarea class="fta" style="min-height:44px;font-size:11.5px;margin-top:4px;" onchange="ESTT.jorNotas('${r.id}',this.value)">${esc(r.notas)}</textarea></details>
+      </div></div>`).join('')}`;
+  }
+  async function jorSalvar(body, msg) { try { JOR = (await api('jornada_salvar', body)).jornada; if (msg) nota(msg); } catch (e) { nota(e.message, 'error'); } jornada(); }
+  function jorFeito(id, v) { jorSalvar({ reuniao: id, feito: v }, v ? 'Reunião registrada como feita' : 'Reunião reaberta'); }
+  function jorCheck(id, k, v) { jorSalvar({ reuniao: id, checklist: { [k]: v } }); }
+  function jorNotas(id, v) { jorSalvar({ reuniao: id, notas: v }, 'Notas salvas'); }
+  function jorDecisao(id) { const t = $('jd_' + id).value.trim(); if (!t) return nota('Escreva a decisão', 'error'); jorSalvar({ reuniao: id, decisao: { texto: t } }, 'Decisão registrada'); }
+  function jorDecisaoDel(id, d) { if (confirm('Remover esta decisão do registro?')) jorSalvar({ reuniao: id, decisao_remover: d }, 'Decisão removida'); }
+
   // ── 💰 orçamento semestral ──
   async function orcamento(semestre) {
     $('esttCorpo').innerHTML = '<div style="padding:20px;color:var(--t3);font-size:11px;">Carregando o orçamento e o realizado do financeiro (pode levar alguns segundos)…</div>';
@@ -286,6 +315,6 @@
 
   window.ESTT = { render, regras: () => { regrasAbertas = !regrasAbertas; desenhar(); }, sub: k => { if (sub === 'roteiro' && k !== 'roteiro' && sujo() && !confirm('A resposta desta etapa tem mudanças não salvas. Sair sem salvar?')) return; sub = k; desenhar(); },
     etapa, salvar, sugerir, usarSug, descartarSug, nfSalvar, nfEditar, nfAtivo, nfRemover, nfImportar, nfTestar,
-    calAno: a => { calAno = a; calendario(); }, calFeito, calCheck, calNotas, gatilho, gatilhoResolver,
+    calAno: a => { calAno = a; calendario(); }, jorFeito, jorCheck, jorNotas, jorDecisao, jorDecisaoDel, calFeito, calCheck, calNotas, gatilho, gatilhoResolver,
     orcSem: s => orcamento(s), orcSug: () => orcDesenhar(true), orcSalvar, socCampo, socAdd, socDel, socSalvar, socAcordo, cadCampo, cadTempo, cadItem, cadItemCampo, cadItemDel, cadSalvar, pesCampo, pesSalvar, pesApagar, _estado: () => ({ D, CAL, ORC, SO }) };
 })();
