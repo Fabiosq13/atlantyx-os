@@ -22,3 +22,16 @@ test('erro: premissa ou preço vazio não quebra', () => {
 test('projeto de grande abaixo do contrato mínimo fica vermelho', () => {
   const c = calcular({ preco: 30000, pessoa_dias: 10, publico: 'grande', tipo: 'projeto' }, P); assert.equal(c.semaforo, 'vermelho'); assert.match(c.motivo, /mínimo/);
 });
+import { calcularEsteira } from '../lib/estudio-produtos.js';
+const PR = [{ id: 'a', nome: 'A', preco: 6900, pessoa_dias: 10, tipo: 'entrada' }, { id: 'b', nome: 'B', preco: 4000, pessoa_dias: 4, periodicidade: 'mensal', prazo_contrato_meses: 12 }, { id: 'c', nome: 'C', preco: 15000, pessoa_dias: 15, periodicidade: 'mensal', prazo_contrato_meses: 12 }];
+test('esteira: CAC por entrante e vendas por entrante', () => {
+  const r = calcularEsteira({ degraus: { A: 'a', B: 'b', C: 'c' }, cac_entrada: 3000, passagens: { AB: { conversao_pct: 40, cac: 500 }, BC: { conversao_pct: 25, cac: 800 } } }, PR, P);
+  assert.equal(r.cac_total_por_entrante, 3000 + 0.4 * 500 + 0.1 * 800); assert.equal(r.vendas_por_entrante, 1.5); assert.equal(r.cac_por_venda, r.cac_total_por_entrante / 1.5 === 2306.67 ? 2306.67 : r.cac_por_venda); assert.ok(r.reducao_cac_por_venda_pct > 25);
+});
+test('esteira: sem dados não quebra e avisa', () => {
+  const r = calcularEsteira({ degraus: { A: null } }, [], P); assert.ok(r.avisos.length >= 2); assert.equal(r.cac_total_por_entrante, null);
+});
+test('esteira: mudar a ordem muda o resultado', () => {
+  const e = { cac_entrada: 3000, passagens: { AB: { conversao_pct: 40, cac: 500 }, BC: { conversao_pct: 25, cac: 800 } } };
+  const x = calcularEsteira({ ...e, degraus: { A: 'a', B: 'b', C: 'c' } }, PR, P), y = calcularEsteira({ ...e, degraus: { A: 'a', B: 'c', C: 'b' } }, PR, P); assert.notEqual(x.margem_esperada_por_entrante, y.margem_esperada_por_entrante);
+});

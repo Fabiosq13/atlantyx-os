@@ -11,10 +11,10 @@
     const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
-  let D = null, ed = null, aba = 'produtos', tmr = null;
+  let D = null, ed = null, ee = null, aba = 'produtos', tmr = null;
   const COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
   const PUB = { grande: 'Grande', medio: 'Médio', atuais: 'Clientes atuais' };
-  const ABAS = [['produtos', 'Produtos', 1], ['esteira', 'Esteira', 0], ['simulador', 'Simulador', 0], ['escala', 'Teste de escala', 0], ['catalogo', 'Catálogo', 0]];
+  const ABAS = [['produtos', 'Produtos', 1], ['esteira', 'Esteira', 1], ['simulador', 'Simulador', 0], ['escala', 'Teste de escala', 0], ['catalogo', 'Catálogo', 0]];
 
   async function abrir() { await carregar(); }
   async function carregar() {
@@ -25,8 +25,8 @@
     const b = $('epApp'); if (!b || !D) return;
     let h = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">' + ABAS.map(([k, t, ok]) => '<button class="btn ' + (aba === k ? 'btn-p' : 'btn-g') + '" style="font-size:11px;' + (ok ? '' : 'opacity:.5;') + '" ' + (ok ? 'onclick="EP.aba(\'' + k + '\')"' : 'disabled title="Próxima fase"') + '>' + t + (ok ? '' : ' · em breve') + '</button>').join('') + '</div>';
     h += premissasHtml();
-    h += ed ? editorHtml() : listaHtml();
-    b.innerHTML = h; if (ed) previa();
+    h += aba === 'esteira' ? (ee ? esteiraEditor() : esteiraLista()) : (ed ? editorHtml() : listaHtml());
+    b.innerHTML = h; if (ed && aba === 'produtos') previa(); if (ee && aba === 'esteira') previaE();
   }
   const fld = (k, v, w, ph) => '<input class="fi" id="epp_' + k + '" style="width:' + (w || 80) + 'px;margin:0;font-size:11px;" value="' + E(v ?? '') + '" placeholder="' + (ph || '') + '">';
   function premissasHtml() {
@@ -80,13 +80,51 @@
         + 'Limite de esforço: <b>' + N(c.limite_esforco_piso) + '</b> p-d (piso) · <b>' + N(c.limite_esforco_meta) + '</b> p-d (meta). Se o cliente pedir mais, sobe de degrau.<br>'
         + 'Margem de contribuição por pessoa-dia: <b>' + R(c.margem_contribuicao_pd) + '</b><br><span style="color:var(--t2);">' + E(c.motivo) + '</span><br><span style="font-size:10px;color:var(--t3);">Tipo de margem: ' + E(c.tipo_margem) + '</span>'; }
     catch (e) { box.innerHTML = '<span style="color:var(--red)">' + E(e.message) + '</span>'; } }, 250); }
+  const nomeP = id => (D.produtos.find(x => x.id === id) || {}).nome || '—';
+  function resumoE(c) {
+    if (!c) return '';
+    return '<div style="font-size:11px;line-height:1.7;">' + (c.avisos?.length ? '<span style="color:var(--gold)">' + c.avisos.map(E).join(' · ') + '</span><br>' : '')
+      + 'CAC por cliente que entra: <b>' + R(c.cac_total_por_entrante) + '</b> · vendas por entrante: <b>' + N(c.vendas_por_entrante) + '</b> · CAC por venda: <b>' + R(c.cac_por_venda) + '</b> <span style="color:var(--t3);">(a esteira reduz ' + N(c.reducao_cac_por_venda_pct) + '% frente a vender só o degrau A)</span><br>'
+      + 'Margem esperada por entrante: <b>' + R(c.margem_esperada_por_entrante) + '</b> · LTV÷CAC: <b>' + N(c.ltv_cac) + '</b> · payback: <b>' + (c.payback_meses == null ? '—' : N(c.payback_meses) + ' meses') + '</b><br>'
+      + (c.por_degrau || []).filter(Boolean).map(d => 'Degrau ' + d.degrau + ' · ' + E(d.nome) + ': chega <b>' + N(d.fracao * 100) + '%</b> · margem ' + R(d.margem_unidade) + (d.meses > 1 ? ' × ' + N(d.meses) + ' meses' : '') + ' = <b>' + R(d.margem_total) + '</b>').join('<br>')
+      + '<div style="font-size:10px;color:var(--t3);margin-top:4px;">Como foi calculado: ' + E(c.formula) + '</div></div>';
+  }
+  function esteiraLista() {
+    const L = D.esteiras || [];
+    let h = '<div style="margin-bottom:10px;"><button class="btn btn-p" style="font-size:11px;" onclick="EP.novaE()">+ Nova esteira</button></div>';
+    if (!L.length) return h + '<div style="padding:24px;color:var(--t3);font-size:12px;">Nenhuma esteira. Cadastre os produtos na aba Produtos e monte o caminho A → B → C de cada público.</div>';
+    for (const e of L) { const c = e.calculo || {}; const bloco = (g, ico) => '<div style="flex:1;min-width:150px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:8px 10px;' + (e.degraus[g] ? '' : 'opacity:.4;') + '"><div style="font-size:10px;color:var(--t3);">Degrau ' + g + '</div><div style="font-weight:700;font-size:12px;">' + E(nomeP(e.degraus[g])) + '</div></div>';
+      const seta = k => '<div style="align-self:center;text-align:center;font-size:10px;color:var(--t2);min-width:92px;">→<br>' + N(e.passagens[k].conversao_pct) + '% · ' + N(e.passagens[k].meses) + ' m<br>CAC ' + R(e.passagens[k].cac) + '<div style="color:var(--t3);">' + E(e.passagens[k].gatilho) + '</div></div>';
+      h += '<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>' + E(e.nome) + ' <span style="font-weight:400;color:var(--t3);">· ' + (PUB[e.publico] || '') + ' · CAC de entrada ' + R(e.cac_entrada) + '</span></b><span><button class="btn btn-g" style="font-size:10px;" onclick="EP.editarE(\'' + e.id + '\')">Editar</button> <button class="btn btn-g" style="font-size:10px;" onclick="EP.excluirE(\'' + e.id + '\')">Excluir</button></span></div>'
+        + '<div style="display:flex;gap:6px;margin:10px 0;flex-wrap:wrap;">' + bloco('A') + seta('AB') + bloco('B') + seta('BC') + bloco('C') + '</div>' + resumoE(c) + '</div>'; }
+    return h;
+  }
+  const selP = (k, v) => '<select class="fi" id="eef_' + k + '" style="width:auto;max-width:220px;margin:0;font-size:11px;" onchange="EP.previaE()"><option value="">— nenhum —</option>' + D.produtos.map(p => '<option value="' + p.id + '"' + (v === p.id ? ' selected' : '') + '>' + E(p.nome) + '</option>').join('') + '</select>';
+  const ie = (k, v, w, ph) => '<input class="fi" id="eef_' + k + '" style="width:' + (w || 70) + 'px;margin:0;font-size:11px;" value="' + E(v ?? '') + '" placeholder="' + (ph || '') + '" oninput="EP.previaE()">';
+  function esteiraEditor() {
+    const e = ee, p = e.passagens || { AB: {}, BC: {} };
+    return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;"><div style="font-size:11px;line-height:2.3;"><b style="font-size:13px;">' + (e.id ? 'Editar esteira' : 'Nova esteira') + '</b><br>Nome ' + ie('nome', e.nome, 220) + ' Público <select class="fi" id="eef_publico" style="width:auto;margin:0;font-size:11px;" onchange="EP.previaE()">' + [['grande', 'Grande'], ['medio', 'Médio'], ['atuais', 'Clientes atuais']].map(([a, b]) => '<option value="' + a + '"' + (e.publico === a ? ' selected' : '') + '>' + b + '</option>').join('') + '</select><br>'
+      + 'Degrau A ' + selP('A', e.degraus?.A) + '<br>Degrau B ' + selP('B', e.degraus?.B) + '<br>Degrau C ' + selP('C', e.degraus?.C) + '<br>'
+      + 'CAC de entrada (cliente novo) R$ ' + ie('cac_entrada', e.cac_entrada, 80) + '<br>'
+      + '<b>A→B</b> conversão % ' + ie('ab_conv', p.AB?.conversao_pct, 45) + ' tempo (meses) ' + ie('ab_meses', p.AB?.meses, 45) + ' CAC R$ ' + ie('ab_cac', p.AB?.cac, 65) + '<br>gatilho ' + ie('ab_gat', p.AB?.gatilho, 260, 'ex.: o relatório do Sprint indica o pacote') + '<br>'
+      + '<b>B→C</b> conversão % ' + ie('bc_conv', p.BC?.conversao_pct, 45) + ' tempo (meses) ' + ie('bc_meses', p.BC?.meses, 45) + ' CAC R$ ' + ie('bc_cac', p.BC?.cac, 65) + '<br>gatilho ' + ie('bc_gat', p.BC?.gatilho, 260, 'ex.: o uso passa do limite de esforço') + '<br>'
+      + 'Origem dos números ' + ie('origem', e.origem, 200, 'informado pelo fundador / hipótese a validar') + '<br><button class="btn btn-p" style="font-size:11px;" onclick="EP.salvarE()">Salvar esteira</button> <button class="btn btn-g" style="font-size:11px;" onclick="EP.cancelarE()">Cancelar</button></div>'
+      + '<div id="epPreviaE" style="background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;align-self:start;">Calculando…</div></div>';
+  }
+  function lerE() { const g = k => $('eef_' + k)?.value ?? ''; return { id: ee?.id, nome: g('nome'), publico: g('publico'), degraus: { A: g('A') || null, B: g('B') || null, C: g('C') || null }, cac_entrada: g('cac_entrada'), origem: g('origem'),
+    passagens: { AB: { conversao_pct: g('ab_conv'), meses: g('ab_meses'), cac: g('ab_cac'), gatilho: g('ab_gat') }, BC: { conversao_pct: g('bc_conv'), meses: g('bc_meses'), cac: g('bc_cac'), gatilho: g('bc_gat') } } }; }
+  let tE = null;
+  function previaE() { clearTimeout(tE); tE = setTimeout(async () => { const box = $('epPreviaE'); if (!box) return; try { const x = lerE(); if (!x.nome) x.nome = 'prévia'; box.innerHTML = '<b>Cálculo ao vivo</b><br>' + resumoE((await api('sim_esteira_previa', x)).calculo); } catch (e) { box.innerHTML = '<span style="color:var(--red)">' + E(e.message) + '</span>'; } }, 250); }
   const num = id => $(id)?.value ?? '';
   async function salvarPrem() {
     const g = k => num('epp_' + k), premissas = { custo_pessoa_dia: g('custo_pessoa_dia'), margem_piso_pct: g('margem_piso_pct'), margem_meta_pct: g('margem_meta_pct'), impostos_pct: g('impostos_pct'), comissao_pct: g('comissao_pct'), custo_max_entrada: g('custo_max_entrada'), contrato_minimo_grandes: g('contrato_minimo_grandes'), limite_ocupacao_pct: g('limite_ocupacao_pct'), dias_uteis_mes: g('dias_uteis_mes'), dso_dias: { grande: g('dso_grande'), medio: g('dso_medio') } };
     premissas.origem = { ...(D.premissas.origem || {}) }; for (const k of ['custo_pessoa_dia', 'margem_piso_pct', 'margem_meta_pct', 'custo_max_entrada', 'contrato_minimo_grandes', 'limite_ocupacao_pct', 'dias_uteis_mes']) if (String(premissas[k]) !== String(D.premissas[k] ?? '')) premissas.origem[k] = 'informado pelo fundador';
     try { D = await api('sim_premissas_salvar', { premissas }); nota('Premissas salvas'); render(); } catch (e) { nota(e.message, 'error'); } }
   async function salvarProd() { try { D = await api('sim_produto_salvar', ler()); ed = null; nota('Produto salvo'); render(); } catch (e) { nota(e.message, 'error'); } }
-  window.EP = { abrir, aba: k => { aba = k; render(); }, salvarPrem, salvarProd, previa,
+  window.EP = { previaE, novaE: () => { ee = { publico: 'medio', degraus: {}, passagens: { AB: {}, BC: {} } }; render(); }, editarE: id => { ee = JSON.parse(JSON.stringify(D.esteiras.find(x => x.id === id))); render(); }, cancelarE: () => { ee = null; render(); },
+    salvarE: async () => { try { D = await api('sim_esteira_salvar', lerE()); ee = null; nota('Esteira salva'); render(); } catch (e) { nota(e.message, 'error'); } },
+    excluirE: async id => { if (!confirm('Excluir esta esteira?')) return; try { D = await api('sim_esteira_excluir', { id }); render(); } catch (e) { nota(e.message, 'error'); } },
+    abrir, aba: k => { aba = k; ed = null; ee = null; render(); }, salvarPrem, salvarProd, previa,
     novo: () => { ed = { publico: 'medio', degrau: 'A', tipo: 'entrada', status: 'rascunho', periodicidade: 'unico' }; render(); }, editar: id => { ed = D.produtos.find(x => x.id === id); render(); }, cancelar: () => { ed = null; render(); },
     acao: async (id, acao) => { try { D = await api('sim_produto_acao', { id, acao }); render(); } catch (e) { nota(e.message, 'error'); } },
     sementes: async () => { try { D = await api('sim_sementes'); nota('Exemplos carregados — hipótese a validar'); render(); } catch (e) { nota(e.message, 'error'); } } };
