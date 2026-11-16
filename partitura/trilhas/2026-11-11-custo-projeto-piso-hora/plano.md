@@ -15,3 +15,4 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - 12/11/2026 · v3.462 · ok · — · —
 - 15/11/2026 · v3.516 · Custo por pessoa-dia na tela Custo por Projeto: (pagamento/PJ + encargos % + ferramentas e nuvem rateadas) ÷ dias úteis e ÷ dias vendidos; ferramentas lidas do QuickBooks por nome de despesa ou informadas · conferir com dados reais
 - 15/11/2026 · v3.517 · Tela Margem × Caixa (QuickBooks): mensal faturado/recebido/margem/EBITDA/caixa, por cliente, prazos e ciclo de caixa, capital de giro, tributos (a confirmar), simulador de ofertas, esteira A/B/C e CAC, metas e 3 decisões; o que falta aparece como dado ausente · conferir com dados reais
+- 15/11/2026 · v3.518 · Simulador Margem × Caixa com premissas do Fabio: R$ 276,56/pessoa-dia (salário+encargos+ferramentas), 3 Sprints/mês, recebimento 30 dias após conclusão, projeto sob medida mínimo R$ 50.000
