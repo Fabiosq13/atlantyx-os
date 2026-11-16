@@ -14,3 +14,4 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - [x] v3.462 · "Motor de cada cliente / projeto" inclui os projetos que não começam com Oficial_ e são alavancas de produto (casam com o Pipeline de Ideias ou têm nome de produto: IA, Sales, Connect, Maestro…) — 🚀 na lista, motor Produtos por padrão, editável
 - 12/11/2026 · v3.462 · ok · — · —
 - 15/11/2026 · v3.516 · Custo por pessoa-dia na tela Custo por Projeto: (pagamento/PJ + encargos % + ferramentas e nuvem rateadas) ÷ dias úteis e ÷ dias vendidos; ferramentas lidas do QuickBooks por nome de despesa ou informadas · conferir com dados reais
+- 15/11/2026 · v3.517 · Tela Margem × Caixa (QuickBooks): mensal faturado/recebido/margem/EBITDA/caixa, por cliente, prazos e ciclo de caixa, capital de giro, tributos (a confirmar), simulador de ofertas, esteira A/B/C e CAC, metas e 3 decisões; o que falta aparece como dado ausente · conferir com dados reais

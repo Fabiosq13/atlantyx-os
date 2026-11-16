@@ -2,7 +2,8 @@ import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
 import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, casarCadastradas as impCasarCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
-import { apurar as chApurar, norm as chNorm, pessoaDia as chPessoaDia } from '../lib/custo-hora.js'; // v3.455
+import { apurar as chApurar, norm as chNorm, pessoaDia as chPessoaDia } from '../lib/custo-hora.js';
+import * as MC from '../lib/margem-caixa.js'; // v3.517 // v3.455
 import * as PAGC from '../lib/pag-colab.js'; // v3.455: folha de colaboradores (Maestro)
 import { termoPendencias, etapaPrazo, previsaoPagamento } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
@@ -310,6 +311,7 @@ async function handler(req, res) {
       desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
       impostos_recorrentes:  () => impostosRecorrentes(params), despesas_repetidas: () => despesasRepetidasSugerir(params), // v3.452
       impostos_cadastrar: () => impostosCadastrar(params), // v3.266
+      margem_caixa: () => margemCaixa(params), margem_caixa_simular: () => ({ resultados: (Array.isArray(params.cenarios) ? params.cenarios : []).slice(0, 12).map(c => ({ nome: String(c.nome || c.tipo), ...MC.simular(c, Number(params.saldo_inicial) || 0, 12) })) }), esteira_cfg: () => esteiraCfg(params),
       custo_projetos: () => custoProjetos(params), custo_projetos_cfg: () => custoProjetosCfg(params), // v3.455
       desp_criar_replicar:   () => despesaCriarReplicar(params),
       desp_ajustar_replicar: () => despesaAjustarReplicar(params),
@@ -7216,6 +7218,64 @@ export function motorDoNome(map, ...nomes) { // projeto ou cliente marcado → m
   const ns = nomes.map(chNorm).filter(Boolean); for (const n of ns) for (const [k, m] of Object.entries(map || {})) if (k && (n === k || n.includes(k) || (k.length >= 5 && k.includes(n)))) return m;
   const t = nomes.join(' '); return CAM_RX_PROJ.pessoas.test(t) ? 'pessoas' : FV2_RX.produtos.test(t) ? 'produtos' : 'projetos';
 }
+// v3.517: ESTEIRA A/B/C (degraus de produto) — configuração editável, guardada em kv
+const ESTEIRA_PADRAO = { atualizado_em: null, degraus: [
+  { id: 'A', nome: 'Entrada · Diagnóstico + Sprint', oferta: 'Diagnóstico e Sprint de 10 dias (resultado rápido, baixo risco para o cliente)', objetivo: 'abrir a conta e provar valor em até 2 semanas', duracao_dias: 10, cobranca: 'à vista, na assinatura (de preferência antes de começar)', tipo_cliente: 'cliente novo', fonte_cac: 'novo' },
+  { id: 'B', nome: 'Projeto · POC → projeto', oferta: 'POC de 6 semanas, depois projeto sob medida com marcos e termos de aceite', objetivo: 'converter a prova em projeto de maior porte', duracao_dias: 42, cobranca: 'parcelas por marco/termo; POC paga com abatimento se fechar em até 60 dias (cliente atual: POC sem custo)', tipo_cliente: 'cliente do degrau A ou indicado', fonte_cac: 'atual' },
+  { id: 'C', nome: 'Recorrência · Atlantyx OS / Maestro / operação contínua', oferta: 'Subscrição dos produtos (infra e suporte inclusos) e operação contínua/sustentação com SLA', objetivo: 'receita recorrente (ARR) e margem estável', duracao_dias: 365, cobranca: 'mensalidade no início do mês; operação contínua para grandes com prazo de 30/60/90 dias', tipo_cliente: 'cliente do degrau B', fonte_cac: 'atual' }] };
+async function esteiraCfg({ salvar } = {}) { const cur = (await _kvFin('fin:esteira').catch(() => null)) || null;
+  if (salvar && Array.isArray(salvar.degraus)) { const v = { atualizado_em: new Date().toISOString(), degraus: salvar.degraus.slice(0, 6).map(d => ({ id: String(d.id || '').substring(0, 3), nome: String(d.nome || '').substring(0, 80), oferta: String(d.oferta || '').substring(0, 300), objetivo: String(d.objetivo || '').substring(0, 200), duracao_dias: Number(d.duracao_dias) || 0, cobranca: String(d.cobranca || '').substring(0, 200), tipo_cliente: String(d.tipo_cliente || '').substring(0, 100), fonte_cac: d.fonte_cac === 'novo' ? 'novo' : 'atual' })) }; await _kvFinSet('fin:esteira', v); return v; }
+  return cur || ESTEIRA_PADRAO; }
+// v3.517: MARGEM × CAIXA — onde a margem não vira caixa (QuickBooks: DRE competência e caixa, faturas, pagamentos, contas a pagar, balanço)
+async function margemCaixa({ meses = 12 } = {}) {
+  const faltando = [], avisos = [];
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado — sem dados para a análise.', faltando: ['QuickBooks (DRE, faturas, pagamentos, contas a pagar, balanço)'] };
+  const hoje = _hojeBR(), n = Math.min(24, Math.max(3, parseInt(meses) || 12));
+  const fimM = _addMesesData(hoje.substring(0, 7) + '-01', -1).substring(0, 7), L = []; for (let i = n - 1; i >= 0; i--) L.push(_addMesesData(fimM + '-01', -i).substring(0, 7));
+  const ini = L[0] + '-01', fimD = _diasMais(_addMesesData(fimM + '-01', 1).substring(0, 8) + '01', -1), ini36 = _addMesesData(ini, -24);
+  const token = await qbToken(), cfg = await _fv2Cfg().catch(() => ({})), mapa = (await _kvFin(K_MOTOR_CLI).catch(() => null)) || {};
+  const pagina = async (tabela, filtroData, campo) => { const out = []; for (let pos = 1; pos <= 4001; pos += 1000) { let d; try { d = await qbQuery(`select * from ${tabela} where ${campo} >= '${filtroData}' startposition ${pos} maxresults 1000`, token); } catch (e) { avisos.push(tabela + ': ' + e.message); break; } const X = d?.QueryResponse?.[tabela] || []; out.push(...X); if (X.length < 1000) break; } return out; };
+  const alinhar = rep => { const F = _fv2Folhas(rep), cols = (rep?.Columns?.Column || []).slice(1), idx = L.map(m => cols.findIndex(c => ((c.MetaData || []).find(x => x.Name === 'StartDate')?.Value || '').substring(0, 7) === m));
+    return { folhas: F.folhas.map(f => ({ ...f, cols: idx.map(i => (i >= 0 ? f.cols[i] || 0 : 0)) })) }; };
+  let acc, cx, serie = [], faturas = [], pagamentos = [], contas = [], pagContas = [], bal = null;
+  try { const [a, c] = await Promise.all([qbPL(ini, fimD, token, '&summarize_column_by=Month', 'Accrual'), qbPL(ini, fimD, token, '&summarize_column_by=Month', 'Cash')]);
+    serie = MC.serieMensal({ meses: L, acc: alinhar(a), cx: alinhar(c), classe: (nome, grupo) => _camClasse(nome, grupo, cfg) }); } catch (e) { faltando.push('DRE mensal (competência e caixa) do QuickBooks: ' + e.message); }
+  [faturas, pagamentos, contas, pagContas] = await Promise.all([pagina('Invoice', ini36, 'TxnDate'), pagina('Payment', ini36, 'TxnDate'), pagina('Bill', ini, 'TxnDate'), pagina('BillPayment', ini, 'TxnDate')]);
+  try { bal = MC.saldosBanco(await qbFetch(`/reports/BalanceSheet?start_date=${ini}&end_date=${fimD}&accounting_method=Cash&summarize_column_by=Month`, token)); } catch (e) { avisos.push('Balanço: ' + e.message); }
+  const motorNome = { pessoas: 'Alocação', projetos: 'Projeto', produtos: 'Produto/subscrição' }, motorDe = c => motorNome[motorDoNome(mapa, c)] || '';
+  const f12 = faturas.filter(f => String(f.TxnDate) >= ini), cli = MC.porCliente({ faturas: f12, pagamentos, hoje, motorDe }), pz = MC.prazos(cli);
+  const pf = MC.prazoFornecedores({ contas, pagamentos: pagContas });
+  const aberto = faturas.reduce((a, f) => a + (Number(f.Balance) > 0.5 ? Number(f.Balance) : 0), 0), vencido = faturas.reduce((a, f) => a + (Number(f.Balance) > 0.5 && String(f.DueDate || f.TxnDate) < hoje ? Number(f.Balance) : 0), 0);
+  const receita12 = serie.reduce((a, x) => a + x.receita_faturada, 0), ebitda12 = serie.reduce((a, x) => a + x.ebitda, 0), caixaOp12 = serie.reduce((a, x) => a + x.caixa_operacional, 0), imp12 = serie.reduce((a, x) => a + x.impostos, 0), com12 = serie.reduce((a, x) => a + x.comercial, 0);
+  const recMes = receita12 / (serie.length || 1), saldoMin = bal && bal.length ? bal.reduce((m, x) => (x.saldo < m.saldo ? x : m), bal[0]) : null;
+  // CAC: cliente novo = primeira fatura dentro dos 12 meses
+  const primeira = {}; for (const f of faturas) { const c = f.CustomerRef?.name; if (!c) continue; if (!primeira[c] || String(f.TxnDate) < primeira[c]) primeira[c] = String(f.TxnDate); }
+  const novos = Object.entries(primeira).filter(([, d]) => d >= ini).map(([c]) => c);
+  const recProd = cli.filter(c => c.motor === 'Produto/subscrição').reduce((a, c) => a + c.faturada, 0), arrPct = receita12 > 0 ? MC_r1(recProd / receita12 * 100) : null;
+  const ebPct = receita12 > 0 ? MC_r1(ebitda12 / receita12 * 100) : null, conv12 = ebitda12 > 0 ? MC_r1(caixaOp12 / ebitda12 * 100) : null;
+  const causas = [ebPct != null && ebPct < 30 ? { causa: 'EBITDA abaixo de 30%', impacto_ano: MC_r2((0.30 - ebPct / 100) * receita12), detalhe: 'diferença entre ' + ebPct + '% e 30% sobre a receita dos 12 meses' } : null,
+    ebitda12 > 0 && caixaOp12 < ebitda12 ? { causa: 'EBITDA que não virou caixa', impacto_ano: MC_r2(ebitda12 - caixaOp12), detalhe: 'EBITDA ' + MC_r2(ebitda12) + ' − caixa operacional ' + MC_r2(caixaOp12) } : null,
+    arrPct != null && arrPct < 30 ? { causa: 'Receita recorrente (produtos) abaixo de 30%', impacto_ano: MC_r2((0.30 - arrPct / 100) * receita12), detalhe: 'hoje ' + arrPct + '% (proxy: clientes marcados como Produto/subscrição) — a confirmar' } : null,
+    vencido > 0 ? { causa: 'Recebíveis vencidos', impacto_ano: MC_r2(vencido), detalhe: 'caixa parado em faturas vencidas (efeito único, não anual)' } : null].filter(Boolean).sort((a, b) => b.impacto_ano - a.impacto_ano).slice(0, 3);
+  if (!bal) faltando.push('Saldo de caixa por mês (balanço do QuickBooks): não veio — saldo mínimo indisponível');
+  faltando.push('Tipo de contrato (projeto/alocação/operação contínua) por fatura: não existe no QuickBooks — usei o motor marcado por cliente como aproximação');
+  faltando.push('Margem bruta e EBITDA por cliente: o QuickBooks não liga custo a cliente — só dá por mês e por projeto (tela Custo por Projeto)');
+  faltando.push('Prazo médio de pagamento a pessoas: o sistema não registra a data do pagamento de cada pessoa');
+  faltando.push('ARR e meta de 60% em 2031: não há contrato recorrente cadastrado separando recorrente de projeto');
+  const cacNovo = novos.length && com12 > 0 ? MC_r2(com12 / novos.length) : null;
+  return { periodo: { de: L[0], ate: L[L.length - 1], meses: L.length }, mensal: serie, clientes: cli, prazos: { receber: pz, fornecedores: pf, ciclo_caixa_dias: pz.geral.prazo_medio_receb_dias != null && pf.prazo_medio_pagto_dias != null ? MC_r1(pz.geral.prazo_medio_receb_dias - pf.prazo_medio_pagto_dias) : null },
+    capital_giro: { receber_aberto: MC_r2(aberto), receber_vencido: MC_r2(vencido), meses_de_receita_em_aberto: recMes > 0 ? MC_r1(aberto / recMes) : null, dias_de_receita_em_aberto: recMes > 0 ? MC_r1(aberto / (recMes / 30)) : null, saldo_minimo: saldoMin, saldos: bal },
+    tributos: { regime_informado: 'Lucro Presumido (carga de 16,33%, informada pelo Fabio) — a confirmar com o contador', impostos_12m: MC_r2(imp12), carga_efetiva_pct: receita12 > 0 ? MC_r1(imp12 / receita12 * 100) : null, premissa_2027: '25% no planejamento; 24% em propostas a partir de jan/2027 (instrução do Fabio)',
+      duvidas_contador: ['Lucro Presumido × Lucro Real: com a margem real, qual dá menos imposto no total (IRPJ/CSLL sobre 32% da receita × sobre o lucro)?', 'Reforma tributária: qual a alíquota efetiva de CBS/IBS para serviços de TI em 2027 e a regra de transição?', 'Retenções na fonte (IR, PIS/COFINS/CSLL, ISS, INSS) dos clientes grandes: o que vira crédito e quando é compensado?', 'ISS: município de incidência (Rio × São Paulo) por contrato e possibilidade de alíquota reduzida', 'Distribuição de lucros isenta × pró-labore × juros sobre capital próprio: o que otimiza a retirada?', 'Subscrição de produto (SaaS) e licenciamento: enquadramento, alíquota e se há benefício (Lei do Bem/ PADIS) para o Atlantyx OS', 'Antecipação de receita e parcelamento de tributos: custo financeiro e efeito no caixa']},
+    cac: { comercial_12m: MC_r2(com12), clientes_novos_12m: novos.length, cac_cliente_novo: cacNovo, observacao: 'CAC = despesas de marketing/vendas/comissão/eventos do QuickBooks ÷ clientes com primeira fatura nos 12 meses. O custo de vender de novo ao cliente atual não é separado no QuickBooks — a confirmar.' },
+    metas: { ebitda_12m: MC_r2(ebitda12), ebitda_pct: ebPct, caixa_operacional_12m: MC_r2(caixaOp12), conversao_caixa_12m: conv12, receita_12m: MC_r2(receita12), arr_proxy_pct: arrPct, meta_ebitda_pct: 30, meta_arr_2027_pct: 30, meta_arr_2031_pct: 60,
+      veredito: { ebitda_acima_30: ebPct == null ? 'sem dado' : ebPct >= 30 ? 'sim' : 'não', arr_30_em_2027: arrPct == null ? 'sem dado' : arrPct >= 30 ? 'já acima' : 'não, hoje em ' + arrPct + '% (proxy)', caixa_positivo: serie.length ? (caixaOp12 > 0 ? 'sim' : 'não') : 'sem dado' }, tres_maiores_causas: causas },
+    decisoes: [ { decisao: 'Cobrar entrada (ou 100% à vista) nos Sprints e a mensalidade do Atlantyx OS no início do mês', impacto_caixa: recMes > 0 ? 'reduzir o prazo médio em 15 dias libera cerca de R$ ' + MC_r2(recMes / 30 * 15).toLocaleString('pt-BR') + ' de caixa (receita média/dia × 15)' : 'a confirmar' },
+      { decisao: 'Cobrança ativa dos recebíveis vencidos (régua e escalonamento por cliente)', impacto_caixa: 'R$ ' + MC_r2(vencido).toLocaleString('pt-BR') + ' hoje parados em faturas vencidas' },
+      { decisao: 'Levar o EBITDA a 30% (preço-piso por dia vendido e corte de custo fixo)', impacto_caixa: ebPct != null && ebPct < 30 ? 'cerca de R$ ' + MC_r2((0.30 - ebPct / 100) * receita12).toLocaleString('pt-BR') + ' por ano a mais de resultado' : 'meta já atingida nos dados' } ],
+    esteira: await esteiraCfg({}), faltando, avisos };
+}
+const MC_r1 = v => Math.round((Number(v) || 0) * 10) / 10, MC_r2 = v => Math.round((Number(v) || 0) * 100) / 100;
 async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pct, fixo_manual, aliquota_pct, mes_fim, encargos_pct, ferramentas_mes, dias_uteis } = {}) {
   const cfgP = (await _kvFin(K_CH_CFG).catch(() => null)) || {}, mapa = (await _kvFin(K_MOTOR_CLI).catch(() => null)) || {};
   const hoje = _hojeBR(), n = Math.min(12, Math.max(1, parseInt(meses) || 3));
