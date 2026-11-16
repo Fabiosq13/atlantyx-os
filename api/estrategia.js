@@ -5,6 +5,7 @@ import * as RT from '../lib/estrategia-roteiro.js';
 import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
 import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
+import * as EP from '../lib/estudio-produtos.js'; // v3.519: Estúdio de Produtos e Esteira (fase 1)
 import { moatObter, moatAnalisar, moatTeseSalvar, moatResumoTexto, K_MOAT } from '../lib/moat.js';   // v3.439
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
@@ -721,6 +722,8 @@ async function handler(req, res) {
       moat_obter: async () => moatObter({ kv, sql: await getSql() }),   // v3.439: MOAT no planejamento
       moat_analisar: async () => { const prem = await premissas().catch(() => ''); const pc = await premissasCtx().catch(() => prem); let ctxT = ''; try { ctxT = resumoCtx(await contexto(false), 22000); } catch (e) { ctxT = 'contexto indisponível: ' + e.message; }
         return moatAnalisar({ claude, kv, sql: await getSql(), contextoTxt: ctxT, premissasTxt: pc.replace(/MOAT \(vantagem[\s\S]*$/, '') }, b, usuario); },
+      sim_obter: () => (soFundador(req), EP.obter({ kv })), sim_premissas_salvar: () => (soFundador(req), EP.premissasSalvar({ kv }, b, usuario)),
+      sim_produto_salvar: () => (soFundador(req), EP.produtoSalvar({ kv }, b, usuario)), sim_produto_acao: () => (soFundador(req), EP.produtoAcao({ kv }, b, usuario)), sim_calcular: () => (soFundador(req), EP.previa({ kv }, b)), sim_sementes: () => (soFundador(req), EP.carregarSementes({ kv }, usuario)),
       moat_tese_salvar: () => (soFundador(req), moatTeseSalvar({ kv }, b, usuario)),
       norte_plano: () => nortePlano(usuario), norte_obter: async () => ({ plano: await kv('norte:plano'), tem_proposito: !!(await kv('proposito')) }),
       sala_abrir: () => salaAbrir(b), sala_rodada: () => salaRodada(b), sala_sintese: () => salaSintese(b), sala_aprovar: () => salaAprovar(b, usuario), sala_acoes: () => salaAcoes(b),
