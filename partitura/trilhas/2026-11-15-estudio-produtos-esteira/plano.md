@@ -12,7 +12,7 @@ ID: 2026-11-15-estudio-produtos-esteira · Trilha: T4/T3 · Aprovado por: Fabio
 ## Fase 4 — Comparação e sensibilidade
 - [x] comparar até 3 cenários, duplicar cenário, sensibilidade (custo +10%, prazo ×2, conversão ×0,5)
 ## Fase 5 — Teste de escala e catálogo versionado
-- [ ] a fazer
+- [x] lib/estudio-escala.js: 7 perguntas com preenchimento pelo sistema, pontuação, sugestão (decisão só do fundador), histórico; catálogo versionado com congelar/descongelar e trava por proposta aprovada (sim:propostas, sim:catalogo_versoes)
 ## Fase 6 — IA de estratégia e finanças
 - [ ] a fazer
 ## Fase 7 — Dados reais e exportação
@@ -29,3 +29,4 @@ ID: 2026-11-15-estudio-produtos-esteira · Trilha: T4/T3 · Aprovado por: Fabio
 | 15/11/2026 | Fase 2 entregue (v3.520) | — | Fase 3: simulador de cenário |
 | 15/11/2026 | Fase 3 entregue (v3.521) | — | Fase 4: comparação de 3 cenários e sensibilidade |
 | 15/11/2026 | Fase 4 entregue (v3.522) | — | Fase 5: teste de escala e catálogo |
+| 15/11/2026 | Fase 5 entregue (v3.523) | Máximo de produtos de 2027 ainda não definido (pergunta 4) | Fase 6: IA de estratégia e finanças |

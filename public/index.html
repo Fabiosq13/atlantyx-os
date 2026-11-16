@@ -2769,7 +2769,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
   <!-- v3.510: AÇÕES DO SISTEMA (kanban) · public/acoes-ui.js · api/s1-intel acoes_* -->
   <div class="page" id="page-s1estudio">
-    <div class="panel"><div class="ph"><div class="pt">&#127981; Estúdio de Produtos e Esteira — escala, margem e CAC baixo, medidos em retorno em X meses</div><span class="tag on">Fases 1-4</span></div>
+    <div class="panel"><div class="ph"><div class="pt">&#127981; Estúdio de Produtos e Esteira — escala, margem e CAC baixo, medidos em retorno em X meses</div><span class="tag on">Fases 1-5</span></div>
       <div class="pb" id="epApp"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando…</div></div></div>
   </div>
 
@@ -37303,7 +37303,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.522] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.523] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37319,7 +37319,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.522';
+window.__ATX_BUILD_ID__ = 'ATX-v3.523';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

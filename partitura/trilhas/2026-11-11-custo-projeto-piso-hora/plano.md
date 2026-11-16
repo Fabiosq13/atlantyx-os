@@ -20,3 +20,4 @@ Spec (pedido do fundador, 11/11/2026): (1) Serviplas é produto (IA Sales) — m
 - 15/11/2026 · v3.520 · Estúdio fase 2: esteira A→B→C com conversão, tempo e CAC por passagem; CAC por entrante/venda, LTV÷CAC e payback · BPM-ID 2026-11-15-estudio-produtos-esteira
 - 15/11/2026 · v3.521 · Estúdio fase 3: simulador de cenário (horizonte 6/12/24/36, margem por oferta, caixa acumulado, break-even, ROI, ocupação, ARR, margem × caixa, semáforos) · BPM-ID 2026-11-15-estudio-produtos-esteira
 - 15/11/2026 · v3.522 · Estúdio fase 4: comparação de até 3 cenários, duplicar cenário e sensibilidade (custo, prazo de recebimento, conversão) · BPM-ID 2026-11-15-estudio-produtos-esteira
+- 15/11/2026 · v3.523 · Estúdio fase 5: teste de escala (7 perguntas, pontuação, sugestão, decisão do fundador, histórico) e catálogo versionado com congelar/descongelar · BPM-ID 2026-11-15-estudio-produtos-esteira

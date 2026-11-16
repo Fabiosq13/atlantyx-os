@@ -57,3 +57,19 @@ test('sensibilidade: custo +10% reduz margem, prazo ×2 reduz caixa mínimo sem 
 test('comparar limita a 3 cenários', () => {
   const c = { horizonte: 6, linhas: [{ esteira_id: 'e1', entradas_mes: 1 }] }; assert.equal(comparar([c, c, c, c], PR, EST, P).length, 3);
 });
+import * as EX from '../lib/estudio-escala.js';
+const mkKv = () => { const m = {}; return async (k, v) => v === undefined ? (m[k] ?? null) : (m[k] = v); };
+test('teste de escala: 3 clientes não aprova; dinheiro caro vira recusar; decisão só uma vez', async () => {
+  const kv = mkKv(); await kv('sim:produtos', [{ id: 'p1', nome: 'Caro', preco: 1000, pessoa_dias: 10, status: 'rascunho', capex_horas: 400 }]);
+  let r = await EX.propostaSalvar({ kv }, { titulo: 'T', produto_id: 'p1', n_clientes_repetem: 3 }, 'f'); const a = r.propostas[0].analise;
+  assert.equal(a.respostas.q1.resposta, 'nao'); assert.equal(a.sugestao, 'recusar');
+  r = await EX.propostaDecidir({ kv }, { id: r.propostas[0].id, decisao: 'recusar' }, 'f'); assert.equal(r.propostas[0].decisao, 'recusar');
+  await assert.rejects(EX.propostaDecidir({ kv }, { id: r.propostas[0].id, decisao: 'aprovar' }, 'f'));
+});
+test('catálogo congelado exige proposta aprovada, que só vale uma vez', async () => {
+  const kv = mkKv(); await kv('sim:produtos', [{ id: 'p1', nome: 'A', status: 'ativo', preco: 1, pessoa_dias: 1 }]);
+  await EX.catalogoCongelar({ kv }, {}, 'f'); await assert.rejects(EX.exigirProposta({ kv }, {}, null));
+  let r = await EX.propostaSalvar({ kv }, { titulo: 'Novo' }, 'f'); const id = r.propostas[0].id; await EX.propostaDecidir({ kv }, { id, decisao: 'aprovar' }, 'f');
+  await EX.exigirProposta({ kv }, { proposta_id: id }, null); await assert.rejects(EX.exigirProposta({ kv }, { proposta_id: id }, null));
+  await EX.exigirProposta({ kv }, {}, { status: 'pausado' });
+});
