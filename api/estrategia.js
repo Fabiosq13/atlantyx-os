@@ -5,7 +5,7 @@ import * as RT from '../lib/estrategia-roteiro.js';
 import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
 import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
-import * as EP from '../lib/estudio-produtos.js'; import * as ES from '../lib/estudio-simulador.js'; import * as EX from '../lib/estudio-escala.js'; // v3.519: Estúdio de Produtos e Esteira (fase 1)
+import * as EP from '../lib/estudio-produtos.js'; import * as ES from '../lib/estudio-simulador.js'; import * as EX from '../lib/estudio-escala.js'; import * as EI from '../lib/estudio-ia.js'; // v3.519: Estúdio de Produtos e Esteira (fase 1)
 import { moatObter, moatAnalisar, moatTeseSalvar, moatResumoTexto, K_MOAT } from '../lib/moat.js';   // v3.439
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
@@ -691,6 +691,14 @@ async function handler(req, res) {
       await kv('inv:cron', { em: new Date().toISOString(), motivo: mudou ? 'Selic mudou de ' + selicAnt + '% para ' + selic + '%' : 'reanálise periódica (45 dias)', historico_id: r.historico_id });
       return res.status(200).json({ success: true, motivo: mudou ? 'selic_mudou' : 'periodica', selic, selic_anterior: selicAnt, historico_id: r.historico_id }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
+  if (req.method === 'GET' && req.query?.cron === 'margem_caixa_mensal') { // v3.524: compara o simulado com o realizado (só leitura; grava apenas o log sim:log)
+    try { const L = (await kv(ES.K_CENARIOS)) || []; if (!L.length) return res.status(200).json({ success: true, pulado: 'nenhum cenário salvo' });
+      const c = L.at(-1), d = await EP.obter({ kv }), sim = ES.simular(c, d.produtos, d.esteiras, d.premissas); let real = null; try { real = (await chamar('financeiro', { action: 'margem_caixa', params: { meses: 12 } })).metas || null; } catch (_) {}
+      const ctx = EI.contexto(sim, d.premissas, c, d.esteiras) + '\nREALIZADO (QuickBooks, 12 meses): ' + (real ? JSON.stringify({ receita: real.receita_12m, ebitda_pct: real.ebitda_pct, caixa_operacional: real.caixa_operacional_12m, conversao_caixa: real.conversao_caixa_12m, arr_proxy_pct: real.arr_proxy_pct }) : 'indisponível');
+      const resposta = await claude(EI.SISTEMA, [{ role: 'user', content: ctx + '\n\nCompare a margem e o caixa SIMULADOS com os REALIZADOS e diga onde divergem e por quê. ' + EI.PERGUNTA_MARGEM_CAIXA }], 1800);
+      const log = (await kv('sim:log')) || []; log.push({ em: new Date().toISOString(), tipo: 'margem_caixa_mensal', cenario: c.nome, resposta }); await kv('sim:log', log.slice(-24));
+      return res.status(200).json({ success: true, cenario: c.nome }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   if (req.method === 'GET' && req.query?.cron === 'ajuste_plano') {
     try { const L = (await kv(K_AJUSTES)) || []; const ult = L.find(x => x.automatico);

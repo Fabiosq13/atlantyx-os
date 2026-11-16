@@ -275,6 +275,10 @@
       "schedule": "20 * * * *"
     },
     {
+      "path": "/api/estrategia?cron=margem_caixa_mensal",
+      "schedule": "0 11 5 * *"
+    },
+    {
       "path": "/api/estrategia?cron=ajuste_plano",
       "schedule": "7 12 1 * *"
     },
