@@ -55,7 +55,7 @@ function montar({ contatos, cfgInicial }) {
     if (/batch\/update/.test(path)) { patches.push(body); return {}; } if (/batch\/read/.test(path)) return { results: [] }; if (/associations/.test(path)) return { results: [] };
     if (method === 'PATCH') { patches.push({ path, body }); return {}; } return {};
   };
-  const F = criarFloresta({ hs, getSql: async () => sql, claude: async () => '{}', todoCriar: async () => {}, todoListar: async () => [], todoConcluir: async () => {}, normTelefone: x => { const d = String(x || '').replace(/\D/g, ''); return d ? (d.length <= 11 ? '55' + d : d) : null; } });
+  const F = criarFloresta({ hs, getSql: async () => sql, claude: async () => '{}', todoCriar: async () => {}, todoListar: async () => [], todoConcluir: async () => {}, avisarVendedor: async m => { (globalThis.__emails = globalThis.__emails || []).push(m); return { ok: true, para: 'teste' }; }, normTelefone: x => { const d = String(x || '').replace(/\D/g, ''); return d ? (d.length <= 11 ? '55' + d : d) : null; } });
   return { F, kvm, patches };
 }
 const ligar = async (F, ativo = true) => F.cfgSalvar({ fq_ativo: ativo });
@@ -133,4 +133,13 @@ test('arrastar lead frio para Frio qualificado efetua a qualificação (mesmo co
   assert.equal((await F.liberarDia({ simular: true })).liberados.length, 1);
   await F.exclusaoSalvar({ card_id: 'c:1', motivo: 'teste' }); assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'frio', 'tirar da fila volta ao frio');
   await assert.rejects(() => F.mover({ card_id: 'c:9', para: 'frio_qualificado' }), /não encontrado/);
+});
+
+test('entrar na ligação manda e-mail ao vendedor com telefone e e-mail do lead, uma vez só; reunião na ligação manda e-mail com data e hora', async () => {
+  globalThis.__emails = []; const { F } = montar({ contatos: [{ id: '1', nome: 'Ana', extra: { email: 'ana@empresa-teste.com.br' } }] });
+  const r = await F.ligacao({ card_ids: ['c:1'] }, 'teste'); assert.equal(r.aviso.avisados, 1);
+  const e = globalThis.__emails[0]; assert.match(e.assunto, /abordagem telefônica/); assert.match(e.blocos[0], /ana@empresa-teste\.com\.br/); assert.match(e.blocos[0], /Telefone/);
+  assert.equal((await F.avisarLigacao()).avisados, 0, 'não repete o aviso');
+  await F.ligacaoResultado({ card_id: 'c:1', resultado: 'reuniao', nota: 'aceitou', data_reuniao: '2026-11-25T10:30' }, 'teste');
+  const m = globalThis.__emails.find(x => /Reunião marcada/.test(x.assunto)); assert.ok(m); assert.match(m.blocos[0], /2026-11-25 às 10:30/); assert.match(m.blocos[0], /ana@empresa-teste/);
 });

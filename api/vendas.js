@@ -898,11 +898,11 @@ async function handler(req, res) {
   // v3.440: cron diário (dias úteis) — a IA revê quem estourou o tempo limite e enche a FILA DE APROVAÇÃO (não executa nada)
   // v3.495: de hora em hora — conversas novas da IARA: avisa o vendedor, move o card e atualiza o HubSpot
   if (req.method === 'GET' && req.query?.cron === 'iara_retorno') {
-    try { const r = await iaraRetorno().processar({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
+    try { const r = await iaraRetorno().processar({}); let lig = null; try { lig = await floresta().avisarLigacao(); } catch (e) { lig = { ok: false, erro: e.message }; } return res.status(200).json({ success: true, ...r, ligacao_aviso: lig }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'abordagem_todo') { // v3.505: de hora em hora — tarefas de abordagem no To-do ganham rascunho na fila de decisões
     try { const r = await floresta().abordagemTodo({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta_fq') { // v3.531: diário (dias úteis, 08:30 Brasília) — libera o Frio qualificado e alerta/move qualificados parados (tudo desligado por padrão)
-    try { const lib = await floresta().liberarDia({}, 'rotina'); const par = await floresta().moverParados({}, 'rotina'); return res.status(200).json({ success: true, liberacao: lib, parados: par }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
+    try { const lib = await floresta().liberarDia({}, 'rotina'); const par = await floresta().moverParados({}, 'rotina'); let lig = null; try { lig = await floresta().avisarLigacao(); } catch (e) { lig = { ok: false, erro: e.message }; } return res.status(200).json({ success: true, liberacao: lib, parados: par, ligacao_aviso: lig }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta') {
     try { const r = await floresta().analisarIA({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'POST' && req.query?.webhook === 'retell') { // v3.530: resultado das ligações da IARA de voz (Retell) — chave própria na URL
