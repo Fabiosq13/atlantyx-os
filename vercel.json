@@ -295,6 +295,10 @@
       "schedule": "13 11 * * 1-5"
     },
     {
+      "path": "/api/vendas?cron=floresta_fq",
+      "schedule": "30 11 * * 1-5"
+    },
+    {
       "path": "/api/vendas?cron=iara_retorno",
       "schedule": "25 * * * *"
     },
