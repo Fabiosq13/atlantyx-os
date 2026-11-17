@@ -77,7 +77,7 @@ test('Frio qualificado ligado: entra só com nível + briefing por nível + tele
   assert.equal(e('2').etapa, 'frio'); assert.match(e('2').bloqueio_fq, /gancho/); assert.equal(e('3').etapa, 'frio'); assert.match(e('3').bloqueio_fq, /telefone/);
   assert.equal(e('5').etapa, 'frio', 'fora do perfil não entra'); assert.equal(D.cards.find(x => x.id === 'c:1').desde.slice(0, 4), String(new Date().getFullYear()), 'a espera conta a partir da entrada na fila');
   await assert.rejects(() => F.briefingSalvar({ card_id: 'c:1', gancho: 'x', fonte: 'sem-link' }), /link/);
-  await assert.rejects(() => F.mover({ card_id: 'c:1', para: 'frio_qualificado' }), /calculado/);
+  await assert.rejects(() => F.mover({ card_id: 'c:1', para: 'frio' }), /Tirar da fila/, 'arrastar de volta para frio é bloqueado: use Tirar da fila');
 });
 
 test('liberação diária: N1 → N2 → N3, mais antigo primeiro, respeita limite, exclusão e é idempotente no dia', async () => {
@@ -119,4 +119,17 @@ test('retorno da IARA: resumo padrão decide pela temperatura sem IA; fora do fo
   await R.processar({ simular: false }).catch(() => {});
   assert.equal(chamadasIA, 1, 'só o resumo fora do formato chama a IA'); assert.deepEqual(moves.map(m => [m.card_id, m.para]), [['c:1', 'reuniao'], ['c:2', 'engajado']]);
   assert.deepEqual(temps, [['c:1', 'quente']]); assert.equal(kvm['vendas:iara:retornos']['1'].padrao, true); assert.equal(kvm['vendas:iara:retornos']['2'].a_confirmar, true);
+});
+
+test('arrastar lead frio para Frio qualificado efetua a qualificação (mesmo com a chave desligada); pendências bloqueiam a liberação', async () => {
+  const { F } = montar({ contatos: [{ id: '1', nome: 'Ana', extra: { email: 'ana@empresa-teste.com.br', industry: 'Energia' } }, { id: '2', nome: 'Bia' }] });
+  const r = await F.mover({ card_id: 'c:1', para: 'frio_qualificado' }, 'fabio');
+  assert.match(r.resultado, /qualificado/); assert.match(r.resultado, /nível NÃO calculado/, 'sem Apollo e sem porte: vira pendência');
+  const D = await F.carregar({ forcar: true }); const c = D.cards.find(x => x.id === 'c:1');
+  assert.equal(c.etapa, 'frio_qualificado'); assert.ok(c.pendencias_fq.length >= 1); assert.equal(c.briefing.setor_linha, 'Setor: Energia');
+  await F.nivelSalvar({ card_id: 'c:1', nivel: 3 }); await ligar(F);
+  const D2 = await F.carregar({ forcar: true }); assert.equal(D2.cards.find(x => x.id === 'c:1').pendencias_fq.length, 0, 'N3 com linha de setor e telefone: sem pendências');
+  assert.equal((await F.liberarDia({ simular: true })).liberados.length, 1);
+  await F.exclusaoSalvar({ card_id: 'c:1', motivo: 'teste' }); assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'frio', 'tirar da fila volta ao frio');
+  await assert.rejects(() => F.mover({ card_id: 'c:9', para: 'frio_qualificado' }), /não encontrado/);
 });
