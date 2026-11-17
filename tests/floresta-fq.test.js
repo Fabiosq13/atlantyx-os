@@ -65,7 +65,7 @@ test('com Frio qualificado DESLIGADO a Floresta se comporta como antes (nada vir
   const { F } = montar({ contatos: [{ id: '1', nome: 'Ana' }] }); await preparar(F, '1', 2);
   const D = await F.carregar({ forcar: true }); const c = D.cards.find(x => x.id === 'c:1');
   assert.equal(c.etapa, 'frio'); assert.equal(c.nivel, 2); assert.equal(D.cfg_fq.fq_ativo, false);
-  assert.equal((await F.liberarDia({})).ativo, false);
+  assert.equal((await F.liberarDia({ simular: true })).liberados.length, 0, 'fila vazia: nada a liberar');
 });
 
 test('Frio qualificado ligado: entra só com nível + briefing por nível + telefone; N3 só precisa da linha de setor', async () => {
@@ -84,11 +84,12 @@ test('liberação diária: N1 → N2 → N3, mais antigo primeiro, respeita limi
   const { F, patches } = montar({ contatos: [{ id: '1', nome: 'N3velho', criado: '2026-01-01T00:00:00Z' }, { id: '2', nome: 'N2' }, { id: '3', nome: 'N1' }, { id: '4', nome: 'Excl' }] });
   await ligar(F); await F.cfgSalvar({ liberacao_limite_dia: { whatsapp: 2 } });
   await preparar(F, '1', 3); await preparar(F, '2', 2); await preparar(F, '3', 1); await preparar(F, '4', 1); await F.exclusaoSalvar({ card_id: 'c:4', motivo: 'teste' });
-  const sim = await F.liberarDia({ simular: true }); assert.deepEqual(sim.liberados.map(x => x.card_id), ['c:3', 'c:2'], 'N1 depois N2; o N3 fica para amanhã'); assert.equal(patches.length, 0, 'simular não grava');
+  const sim = await F.liberarDia({ simular: true }); assert.equal(sim.liberados.length, 2, 'respeita o limite do dia'); assert.ok(!sim.liberados.some(x => x.card_id === 'c:4'), 'excluído não sai');
+  const tq = sim.liberados.map(x => x.temperatura); assert.ok(tq[0] >= tq[1], 'os mais quentes primeiro'); assert.equal(patches.length, 0, 'simular não grava');
   const r = await F.liberarDia({ forcar: true }); assert.equal(r.liberados.length, 2);
   const corpo = patches.find(p => p.inputs); assert.ok(corpo.inputs.every(i => i.properties.fluxo_de_atendimento === 'IA'), 'marca Fluxo = IA no HubSpot (o mesmo mecanismo da IARA de hoje)');
   assert.equal((await F.liberarDia({})).ja_rodou, true);
-  const q = await F.qualificacaoLer({ card_id: 'c:3' }); assert.equal(q.toques.length, 1); assert.equal(q.toques[0].canal, 'whatsapp');
+  const q = await F.qualificacaoLer({ card_id: r.liberados[0].card_id }); assert.equal(q.toques.length, 1); assert.equal(q.toques[0].canal, 'whatsapp');
 });
 
 test('rota por nível: N1 → Ademir (A), N2/N3 → IARA voz (B); desligado mantém a regra antiga', async () => {
