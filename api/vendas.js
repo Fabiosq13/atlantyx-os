@@ -901,6 +901,8 @@ async function handler(req, res) {
     try { const r = await iaraRetorno().processar({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'abordagem_todo') { // v3.505: de hora em hora — tarefas de abordagem no To-do ganham rascunho na fila de decisões
     try { const r = await floresta().abordagemTodo({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
+  if (req.method === 'GET' && req.query?.cron === 'floresta_fq') { // v3.531: diário (dias úteis, 08:30 Brasília) — libera o Frio qualificado e alerta/move qualificados parados (tudo desligado por padrão)
+    try { const lib = await floresta().liberarDia({}, 'rotina'); const par = await floresta().moverParados({}, 'rotina'); return res.status(200).json({ success: true, liberacao: lib, parados: par }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta') {
     try { const r = await floresta().analisarIA({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'POST' && req.query?.webhook === 'retell') { // v3.530: resultado das ligações da IARA de voz (Retell) — chave própria na URL
@@ -977,6 +979,12 @@ async function handler(req, res) {
     floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
     floresta_mover: () => floresta().mover(payload, req.sessao?.login),
     floresta_cfg: () => floresta().cfgSalvar(payload),
+    floresta_nivel: () => floresta().nivelSalvar(payload, req.sessao?.login),                 // v3.531: nível do lead (calcula ou define)
+    floresta_briefing_salvar: () => floresta().briefingSalvar(payload, req.sessao?.login),    // gancho público + fonte (link) / linha de setor
+    floresta_qualificacao_ler: () => floresta().qualificacaoLer(payload),                     // aba Qualificação do card
+    floresta_exclusao: () => floresta().exclusaoSalvar(payload, req.sessao?.login),           // tirar da fila / pausa geral
+    floresta_liberacao_rodar: () => floresta().liberarDia(payload, req.sessao?.login),        // liberação diária (simular:true só lista)
+    floresta_parados_rodar: () => floresta().moverParados(payload, req.sessao?.login),        // qualificados parados: alerta / move
     floresta_iara_preparar: () => floresta().iaraPreparar(payload),          // v3.441: IARA
     floresta_iara_enviar: () => floresta().iaraEnviar(payload, req.sessao?.login),
     floresta_apollo: () => floresta().apolloBuscar(payload),                 // v3.441: leads frios do Apollo
