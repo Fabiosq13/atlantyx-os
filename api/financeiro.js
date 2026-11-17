@@ -9103,7 +9103,8 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   // e para avulsa recorrente. Regras do fundador (kv fin:rp_regras, editáveis na agenda) + regra automática pelo assunto
   // (fatura/termo com "xplann" elimina a recorrência "Sustentação Xplann"). Casa pela data mais próxima (venc./emissão, ±25 dias),
   // uma recorrência por documento; a fatura continua valendo (é ela a receita), a recorrência sai.
-  const regrasSubst = Array.isArray(regrasCfg) ? regrasCfg : _RP_REGRAS_PADRAO;
+  // v3.533: as regras FIXAS dos recorrentes (Xplann, Anaplan, Big Data) valem sempre, mesmo com regras próprias salvas — fatura criada elimina a recorrência do mês (sem duplicar no fluxo)
+  const regrasSubst = [...(Array.isArray(regrasCfg) ? regrasCfg : _RP_REGRAS_PADRAO), ..._RP_REGRAS_FIXAS];
   {
     const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
     const cmp = x => nrm(x).replace(/ /g, '');
@@ -9114,7 +9115,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     const recs = oc.filter(o => (o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) && !o.coberta_por && !o.status);
     const textoRec = o => [o.cliente, o.projeto, o.descricao].join(' ');
     const casaDoc = (o, d) => { const tr = textoRec(o);
-      for (const r of regrasSubst) if (r && r.recorrente && r.documento && contem(tr, r.recorrente) && contem(d.txt, r.documento)) return 'regra: "' + r.documento + '" → "' + r.recorrente + '"';
+      for (const r of regrasSubst) if (r && r.recorrente && r.documento && contem(tr, r.recorrente) && contem(d.txt, r.documento) && (!r.tambem || contem(d.txt, r.tambem))) return 'regra: "' + r.documento + '" → "' + r.recorrente + '"';
       const chave = _rpAssunto([o.projeto, o.cliente].join(' ')); if (chave.length >= 5 && cmp(d.txt).includes(chave)) return 'assunto "' + chave + '"';
       return null; };
     const dist = (o, d) => Math.min(...d.datas.map(x => Math.abs(Date.parse(o.data) - Date.parse(x))));
@@ -9213,6 +9214,8 @@ function _rpComoRecebiveis(rp, data_inicio, data_fim) {
 }
 // v3.427: regras de substituição padrão (ditas pelo fundador em 10/11/2026) — editáveis na Agenda de Receitas
 const _RP_REGRAS_PADRAO = [{ documento: 'sustentação e evolutivas', recorrente: 'bigdata' }, { documento: 'xplann', recorrente: 'xplann' }];
+// fixas (pedido do fundador em 17/11/2026): fatura/termo de Xplann, Anaplan ou sustentação Big Data tira a recorrência do mesmo mês. Big Data exige "sustenta" no documento, para nota de projeto/marco não eliminar a mensalidade.
+const _RP_REGRAS_FIXAS = [{ documento: 'xplann', recorrente: 'xplann' }, { documento: 'anaplan', recorrente: 'anaplan' }, { documento: 'big data', recorrente: 'big data', tambem: 'sustenta' }];
 async function rpRegrasSalvar({ regras } = {}) {
   if (!Array.isArray(regras)) throw Object.assign(new Error('regras: lista obrigatória'), { status: 400 });
   const L = regras.map(r => ({ documento: String(r?.documento || '').trim().substring(0, 120), recorrente: String(r?.recorrente || '').trim().substring(0, 120) })).filter(r => r.documento.length >= 3 && r.recorrente.length >= 3).slice(0, 50);
