@@ -7284,7 +7284,7 @@ async function margemCaixa({ meses = 12 } = {}) {
   // v3.536: POR PROJETO — margem (competência) e lucro/prejuízo em caixa, com custo = pessoal (horas × custo/hora) + fixo rateado + impostos (mesma apuração da tela Custo por Projeto)
   let projetos = null; try { const nP = Math.min(12, n), CP = await custoProjetos({ meses: nP, mes_fim: fimM }); const iniP = L[L.length - nP] + '-01';
     projetos = MC.porProjeto({ projetos: CP.projetos || [], faturas_proj: CP.faturas_proj || [], pagamentos, ini: iniP, fim: fimD, n: nP, aliquota: (Number(CP.aliquota_pct) || 0) / 100, conferencia: CP.conferencia, faturas_detalhe: CP.faturas_detalhe });
-    serie = MC.ajustarMargemBruta(serie, CP.direto_por_mes || {});
+    serie = MC.ajustarMargemBruta(serie, CP.direto_por_mes || {}, { folha_por_mes: CP.folha_por_mes || {}, detalhe_por_mes: CP.detalhe_por_mes || {}, aliquota: (Number(CP.aliquota_pct) || 0) / 100 });
     projetos.metodo_rateio = CP.metodo; projetos.aliquota_fonte = CP.aliquota_fonte; projetos.avisos = (CP.avisos || []).slice(0, 6); if (nP < n) projetos.aviso_periodo = 'Por projeto: últimos ' + nP + ' meses (limite da apuração de custo por projeto).';
   } catch (e) { faltando.push('Margem e caixa por projeto: ' + e.message); serie = MC.ajustarMargemBruta(serie, {}); }
   if (serie.some(x => x.margem_bruta == null)) faltando.push('Margem bruta de ' + serie.filter(x => x.margem_bruta == null).length + ' mês(es): o QuickBooks não tem conta de custo dos serviços e não há folha/horas apontadas no Maestro para esses meses');
