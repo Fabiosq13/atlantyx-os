@@ -7284,8 +7284,10 @@ async function margemCaixa({ meses = 12 } = {}) {
   // v3.536: POR PROJETO — margem (competência) e lucro/prejuízo em caixa, com custo = pessoal (horas × custo/hora) + fixo rateado + impostos (mesma apuração da tela Custo por Projeto)
   let projetos = null; try { const nP = Math.min(12, n), CP = await custoProjetos({ meses: nP, mes_fim: fimM }); const iniP = L[L.length - nP] + '-01';
     projetos = MC.porProjeto({ projetos: CP.projetos || [], faturas_proj: CP.faturas_proj || [], pagamentos, ini: iniP, fim: fimD, n: nP, aliquota: (Number(CP.aliquota_pct) || 0) / 100 });
+    serie = MC.ajustarMargemBruta(serie, CP.direto_por_mes || {});
     projetos.metodo_rateio = CP.metodo; projetos.aliquota_fonte = CP.aliquota_fonte; projetos.avisos = (CP.avisos || []).slice(0, 6); if (nP < n) projetos.aviso_periodo = 'Por projeto: últimos ' + nP + ' meses (limite da apuração de custo por projeto).';
-  } catch (e) { faltando.push('Margem e caixa por projeto: ' + e.message); }
+  } catch (e) { faltando.push('Margem e caixa por projeto: ' + e.message); serie = MC.ajustarMargemBruta(serie, {}); }
+  if (serie.some(x => x.margem_bruta == null)) faltando.push('Margem bruta de ' + serie.filter(x => x.margem_bruta == null).length + ' mês(es): o QuickBooks não tem conta de custo dos serviços e não há folha/horas apontadas no Maestro para esses meses');
   return { periodo: { de: L[0], ate: L[L.length - 1], meses: L.length }, mensal: serie, projetos, clientes: cli, prazos: { receber: pz, fornecedores: pf, ciclo_caixa_dias: pz.geral.prazo_medio_receb_dias != null && pf.prazo_medio_pagto_dias != null ? MC_r1(pz.geral.prazo_medio_receb_dias - pf.prazo_medio_pagto_dias) : null },
     capital_giro: { receber_aberto: MC_r2(aberto), receber_vencido: MC_r2(vencido), meses_de_receita_em_aberto: recMes > 0 ? MC_r1(aberto / recMes) : null, dias_de_receita_em_aberto: recMes > 0 ? MC_r1(aberto / (recMes / 30)) : null, saldo_minimo: saldoMin, saldos: bal },
     tributos: { regime_informado: 'Lucro Presumido (carga de 16,33%, informada pelo Fabio) — a confirmar com o contador', impostos_12m: MC_r2(imp12), carga_efetiva_pct: receita12 > 0 ? MC_r1(imp12 / receita12 * 100) : null, premissa_2027: '25% no planejamento; 24% em propostas a partir de jan/2027 (instrução do Fabio)',
