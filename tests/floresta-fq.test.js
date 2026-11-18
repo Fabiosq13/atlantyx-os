@@ -170,3 +170,12 @@ test('card movido não "volta": vale a etapa escolhida mesmo antes de o HubSpot 
   const ps = patches.filter(p => p.path && /contacts\/1$/.test(p.path)).map(p => p.body.properties);
   assert.ok(ps.some(x => x.lifecyclestage === ''), 'limpa o ciclo de vida antes de baixar'); assert.ok(ps.some(x => x.lifecyclestage === 'marketingqualifiedlead'));
 });
+
+test('lead PERDIDO movido para a ligação é reativado e fica na ligação; recusa vira erro (não "volta" calado)', async () => {
+  globalThis.__emails = []; const { F, patches } = montar({ contatos: [{ id: '1', nome: 'Reinaldo Teste', extra: { hs_lead_status: 'UNQUALIFIED' } }, { id: '2', nome: 'Sem Fone', tel: '', extra: { hs_lead_status: 'UNQUALIFIED' } }] });
+  assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'perdido');
+  const r = await F.mover({ card_id: 'c:1', para: 'ligacao' }, 'fabio'); assert.match(r.resultado, /reativado/);
+  assert.ok(patches.some(p => p.path && /contacts\/1$/.test(p.path) && p.body.properties.hs_lead_status === 'ATTEMPTED_TO_CONTACT'));
+  assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'ligacao', 'fica na ligação mesmo com o HubSpot ainda devolvendo Perdido');
+  await assert.rejects(() => F.mover({ card_id: 'c:2', para: 'ligacao' }, 'fabio'), /sem telefone/);
+});
