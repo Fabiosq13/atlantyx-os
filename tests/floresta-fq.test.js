@@ -151,3 +151,13 @@ test('arrastar para a IARA move o card na hora, vindo de qualquer etapa (ex.: qu
   const D = await F.carregar({ forcar: true }); assert.equal(D.cards.find(x => x.id === 'c:1').etapa, 'iara', 'qualificado → IARA'); assert.equal(D.cards.find(x => x.id === 'c:2').etapa, 'iara', 'frio → IARA sem esperar o HubSpot');
   await F.mover({ card_id: 'c:1', para: 'qualificado' }, 'fabio'); assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').iara_forcado, false, 'ao mover de novo, deixa de ficar preso na IARA');
 });
+
+test('lead do funil/atributo WX vai para a Patricia; os demais para o Ademir', async () => {
+  const { ehWX, vendedorDe, COPIA_FUNDADOR } = await import('../lib/floresta-email.js');
+  assert.equal(ehWX({ pipeline_nome: 'Funil WX Patricia' }), true); assert.equal(ehWX({ abordagem: 'WX' }), true); assert.equal(ehWX({ campanha: 'wxc.one' }), true);
+  assert.equal(ehWX({ pipeline_nome: 'Atlantyx', empresa: 'Wxyz Ltda', campanha: 'Linux' }), false);
+  assert.equal(vendedorDe({ pipeline_nome: 'WX Patricia' }).email, 'pt@wxc.one'); assert.equal(vendedorDe({}).email, 'ademir.souza@atlanteam.com.br'); assert.equal(COPIA_FUNDADOR, 'contato@atlanteam.com.br');
+  globalThis.__emails = []; const { F } = montar({ contatos: [{ id: '1', nome: 'Wanda', extra: { hs_analytics_source_data_1: 'WX Patricia' } }, { id: '2', nome: 'Beto' }] });
+  await F.mover({ card_id: 'c:1', para: 'qualificado' }, 'fabio'); await F.mover({ card_id: 'c:2', para: 'qualificado' }, 'fabio');
+  const q = globalThis.__emails.filter(e => /Lead qualificado/.test(e.assunto)); assert.deepEqual(q.map(e => e.vendedorEmail), ['pt@wxc.one', 'ademir.souza@atlanteam.com.br']);
+});
