@@ -710,8 +710,14 @@ async function propConverter(base, { id } = {}) {
 // o sistema cria (ou reaproveita) empresa e contato no HubSpot, cria o negócio ligado aos dois e guarda o relato como nota.
 async function _hs(caminho, metodo = 'GET', corpo) {
   if (!process.env.HUBSPOT_TOKEN) throw new Error('HUBSPOT_TOKEN não configurado no Vercel');
-  const r = await fetch('https://api.hubapi.com' + caminho, { method: metodo, headers: { Authorization: 'Bearer ' + process.env.HUBSPOT_TOKEN, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
-  const d = r.status === 204 ? {} : await r.json().catch(() => ({}));
+  // v3.538: o HubSpot limita chamadas por segundo (429 "secondly limit") — espera e repete até 5 vezes em vez de devolver o erro para a tela
+  let r, d;
+  for (let t = 0; ; t++) {
+    r = await fetch('https://api.hubapi.com' + caminho, { method: metodo, headers: { Authorization: 'Bearer ' + process.env.HUBSPOT_TOKEN, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
+    if (r.status !== 429 || t >= 5) break;
+    const ra = Number(r.headers?.get?.('retry-after')); await new Promise(ok => setTimeout(ok, Math.min(10000, ra > 0 ? ra * 1000 : 1100 * (t + 1)) + Math.floor(Math.random() * 300)));
+  }
+  d = r.status === 204 ? {} : await r.json().catch(() => ({}));
   if (!r.ok) throw new Error('HubSpot ' + r.status + ': ' + (d.message || 'erro'));
   return d;
 }
