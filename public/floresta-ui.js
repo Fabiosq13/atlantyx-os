@@ -298,7 +298,12 @@
     if (para === 'congelado') { ate = prompt('Congelar os ' + L.length + ' até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
     else if (!confirm('Mover os ' + L.length + ' cards marcados para ' + e.nome + '?\n\n' + L.slice(0, 12).map(c => '• ' + c.nome).join('\n') + (L.length > 12 ? '\n… e mais ' + (L.length - 12) : '') + (L.length > 60 ? '\n\n(máximo de 60 por vez)' : ''))) return;
     const antes = L.map(c => [c, c.etapa]); L.forEach(c => { c.etapa_real = c.etapa_real || c.etapa; c.etapa = para; MOVENDO[c.id] = para; }); _redesenhar(); nota('Movendo ' + L.length + ' cards… pode levar alguns segundos', 'info');
-    try { const r = await api('floresta_mover_lote', { card_ids: L.map(c => c.id), para, congelar_ate: ate, motivo }); const f = (r.resultados || []).filter(x => !x.ok);
+    try { // v3.555: em partes de 4 (cada card faz chamadas ao HubSpot; 40 de uma vez estouravam o tempo do servidor e os cards voltavam)
+      const r = { resultados: [], ok: 0, total: L.length }; const ids = L.map(c => c.id);
+      for (let i = 0; i < ids.length; i += 4) { nota('Movendo ' + Math.min(i + 4, ids.length) + ' de ' + ids.length + '…', 'info');
+        try { const p = await api('floresta_mover_lote', { card_ids: ids.slice(i, i + 4), para, congelar_ate: ate, motivo }); r.resultados.push(...(p.resultados || [])); r.ok += p.ok || 0; }
+        catch (ep) { ids.slice(i, i + 4).forEach(id => r.resultados.push({ card_id: id, nome: (D.cards.find(y => y.id === id) || {}).nome, ok: false, motivo: ep.message })); } }
+      const f = (r.resultados || []).filter(x => !x.ok);
       L.forEach(c => delete MOVENDO[c.id]); f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id), k = D.cards.find(y => y.id === x.card_id); if (a && k) k.etapa = a[1]; });
       nota(r.ok + ' de ' + r.total + ' movido(s) para ' + e.nome + (f.length ? ' · ' + f.length + ' não moveram: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
       SEL.clear(); f.forEach(x => SEL.add(x.card_id)); _redesenhar(); carregar(true); }
