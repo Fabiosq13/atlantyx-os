@@ -161,3 +161,12 @@ test('lead do funil/atributo WX vai para a Patricia; os demais para o Ademir', a
   await F.mover({ card_id: 'c:1', para: 'qualificado' }, 'fabio'); await F.mover({ card_id: 'c:2', para: 'qualificado' }, 'fabio');
   const q = globalThis.__emails.filter(e => /Lead qualificado/.test(e.assunto)); assert.deepEqual(q.map(e => e.vendedorEmail), ['pt@wxc.one', 'ademir.souza@atlanteam.com.br']);
 });
+
+test('card movido não "volta": vale a etapa escolhida mesmo antes de o HubSpot refletir; contato qualificado movido para trás baixa o ciclo de vida', async () => {
+  const { F, patches } = montar({ contatos: [{ id: '1', nome: 'Cetco Teste', lc: 'salesqualifiedlead' }] });
+  assert.equal((await F.carregar({ forcar: true })).cards[0].etapa, 'qualificado');
+  await F.mover({ card_id: 'c:1', para: 'engajado' }, 'fabio');
+  assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'engajado', 'o fake do HubSpot ainda devolve SQL, mas o card fica onde foi movido');
+  const ps = patches.filter(p => p.path && /contacts\/1$/.test(p.path)).map(p => p.body.properties);
+  assert.ok(ps.some(x => x.lifecyclestage === ''), 'limpa o ciclo de vida antes de baixar'); assert.ok(ps.some(x => x.lifecyclestage === 'marketingqualifiedlead'));
+});
