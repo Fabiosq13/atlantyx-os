@@ -19,6 +19,6 @@ test('margem bruta: sem conta de custo dos serviços no QuickBooks usa a folha t
   const { ajustarMargemBruta } = await import('../lib/margem-caixa.js');
   const serie = [{ mes: '2026-08', receita_faturada: 200000, custo_direto: 0, margem_bruta: 200000, margem_bruta_pct: 100 }, { mes: '2026-09', receita_faturada: 100000, custo_direto: 0, margem_bruta: 100000, margem_bruta_pct: 100 }, { mes: '2026-10', receita_faturada: 100000, custo_direto: 30000, margem_bruta: 70000, margem_bruta_pct: 70 }];
   const r = ajustarMargemBruta(serie, { '2026-08': 120000, '2026-09': null }, { folha_por_mes: { '2026-08': 120000, '2026-09': null } });
-  assert.equal(r[0].margem_bruta, 80000); assert.equal(r[0].margem_bruta_pct, 40); assert.match(r[0].custo_direto_fonte, /Maestro/);
+  assert.equal(r[0].margem_bruta, 80000); assert.equal(r[0].margem_bruta_pct, 40); assert.match(r[0].custo_direto_fonte, /Folha total/);
   assert.equal(r[1].margem_bruta, null); assert.equal(r[1].margem_bruta_pct, null); assert.equal(r[2].margem_bruta_pct, 70, 'mês com custo no QuickBooks não muda');
 });
