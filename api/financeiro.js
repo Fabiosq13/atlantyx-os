@@ -311,7 +311,7 @@ async function handler(req, res) {
       desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
       impostos_recorrentes:  () => impostosRecorrentes(params), despesas_repetidas: () => despesasRepetidasSugerir(params), // v3.452
       impostos_cadastrar: () => impostosCadastrar(params), // v3.266
-      margem_caixa: () => margemCaixa(params), margem_caixa_simular: () => ({ resultados: (Array.isArray(params.cenarios) ? params.cenarios : []).slice(0, 12).map(c => ({ nome: String(c.nome || c.tipo), ...MC.simular(c, Number(params.saldo_inicial) || 0, 12) })) }), esteira_cfg: () => esteiraCfg(params),
+      margem_caixa: () => margemCaixa(params), margem_caixa_ia: () => margemCaixaIA(params), margem_caixa_simular: () => ({ resultados: (Array.isArray(params.cenarios) ? params.cenarios : []).slice(0, 12).map(c => ({ nome: String(c.nome || c.tipo), ...MC.simular(c, Number(params.saldo_inicial) || 0, 12) })) }), esteira_cfg: () => esteiraCfg(params),
       custo_projetos: () => custoProjetos(params), custo_projetos_cfg: () => custoProjetosCfg(params), // v3.455
       desp_criar_replicar:   () => despesaCriarReplicar(params),
       desp_ajustar_replicar: () => despesaAjustarReplicar(params),
@@ -7226,6 +7226,24 @@ const ESTEIRA_PADRAO = { atualizado_em: null, degraus: [
 async function esteiraCfg({ salvar } = {}) { const cur = (await _kvFin('fin:esteira').catch(() => null)) || null;
   if (salvar && Array.isArray(salvar.degraus)) { const v = { atualizado_em: new Date().toISOString(), degraus: salvar.degraus.slice(0, 6).map(d => ({ id: String(d.id || '').substring(0, 3), nome: String(d.nome || '').substring(0, 80), oferta: String(d.oferta || '').substring(0, 300), objetivo: String(d.objetivo || '').substring(0, 200), duracao_dias: Number(d.duracao_dias) || 0, cobranca: String(d.cobranca || '').substring(0, 200), tipo_cliente: String(d.tipo_cliente || '').substring(0, 100), fonte_cac: d.fonte_cac === 'novo' ? 'novo' : 'atual' })) }; await _kvFinSet('fin:esteira', v); return v; }
   return cur || ESTEIRA_PADRAO; }
+// v3.536: IA FINANCEIRA da tela Margem × Caixa — responde em linguagem de leigo, SÓ com os números da tela (enviados no contexto)
+async function margemCaixaIA({ pergunta, historico, contexto } = {}) {
+  const q = String(pergunta || '').trim().substring(0, 1200); if (q.length < 3) throw Object.assign(new Error('Escreva a pergunta'), { status: 400 });
+  const system = `Você é a IA financeira da tela "Margem × Caixa" do Atlantyx OS. Fala com um empresário que NÃO é da área financeira.
+Regras:
+- Português do Brasil, direto e didático. Explique cada termo técnico em uma frase simples na primeira vez que usar (ex.: "EBITDA: o que sobra da operação antes de impostos e juros").
+- Use SOMENTE os números do CONTEXTO abaixo (dados do QuickBooks e do Maestro já calculados pelo sistema). Nunca invente número, cliente ou projeto. Se o dado não está no contexto, diga que falta e onde costuma estar.
+- Valores em R$ sem centavos. Mostre a conta quando concluir algo (ex.: recebido − impostos − pessoal − fixo).
+- Diferencie sempre competência (faturado: quando o serviço foi cobrado) de caixa (recebido: quando o dinheiro entrou).
+- Termine com 1 a 3 ações práticas, cada uma com o impacto em R$ quando os dados permitirem. Não é parecer contábil: questões de tributo vão para o contador.
+- Resposta curta: no máximo 220 palavras, sem tabelas.
+
+CONTEXTO (JSON da tela):
+${String(contexto || '').substring(0, 24000)}`;
+  const msgs = [...(Array.isArray(historico) ? historico : []).slice(-6).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '').substring(0, 2500) })).filter(m => m.content), { role: 'user', content: q }];
+  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  return { resposta: await claudeFin(system, msgs, 900) };
+}
 // v3.517: MARGEM × CAIXA — onde a margem não vira caixa (QuickBooks: DRE competência e caixa, faturas, pagamentos, contas a pagar, balanço)
 async function margemCaixa({ meses = 12 } = {}) {
   const faltando = [], avisos = [];
@@ -7263,7 +7281,12 @@ async function margemCaixa({ meses = 12 } = {}) {
   faltando.push('Prazo médio de pagamento a pessoas: o sistema não registra a data do pagamento de cada pessoa');
   faltando.push('ARR e meta de 60% em 2031: não há contrato recorrente cadastrado separando recorrente de projeto');
   const cacNovo = novos.length && com12 > 0 ? MC_r2(com12 / novos.length) : null;
-  return { periodo: { de: L[0], ate: L[L.length - 1], meses: L.length }, mensal: serie, clientes: cli, prazos: { receber: pz, fornecedores: pf, ciclo_caixa_dias: pz.geral.prazo_medio_receb_dias != null && pf.prazo_medio_pagto_dias != null ? MC_r1(pz.geral.prazo_medio_receb_dias - pf.prazo_medio_pagto_dias) : null },
+  // v3.536: POR PROJETO — margem (competência) e lucro/prejuízo em caixa, com custo = pessoal (horas × custo/hora) + fixo rateado + impostos (mesma apuração da tela Custo por Projeto)
+  let projetos = null; try { const nP = Math.min(12, n), CP = await custoProjetos({ meses: nP, mes_fim: fimM }); const iniP = L[L.length - nP] + '-01';
+    projetos = MC.porProjeto({ projetos: CP.projetos || [], faturas_proj: CP.faturas_proj || [], pagamentos, ini: iniP, fim: fimD, n: nP, aliquota: (Number(CP.aliquota_pct) || 0) / 100 });
+    projetos.metodo_rateio = CP.metodo; projetos.aliquota_fonte = CP.aliquota_fonte; projetos.avisos = (CP.avisos || []).slice(0, 6); if (nP < n) projetos.aviso_periodo = 'Por projeto: últimos ' + nP + ' meses (limite da apuração de custo por projeto).';
+  } catch (e) { faltando.push('Margem e caixa por projeto: ' + e.message); }
+  return { periodo: { de: L[0], ate: L[L.length - 1], meses: L.length }, mensal: serie, projetos, clientes: cli, prazos: { receber: pz, fornecedores: pf, ciclo_caixa_dias: pz.geral.prazo_medio_receb_dias != null && pf.prazo_medio_pagto_dias != null ? MC_r1(pz.geral.prazo_medio_receb_dias - pf.prazo_medio_pagto_dias) : null },
     capital_giro: { receber_aberto: MC_r2(aberto), receber_vencido: MC_r2(vencido), meses_de_receita_em_aberto: recMes > 0 ? MC_r1(aberto / recMes) : null, dias_de_receita_em_aberto: recMes > 0 ? MC_r1(aberto / (recMes / 30)) : null, saldo_minimo: saldoMin, saldos: bal },
     tributos: { regime_informado: 'Lucro Presumido (carga de 16,33%, informada pelo Fabio) — a confirmar com o contador', impostos_12m: MC_r2(imp12), carga_efetiva_pct: receita12 > 0 ? MC_r1(imp12 / receita12 * 100) : null, premissa_2027: '25% no planejamento; 24% em propostas a partir de jan/2027 (instrução do Fabio)',
       duvidas_contador: ['Lucro Presumido × Lucro Real: com a margem real, qual dá menos imposto no total (IRPJ/CSLL sobre 32% da receita × sobre o lucro)?', 'Reforma tributária: qual a alíquota efetiva de CBS/IBS para serviços de TI em 2027 e a regra de transição?', 'Retenções na fonte (IR, PIS/COFINS/CSLL, ISS, INSS) dos clientes grandes: o que vira crédito e quando é compensado?', 'ISS: município de incidência (Rio × São Paulo) por contrato e possibilidade de alíquota reduzida', 'Distribuição de lucros isenta × pró-labore × juros sobre capital próprio: o que otimiza a retirada?', 'Subscrição de produto (SaaS) e licenciamento: enquadramento, alíquota e se há benefício (Lei do Bem/ PADIS) para o Atlantyx OS', 'Antecipação de receita e parcelamento de tributos: custo financeiro e efeito no caixa']},
@@ -7331,7 +7354,7 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
         const cli = i.CustomerRef?.name || '', L0 = lig[String(i.Id)], linhas = (i.Line || []).map(l => l.Description).filter(Boolean).join(' ');
         const rotulo = L0?.projeto || cli, texto = [L0?.projeto, L0?.marco_projeto, L0?.parcela, linhas, i.PrivateNote, i.CustomerMemo?.value, cli].filter(Boolean).join(' ');
         const a = acharOficial(rotulo, texto, cli);
-        receitas.push({ projeto: a ? a.proj : null, cliente: cli, valor: v, mes: String(i.TxnDate).substring(0, 7), rotulo, como: a?.como || null, doc: i.DocNumber || i.Id }); }
+        receitas.push({ projeto: a ? a.proj : null, cliente: cli, valor: v, mes: String(i.TxnDate).substring(0, 7), rotulo, como: a?.como || null, doc: i.DocNumber || i.Id, id: i.Id }); }
     } catch (e) { avisos.push('QuickBooks: ' + e.message); } }
   else avisos.push('QuickBooks não configurado — sem custo fixo e sem receita.');
   const cfgFin = await _fv2Cfg().catch(() => ({})), aliq = aliquota_pct != null && aliquota_pct !== '' ? Number(aliquota_pct) / 100 : cfgP.aliquota_pct != null ? Number(cfgP.aliquota_pct) / 100 : cfgFin.aliquota_pct != null ? cfgFin.aliquota_pct / 100 : (aliqQb || 0.1615);
@@ -7382,6 +7405,7 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
     R.receitas_sem_projeto = Object.values(g).map(x => ({ ...x, valor_mes: round(x.valor / L.length) })).sort((a, b) => b.valor - a.valor);  if (R.receitas_sem_projeto.length) R.avisos.unshift(R.receitas_sem_projeto.length + ' receita(s) sem projeto Oficial_ (' + R.receitas_sem_projeto.reduce((t, x) => t + x.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ' no período) — ligue no quadro "🔗 Receita → projeto Oficial_" para a margem dos projetos ficar certa.'); }
   R.receitas_ligadas = receitas.filter(r => r.projeto).reduce((o, r) => { const k = r.rotulo + '→' + r.projeto; (o[k] = o[k] || { rotulo: r.rotulo, projeto: r.projeto, como: r.como, valor: 0 }).valor = round(o[k].valor + r.valor); return o; }, {});
   R.receitas_ligadas = Object.values(R.receitas_ligadas).sort((a, b) => b.valor - a.valor);
+  R.faturas_proj = receitas.map(r => ({ id: r.id, projeto: r.projeto || null })); // v3.536: fatura → projeto (para o recebido por projeto da tela Margem × Caixa)
   return R;
 }
 async function impostosCadastrar({ itens = [] } = {}) {
