@@ -279,7 +279,9 @@
     document.body.appendChild(m); conversa(c.id);
   }
   async function soltar(para) {
-    const id = arrastando; arrastando = null; if (!id) return; const c = D.cards.find(x => x.id === id); if (!c || c.etapa === para) return;
+    const id = arrastando; arrastando = null; if (!id) return;
+    if (SEL.has(id) && SEL.size > 1) return soltarLote(para);   // v3.547: arrastou um card MARCADO com outros marcados → move todos
+    const c = D.cards.find(x => x.id === id); if (!c || c.etapa === para) return;
     const e = D.etapas.find(x => x.id === para); let ate = null, motivo = '';
     if (para === 'congelado') { ate = prompt('Congelar até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
     else if (para === 'frio_qualificado') { if (!confirm('Qualificar "' + c.nome + '"?\n\nO sistema calcula o nível (porte pelo Apollo, sem custo), monta a linha de setor e coloca o lead na fila do Frio qualificado. O que não der para obter sozinho fica como pendência no card.')) return; }
@@ -289,6 +291,18 @@
     catch (e2) { c.etapa = de; c.movendo = false; render(); nota('Não moveu: ' + e2.message, 'error'); }
   }
   async function congelar(id) { arrastando = id; document.getElementById('flModal')?.remove(); await soltar('congelado'); }
+  async function soltarLote(para) {
+    const L = [...SEL].map(id => D.cards.find(x => x.id === id)).filter(x => x && x.etapa !== para); if (!L.length) return nota('Os cards marcados já estão nessa etapa', 'info');
+    const e = D.etapas.find(x => x.id === para); let ate = null, motivo = '';
+    if (para === 'congelado') { ate = prompt('Congelar os ' + L.length + ' até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
+    else if (!confirm('Mover os ' + L.length + ' cards marcados para ' + e.nome + '?\n\n' + L.slice(0, 12).map(c => '• ' + c.nome).join('\n') + (L.length > 12 ? '\n… e mais ' + (L.length - 12) : '') + (L.length > 60 ? '\n\n(máximo de 60 por vez)' : ''))) return;
+    const antes = L.map(c => [c, c.etapa]); L.forEach(c => { c.etapa_real = c.etapa_real || c.etapa; c.etapa = para; }); _redesenhar(); nota('Movendo ' + L.length + ' cards… pode levar alguns segundos', 'info');
+    try { const r = await api('floresta_mover_lote', { card_ids: L.map(c => c.id), para, congelar_ate: ate, motivo }); const f = (r.resultados || []).filter(x => !x.ok);
+      f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id); if (a) a[0].etapa = a[1]; });
+      nota(r.ok + ' de ' + r.total + ' movido(s) para ' + e.nome + (f.length ? ' · ' + f.length + ' não moveram: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
+      SEL.clear(); f.forEach(x => SEL.add(x.card_id)); _redesenhar(); carregar(true); }
+    catch (e2) { antes.forEach(([c, et]) => { c.etapa = et; }); _redesenhar(); nota('Não moveu: ' + e2.message, 'error'); }
+  }
   async function ia() { const b = $('flIaBtn'); if (b) { b.disabled = true; b.textContent = '🤖 Lendo a floresta… (até 2 min)'; }
     try { const r = await api('floresta_ia', {}); nota(r.novas ? r.novas + ' decisão(ões) para aprovar' : 'Nenhum estourado novo — veja os insights'); painel = r.novas ? 'fila' : 'ins'; await carregar(false); }
     catch (e) { nota('Erro: ' + e.message, 'error'); } finally { if (b) { b.disabled = false; b.textContent = '🤖 IA: decidir os estourados'; } } }
@@ -339,7 +353,7 @@
     const ids = umId ? [umId] : [...SEL]; if (!ids.length) return nota('Marque ao menos um card', 'error'); const L = ids.map(id => D.cards.find(c => c.id === id)).filter(Boolean); const semTel = L.filter(c => !c.telefone).length, ja = L.filter(c => c.no_fluxo_ia).length;
     if (!confirm('Colocar ' + L.length + ' no fluxo da IARA?\n\nO campo "' + (D.props_ia?.marca_interno || 'atendido_pela_ia') + '" é marcado no HubSpot e a IARA assume a abordagem pelo WhatsApp.' + (ja ? '\n' + ja + ' já estão no fluxo.' : '') + (semTel ? '\n⚠ ' + semTel + ' sem telefone — a IARA não consegue falar com eles.' : ''))) return;
     document.getElementById('flModal')?.remove(); nota('Marcando "' + (D.props_ia?.marca_interno || 'atendido_pela_ia') + '" no HubSpot…', 'info');
-    try { const r = await api('floresta_iara_fluxo', { card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })) }); const f = (r.resultados || []).filter(x => !x.ok);
+    try { const r = await api('floresta_iara_fluxo', { forcado: true, card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })) }); const f = (r.resultados || []).filter(x => !x.ok);
       _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), true);
       nota(r.ok + ' no fluxo da IARA' + (r.campos ? ' — HubSpot: ' + Object.entries(r.campos).map(([k, v]) => k + ' = ' + v).join(', ') : '') + (f.length ? ' · ' + f.length + ' com erro: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
       if (!umId) f.length ? (SEL.clear(), f.forEach(x => SEL.add(x.card_id))) : SEL.clear(); _redesenhar(); carregar(true).catch(() => {}); }
@@ -347,7 +361,7 @@
   }
   async function tirarIara(umId) { const ids = umId ? [umId] : [...SEL]; if (!ids.length || !confirm('Tirar ' + ids.length + ' do fluxo da IARA (fluxo_de_atendimento = Manual no HubSpot)?')) return;
     document.getElementById('flModal')?.remove(); const L = ids.map(id => D.cards.find(c => c.id === id)).filter(Boolean);
-    try { const r = await api('floresta_iara_fluxo', { card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })), tirar: true }); _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), false);
+    try { const r = await api('floresta_iara_fluxo', { forcado: true, card_ids: ids, contatos: L.map(c => ({ card_id: c.id, contato_id: c.contato_id || (String(c.id).startsWith('c:') ? String(c.id).slice(2) : null), nome: c.nome })), tirar: true }); _aplicarIara((r.resultados || []).filter(x => x.ok).map(x => x.card_id), false);
       nota(r.ok + ' fora do fluxo da IARA'); if (!umId) SEL.clear(); _redesenhar(); carregar(true).catch(() => {}); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
   function _aplicarIara(ids, on) { ids.forEach(id => { const c = D.cards.find(x => x.id === id); if (!c) return; c.no_fluxo_ia = on; c.fluxo_ia = on ? 'IA' : '';
     if (on && ['frio', 'abordado', 'engajado'].includes(c.etapa)) { c.etapa_antes_iara = c.etapa; c.etapa = 'iara'; } else if (!on && c.etapa === 'iara') c.etapa = c.etapa_antes_iara || 'frio'; }); }

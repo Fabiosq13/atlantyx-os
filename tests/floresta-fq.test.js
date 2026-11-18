@@ -192,3 +192,10 @@ test('lead WX: acha o negócio por qualquer contato associado e nunca usa os des
   assert.equal(vendedorDe(cardDoContato(cards, '2')).email, 'pt@wxc.one', 'segundo contato do negócio WX também é WX');
   assert.equal(vendedorDe(cardDoContato(cards, '3')).email, 'ademir.souza@atlanteam.com.br'); assert.equal(cardDoContato(cards, '99'), null);
 });
+
+test('mover em lote: todos os marcados vão (não só o primeiro) e cada falha vem com o motivo', async () => {
+  globalThis.__emails = []; const { F } = montar({ contatos: [{ id: '1', nome: 'A' }, { id: '2', nome: 'B' }, { id: '3', nome: 'C' }, { id: '4', nome: 'D', tel: '' }] });
+  const r = await F.moverLote({ card_ids: ['c:1', 'c:2', 'c:3'], para: 'engajado' }, 'fabio'); assert.equal(r.ok, 3);
+  const D = await F.carregar({ forcar: true }); assert.deepEqual(['c:1', 'c:2', 'c:3'].map(id => D.cards.find(x => x.id === id).etapa), ['engajado', 'engajado', 'engajado']);
+  const l = await F.moverLote({ card_ids: ['c:1', 'c:2', 'c:4'], para: 'ligacao' }, 'fabio'); assert.equal(l.ok, 2); assert.match(l.resultados.find(x => x.card_id === 'c:4').motivo, /sem telefone/);
+});
