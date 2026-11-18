@@ -301,7 +301,7 @@
     try { // v3.555: em partes de 4 (cada card faz chamadas ao HubSpot; 40 de uma vez estouravam o tempo do servidor e os cards voltavam)
       const r = { resultados: [], ok: 0, total: L.length }; const ids = L.map(c => c.id);
       for (let i = 0; i < ids.length; i += 4) { nota('Movendo ' + Math.min(i + 4, ids.length) + ' de ' + ids.length + '…', 'info');
-        try { const p = await api('floresta_mover_lote', { card_ids: ids.slice(i, i + 4), para, congelar_ate: ate, motivo }); r.resultados.push(...(p.resultados || [])); r.ok += p.ok || 0; }
+        try { const p = await api('floresta_mover_lote', { card_ids: ids.slice(i, i + 4), para, congelar_ate: ate, motivo, avisar: i + 4 >= ids.length }); r.resultados.push(...(p.resultados || [])); r.ok += p.ok || 0; }
         catch (ep) { ids.slice(i, i + 4).forEach(id => r.resultados.push({ card_id: id, nome: (D.cards.find(y => y.id === id) || {}).nome, ok: false, motivo: ep.message })); } }
       const f = (r.resultados || []).filter(x => !x.ok);
       L.forEach(c => delete MOVENDO[c.id]); f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id), k = D.cards.find(y => y.id === x.card_id); if (a && k) k.etapa = a[1]; });
