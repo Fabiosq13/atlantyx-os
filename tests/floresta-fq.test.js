@@ -143,3 +143,11 @@ test('entrar na ligação manda e-mail ao vendedor com telefone e e-mail do lead
   await F.ligacaoResultado({ card_id: 'c:1', resultado: 'reuniao', nota: 'aceitou', data_reuniao: '2026-11-25T10:30' }, 'teste');
   const m = globalThis.__emails.find(x => /Reunião marcada/.test(x.assunto)); assert.ok(m); assert.match(m.blocos[0], /2026-11-25 às 10:30/); assert.match(m.blocos[0], /ana@empresa-teste/);
 });
+
+test('arrastar para a IARA move o card na hora, vindo de qualquer etapa (ex.: qualificado), mesmo antes de a busca do HubSpot refletir o campo', async () => {
+  const { F } = montar({ contatos: [{ id: '1', nome: 'Ana', lc: 'salesqualifiedlead' }, { id: '2', nome: 'Bia' }] });
+  assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'qualificado');
+  await F.mover({ card_id: 'c:1', para: 'iara' }, 'fabio'); await F.mover({ card_id: 'c:2', para: 'iara' }, 'fabio');
+  const D = await F.carregar({ forcar: true }); assert.equal(D.cards.find(x => x.id === 'c:1').etapa, 'iara', 'qualificado → IARA'); assert.equal(D.cards.find(x => x.id === 'c:2').etapa, 'iara', 'frio → IARA sem esperar o HubSpot');
+  await F.mover({ card_id: 'c:1', para: 'qualificado' }, 'fabio'); assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').iara_forcado, false, 'ao mover de novo, deixa de ficar preso na IARA');
+});

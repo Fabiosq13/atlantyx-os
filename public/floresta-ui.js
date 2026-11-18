@@ -284,7 +284,9 @@
     if (para === 'congelado') { ate = prompt('Congelar até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
     else if (para === 'frio_qualificado') { if (!confirm('Qualificar "' + c.nome + '"?\n\nO sistema calcula o nível (porte pelo Apollo, sem custo), monta a linha de setor e coloca o lead na fila do Frio qualificado. O que não der para obter sozinho fica como pendência no card.')) return; }
     else if (!confirm(`Mover "${c.nome}" para ${e.nome}?` + (para === 'iara' ? '\n\nO contato entra no fluxo da IARA (fluxo_de_atendimento = IA, atendido_pela_ia = false até a IARA atender, abordagem = Geral se estiver vazia). Não precisa de negócio.' : c.tipo === 'contato' && ['reuniao', 'proposta', 'negociacao'].includes(para) ? '\n\nUm NEGÓCIO será criado no HubSpot para este contato.' : '\n\nA etapa muda também no HubSpot.'))) return;
-    try { const r = await api('floresta_mover', { card_id: id, para, congelar_ate: ate, motivo }); nota(r.resultado || 'Movido'); await carregar(true); } catch (e2) { nota('Erro: ' + e2.message, 'error'); }
+    const de = c.etapa; c.etapa_real = c.etapa_real || de; c.etapa = para; c.movendo = true; render(); nota('Movendo "' + c.nome + '"…', 'info');   // v3.539: o card muda na hora; o HubSpot é gravado em seguida
+    try { const r = await api('floresta_mover', { card_id: id, para, congelar_ate: ate, motivo }); c.movendo = false; nota(r.resultado || 'Movido'); carregar(true); }
+    catch (e2) { c.etapa = de; c.movendo = false; render(); nota('Não moveu: ' + e2.message, 'error'); }
   }
   async function congelar(id) { arrastando = id; document.getElementById('flModal')?.remove(); await soltar('congelado'); }
   async function ia() { const b = $('flIaBtn'); if (b) { b.disabled = true; b.textContent = '🤖 Lendo a floresta… (até 2 min)'; }
