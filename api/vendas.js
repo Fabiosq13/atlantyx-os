@@ -984,6 +984,7 @@ async function handler(req, res) {
     iara_retornos: () => iaraRetorno().processar({ horas: payload.horas || 26, simular: !!payload.simular }), // v3.495: rodar agora (ou simular sem gravar)
     floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
     floresta_mover: () => floresta().mover(payload, req.sessao?.login),
+    floresta_movlog: () => floresta().movLog(payload),   // v3.557: registro dos movimentos manuais
     floresta_mover_lote: () => floresta().moverLote(payload, req.sessao?.login),   // v3.547: arrastar vários marcados
     floresta_cfg: () => floresta().cfgSalvar(payload),
     floresta_nivel: () => floresta().nivelSalvar(payload, req.sessao?.login),                 // v3.531: nível do lead (calcula ou define)
