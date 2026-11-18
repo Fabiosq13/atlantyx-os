@@ -7283,7 +7283,7 @@ async function margemCaixa({ meses = 12 } = {}) {
   const cacNovo = novos.length && com12 > 0 ? MC_r2(com12 / novos.length) : null;
   // v3.536: POR PROJETO — margem (competência) e lucro/prejuízo em caixa, com custo = pessoal (horas × custo/hora) + fixo rateado + impostos (mesma apuração da tela Custo por Projeto)
   let projetos = null; try { const nP = Math.min(12, n), CP = await custoProjetos({ meses: nP, mes_fim: fimM }); const iniP = L[L.length - nP] + '-01';
-    projetos = MC.porProjeto({ projetos: CP.projetos || [], faturas_proj: CP.faturas_proj || [], pagamentos, ini: iniP, fim: fimD, n: nP, aliquota: (Number(CP.aliquota_pct) || 0) / 100 });
+    projetos = MC.porProjeto({ projetos: CP.projetos || [], faturas_proj: CP.faturas_proj || [], pagamentos, ini: iniP, fim: fimD, n: nP, aliquota: (Number(CP.aliquota_pct) || 0) / 100, conferencia: CP.conferencia, faturas_detalhe: CP.faturas_detalhe });
     serie = MC.ajustarMargemBruta(serie, CP.direto_por_mes || {});
     projetos.metodo_rateio = CP.metodo; projetos.aliquota_fonte = CP.aliquota_fonte; projetos.avisos = (CP.avisos || []).slice(0, 6); if (nP < n) projetos.aviso_periodo = 'Por projeto: últimos ' + nP + ' meses (limite da apuração de custo por projeto).';
   } catch (e) { faltando.push('Margem e caixa por projeto: ' + e.message); serie = MC.ajustarMargemBruta(serie, {}); }
@@ -7310,7 +7310,7 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
   const avisos = [];
   // 1) Maestro: folha, apontamentos, projetos
   let folhas = {}, apts = [], cad = [], oficiaisLista = [];
-  let mkM = [], finM = [];
+  let mkM = [], finM = []; let conferencia = null; // v3.543: marcos e termos do sistema por projeto (para conferir com a receita ligada)
   try { const S = await _maestroLer(['atlx_analistas_cad', 'atlx_apontamentos', 'atlx_pag_mensal', 'atlx_projetos_cad', 'atlx_proj_marcos', 'atlx_proj_financeiro']);
     mkM = Array.isArray(S.atlx_proj_marcos?.marcos) ? S.atlx_proj_marcos.marcos : (Array.isArray(S.atlx_proj_marcos) ? S.atlx_proj_marcos : []); finM = Array.isArray(S.atlx_proj_financeiro?.itens) ? S.atlx_proj_financeiro.itens : [];
     const ana = Array.isArray(S.atlx_analistas_cad) ? S.atlx_analistas_cad : (S.atlx_analistas_cad?.itens || []); apts = Array.isArray(S.atlx_apontamentos) ? S.atlx_apontamentos : (S.atlx_apontamentos?.itens || []);
@@ -7357,6 +7357,19 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
         const rotulo = L0?.projeto || cli, texto = [L0?.projeto, L0?.marco_projeto, L0?.parcela, linhas, i.PrivateNote, i.CustomerMemo?.value, cli].filter(Boolean).join(' ');
         const a = acharOficial(rotulo, texto, cli);
         receitas.push({ projeto: a ? a.proj : null, cliente: cli, valor: v, mes: String(i.TxnDate).substring(0, 7), rotulo, como: a?.como || null, doc: i.DocNumber || i.Id, id: i.Id }); }
+      // v3.543: CONFERÊNCIA — marcos (Kanban de Marcos) e termos (Kanban de Faturamento) do período por projeto Oficial_, para achar receita que existe e não foi ligada ao projeto
+      try { conferencia = {}; const cf = pr => (conferencia[pr] = conferencia[pr] || { marcos: 0, marcos_valor: 0, marcos_faturados: 0, marcos_faturados_valor: 0, termos: 0, termos_valor: 0, termos_com_fatura: 0, termos_com_fatura_valor: 0, itens: [] });
+        const dS = d => (d instanceof Date ? d.toISOString() : String(d || '')).substring(0, 10), noPer = d => d && d >= ini && d <= fimD, SEM = '(sem projeto Oficial_)';
+        const mk = await sql`SELECT m.id, m.descricao, m.valor, m.data_entrega, m.status_kanban, m.nota_fiscal, m.data_pagamento, p.nome AS projeto, p.cliente FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id WHERE COALESCE(m.valor, 0) > 0`.catch(() => []);
+        for (const m of mk) { const d = dS(m.data_entrega); if (!noPer(d)) continue; const a = acharOficial(m.projeto, [m.projeto, m.descricao, m.cliente].filter(Boolean).join(' '), m.cliente || ''), X = cf(a ? a.proj : SEM), v = Number(m.valor) || 0;
+          const fat = !!(String(m.nota_fiscal || '').trim() || m.data_pagamento || ['nf_emitida', 'aguardando_pagamento', 'concluido'].includes(m.status_kanban));
+          X.marcos++; X.marcos_valor += v; if (fat) { X.marcos_faturados++; X.marcos_faturados_valor += v; } X.itens.push({ tipo: 'marco', nome: String(m.descricao || 'Marco').substring(0, 80), projeto_origem: m.projeto, valor: v, data: d, situacao: fat ? 'faturado' : 'só cadastrado (' + (m.status_kanban || '') + ')' }); }
+        const tm = await sql`SELECT t.id, t.projeto, t.numero_termo, t.marco_projeto, t.status, COALESCE(t.data_termo, t.criado_em::date) AS em, COALESCE(NULLIF(SUM(COALESCE(NULLIF(e.nf_valor, 0), e.valor_parcela)), 0), MAX(t.valor_total_termo), 0) AS total, COUNT(e.qb_invoice_id) AS faturas
+          FROM termos_faturamento t LEFT JOIN termos_empresas e ON e.termo_id = t.id WHERE COALESCE(t.status, '') <> 'cancelado' GROUP BY t.id`.catch(() => []);
+        for (const t of tm) { const d = dS(t.em); if (!noPer(d)) continue; const a = acharOficial(t.projeto, [t.projeto, t.marco_projeto].filter(Boolean).join(' '), ''), X = cf(a ? a.proj : SEM), v = Number(t.total) || 0, fat = Number(t.faturas) > 0;
+          X.termos++; X.termos_valor += v; if (fat) { X.termos_com_fatura++; X.termos_com_fatura_valor += v; } X.itens.push({ tipo: 'termo', nome: 'Termo ' + (t.numero_termo || '') + (t.marco_projeto ? ' · ' + String(t.marco_projeto).substring(0, 60) : ''), projeto_origem: t.projeto, valor: v, data: d, situacao: fat ? 'com fatura no QuickBooks' : 'sem fatura ligada (' + (t.status || '') + ')' }); }
+        for (const X of Object.values(conferencia)) { for (const k of ['marcos_valor', 'marcos_faturados_valor', 'termos_valor', 'termos_com_fatura_valor']) X[k] = round(X[k]); X.itens.sort((a, b) => String(b.data).localeCompare(String(a.data))); X.itens = X.itens.slice(0, 40); }
+      } catch (e) { conferencia = null; avisos.push('Conferência de marcos e termos: ' + e.message); }
     } catch (e) { avisos.push('QuickBooks: ' + e.message); } }
   else avisos.push('QuickBooks não configurado — sem custo fixo e sem receita.');
   const cfgFin = await _fv2Cfg().catch(() => ({})), aliq = aliquota_pct != null && aliquota_pct !== '' ? Number(aliquota_pct) / 100 : cfgP.aliquota_pct != null ? Number(cfgP.aliquota_pct) / 100 : cfgFin.aliquota_pct != null ? cfgFin.aliquota_pct / 100 : (aliqQb || 0.1615);
@@ -7407,7 +7420,8 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
     R.receitas_sem_projeto = Object.values(g).map(x => ({ ...x, valor_mes: round(x.valor / L.length) })).sort((a, b) => b.valor - a.valor);  if (R.receitas_sem_projeto.length) R.avisos.unshift(R.receitas_sem_projeto.length + ' receita(s) sem projeto Oficial_ (' + R.receitas_sem_projeto.reduce((t, x) => t + x.valor, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ' no período) — ligue no quadro "🔗 Receita → projeto Oficial_" para a margem dos projetos ficar certa.'); }
   R.receitas_ligadas = receitas.filter(r => r.projeto).reduce((o, r) => { const k = r.rotulo + '→' + r.projeto; (o[k] = o[k] || { rotulo: r.rotulo, projeto: r.projeto, como: r.como, valor: 0 }).valor = round(o[k].valor + r.valor); return o; }, {});
   R.receitas_ligadas = Object.values(R.receitas_ligadas).sort((a, b) => b.valor - a.valor);
-  R.faturas_proj = receitas.map(r => ({ id: r.id, projeto: r.projeto || null })); // v3.536: fatura → projeto (para o recebido por projeto da tela Margem × Caixa)
+  R.faturas_proj = receitas.map(r => ({ id: r.id, projeto: r.projeto || null })); R.conferencia = conferencia;
+  R.faturas_detalhe = receitas.reduce((o, r) => { const k = r.projeto || '(sem projeto Oficial_)'; (o[k] = o[k] || []).push({ doc: r.doc, cliente: r.cliente, valor: round(r.valor), mes: r.mes, como: r.como || 'não ligada' }); return o; }, {}); // v3.536: fatura → projeto (para o recebido por projeto da tela Margem × Caixa)
   return R;
 }
 async function impostosCadastrar({ itens = [] } = {}) {
