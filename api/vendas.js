@@ -985,6 +985,9 @@ async function handler(req, res) {
     floresta_decidir: () => floresta().decidir(payload, req.sessao?.login),
     floresta_mover: () => floresta().mover(payload, req.sessao?.login),
     floresta_sem_tel_email: () => floresta().semTelefoneParaEmail(payload, req.sessao?.login),   // v3.558
+    floresta_editar: () => floresta().editar(payload, req.sessao?.login),   // v3.563
+    floresta_criar: () => floresta().criar(payload, req.sessao?.login),   // v3.563: novo lead / novo negócio
+    floresta_buscar_contato: () => floresta().buscarContato(payload),
     floresta_movlog: () => floresta().movLog(payload),   // v3.557: registro dos movimentos manuais
     floresta_mover_lote: () => floresta().moverLote(payload, req.sessao?.login),   // v3.547: arrastar vários marcados
     floresta_cfg: () => floresta().cfgSalvar(payload),

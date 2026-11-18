@@ -13,6 +13,8 @@ export function ambiente({ atraso = false } = {}) {
     if (/pipelines\/deals/.test(path)) return { results: pipes }; if (/owners/.test(path)) return { results: [] }; if (/account-info/.test(path)) return { portalId: 1 }; if (/properties\/contacts/.test(path)) return { results: props };
     if (/deals\/search/.test(path)) return { results: Object.values(ler().Dl).filter(d => !d.arquivado).map(d => ({ id: d.id, properties: { ...d.p } })) };
     if (/associations\/deals\/contacts\/batch\/read/.test(path)) return { results: body.inputs.map(i => ({ from: { id: i.id }, to: (ler().Dl[i.id]?.contatos || []).map(c => ({ toObjectId: c })) })) };
+    if (/objects\/contacts$/.test(path) && method === 'POST') { const C = ler().C, id = String(900 + Object.keys(C).length); C[id] = { id, p: { createdate: new Date().toISOString(), lastmodifieddate: new Date().toISOString(), ...body.properties } }; return { id, properties: C[id].p }; }
+    if (/contacts\/search/.test(path)) { const em = body?.filterGroups?.[0]?.filters?.find(f => f.propertyName === 'email'); if (em) return { results: Object.values(ler().C).filter(c => String(c.p.email || '').toLowerCase() === String(em.value).toLowerCase()).map(c => ({ id: c.id, properties: { ...c.p } })) }; }
     if (/contacts\/search/.test(path)) return { results: Object.values(ler().C).map(c => ({ id: c.id, properties: { ...c.p, num_associated_deals: String(Object.values(ler().Dl).filter(d => d.contatos.includes(c.id)).length) } })) };
     if (/contacts\/batch\/read/.test(path)) return { results: body.inputs.map(i => ({ id: i.id, properties: { ...(C[i.id]?.p || {}) } })) };
     if (/contacts\/batch\/update/.test(path)) { body.inputs.forEach(i => Object.assign(C[i.id].p, i.properties)); return {}; }
