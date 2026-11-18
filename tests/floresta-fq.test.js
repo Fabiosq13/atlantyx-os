@@ -179,3 +179,9 @@ test('lead PERDIDO movido para a ligação é reativado e fica na ligação; rec
   assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'ligacao', 'fica na ligação mesmo com o HubSpot ainda devolvendo Perdido');
   await assert.rejects(() => F.mover({ card_id: 'c:2', para: 'ligacao' }, 'fabio'), /sem telefone/);
 });
+
+test('lead QUALIFICADO movido para a ligação fica na ligação (não volta para Qualificado)', async () => {
+  globalThis.__emails = []; const { F } = montar({ contatos: [{ id: '1', nome: 'Quali Teste', lc: 'salesqualifiedlead' }] });
+  await F.mover({ card_id: 'c:1', para: 'ligacao' }, 'fabio');
+  const c = (await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1'); assert.equal(c.etapa, 'ligacao'); assert.equal(c.etapa_real, 'qualificado');
+});
