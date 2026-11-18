@@ -52,3 +52,14 @@ test('token do webhook depende da chave e a configuração mostra o que falta', 
   assert.equal(tokenWebhook().length, 24); const { V } = montar({ cards: [] });
   const c = V.config('https://exemplo.test'); assert.equal(c.ok, true); assert.match(c.webhook_url, /webhook=retell&k=/);
 });
+
+test('limite mensal de 120 minutos: o webhook soma a duração uma vez por ligação e bloqueia novas ligações ao atingir', async () => {
+  const { V, chamadas } = montar({ cards: [card('c:1', 'B'), card('c:2', 'B', { telefone: '21966665555' })] });
+  await V.ligar({ card_ids: ['c:1'] }, 'fabio'); assert.equal(chamadas.length, 1);
+  const ev = (id, ms) => ({ event: 'call_ended', call: { call_id: id, duration_ms: ms, disconnection_reason: 'dial_no_answer', metadata: { teste: '1' } } });
+  await V.webhook(ev('x1', 60 * 60000)); await V.webhook(ev('x1', 60 * 60000)); // repetido: conta uma vez
+  assert.equal((await V.status()).minutos_mes, 60); assert.equal((await V.status()).max_min_mes, 120);
+  await V.webhook(ev('x2', 60 * 60000)); assert.equal((await V.status()).minutos_mes, 120);
+  await assert.rejects(() => V.ligar({ card_ids: ['c:2'] }, 'fabio'), /120 minutos por mês/); await assert.rejects(() => V.teste({ telefone: '21999998888' }), /120 minutos por mês/);
+  assert.equal(chamadas.length, 1, 'nenhuma ligação nova saiu');
+});
