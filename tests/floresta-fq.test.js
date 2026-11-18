@@ -185,3 +185,10 @@ test('lead QUALIFICADO movido para a ligação fica na ligação (não volta par
   await F.mover({ card_id: 'c:1', para: 'ligacao' }, 'fabio');
   const c = (await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1'); assert.equal(c.etapa, 'ligacao'); assert.equal(c.etapa_real, 'qualificado');
 });
+
+test('lead WX: acha o negócio por qualquer contato associado e nunca usa os destinatários extras do vendedor padrão', async () => {
+  const { cardDoContato, vendedorDe } = await import('../lib/floresta-email.js');
+  const cards = [{ id: 'n:9', tipo: 'negocio', contato_id: '1', contatos: [{ id: '1' }, { id: '2' }], pipeline_nome: 'WX Patricia' }, { id: 'c:3', tipo: 'contato', hs_id: '3' }];
+  assert.equal(vendedorDe(cardDoContato(cards, '2')).email, 'pt@wxc.one', 'segundo contato do negócio WX também é WX');
+  assert.equal(vendedorDe(cardDoContato(cards, '3')).email, 'ademir.souza@atlanteam.com.br'); assert.equal(cardDoContato(cards, '99'), null);
+});
