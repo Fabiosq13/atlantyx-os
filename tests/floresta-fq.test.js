@@ -77,7 +77,8 @@ test('Frio qualificado ligado: entra só com nível + briefing por nível + tele
   assert.equal(e('2').etapa, 'frio'); assert.match(e('2').bloqueio_fq, /gancho/); assert.equal(e('3').etapa, 'frio'); assert.match(e('3').bloqueio_fq, /telefone/);
   assert.equal(e('5').etapa, 'frio', 'fora do perfil não entra'); assert.equal(D.cards.find(x => x.id === 'c:1').desde.slice(0, 4), String(new Date().getFullYear()), 'a espera conta a partir da entrada na fila');
   await assert.rejects(() => F.briefingSalvar({ card_id: 'c:1', gancho: 'x', fonte: 'sem-link' }), /link/);
-  await assert.rejects(() => F.mover({ card_id: 'c:1', para: 'frio' }), /Tirar da fila/, 'arrastar de volta para frio é bloqueado: use Tirar da fila');
+  const rv = await F.mover({ card_id: 'c:1', para: 'frio' }); assert.equal(rv.manual, true, 'v3.553: nenhum movimento é recusado — vale a marcação da Floresta');
+  assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'frio');
 });
 
 test('liberação diária: N1 → N2 → N3, mais antigo primeiro, respeita limite, exclusão e é idempotente no dia', async () => {
@@ -171,13 +172,14 @@ test('card movido não "volta": vale a etapa escolhida mesmo antes de o HubSpot 
   assert.ok(ps.some(x => x.lifecyclestage === ''), 'limpa o ciclo de vida antes de baixar'); assert.ok(ps.some(x => x.lifecyclestage === 'marketingqualifiedlead'));
 });
 
-test('lead PERDIDO movido para a ligação é reativado e fica na ligação; recusa vira erro (não "volta" calado)', async () => {
+test('lead PERDIDO movido para a ligação é reativado e fica na ligação; sem telefone também fica (marcação da Floresta)', async () => {
   globalThis.__emails = []; const { F, patches } = montar({ contatos: [{ id: '1', nome: 'Reinaldo Teste', extra: { hs_lead_status: 'UNQUALIFIED' } }, { id: '2', nome: 'Sem Fone', tel: '', extra: { hs_lead_status: 'UNQUALIFIED' } }] });
   assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'perdido');
   const r = await F.mover({ card_id: 'c:1', para: 'ligacao' }, 'fabio'); assert.match(r.resultado, /reativado/);
   assert.ok(patches.some(p => p.path && /contacts\/1$/.test(p.path) && p.body.properties.hs_lead_status === 'ATTEMPTED_TO_CONTACT'));
   assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:1').etapa, 'ligacao', 'fica na ligação mesmo com o HubSpot ainda devolvendo Perdido');
-  await assert.rejects(() => F.mover({ card_id: 'c:2', para: 'ligacao' }, 'fabio'), /sem telefone/);
+  const rs = await F.mover({ card_id: 'c:2', para: 'ligacao' }, 'fabio'); assert.equal(rs.manual, true, 'sem telefone não recusa: fica marcado na ligação');
+  assert.equal((await F.carregar({ forcar: true })).cards.find(x => x.id === 'c:2').etapa, 'ligacao');
 });
 
 test('lead QUALIFICADO movido para a ligação fica na ligação (não volta para Qualificado)', async () => {
@@ -193,9 +195,9 @@ test('lead WX: acha o negócio por qualquer contato associado e nunca usa os des
   assert.equal(vendedorDe(cardDoContato(cards, '3')).email, 'ademir.souza@atlanteam.com.br'); assert.equal(cardDoContato(cards, '99'), null);
 });
 
-test('mover em lote: todos os marcados vão (não só o primeiro) e cada falha vem com o motivo', async () => {
+test('mover em lote: todos os marcados vão (não só o primeiro); nada é recusado', async () => {
   globalThis.__emails = []; const { F } = montar({ contatos: [{ id: '1', nome: 'A' }, { id: '2', nome: 'B' }, { id: '3', nome: 'C' }, { id: '4', nome: 'D', tel: '' }] });
   const r = await F.moverLote({ card_ids: ['c:1', 'c:2', 'c:3'], para: 'engajado' }, 'fabio'); assert.equal(r.ok, 3);
   const D = await F.carregar({ forcar: true }); assert.deepEqual(['c:1', 'c:2', 'c:3'].map(id => D.cards.find(x => x.id === id).etapa), ['engajado', 'engajado', 'engajado']);
-  const l = await F.moverLote({ card_ids: ['c:1', 'c:2', 'c:4'], para: 'ligacao' }, 'fabio'); assert.equal(l.ok, 2); assert.match(l.resultados.find(x => x.card_id === 'c:4').motivo, /sem telefone/);
+  const l = await F.moverLote({ card_ids: ['c:1', 'c:2', 'c:4'], para: 'ligacao' }, 'fabio'); assert.equal(l.ok, 3); assert.equal(l.resultados.find(x => x.card_id === 'c:4').ok, true);
 });
