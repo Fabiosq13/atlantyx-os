@@ -7352,10 +7352,15 @@ async function custoProjetos({ meses = 3, metodo, utilizacao_pct, margem_alvo_pc
         if (hits.length && (hits.length === 1 || hits[0].n > hits[1].n)) return { proj: hits[0].nome, como: 'palavra do nome' };
         const doCli = oficiais.filter(o => o.cliente && chNorm(cli).includes(chNorm(o.cliente).split(' ')[0] || '~')); if (doCli.length === 1) return { proj: doCli[0].nome, como: 'único projeto do cliente' };
         return null; };
+      // v3.551: NF informada no MARCO (Kanban de Marcos) ou no TERMO (Kanban de Faturamento) liga a fatura do QuickBooks ao projeto — mesmo sem qb_invoice_id gravado
+      const nfProj = {}; { const nfk = x => String(x || '').replace(/\D/g, '').replace(/^0+/, '');
+        try { (await sql`SELECT m.nota_fiscal, m.descricao, p.nome AS projeto, p.cliente FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id WHERE COALESCE(TRIM(m.nota_fiscal), '') <> ''`).forEach(m => { const a = acharOficial(m.projeto, [m.projeto, m.descricao, m.cliente].filter(Boolean).join(' '), m.cliente || ''); const k = nfk(m.nota_fiscal); if (a && k) nfProj[k] = a.proj; }); } catch (_) {}
+        try { (await sql`SELECT e.nf_numero, t.projeto, t.marco_projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE COALESCE(TRIM(e.nf_numero), '') <> ''`).forEach(t => { const a = acharOficial(t.projeto, [t.projeto, t.marco_projeto].filter(Boolean).join(' '), ''); const k = nfk(t.nf_numero); if (a && k && !nfProj[k]) nfProj[k] = a.proj; }); } catch (_) {}
+        nfProj._k = nfk; }
       for (const i of inv) { const v = (i.Line || []).filter(l => l.DetailType === 'SalesItemLineDetail').reduce((s, l) => s + (parseFloat(l.Amount) || 0), 0) || (parseFloat(i.TotalAmt) || 0); if (!(v > 0)) continue;
         const cli = i.CustomerRef?.name || '', L0 = lig[String(i.Id)], linhas = (i.Line || []).map(l => l.Description).filter(Boolean).join(' ');
         const rotulo = L0?.projeto || cli, texto = [L0?.projeto, L0?.marco_projeto, L0?.parcela, linhas, i.PrivateNote, i.CustomerMemo?.value, cli].filter(Boolean).join(' ');
-        const a = acharOficial(rotulo, texto, cli);
+        const nfHit = nfProj[nfProj._k(i.DocNumber)]; const a = nfHit ? { proj: nfHit, como: 'NF do marco/termo' } : acharOficial(rotulo, texto, cli);
         receitas.push({ projeto: a ? a.proj : null, cliente: cli, valor: v, mes: String(i.TxnDate).substring(0, 7), rotulo, como: a?.como || null, doc: i.DocNumber || i.Id, id: i.Id }); }
       // v3.543: CONFERÊNCIA — marcos (Kanban de Marcos) e termos (Kanban de Faturamento) do período por projeto Oficial_, para achar receita que existe e não foi ligada ao projeto
       try { conferencia = {}; const cf = pr => (conferencia[pr] = conferencia[pr] || { marcos: 0, marcos_valor: 0, marcos_faturados: 0, marcos_faturados_valor: 0, termos: 0, termos_valor: 0, termos_com_fatura: 0, termos_com_fatura_valor: 0, itens: [] });
