@@ -13,6 +13,7 @@
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'Demorou demais — tente de novo' : 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
+  let recarregarDepois = false; const MOVENDO = {};   // cards com movimento em andamento (id → etapa de destino): uma leitura que chega no meio não desfaz o movimento na tela
   let D = null, vista = 'kanban', filtro = { q: '', tipo: '', atrasados: false, decisores: false, nivel: '', funil: '', dono: '', abordagem: '', campanha: '', setor: '' }, painel = 'fila', arrastando = null, carregando = false;
   const SEL = new Set();   // v3.441: cards marcados para a IARA
   const FLUXO = ['frio', 'frio_qualificado', 'iara', 'ligacao', 'abordado', 'engajado', 'qualificado', 'reuniao', 'proposta', 'negociacao', 'cliente', 'remarketing', 'congelado', 'perdido'];
@@ -25,9 +26,9 @@
 
   async function abrir() { if (!D) await carregar(false); else render(); }
   async function carregar(forcar) {
-    if (carregando) return; carregando = true; const box = $('flApp'); if (box && !D) box.innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3);font-size:12px;">🌳 Plantando a floresta… lendo contatos e negócios do HubSpot</div>';
-    try { D = await api('floresta', { forcar: !!forcar }); render(); } catch (e) { if (box) box.innerHTML = '<div style="color:var(--red);padding:20px;">Erro: ' + esc(e.message) + '</div>'; }
-    finally { carregando = false; }
+    if (carregando) { if (forcar) recarregarDepois = true; return; } carregando = true;   // v3.548: pedido de recarga durante uma leitura não é mais descartado (a leitura antiga "devolvia" o card) const box = $('flApp'); if (box && !D) box.innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3);font-size:12px;">🌳 Plantando a floresta… lendo contatos e negócios do HubSpot</div>';
+    try { D = await api('floresta', { forcar: !!forcar }); for (const [id, pa] of Object.entries(MOVENDO)) { const c = D.cards.find(x => x.id === id); if (c && c.etapa !== pa) { c.etapa_real = c.etapa_real || c.etapa; c.etapa = pa; } } render(); } catch (e) { if (box) box.innerHTML = '<div style="color:var(--red);padding:20px;">Erro: ' + esc(e.message) + '</div>'; }
+    finally { carregando = false; if (recarregarDepois) { recarregarDepois = false; carregar(true); } }
   }
   function filtrados() {
     const q = filtro.q.toLowerCase().trim();
@@ -286,9 +287,9 @@
     if (para === 'congelado') { ate = prompt('Congelar até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
     else if (para === 'frio_qualificado') { if (!confirm('Qualificar "' + c.nome + '"?\n\nO sistema calcula o nível (porte pelo Apollo, sem custo), monta a linha de setor e coloca o lead na fila do Frio qualificado. O que não der para obter sozinho fica como pendência no card.')) return; }
     else if (!confirm(`Mover "${c.nome}" para ${e.nome}?` + (para === 'iara' ? '\n\nO contato entra no fluxo da IARA (fluxo_de_atendimento = IA, atendido_pela_ia = false até a IARA atender, abordagem = Geral se estiver vazia). Não precisa de negócio.' : c.tipo === 'contato' && ['reuniao', 'proposta', 'negociacao'].includes(para) ? '\n\nUm NEGÓCIO será criado no HubSpot para este contato.' : '\n\nA etapa muda também no HubSpot.'))) return;
-    const de = c.etapa; c.etapa_real = c.etapa_real || de; c.etapa = para; c.movendo = true; render(); nota('Movendo "' + c.nome + '"…', 'info');   // v3.539: o card muda na hora; o HubSpot é gravado em seguida
-    try { const r = await api('floresta_mover', { card_id: id, para, congelar_ate: ate, motivo }); c.movendo = false; nota(r.resultado || 'Movido'); carregar(true); }
-    catch (e2) { c.etapa = de; c.movendo = false; render(); nota('Não moveu: ' + e2.message, 'error'); }
+    const de = c.etapa; c.etapa_real = c.etapa_real || de; c.etapa = para; c.movendo = true; MOVENDO[id] = para; render(); nota('Movendo "' + c.nome + '"…', 'info');   // v3.539: o card muda na hora; o HubSpot é gravado em seguida
+    try { const r = await api('floresta_mover', { card_id: id, para, congelar_ate: ate, motivo }); delete MOVENDO[id]; nota(r.resultado || 'Movido'); carregar(true); }
+    catch (e2) { delete MOVENDO[id]; const k = D.cards.find(x => x.id === id); if (k) k.etapa = de; render(); nota('Não moveu: ' + e2.message, 'error'); }
   }
   async function congelar(id) { arrastando = id; document.getElementById('flModal')?.remove(); await soltar('congelado'); }
   async function soltarLote(para) {
@@ -296,12 +297,12 @@
     const e = D.etapas.find(x => x.id === para); let ate = null, motivo = '';
     if (para === 'congelado') { ate = prompt('Congelar os ' + L.length + ' até quando? (AAAA-MM-DD)', new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)); if (!ate) return; motivo = prompt('Motivo (opcional):', '') || ''; }
     else if (!confirm('Mover os ' + L.length + ' cards marcados para ' + e.nome + '?\n\n' + L.slice(0, 12).map(c => '• ' + c.nome).join('\n') + (L.length > 12 ? '\n… e mais ' + (L.length - 12) : '') + (L.length > 60 ? '\n\n(máximo de 60 por vez)' : ''))) return;
-    const antes = L.map(c => [c, c.etapa]); L.forEach(c => { c.etapa_real = c.etapa_real || c.etapa; c.etapa = para; }); _redesenhar(); nota('Movendo ' + L.length + ' cards… pode levar alguns segundos', 'info');
+    const antes = L.map(c => [c, c.etapa]); L.forEach(c => { c.etapa_real = c.etapa_real || c.etapa; c.etapa = para; MOVENDO[c.id] = para; }); _redesenhar(); nota('Movendo ' + L.length + ' cards… pode levar alguns segundos', 'info');
     try { const r = await api('floresta_mover_lote', { card_ids: L.map(c => c.id), para, congelar_ate: ate, motivo }); const f = (r.resultados || []).filter(x => !x.ok);
-      f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id); if (a) a[0].etapa = a[1]; });
+      L.forEach(c => delete MOVENDO[c.id]); f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id), k = D.cards.find(y => y.id === x.card_id); if (a && k) k.etapa = a[1]; });
       nota(r.ok + ' de ' + r.total + ' movido(s) para ' + e.nome + (f.length ? ' · ' + f.length + ' não moveram: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
       SEL.clear(); f.forEach(x => SEL.add(x.card_id)); _redesenhar(); carregar(true); }
-    catch (e2) { antes.forEach(([c, et]) => { c.etapa = et; }); _redesenhar(); nota('Não moveu: ' + e2.message, 'error'); }
+    catch (e2) { antes.forEach(([c, et]) => { delete MOVENDO[c.id]; const k = D.cards.find(y => y.id === c.id); if (k) k.etapa = et; }); _redesenhar(); nota('Não moveu: ' + e2.message, 'error'); }
   }
   async function ia() { const b = $('flIaBtn'); if (b) { b.disabled = true; b.textContent = '🤖 Lendo a floresta… (até 2 min)'; }
     try { const r = await api('floresta_ia', {}); nota(r.novas ? r.novas + ' decisão(ões) para aprovar' : 'Nenhum estourado novo — veja os insights'); painel = r.novas ? 'fila' : 'ins'; await carregar(false); }
