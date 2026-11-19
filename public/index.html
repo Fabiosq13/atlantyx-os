@@ -2772,7 +2772,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
   <!-- v3.564: ASSUNTOS (tela do ATLAS por assunto) · public/assuntos-ui.js · api/s1-intel atlas_* · lib/atlas-itens.js -->
   <div class="page" id="page-s0assuntos">
     <style>
-#page-s0assuntos,.as-modal{--ink:#0B1B21;--mut:#5E7480;--line:#DCE8EB;--pet:#00708A;--cy:#00C4CC;--mint:#00FCA8;--grn:#047857;--amb:#A16207;--red:#B42318;font-family:Montserrat,system-ui,sans-serif;color:var(--ink);background:#F1F7F8;border-radius:14px;position:relative;min-height:calc(100vh - 90px);padding-bottom:190px;overflow:hidden}
+#page-s0assuntos,.as-modal{--ink:#0B1B21;--mut:#5E7480;--line:#DCE8EB;--pet:#00708A;--cy:#00C4CC;--mint:#00FCA8;--grn:#047857;--amb:#A16207;--red:#B42318;font-family:Montserrat,system-ui,sans-serif;color:var(--ink);background:#F1F7F8;border-radius:14px;position:relative;min-height:calc(100vh - 80px);min-height:calc(100dvh - 80px);padding-bottom:0;overflow:clip}
+#page-s0assuntos.active{display:flex;flex-direction:column}
+#asApp{flex:1;display:flex;flex-direction:column}
 #page-s0assuntos::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 520px at 88% -8%,rgba(0,196,204,.28),transparent 70%),radial-gradient(760px 460px at 14% 108%,rgba(0,252,168,.2),transparent 70%);pointer-events:none}
 #asApp{position:relative}
 .as-tabs{display:flex;gap:6px;padding:16px 28px 6px;flex-wrap:wrap;align-items:center}
@@ -2803,7 +2805,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .as-d{padding:12px 15px;display:flex;flex-direction:column;gap:6px;font-size:12.5px}.as-d.hot{border:1.5px solid #F0A8A1;background:linear-gradient(180deg,#FFF4F2,#fff)}.as-d p{font-size:11.5px;color:var(--mut);margin:0;line-height:1.45}
 .as-bt{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 15px;font:700 11.5px Montserrat,sans-serif;cursor:pointer;color:var(--ink);align-self:flex-start}.as-bt.p{background:var(--ink);color:#fff;border-color:var(--ink)}
 .as-av{display:flex;gap:10px;align-items:center;padding:7px 4px;border-radius:12px;cursor:pointer;font-size:12.5px}.as-av:hover{background:#EEF8FA}.as-nota{color:var(--mut);font-size:10.8px;padding:4px}
-.as-comp{position:sticky;bottom:14px;margin:18px 28px 0;z-index:5}
+.as-comp{position:sticky;bottom:0;margin:auto 28px 0;padding:14px 0 14px;z-index:5;background:linear-gradient(180deg,rgba(241,247,248,0),#F1F7F8 28%)}
+@media(max-width:900px){.as-tabs,.as-hero,.as-body{padding-left:14px;padding-right:14px}.as-comp{margin-left:14px;margin-right:14px}.as-hero h1{font-size:23px}.as-kp{gap:20px;flex-wrap:wrap}.as-orb{width:54px;height:54px}}
+@media(max-width:600px){.as-hero{flex-direction:column;align-items:flex-start;gap:10px}.as-ctx,.as-bar kbd{display:none}.as-bar{padding:8px 8px 8px 12px;gap:8px}.as-bar input{font-size:14px}.as-send{padding:10px 14px}.as-comp .as-sug{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.as-comp .as-sug span{white-space:nowrap;flex:none}.as-more{margin-left:0}}
 .as-sug{display:flex;gap:8px;margin:0 0 10px 6px;flex-wrap:wrap}.as-sug span{font-size:12px;font-weight:600;background:rgba(255,255,255,.95);border:1px solid #D5E5E9;color:var(--pet);padding:7px 14px;border-radius:20px;cursor:pointer}
 .as-bar{display:flex;align-items:center;gap:12px;background:#fff;border:2px solid var(--ink);border-radius:26px;padding:10px 12px;box-shadow:0 0 0 7px rgba(0,196,204,.16),0 26px 70px rgba(10,50,60,.2)}
 .as-ctx{background:var(--mint);color:#04342A;font-weight:800;font-size:11.5px;border-radius:20px;padding:6px 12px;white-space:nowrap}
@@ -37363,7 +37367,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.567] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.568] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37379,7 +37383,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.567';
+window.__ATX_BUILD_ID__ = 'ATX-v3.568';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
