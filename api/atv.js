@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desliga dos robôs
 import crypto from 'node:crypto';
 // api/atv.js — v3.153 ATLANTYX TV + WEBINARS AO VIVO
 //
@@ -124,6 +125,11 @@ async function mercado(forcar) {
 
 // ── notícias escritas pela IA a partir de fontes reais (busca na web) — cache 60 min ──
 async function noticias(forcar) {
+  if (!forcar) { // v3.566: robô desligado, ou "só com a TV no ar" (padrão): usa a última busca guardada, sem chamar a IA
+    const g = await liberado('noticias'), ult = (await kv('atv:noticias')) || { itens: [], em: null };
+    if (!g.ok) return ult;
+    if (g.cfg?.so_no_ar !== false) { const tx = await kv('atv:transmissao'); if (!(tx && tx.egress_id)) return ult; }
+  }
   // v3.191 (custo): antes renovava de hora em hora, 24 h por dia, com até 6 buscas na web. Agora renova quando a última
   // tem mais de 4 h, só em dia útil entre 6h e 18h (≈ 7h, 12h e 17h) e com até 3 buscas. Fora disso, usa a última.
   const c = await kv('atv:noticias');

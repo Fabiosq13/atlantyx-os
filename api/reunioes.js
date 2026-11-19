@@ -1,3 +1,4 @@
+import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desliga dos robôs
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 // api/reunioes.js — v3.147 · RITOS SEMANAIS (reuniões recorrentes com pauta automática)
@@ -356,7 +357,7 @@ async function ciclo() {
 async function handler(req, res) {
   const q = req.query || Object.fromEntries(new URL(req.url || '/', 'http://x').searchParams);
   try {
-    if (req.method === 'GET') { if (q.cron) return res.status(200).json({ success: true, ...(await ciclo()) }); return res.status(405).json({ success: false, error: 'Use POST' }); }
+    if (req.method === 'GET') { if (q.cron) { const g = await liberado('pauta'); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); return res.status(200).json({ success: true, ...(await ciclo()) }); } return res.status(405).json({ success: false, error: 'Use POST' }); }
     const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
     const acoes = {
       ritos: () => ritos(), rito_salvar: () => ritoSalvar(b), rito_excluir: async () => { const sql = await getSql(); await sql`DELETE FROM reu_ritos WHERE id=${b.id}`; return { ok: true }; },

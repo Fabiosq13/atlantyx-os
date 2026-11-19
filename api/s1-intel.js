@@ -3,6 +3,7 @@ import { K_VIGENTE, planoResumoTexto } from '../lib/plano-estrategico.js'; // v3
 import { salvarHistorico, listarHistorico, obterHistorico } from '../lib/historico-s1.js';
 import * as AC from '../lib/acoes-sistema.js'; // v3.510: kanban de Ações do sistema
 import * as AT from '../lib/atlas-itens.js'; // v3.564: o que o ATLAS cria por assunto
+import * as RB from '../lib/robos.js'; // v3.566: configuração dos robôs (liga/desliga, modelo, custo)
 // api/s1-intel.js
 // S1 · Inteligência Estratégica Contínua da Atlantyx
 // Os agentes analisam a própria empresa — riscos, finanças, mercado, posicionamento
@@ -23,6 +24,15 @@ async function handler(req, res) {
     if (action === 'historico_obter') { const h = await obterHistorico(req.body.id); return h ? res.status(200).json({ success: true, item: h }) : res.status(404).json({ success: false, error: 'Versão não encontrada' }); }
 
     // v3.510: KANBAN DE AÇÕES DO SISTEMA — propostas da IA; aprovada = executada pelo próprio sistema (lista fechada de executores)
+    // v3.566: ROBÔS E CUSTO DE IA — só administrador
+    if (/^robos_/.test(String(action))) {
+      if (req.sessao && !req.sessao.admin) return res.status(403).json({ success: false, error: 'Só o administrador configura os robôs' });
+      try {
+        if (action === 'robos_listar') { const { iaEstado } = await import('../lib/qa-guard.js'); const e = await iaEstado(true); return res.status(200).json({ success: true, ...(await RB.listar()), ia_ligada: e.ligada }); }
+        if (action === 'robos_salvar') { await RB.salvar(req.body, req.sessao?.login || req.usuario || ''); return res.status(200).json({ success: true, ...(await RB.listar()) }); }
+        return res.status(400).json({ success: false, error: 'Ação desconhecida' });
+      } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
+    }
     // v3.564: ATLAS por assunto — rascunho → teste → publicado (lib/atlas-itens.js)
     if (/^atlas_/.test(String(action))) {
       const login = req.sessao?.login || req.usuario || '', admin = req.sessao ? !!req.sessao.admin : true; _inicioReq = Date.now();

@@ -1,3 +1,4 @@
+import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desliga dos robôs
 import { comGuarda } from '../lib/qa-guard.js';
 // api/followup-cron.js
 // Agente S7-05 — Follow-up automático 48h sem resposta
@@ -14,6 +15,7 @@ async function handler(req, res) {
   }
 
   try {
+    { const g = await liberado('followup'); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); } // v3.566
     const agora = new Date();
     const enviados = [];
 

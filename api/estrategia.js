@@ -1,3 +1,4 @@
+import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desliga dos robôs
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
@@ -685,6 +686,7 @@ async function handler(req, res) {
   // v3.401: cron semanal (quinta, 9h de Brasília) — reanálise de Investimentos & Retiradas quando o Copom decide.
   // Lê a Selic meta na API aberta do Banco Central (série SGS 432, sem chave): mudou desde a última análise → reanalisa;
   // sem mudança, reanalisa mesmo assim a cada 45 dias (intervalo entre reuniões do Copom), para cobrir decisão de manutenção.
+  if (req.method === 'GET' && ['investimentos', 'margem_caixa_mensal', 'ajuste_plano'].includes(req.query?.cron)) { const g = await liberado('simulacoes'); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); } // v3.566
   if (req.method === 'GET' && req.query?.cron === 'investimentos') {
     try { const ult = await kv('inv:ultima'); if (!ult) return res.status(200).json({ success: true, pulado: 'o fundador ainda não rodou a primeira análise' });
       let selic = null; try { const r = await fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json', { signal: AbortSignal.timeout(15000) }); const j = await r.json(); selic = Number(String(j?.[0]?.valor || '').replace(',', '.')) || null; } catch (_) {}

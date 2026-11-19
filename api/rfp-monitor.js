@@ -1,3 +1,4 @@
+import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desliga dos robôs
 import { comGuarda } from '../lib/qa-guard.js';
 // api/rfp-monitor.js — v3.11
 // S2-01 + S2-04 — Monitor de RFPs/editais REAIS
@@ -49,6 +50,10 @@ async function handler(req, res) {
 
   try {
     const body = req.method === 'POST' ? (req.body || {}) : {};
+    // v3.566: o cron só roda se o robô estiver ligado e no intervalo escolhido (padrão: 1x por semana); busca manual na tela não é afetada
+    if (req.method === 'GET' && process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}` && !req.query?.urgente) {
+      const sub = req.query?.acao === 'petronect' ? 'petronect' : ''; const g = await liberado('rfp', sub); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); await marcar('rfp', sub);
+    }
     // Demanda #21: GET ?urgente=true → RFPs da última varredura com prazo em até 3 dias (Dashboard LIVE)
     let urgente = req.query?.urgente; try { urgente = urgente || new URL(req.url || '/', 'http://x').searchParams.get('urgente'); } catch (_) {}
     if (req.method === 'GET' && urgente) {

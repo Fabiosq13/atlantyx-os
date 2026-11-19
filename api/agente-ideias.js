@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desliga dos robôs
 // api/agente-ideias.js — v3.45 ESTEIRA DE DEMANDAS IA (Fase 1: Agente de Produto)
 //
 // Um "PM virtual" pensa o Atlantyx OS em ciclos agendados (e no botão "Pensar agora"): lê as telas do
@@ -420,6 +421,7 @@ async function ciclo() {
   const cfg = await config(); if (!cfg.ativo) return { pulado: 'agente desligado' };
   const ult = await kvGet('agente:ideias:ultimo_ciclo');
   const sync = await sincronizar().catch(e => ({ erro: e.message }));
+  { const g = await liberado('agente_ideias'); if (!g.ok) return { pulado: g.motivo, sync }; } // v3.566: desligado = só sincroniza com o GitHub, não gera
   if (ult?.em && Date.now() - Date.parse(ult.em) < (Math.max(6, +cfg.frequencia_horas || 24) - 1) * 3600000) return { pulado: 'fora da frequência', sync };
   // não acumula: se já há muitas sugestões esperando o fundador, não gera mais
   const sql = await getSql(); const [{ n }] = await sql`SELECT COUNT(*)::int n FROM agente_demandas WHERE status = 'sugerida'`;
