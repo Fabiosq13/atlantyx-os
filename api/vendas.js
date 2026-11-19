@@ -15,6 +15,7 @@ import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desli
 import { calcularFormatos, PARAMS_PADRAO, FORMATOS } from '../lib/proposta-calc.js';
 import { lerPlanoVigente, planoInicial } from '../lib/plano-estrategico.js';
 import { criarFloresta } from '../lib/floresta.js';
+import { funilDoLogin, ACOES_GLOBAIS } from '../lib/floresta-acesso.js'; // v3.569
 import { criarVoz, tokenWebhook } from '../lib/floresta-voz.js';
 import { criarIaraRetorno } from '../lib/iara-retorno.js';   // v3.495: retorno das conversas da IARA   // v3.440: Floresta de Vendas
 
@@ -1020,8 +1021,13 @@ async function handler(req, res) {
     leads_esquecidos_msg: () => leadsEsquecidosMensagem(payload),
     estrategia_excluir: () => sqlRun(async sql => { await sql`DELETE FROM vendas_estrategias WHERE id = ${payload.id}`; return { ok: true }; }),
   };
+  // v3.569: acesso por funil — quem é só do funil padrão (Ademir) ou só do WX (Patricia) não vê nem mexe em card do outro
+  let _funil = null;
+  if (/^floresta/.test(String(action))) { try { _funil = funilDoLogin(req.sessao?.login, (await cfgGet('floresta_acesso_funil')) || {}); } catch (_) {}
+    if (_funil) { if (ACOES_GLOBAIS.has(action) || (action === 'floresta_ia' && !payload.card_id)) return res.status(403).json({ success: false, error: 'Ação não liberada para o seu acesso (funil ' + (_funil === 'wx' ? 'WX' : 'padrão') + ')' });
+      const bloq = await floresta().barrarFunil(payload, _funil); if (bloq) return res.status(403).json({ success: false, error: bloq }); } }
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida. Disponíveis: ' + Object.keys(acoes).join(', ') });
-  try { return res.status(200).json({ success: true, action, ...(await acoes[action]()) }); }
+  try { let r = await acoes[action](); if (_funil && action === 'floresta') r = await floresta().filtrarFunil(r, _funil); if (_funil && action === 'floresta_movlog') r = await floresta().movLogFunil(_funil); return res.status(200).json({ success: true, action, ...r }); }
   catch (e) { console.error('[vendas]', action, e.message); return res.status(500).json({ success: false, error: e.message }); }
 }
 export { calcularFormatos, margens };
