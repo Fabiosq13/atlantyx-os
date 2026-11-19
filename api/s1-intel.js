@@ -29,6 +29,8 @@ async function handler(req, res) {
       if (req.sessao && !req.sessao.admin) return res.status(403).json({ success: false, error: 'Só o administrador configura os robôs' });
       try {
         if (action === 'robos_listar') { const { iaEstado } = await import('../lib/qa-guard.js'); const e = await iaEstado(true); return res.status(200).json({ success: true, ...(await RB.listar()), ia_ligada: e.ligada }); }
+        if (action === 'robos_modelo_salvar') { await RB.modeloSalvar(req.body, req.sessao?.login || ''); return res.status(200).json({ success: true, ...(await RB.listar()) }); }
+        if (action === 'robos_modelo_remover') { await RB.modeloRemover(req.body); return res.status(200).json({ success: true, ...(await RB.listar()) }); }
         if (action === 'robos_salvar') { await RB.salvar(req.body, req.sessao?.login || req.usuario || ''); return res.status(200).json({ success: true, ...(await RB.listar()) }); }
         return res.status(400).json({ success: false, error: 'Ação desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
