@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { montarCaixa, montarOrcamento } from '../lib/graficos-fin.js'; // v3.570: gráficos de linhas (caixa meta × real, orçamento × real)
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
 import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, casarCadastradas as impCasarCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
@@ -196,6 +197,8 @@ async function handler(req, res) {
       pendencias_fin:        () => pendenciasFin(params), // v3.244
       // v3.110: Orçamento em DRE de 12 meses móveis (orçado × realizado/projetado) + propostas do CRM
       orcamento_dre:         () => orcamentoDre(params),
+      grafico_caixa_meta:    () => graficoCaixaMeta(params),      // v3.570: fluxo de caixa meta × real (mês, acumulado, saldo)
+      grafico_orcamento_real: () => graficoOrcamentoReal(params), // v3.570: orçamento × real (receitas, gastos, resultado)
       crm_etapas:            () => crmEtapas(),
       // v3.211: Agenda de Receitas (marcos + sustentações + avulsas, sem lançar no QuickBooks)
       receitas_agenda:            () => receitasAgenda(params),
@@ -384,7 +387,7 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1, metas_empresa_status: 1 }; // v3.301: + metas (o cartão esgotava os 30 s)
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1, metas_empresa_status: 1, grafico_caixa_meta: 1, grafico_orcamento_real: 1 }; // v3.301: + metas (o cartão esgotava os 30 s)
     if (CACHE_FIN[action]) {
       const { _forcar, _max_idade, ...pChave } = params || {};
       // v3.232: chamadas internas (TV, vendas, rito) pedem dado de no máximo alguns minutos — antes aceitavam até 12 h
@@ -9542,6 +9545,24 @@ async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null, prevista =
   const recReal = meses.filter(m => !ehFuturo(m)).reduce((a, m) => a + (G.receitas.meses[m].real - (linhas.crm_receita?.real?.[m] || 0)), 0);
   const cusReal = meses.filter(m => !ehFuturo(m)).reduce((a, m) => a + G.custos.meses[m].real + G.despesas.meses[m].real - (linhas.crm_gastos?.real?.[m] || 0), 0);
   out.custo_historico_pct = recReal > 0 ? Math.round(cusReal / recReal * 100) : null;
+  return out;
+}
+
+// v3.570: dados dos gráficos de linhas. Cada gráfico tem a sua chamada: o lento (QuickBooks) não segura o outro.
+async function graficoCaixaMeta({ ano, conta_id = null } = {}) {
+  const a = parseInt(ano) || parseInt(_hojeBR()), erros = [];
+  const [ex, mt] = await Promise.allSettled([extratoMensal({ ano: a, conta_id }), _metasComPadrao([a])]);
+  if (ex.status === 'rejected') erros.push('Fluxo de caixa: ' + ex.reason?.message);
+  if (mt.status === 'rejected') erros.push('Metas: ' + mt.reason?.message);
+  const out = montarCaixa({ ano: a, extrato: ex.status === 'fulfilled' ? ex.value : null, metas: mt.status === 'fulfilled' ? mt.value?.por_ano?.[String(a)] : null, hoje: _hojeBR(), erros });
+  if (ex.status === 'fulfilled' && ex.value?.qb_erro) out.erro = ex.value.qb_erro; // não vai para o cache quando o QuickBooks falhou
+  return out;
+}
+async function graficoOrcamentoReal({ ano, metodo = 'Cash' } = {}) {
+  const a = parseInt(ano) || parseInt(_hojeBR()), erros = []; let dre = null;
+  try { dre = await orcamentoDre({ inicio: `${a}-01`, meses: 12, prevista: false, metodo }); } catch (e) { erros.push('Orçado × realizado: ' + e.message); }
+  const out = montarOrcamento({ ano: a, dre, hoje: _hojeBR(), erros });
+  if (erros.length || !dre?.qb_configurado) out.erro = erros[0] || 'QuickBooks não conectado';
   return out;
 }
 
