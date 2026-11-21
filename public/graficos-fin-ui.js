@@ -7,7 +7,7 @@
   const nf = (n, d = 0) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
   const R = v => v == null ? '—' : (v < 0 ? '-' : '') + 'R$ ' + nf(Math.abs(v));
   const RC = v => { if (v == null) return '—'; const a = Math.abs(v), s = v < 0 ? '-' : ''; return a >= 1e6 ? s + 'R$ ' + nf(a / 1e6, a >= 1e7 ? 0 : 1) + ' mi' : a >= 1e4 ? s + 'R$ ' + nf(a / 1e3) + ' mil' : s + 'R$ ' + nf(a); };
-  const COR = { real: 'var(--green)', meta: 'var(--gold)', orcado: 'var(--blue)', minimo: 'var(--red)' };
+  const COR = { liq: 'var(--purple, #b48cff)', real: 'var(--green)', meta: 'var(--gold)', orcado: 'var(--blue)', minimo: 'var(--red)' };
   const S = { ano: new Date().getFullYear(), caixa: null, orc: null, vCaixa: 'mensal', vOrc: 'receitas', modoOrc: 'mensal', erro: {}, CH: {} };
 
   async function chamar(action, p) { return await finApi(action, p, { timeoutMs: 60000 }); }
@@ -77,20 +77,21 @@
     const cab = '<div class="gf-h"><div><b>Fluxo de caixa: meta × real</b><div class="gf-sub">Quanto o caixa gerou contra o que a meta de lucro da empresa exige gerar</div></div></div>';
     if (S.erro.caixa || !S.caixa) { box.innerHTML = cab + erroBox(S.erro.caixa || 'sem resposta'); return; }
     const d = S.caixa, c = d.caixa[S.vCaixa], rs = d.resumo, mi = d.meta_info, i0 = d.indice_mes_atual;
-    const ser = [{ nome: 'Real', v: c.real, cor: COR.real }, { nome: 'Previsto', v: c.previsto, cor: COR.real, tracejado: true, ancora: c.real }, { nome: 'Meta', v: c.meta, cor: COR.meta, fino: true }].filter(s => s.v.some(x => x != null));
+    const ser = [{ nome: 'Real', v: c.real, cor: COR.real }, { nome: 'Previsto', v: c.previsto, cor: COR.real, tracejado: true, ancora: c.real }, { nome: 'Meta', v: c.meta, cor: COR.meta, fino: true }, { nome: 'Líquido dos novos impostos', v: c.liquido, cor: COR.liq }].filter(s => s.v.some(x => x != null));
     const refs = S.vCaixa === 'saldo' && c.minimo != null ? [{ valor: c.minimo, rotulo: 'Caixa mínimo ' + RC(c.minimo), cor: COR.minimo }] : [];
     const tit = { mensal: 'Resultado de caixa do mês (entradas − saídas)', acumulado: 'Resultado de caixa acumulado no ano', saldo: 'Saldo em caixa no fim do mês' }[S.vCaixa];
     const k = [
       chip('Real nos meses fechados', RC(rs.resultado_real_fechado), rs.meses_fechados ? 'meta ' + RC(rs.meta_fechado) + (rs.atingido_pct != null ? ' · ' + rs.atingido_pct + '% da meta' : '') : 'nenhum mês fechado ainda', cDes(rs.desvio_fechado)),
       chip('Desvio contra a meta', rs.desvio_fechado == null ? '—' : (rs.desvio_fechado > 0 ? '+' : '') + RC(rs.desvio_fechado), rs.situacao || 'sem meta cadastrada', cDes(rs.desvio_fechado)),
       chip('Projeção do ano', RC(rs.projecao_fim_ano), 'meta do ano ' + RC(rs.meta_ano) + (rs.desvio_projetado != null ? ' · ' + (rs.desvio_projetado >= 0 ? '+' : '') + RC(rs.desvio_projetado) : ''), cDes(rs.desvio_projetado)),
+      (d.imposto && d.imposto.ativo ? chip('Caixa líquido do ano (imposto ' + d.imposto.novo_pct + '%)', RC(d.imposto.liquido_ano), 'novo imposto custa ' + RC(d.imposto.imposto_adicional_ano) + ' a mais no ano', 'var(--purple, #b48cff)') : '') +
       chip('Saldo hoje', RC(rs.saldo_hoje), rs.caixa_minimo != null ? 'mínimo ' + RC(rs.caixa_minimo) : 'caixa mínimo não cadastrado', rs.saldo_hoje != null && rs.caixa_minimo != null && rs.saldo_hoje < rs.caixa_minimo ? 'var(--red)' : null)].join('');
     box.innerHTML = cab + '<div class="gf-ks-row">' + k + '</div>'
-      + '<div class="gf-bar">' + abas(S.vCaixa, [['mensal', 'Resultado do mês'], ['acumulado', 'Acumulado no ano'], ['saldo', 'Saldo em caixa']], 'vistaCaixa') + legenda([{ nome: 'Real', cor: COR.real }, { nome: 'Previsto (realizado + a vencer)', cor: COR.real, tr: true }, { nome: 'Meta', cor: COR.meta }])
+      + '<div class="gf-bar">' + abas(S.vCaixa, [['mensal', 'Resultado do mês'], ['acumulado', 'Acumulado no ano'], ['saldo', 'Saldo em caixa']], 'vistaCaixa') + legenda([{ nome: 'Real', cor: COR.real }, { nome: 'Previsto (realizado + a vencer)', cor: COR.real, tr: true }, { nome: 'Meta', cor: COR.meta }].concat(d.imposto && d.imposto.ativo ? [{ nome: 'Líquido (imposto ' + d.imposto.novo_pct + '%)', cor: COR.liq }] : []))
       + '</div><div class="gf-tt">' + tit + '</div>' + linhas('gfc', d.meses, ser, refs, i0)
       + '<div class="gf-nota">Meta do mês = meta de faturamento do mês × meta de margem líquida'
       + (mi.faturamento_ano ? ' (' + RC(mi.faturamento_ano) + ' × ' + mi.margem_pct + '%, ' + esc(mi.distribuicao) + ')' : '') + '. O mês corrente mostra o realizado até hoje; a linha tracejada é o mês inteiro com o que ainda vai entrar e sair.</div>'
-      + tabela(d.meses, [{ nome: 'Real', v: c.real }, { nome: 'Previsto', v: c.previsto }, { nome: 'Meta', v: c.meta }]) + avisos(d.avisos);
+      + tabela(d.meses, [{ nome: 'Real', v: c.real }, { nome: 'Previsto', v: c.previsto }, { nome: 'Meta', v: c.meta }].concat(d.imposto && d.imposto.ativo ? [{ nome: 'Líquido dos novos impostos', v: c.liquido }] : [])) + avisos(d.avisos);
   }
 
   function pintaOrc() {

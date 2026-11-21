@@ -59,3 +59,16 @@ test('orçamento: sem orçado avisa; sem DRE devolve aviso e nenhuma série', ()
   assert.ok(montarOrcamento({ ano: 2026, dre: z, hoje: '2026-05-18' }).avisos.some(a => /Sem orçamento cadastrado/.test(a)));
   const n = montarOrcamento({ ano: 2026, dre: null, hoje: '2026-05-18' }); assert.equal(n.series, null); assert.ok(n.avisos.length);
 });
+
+test('impostos novos: 2027 desconta 25% − 16,33% sobre as entradas; 2026 não tem linha líquida', () => {
+  const r27 = montarCaixa({ ano: 2027, extrato: ext(2027), metas, hoje: '2026-11-21' });
+  const m = ext(2027).meses[0], imp = Math.round(m.entradas * 0.0867 * 100) / 100;
+  assert.equal(r27.imposto.ativo, true);
+  assert.equal(r27.caixa.mensal.liquido[0], Math.round((m.resultado - imp) * 100) / 100);
+  assert.equal(r27.caixa.acumulado.liquido[1], Math.round((r27.caixa.mensal.liquido[0] + r27.caixa.mensal.liquido[1]) * 100) / 100);
+  assert.ok(r27.caixa.saldo.liquido[11] < ext(2027).meses[11].saldo_fim);
+  const r26 = montarCaixa({ ano: 2026, extrato: ext(2026), metas, hoje: '2026-11-21' });
+  assert.equal(r26.imposto.ativo, false);
+  assert.ok(r26.caixa.mensal.liquido.every(v => v == null));
+  assert.ok(r26.avisos.some(a => /jan\/2027/.test(a)));
+});
