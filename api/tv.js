@@ -1,4 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { placarMontar } from './placar.js'; // v3.572: Placar de Metas (slide da TV: só agregados, filtro visivel_tv)
+import { paraTv } from '../lib/placar-calc.js';
 import crypto from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
@@ -28,9 +30,9 @@ async function kv(k, v) {
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
 const CFG_PADRAO = { codigo: null, criado_em: null, rotacao_s: 25, slides: ['financeiro', 'comercial', 'qualidade'] };
-const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos', 'projetos_tarefas', 'metas', 'objetivos', 'riscos', 'estrategia'];
+const SLIDES_OK = ['financeiro', 'comercial', 'marketing', 'qualidade', 'projetos', 'projetos_tarefas', 'metas', 'objetivos', 'riscos', 'estrategia', 'placar'];
 // v3.152: o slide Qualidade entra nas TVs já configuradas (uma vez; depois vale o que o usuário salvar)
-const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (!c.v479) { const sl = [...(c.slides || [])]; const i = sl.indexOf('projetos'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'projetos_tarefas'); c.slides = [...new Set(sl)]; c.v479 = true; } /* v3.479: tarefas e rentabilidade por projeto */ if (!c.v482) { c.slides = [...new Set([...(c.slides || []), 'metas', 'objetivos', 'riscos'])]; c.v482 = true; } /* v3.482: metas anuais, objetivos e riscos */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
+const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (!c.v332) { const sl = [...(c.slides || [])]; const i = sl.indexOf('comercial'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'marketing'); c.slides = [...new Set(sl)]; c.v332 = true; } /* v3.332: slide de marketing digital */ if (!c.v479) { const sl = [...(c.slides || [])]; const i = sl.indexOf('projetos'); sl.splice(i >= 0 ? i + 1 : sl.length, 0, 'projetos_tarefas'); c.slides = [...new Set(sl)]; c.v479 = true; } /* v3.479: tarefas e rentabilidade por projeto */ if (!c.v482) { c.slides = [...new Set([...(c.slides || []), 'metas', 'objetivos', 'riscos'])]; c.v482 = true; } /* v3.482: metas anuais, objetivos e riscos */ if (!c.v572) { c.slides = [...new Set([...(c.slides || []), 'placar'])]; c.v572 = true; } /* v3.572: Placar de Metas */ if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
 const codigoNovo = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const b = crypto.randomBytes(12); let s = ''; for (const x of b) s += a[x % a.length]; return s; };
 const base = () => { const b = process.env.MEDIA_PUBLIC_BASE || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app'; return (b.startsWith('http') ? b : 'https://' + b).replace(/\/$/, ''); };
 
@@ -217,7 +219,9 @@ async function montarDados() {
           return { nome: _tx(a.nome, 60), status: a.status, receita_meta: a.receita_meta, receita_real: a.receita_realizada, contratos: lin.contratos || 0, leads_ano: lin.leads || 0, leads_90d: r.leads_90d ?? null, reunioes_90d: r.reunioes_90d ?? null }; }).slice(0, 9), visao: VIG.visao || null, prioridades: (VIG.prioridades || []).slice(0, 5).map(x => _tx(x, 130)) } : null };
   })();
   const estr = v(es) || { erro: erro(es) };
-  return { qual, proj, mkt, metas, estr, gerado_em: new Date().toISOString(), mes_ref: mes,
+  // v3.572: Placar de Metas — só indicadores marcados visivel_tv, sem nome de cliente/projeto/pessoa, caixa ou valor de contrato (lib/placar-calc.paraTv)
+  const placar = await placarMontar(ano).then(paraTv).catch(e => ({ erro: String(e.message || e).substring(0, 120) }));
+  return { qual, proj, mkt, metas, estr, placar, gerado_em: new Date().toISOString(), mes_ref: mes,
     // v3.357: cartões no padrão do Dashboard — Real · Previsto · Meta · % atingido · farol (previsto = real + programado até o fim do mês)
     // v3.507: os mesmos KPIs do mês, agora no ANO — real acumulado até hoje contra a meta anual (previsto = real no ritmo do ano)
     resa: (() => { const KA = v(kpA)?.resultado || null; if (!KA || !KA.periodo_res) return null; const P = KA.periodo_res, Ma = KA.metas_periodo || {}, fr = num(Ma.fracao_decorrida), rit = x => x == null || !(fr > 0.04) ? null : Math.round(num(x) / fr);
@@ -290,7 +294,7 @@ async function _comUltimoBom(d) {
   if (mudou) { try { await kv('tv:ultimo_bom', bom); } catch (_) {} }
   d.antigos = antigos; return d;
 }
-const FORMATO_TV = 512; // (fotos usam o mesmo pacote de dados)
+const FORMATO_TV = 572; // (fotos usam o mesmo pacote de dados)
 async function dados(forcar) {
   const c = await kv('tv:dados');
   // v3.484: cache feito por uma versão anterior (sem os blocos novos: metas, estratégia) é refeito na hora, não espera os 10 min
@@ -637,6 +641,25 @@ function sMetas(){if(!D.metas)return '<div style="margin:auto;font-size:30px;col
   h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:23px">'+ind+pl+'</div>'
    +'<div style="font-size:15px;color:#6E7BA0">Financeiras: QuickBooks + Metas da Empresa ('+(D.fin&&D.fin.regime?'regime '+esc(D.fin.regime):'')+') · clientes: QuickBooks (receita por cliente no ano) · pipeline: HubSpot, contra o que falta faturar depois da carteira · farol: realizado × esperado até hoje (verde ≥ 100%, amarelo ≥ 85%) · alavancas: verde = leads de 90 dias no ritmo do plano, amarelo ≥ metade'+(M.erro?' · ⚠ '+esc(M.erro):'')+'</div>';
   return h}
+/* v3.572: PLACAR DE METAS — receita no topo (meta, esperado, realizado, projeção, gap) + 2 colunas de até 9 linhas; ícone + texto em todo status; ações em curso */
+function sPlacar(){var X=D.placar;if(!X||X.erro)return '<div style="margin:auto;font-size:30px;color:#8E9BC0">'+(X&&X.erro?'Placar indisponível agora: '+esc(X.erro):'Atualizando o placar de metas… aparece na próxima carga da TV.')+'</div>';
+  var fm=function(i,v){if(nz(v))return '—';return i.unidade==='R$'?brl(v):i.unidade==='%'?pct(v):i.unidade==='dias'?Math.round(v)+' dias':String(v).replace('.',',')};
+  var mt=function(i){return i.faixa?'faixa '+i.faixa[0]+'–'+i.faixa[1]+'%':nz(i.meta)?'sem meta':'meta '+fm(i,i.meta)};
+  var st=function(i){return '<span style="color:'+cor(i.cor)+';font-weight:800;white-space:nowrap">'+i.icone+' '+(i.cor==='cinza'&&!nz(i.idade_dias)&&i.idade_dias>0?'dado de '+i.idade_dias+' d':esc(i.texto))+'</span>'};
+  var R=X.receita,h='';
+  if(R){var pc=!nz(R.meta)&&R.meta>0?Math.min(100,(R.real||0)/R.meta*100):0,mk=!nz(R.meta)&&R.meta>0&&!nz(R.esperado)?Math.min(100,R.esperado/R.meta*100):null;
+    h+='<div style="background:#0F1630;border:1px solid #1E2A52;border-radius:17px;padding:14px 26px"><div style="display:flex;align-items:baseline;gap:28px;flex-wrap:nowrap"><div style="font-size:23px;font-weight:800;min-width:0">Receita de '+X.ano+'</div>'
+     +'<div style="font-size:46px;font-weight:800;color:'+cor(R.cor)+'">'+fm(R,R.real)+'</div><div style="font-size:19px;color:#8E9BC0;line-height:1.35">'+mt(R)+' · esperado até hoje '+fm(R,R.esperado)+'<br>projeção do ano '+fm(R,R.projecao)+(nz(R.gap)?'':' · gap '+(R.gap>=0?'+':'')+fm(R,R.gap))+'</div><div style="margin-left:auto;font-size:24px">'+st(R)+'</div></div>'
+     +'<div style="position:relative;height:16px;background:#1A2448;border-radius:9px;margin-top:10px"><div style="height:100%;width:'+pc+'%;background:'+cor(R.cor)+';border-radius:9px"></div>'+(mk!=null?'<div style="position:absolute;top:-5px;bottom:-5px;left:'+mk+'%;width:4px;background:#fff;border-radius:2px"></div>':'')+'</div></div>'}
+  var L=X.linhas||[],g1=L.filter(function(i){return i.grupo==='Resultado e crescimento'}),g2=L.filter(function(i){return i.grupo!=='Resultado e crescimento'});
+  var col=function(t,A){return '<div class="painel" style="min-height:0"><h3>'+t+'</h3><div style="flex:1;min-height:0;overflow:hidden">'+(A.length?A.map(function(i){return '<div class="lin" style="padding:6px 0;font-size:21px"><div class="n">'+esc(i.nome)+'<div style="font-size:16px;color:#8E9BC0">'+mt(i)+(i.rotulo?' · '+esc(i.rotulo):'')+'</div></div><div class="q" style="font-size:25px;text-align:right">'+fm(i,i.real)+' <span style="font-size:20px;color:#8E9BC0">'+(i.tendencia||'')+'</span><div style="font-size:16px">'+st(i)+'</div></div></div>'}).join(''):'<div class="erro">Nenhum indicador visível na TV neste grupo.</div>')+'</div></div>'};
+  h+='<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:23px">'+col('Resultado e crescimento',g1)+col('Operação e caixa',g2)+'</div>';
+  var Ac=X.acoes||[];
+  h+='<div style="display:flex;gap:20px;align-items:center;flex-wrap:nowrap;background:#0F1630;border:1px solid #1E2A52;border-radius:15px;padding:10px 22px;font-size:18px">'
+   +'<div style="font-weight:800;white-space:nowrap">'+(X.resumo?X.resumo.verde+' ✔ · '+X.resumo.amarelo+' ▲ · '+X.resumo.vermelho+' ✖':'')+'</div>'
+   +(Ac.length?Ac.map(function(a){return '<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#C9D2EE">Ação: '+esc(a.indicador)+' — '+esc(a.o_que_muda)+' · até '+esc(String(a.prazo||'').split('-').reverse().join('/'))+'</div>'}).join(''):'<div style="color:#8E9BC0">Nenhuma ação em curso.</div>')+'</div>'
+   +'<div style="font-size:15px;color:#6E7BA0">✔ no alvo · ▲ atenção · ✖ fora da meta · ○ sem meta ou dado velho · ↑↓→ tendência contra as últimas leituras · manual/estimado indicados · atualizado '+(X.gerado_em?new Date(X.gerado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+'</div>';
+  return h}
 /* v3.508: ESTRATÉGIA = objetivos (OKRs) + riscos num só slide (antes 2): foco e risco geral no topo, OKRs à esquerda, principais riscos e prioridades à direita */
 function sEstr(){var X=D.estr||{},O=X.okr,R=X.riscos,Sa=X.sala,P=(D.metas||{}).plano,PL=X.planejamento;
   var nv=R?String(R.nivel).toLowerCase():'',fn=/alt/.test(nv)?'vermelho':/m[eé]d/.test(nv)?'amarelo':/baix/.test(nv)?'verde':null,fs=function(sc){return sc>=6?'vermelho':sc>=3?'amarelo':'verde'};
@@ -721,7 +744,7 @@ function sRis(){var X=D.estr||{},R=X.riscos,Sa=X.sala,M=D.metas||{},Fi=D.fin||{}
    +(R&&R.contingencia?'<div style="font-size:15px;color:#FFB547;line-height:1.3;max-height:40px;overflow:hidden;margin-top:6px"><b>Contingência:</b> '+esc(R.contingencia)+'</div>':'')+'</div>';
   return top+'<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:23px">'+esq+dir+'</div>'
    +'<div style="font-size:15px;color:#6E7BA0">Riscos: última análise do Planejamento Estratégico (cor = probabilidade × impacto) · sinais: QuickBooks, HubSpot, Maestro e Faturamento atualizados a cada carga da TV</div>'}
-var TIT={estrategia:'Estratégia · objetivos e riscos',financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing',qualidade:'Qualidade',projetos:'Projetos',projetos_tarefas:'Projetos · tarefas e rentabilidade',metas:'Metas anuais · clientes e vendas',objetivos:'Objetivos estratégicos',riscos:'Riscos'},REN={estrategia:sEstr,financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj,projetos_tarefas:sProjT,metas:sMetas,objetivos:sObj,riscos:sRis};
+var TIT={estrategia:'Estratégia · objetivos e riscos',financeiro:'Financeiro',comercial:'Vendas · funil',marketing:'Marketing',qualidade:'Qualidade',projetos:'Projetos',projetos_tarefas:'Projetos · tarefas e rentabilidade',metas:'Metas anuais · clientes e vendas',objetivos:'Objetivos estratégicos',riscos:'Riscos',placar:'Placar de Metas'},REN={placar:sPlacar,estrategia:sEstr,financeiro:sFin,comercial:sCom,marketing:sMkt,qualidade:sQual,projetos:sProj,projetos_tarefas:sProjT,metas:sMetas,objetivos:sObj,riscos:sRis};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
   var g=new Date(D.gerado_em),NB={res:'resultado do mês',fin:'financeiro',com:'vendas',mkt:'marketing',proj:'projetos',qual_termos:'termos',qual_qb:'QuickBooks',qual_proj:'projetos'};
@@ -802,7 +825,7 @@ async function handler(req, res) {
       config: async () => { const c = await config(); return { config: { ...c, link: c.codigo ? base() + '/tv/' + c.codigo : null } }; },
       gerar: async () => { const c = await config(); const n = { ...c, codigo: codigoNovo(), criado_em: new Date().toISOString() }; await kv('tv:config', n); return { config: { ...n, link: base() + '/tv/' + n.codigo } }; },
       revogar: async () => { const c = await config(); await kv('tv:config', { ...c, codigo: null, criado_em: null }); return { ok: true }; },
-      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, v479: true, v482: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
+      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, v332: true, v479: true, v482: true, v572: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
         if (!Array.isArray(n.slides) || !n.slides.length) throw new Error('Escolha pelo menos um slide'); await kv('tv:config', n);
         /* v3.237: esconder nomes vale na hora (cache de 10 min) */ if (n.nomes_projetos !== c.nomes_projetos) { try { await kv('tv:dados', null); } catch (_) {} } return { config: { ...n, link: n.codigo ? base() + '/tv/' + n.codigo : null } }; },
       atualizar_dados: async () => ({ dados: await dados(true) }),

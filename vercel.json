@@ -200,6 +200,9 @@
     "api/reunioes.js": {
       "maxDuration": 180
     },
+    "api/placar.js": {
+      "maxDuration": 120
+    },
     "api/tv.js": {
       "maxDuration": 120
     },
@@ -214,6 +217,10 @@
     }
   },
   "crons": [
+    {
+      "path": "/api/placar?cron=1",
+      "schedule": "30 10 * * *"
+    },
     {
       "path": "/api/rfp-monitor",
       "schedule": "0 10 * * 1-5"
