@@ -270,7 +270,7 @@
         ${c.proximo_passo ? `<div style="grid-column:1/-1;"><span style="color:var(--t3);">Próximo passo:</span> ${esc(c.proximo_passo)}</div>` : ''}
         ${c.congelado ? `<div style="grid-column:1/-1;color:#5aa9ff;">🧊 Congelado até ${dt(c.congelado.ate)} — ${esc(c.congelado.motivo || '')}</div>` : ''}
         <div><span style="color:var(--t3);">Telefone:</span> ${c.telefone ? `<b>${esc(c.telefone)}</b> <span style="color:var(--t3);">(${c.tel_tipo === 'fixo' ? 'fixo' : 'celular'})</span>` : '<span style="color:var(--t3);">não cadastrado no HubSpot</span>'}</div>
-        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;"><span style="color:var(--t3);">E-mail:</span> ${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '<span style="color:var(--t3);">não cadastrado</span>'}</div>
+        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;"><span style="color:var(--t3);">E-mail:</span> ${c.email ? `<a href="https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${encodeURIComponent(c.email)}" target="_blank" rel="noopener">${esc(c.email)}</a>` : '<span style="color:var(--t3);">não cadastrado</span>'}</div>
         ${(c.contatos || []).length ? `<div style="grid-column:1/-1;"><span style="color:var(--t3);">Contatos:</span> ${c.contatos.map(x => esc(x.nome + (x.cargo ? ' (' + x.cargo + ')' : ''))).join(', ')}</div>` : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">
@@ -280,7 +280,7 @@
         <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.congelar('${esc(c.id)}')">🧊 Congelar</button>
         ${c.link ? `<a class="btn" style="font-size:10.5px;text-decoration:none;color:#ff7a59;border-color:#ff7a59;" href="${esc(c.link)}" target="_blank" rel="noopener">HubSpot</a>` : ''}
         ${wa ? `<a class="btn" style="font-size:10.5px;text-decoration:none;color:#25d366;border-color:#25d366;" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
-        ${c.email ? `<a class="btn" style="font-size:10.5px;text-decoration:none;" href="mailto:${esc(c.email)}">E-mail</a>` : ''}
+        ${c.email ? `<a class="btn" style="font-size:10.5px;text-decoration:none;" href="https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${encodeURIComponent(c.email)}" target="_blank" rel="noopener">E-mail</a>` : ''}
         <button class="btn btn-g" style="font-size:10.5px;margin-left:auto;" onclick="FLORESTA.editar('${esc(c.id)}')">✏️ Editar</button><button class="btn btn-g" style="font-size:10.5px;" title="Lê o HubSpot de novo (valor, etapa, datas…) e reabre este card" onclick="FLORESTA.reler('${esc(c.id)}')">↻ Atualizar do HubSpot</button><button class="btn btn-g" style="font-size:10.5px;" onclick="document.getElementById('flModal').remove()">Fechar</button></div></div>`;
     document.body.appendChild(m); conversa(c.id);
   }
@@ -367,16 +367,21 @@
   }
   function _msg(id) { const el = $('fd_' + id); const f = D.fila.find(x => x.id === id) || {}; return { f, txt: el?.querySelector('[data-k=mensagem]')?.value || f.mensagem || '', ass: el?.querySelector('[data-k=assunto]')?.value || f.assunto || '' }; }
   // v3.501: a IA escreve o e-mail ou o WhatsApp da decisão; você revisa e abre no seu e-mail/WhatsApp
-  async function rascunho(id, canal) { nota('Escrevendo ' + (canal === 'email' ? 'o e-mail' : canal === 'linkedin' ? 'o convite' : 'o WhatsApp') + '…', 'info');
+  async function rascunho(id, canal) { let gw = null; if (canal === 'email') { try { gw = window.open('', '_blank'); if (gw) gw.document.write('<body style="font:14px sans-serif;padding:24px">⏳ A IA está escrevendo o e-mail… ele abre aqui no Gmail em seguida.</body>'); } catch (_) { gw = null; } }   // v3.580: aba aberta no clique (senão o navegador bloqueia) e levada ao Gmail quando o texto ficar pronto
+    nota('Escrevendo ' + (canal === 'email' ? 'o e-mail' : canal === 'linkedin' ? 'o convite' : 'o WhatsApp') + '…', 'info');
     try { const r = await api('floresta_rascunho', { id, canal }); const f = (D.fila || []).find(x => x.id === id); if (f) Object.assign(f, { mensagem: r.mensagem, assunto: r.assunto, canal_rascunho: canal, linkedin_url: r.linkedin_url || f.linkedin_url, email: r.email || f.email, telefone: r.telefone || f.telefone });
-      render(); nota((canal === 'email' ? 'E-mail' : canal === 'linkedin' ? 'Convite' : 'WhatsApp') + ' pronto — revise antes de enviar'); } catch (e) { nota(e.message, 'error'); } }
+      render(); nota((canal === 'email' ? 'E-mail' : canal === 'linkedin' ? 'Convite' : 'WhatsApp') + ' pronto — revise antes de enviar');
+      if (gw) { const g = (D.fila || []).find(x => x.id === id) || {}; if (g.email) { gw.location.href = gmail(g.email, g.assunto, g.mensagem); } else { gw.close(); nota('Este lead não tem e-mail no HubSpot — o texto está pronto no cartão', 'warn'); } } }
+    catch (e) { if (gw) try { gw.close(); } catch (_) {} nota(e.message, 'error'); } }
   async function linkedinEnviar(id) { const { f, txt } = _msg(id);
     if (!confirm('Enviar este convite de conexão pelo LinkedIn (PhantomBuster) para ' + (f.nome || 'o lead') + '?\n\n' + txt)) return;
     nota('Enviando convite…', 'info');
     try { await api('floresta_linkedin_enviar', { id, mensagem: txt, enviar: true }); f.mensagem = txt; f.linkedin_enviado_em = new Date().toISOString(); render(); nota('Convite disparado no PhantomBuster — pode levar alguns minutos para sair no LinkedIn', 'success'); } catch (e) { nota(e.message, 'error'); } }
   function copiarMsg(id) { const { txt, ass } = _msg(id); try { navigator.clipboard.writeText((ass ? 'Assunto: ' + ass + '\n\n' : '') + txt); nota('Copiado'); } catch (_) {} }
   function wa(id) { const { f, txt } = _msg(id); const t = String(f.telefone || '').replace(/\D/g, ''); window.open('https://wa.me/' + (t.length <= 11 ? '55' + t : t) + '?text=' + encodeURIComponent(txt), '_blank', 'noopener'); }
-  function mail(id) { const { f, txt, ass } = _msg(id); location.href = 'mailto:' + encodeURIComponent(f.email) + '?subject=' + encodeURIComponent(ass) + '&body=' + encodeURIComponent(txt); }
+  // v3.580: e-mail abre direto no GOOGLE GMAIL (nova aba, já com destinatário, assunto e texto) — não depende do programa de e-mail do computador
+  const gmail = (para, ass, txt) => 'https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=' + encodeURIComponent(para || '') + '&su=' + encodeURIComponent(ass || '') + '&body=' + encodeURIComponent(txt || '');
+  function mail(id) { const { f, txt, ass } = _msg(id); window.open(gmail(f.email, ass, txt), '_blank', 'noopener'); }
   function sla() {
     const CF = D.cfg_fq || {};
     document.getElementById('flModal')?.remove(); const m = document.createElement('div'); m.id = 'flModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
