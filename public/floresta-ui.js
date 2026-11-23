@@ -125,7 +125,7 @@
     const N = c.nivel_info || {}, B = c.briefing || {}, T = c.temp || {}, tq = c.toques || [];
     const f = (id, ph, v, w) => `<input class="fi" id="flq_${id}" placeholder="${ph}" value="${esc(v ?? '')}" style="${w || 'width:100%'};margin:2px 0;"/>`;
     return `<div style="margin-top:10px;border:1px solid ${c.nivel != null ? NIVCOR[c.nivel] : 'var(--bd)'};border-radius:10px;padding:9px 11px;">
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><b>🎯 Qualificação</b>${nivBadge(c) || '<span class="fl-chip">sem nível</span>'}${c.nivel != null ? `<span style="color:var(--t3);">${esc(NIVNOME[c.nivel])}</span>` : ''}${c.etapa === 'frio_qualificado' ? '<span class="fl-chip" style="color:#2b5fa8;">na fila do Frio qualificado</span>' : ''}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><b>🎯 Qualificação</b>${nivBadge(c) || '<span class="fl-chip">sem nível</span>'}${c.nivel == null && c.nivel_motivo ? `<span style="color:var(--gold);font-size:10.5px;">${esc(c.nivel_motivo)}</span>` : ''}${c.nivel != null ? `<span style="color:var(--t3);">${esc(NIVNOME[c.nivel])}</span>` : ''}${c.etapa === 'frio_qualificado' ? '<span class="fl-chip" style="color:#2b5fa8;">na fila do Frio qualificado</span>' : ''}</div>
       ${N.motivo ? `<div style="color:var(--t3);margin-top:3px;">${esc(N.motivo)}${N.confirmado ? ' · confirmado' : ''}${N.fonte ? ' · fonte: ' + esc(N.fonte) : ''}</div>` : ''}
       ${(c.pendencias_fq || []).length ? `<div style="color:var(--gold);margin-top:3px;">Pendências para liberar: ${esc(c.pendencias_fq.join(' · '))}</div>` : ''}
       ${c.bloqueio_fq && c.etapa === 'frio' ? `<div style="color:var(--gold);margin-top:3px;">Ainda não entra na fila: ${esc(c.bloqueio_fq)}</div>` : ''}
@@ -321,6 +321,7 @@
         catch (ep) { ids.slice(i, i + PT).forEach(id => r.resultados.push({ card_id: id, nome: (D.cards.find(y => y.id === id) || {}).nome, ok: false, motivo: ep.message })); } }
       const f = (r.resultados || []).filter(x => !x.ok);
       L.forEach(c => delete MOVENDO[c.id]); f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id), k = D.cards.find(y => y.id === x.card_id); if (a && k) k.etapa = a[1]; });
+      if (para === 'frio_qualificado') { const t = {}; (r.resultados || []).forEach(x => { const m = String(x.resultado || '').match(/nível NÃO calculado — ([^:]+):/); if (m) t[m[1].replace(/\d+[\w.]*\.\w+/g, '…')] = (t[m[1].replace(/\d+[\w.]*\.\w+/g, '…')] || 0) + 1; }); const k = Object.entries(t).sort((a, b) => b[1] - a[1]); if (k.length) setTimeout(() => nota('Sem nível: ' + k.slice(0, 3).map(([m, n]) => n + '× ' + m).join(' · '), 'info'), 1200); }
       nota(r.ok + ' de ' + r.total + ' movido(s) para ' + e.nome + (f.length ? ' · ' + f.length + ' não moveram: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
       SEL.clear(); f.forEach(x => SEL.add(x.card_id)); _redesenhar(); carregar(true); }
     catch (e2) { antes.forEach(([c, et]) => { delete MOVENDO[c.id]; const k = D.cards.find(y => y.id === c.id); if (k) k.etapa = et; }); _redesenhar(); nota('Não moveu: ' + e2.message, 'error'); }
