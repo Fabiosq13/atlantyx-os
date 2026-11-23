@@ -10,8 +10,9 @@
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'Demorou demais — tente de novo' : 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
-  const TABS = ['comercial', 'marketing', 'financeiro', 'projetos', 'estrategia', 'integracoes'];
+  const TABS = ['comercial', 'marketing', 'financeiro', 'projetos', 'estrategia', 'pessoas', 'juridico', 'dados', 'produtos', 'atendimento', 'desenvolvimento', 'email', 'dashboards', 'integracoes'];   // v3.578: todas as áreas de atuação do menu
   const ICO = { comercial: '🤝', marketing: '📣', financeiro: '💰', projetos: '🗂️', estrategia: '🧭', integracoes: '🔌', pessoas: '👥', juridico: '⚖️', dados: '🗄️', produtos: '📦' };
+  Object.assign(ICO, { atendimento: '🎧', desenvolvimento: '🛠️', email: '📬', dashboards: '📊' });
   const TICO = { agente: '🤖', relatorio: '📄', analise: '🔎', tela: '🖥️' };
   const EST = { rascunho: ['Rascunho · só você', 'pe'], teste: ['Em teste', 'te'], publicado: ['Publicado', 'ok'] };
   // Opções numeradas (teclas 1–9 e 0): "ir" abre uma tela que já existe; "pedir" pede algo novo ao ATLAS.
@@ -32,6 +33,19 @@
       ['Gerar', 'Relatório do funil', 'Etapas, conversão e ticket', { pedir: ['relatorio', 'Relatório semanal do funil comercial: leads por etapa, conversão, ticket médio e negócios parados'] }], ['Gerar', 'Análise de perdas', 'Por que não fechamos', { pedir: ['analise', 'Análise dos motivos de perda de negócios e o que mudar na abordagem'] }],
       ['Conectar', 'HubSpot', 'Atualizar do CRM', { ir: 's7clientes' }]]
   };
+  // v3.578: cada área abre as telas que já existem dela (tecla = número) e mantém os pedidos ao ATLAS
+  const TELAS = {
+    projetos: [['Status Report', 's9status'], ['Painel Mestre', 's9painel'], ['Raio-X do projeto', 's9raiox'], ['Agenda do GP', 's9agenda']],
+    estrategia: [['Plano estratégico', 's1plano'], ['Visão e Metas', 's1metas'], ['Placar de Metas', 's1placar'], ['OKRs', 's1okr'], ['Business Plan', 's1bp']],
+    pessoas: [['Departamento Pessoal', 's8rh'], ['Cadastro de funcionários', 's8funcionarios'], ['Organograma', 's8organograma'], ['Papéis e responsabilidades', 's8papeis']],
+    juridico: [['Jurídico e Compliance', 's5juridico'], ['Análise de contratos', 's5contratos']],
+    dados: [['Engenharia de Dados', 's12hub'], ['Novo projeto de dados', 's12novo'], ['Modelagem DW', 's12modelagem']],
+    atendimento: [['Atendimento omnichannel', 's10atend'], ['Inside Sales + SDR', 's11sales']],
+    desenvolvimento: [['Desenvolvimento, QA e versões', 's6dev'], ['Esteira de entrega', 's6fabrica'], ['QA de produtos', 's6qaprod'], ['Linha de produção', 's6pipeline']],
+    email: [['Caixa de entrada', 'email'], ['RFPs', 'emailrfp'], ['Respostas de vendas', 'emailvendas'], ['Projetos', 'emailprojetos']],
+    dashboards: [['Dashboard Studio', 's13hub'], ['Novo dashboard', 's13novo'], ['Mockup interativo', 's13mockup'], ['Dashboard financeiro', 's1dash']],
+    integracoes: [['Ações do sistema', 's1acoessis'], ['Metricool e Ideogram', 's2social'], ['HubSpot (clientes)', 's7clientes']]
+  };
   const GENERICO = a => [
     ['Gerar', 'Relatório de ' + a, 'O ATLAS monta com o que você pedir', { pedir: ['relatorio', 'Relatório semanal de ' + a + ' com os pontos que precisam de atenção'] }],
     ['Gerar', 'Análise de ' + a, 'Situação, riscos e recomendações', { pedir: ['analise', 'Análise da situação atual de ' + a + ' com riscos e recomendações'] }],
@@ -40,7 +54,7 @@
 
   const S = { cat: null, assunto: 'marketing', itens: [], aguardando: 0, atividade: null, sel: 0, tipo: 'analise', ocupado: false };
   const nomeA = k => (S.cat?.assuntos || {})[k] || k;
-  const opcoes = () => (OPC[S.assunto] || GENERICO(nomeA(S.assunto))).map((o, i) => ({ g: o[0], t: o[1], s: o[2], a: o[3], n: (i + 1) % 10 }));
+  const opcoes = () => (OPC[S.assunto] || (TELAS[S.assunto] || []).map(t => ['Ver', t[0], 'Abre a tela', { ir: t[1] }]).concat(GENERICO(nomeA(S.assunto))).slice(0, 10)).map((o, i) => ({ g: o[0], t: o[1], s: o[2], a: o[3], n: (i + 1) % 10 }));
 
   async function abrir() {
     const box = $('asApp'); if (!box) return;
@@ -53,13 +67,13 @@
 
   function render() {
     const box = $('asApp'); if (!box) return;
-    const outros = Object.keys(S.cat.assuntos).filter(k => !TABS.includes(k));
+    const outros = Object.keys(S.cat.assuntos).filter(k => !TABS.includes(k));   // (assuntos criados depois e ainda sem aba)
     const O = opcoes(), grupos = ['Ver', 'Criar', 'Gerar', 'Conectar'].map(g => [g, O.filter(o => o.g === g)]).filter(x => x[1].length);
     const meus = S.itens.filter(i => i.meu && i.estado !== 'publicado'), aprov = S.itens.filter(i => i.aprovacao === 'pedida' && i.pode_aprovar && i.estado !== 'publicado');
     const pub = S.itens.filter(i => i.estado === 'publicado'), at = S.atividade || {};
     const prec = []; aprov.forEach(i => prec.push([i, 'Pedido de aprovação: ' + i.titulo, 'Quem pediu: ' + esc(i.criado_por) + '. Revise e publique ou devolva.', 'Revisar']));
     meus.filter(i => i.estado === 'rascunho' && !aprov.includes(i)).slice(0, 3).forEach(i => prec.push([i, 'Rascunho seu: ' + i.titulo, 'Só você vê. Teste e publique quando estiver bom.', 'Abrir']));
-    box.innerHTML = '<div class="as-tabs">' + TABS.map(k => '<button class="as-tab' + (k === S.assunto ? ' on' : '') + '" onclick="ASSUNTOS.trocar(\'' + k + '\')">' + ICO[k] + ' ' + esc(nomeA(k)) + '</button>').join('')
+    box.innerHTML = '<div class="as-tabs">' + TABS.filter(k => S.cat.assuntos[k]).map(k => '<button class="as-tab' + (k === S.assunto ? ' on' : '') + '" onclick="ASSUNTOS.trocar(\'' + k + '\')">' + (ICO[k] || '📁') + ' ' + esc(nomeA(k)) + '</button>').join('')
       + '<select class="as-more" onchange="if(this.value)ASSUNTOS.trocar(this.value)"><option value="">Mais assuntos ▾</option>' + outros.map(k => '<option value="' + k + '"' + (k === S.assunto ? ' selected' : '') + '>' + esc(nomeA(k)) + '</option>').join('') + '</select></div>'
       + '<div class="as-hero"><div class="as-orb"></div><div><h1>' + esc(nomeA(S.assunto)) + ': <b>' + (pub.length ? pub.length + ' publicado(s)' : S.itens.length ? S.itens.length + ' item(ns) ainda não publicado(s)' : 'nada criado ainda') + '</b>' + (S.aguardando ? ' e <mark>' + S.aguardando + ' aguardando sua aprovação</mark>' : '') + '.</h1>'
       + '<div class="as-kp"><div><small>Publicados</small><b>' + pub.length + '</b></div><div><small>Em teste</small><b>' + S.itens.filter(i => i.estado === 'teste').length + '</b></div><div><small>Rascunhos</small><b>' + S.itens.filter(i => i.estado === 'rascunho').length + '</b></div><div><small>Criados hoje</small><b>' + (at.hoje || 0) + '</b></div></div></div></div>'

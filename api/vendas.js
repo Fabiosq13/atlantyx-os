@@ -981,6 +981,7 @@ async function handler(req, res) {
     leads_esquecidos: () => leadsEsquecidos(payload), // v3.422
     floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
     floresta_ia: () => floresta().analisarIA(payload),
+    floresta_chat: () => floresta().perguntar(payload),   // v3.578: consulta livre à IA (só leitura; respeita o funil do login)
     floresta_conversa: () => floresta().conversa(payload),
     floresta_rascunho: () => floresta().rascunho(payload), // v3.501: e-mail ou WhatsApp escrito pela IA para a decisão // v3.496: resumo, notas e mensagens do HubSpot no card
     iara_retornos: () => iaraRetorno().processar({ horas: payload.horas || 26, simular: !!payload.simular }), // v3.495: rodar agora (ou simular sem gravar)
@@ -1023,7 +1024,7 @@ async function handler(req, res) {
   };
   // v3.569: acesso por funil — quem é só do funil padrão (Ademir) ou só do WX (Patricia) não vê nem mexe em card do outro
   let _funil = null;
-  if (/^floresta/.test(String(action))) { try { _funil = funilDoLogin(req.sessao?.login, (await cfgGet('floresta_acesso_funil')) || {}); } catch (_) {}
+  if (/^floresta/.test(String(action))) { try { _funil = funilDoLogin(req.sessao?.login, (await cfgGet('floresta_acesso_funil')) || {}); } catch (_) {} if (action === 'floresta_chat') payload.funil_servidor = _funil;   // v3.578: o filtro vem do servidor, nunca do navegador
     if (_funil) { if (ACOES_GLOBAIS.has(action) || (action === 'floresta_ia' && !payload.card_id)) return res.status(403).json({ success: false, error: 'Ação não liberada para o seu acesso (funil ' + (_funil === 'wx' ? 'WX' : 'padrão') + ')' });
       const bloq = await floresta().barrarFunil(payload, _funil); if (bloq) return res.status(403).json({ success: false, error: bloq }); } }
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida. Disponíveis: ' + Object.keys(acoes).join(', ') });

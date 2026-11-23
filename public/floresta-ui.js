@@ -92,6 +92,7 @@
       <button class="btn" style="font-size:10.5px;color:#22d3a3;border-color:#22d3a3;" onclick="FLORESTA.apollo()" title="Abre a busca no Apollo: ❄️ Frios (busca por perfil) ou 🌡 Mornos (suas listas de intenção de compra)">🧲 Gerar leads (Apollo) · frios e 🌡 mornos</button>
       <button class="btn" style="font-size:10.5px;" title="Varre o To-do atrás de tarefas de abordagem (suas ou de outros robôs) ligadas a um lead do funil e deixa o rascunho pronto em Decisões. Roda sozinho de hora em hora. Nada é enviado." onclick="FLORESTA.abordagemTodo()">📋 Abordagens do To-do</button>
       <button class="btn" style="font-size:10.5px;" title="Lê agora as conversas novas da IARA no HubSpot: avisa o Ademir por e-mail, move os cards e atualiza telefone/e-mail. Roda sozinho a cada hora." onclick="FLORESTA.iaraRetornos()">🤖 Retornos da IARA</button>
+      <button class="btn" style="font-size:10.5px;color:var(--pu);border-color:var(--pu);" onclick="FLORESTA.chat()" title="Consulta livre à IA da empresa sobre os seus leads e o funil (só leitura)">💬 Perguntar à IA</button>
       <button class="btn btn-p" id="flIaBtn" style="font-size:10.5px;" onclick="FLORESTA.ia()">🤖 IA: decidir os estourados</button>
       <button class="btn" style="font-size:10.5px;" onclick="FLORESTA.sla()">⏱ Tempos limite</button>
       <button class="btn" style="font-size:10.5px;background:#16a34a;color:#fff;border-color:#16a34a;" onclick="FLORESTA.novo()">➕ Novo lead / negócio</button>
@@ -326,6 +327,30 @@
       SEL.clear(); f.forEach(x => SEL.add(x.card_id)); _redesenhar(); carregar(true); }
     catch (e2) { antes.forEach(([c, et]) => { delete MOVENDO[c.id]; const k = D.cards.find(y => y.id === c.id); if (k) k.etapa = et; }); _redesenhar(); nota('Não moveu: ' + e2.message, 'error'); }
   }
+  // v3.578: 💬 consulta livre à IA (mesma IA da empresa; só leitura; respeita o seu funil)
+  const CH = { h: [], aberto: false };
+  function chat() {
+    let el = document.getElementById('flChat'); if (el) { el.remove(); return; }
+    el = document.createElement('div'); el.id = 'flChat';
+    el.style.cssText = 'position:fixed;right:18px;bottom:18px;width:min(460px,calc(100vw - 36px));height:min(560px,calc(100vh - 90px));background:var(--bg2);border:1px solid var(--pu);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.45);z-index:9000;display:flex;flex-direction:column;overflow:hidden;';
+    el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--bd);"><b style="flex:1;font-size:12.5px;">💬 IA da Atlantyx · Floresta</b><button class="btn" style="font-size:10px;" onclick="FLORESTA.chatLimpar()">Nova conversa</button><button class="btn" style="font-size:10px;" onclick="FLORESTA.chat()">✕</button></div>'
+      + '<div id="flChatMsgs" style="flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.55;"></div>'
+      + '<div id="flChatSug" style="padding:0 12px 6px;display:flex;gap:5px;flex-wrap:wrap;"></div>'
+      + '<div style="display:flex;gap:6px;padding:10px;border-top:1px solid var(--bd);"><textarea id="flChatIn" class="fsel" style="flex:1;height:48px;font-size:12px;resize:none;" placeholder="Ex.: quais leads quentes estão parados há mais de 10 dias? · quantos sem telefone e sem e-mail?" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();FLORESTA.chatEnviar()}"></textarea><button class="btn btn-p" id="flChatBtn" onclick="FLORESTA.chatEnviar()">Enviar</button></div>';
+    document.body.appendChild(el); chatPinta(); setTimeout(() => $('flChatIn')?.focus(), 50);
+  }
+  const SUG = ['Quais leads quentes estão parados além do tempo limite?', 'Quantos leads estão sem telefone e sem e-mail, por etapa?', 'Quem devo abordar primeiro hoje e por quê?', 'Resuma o funil: gargalo e previsão de vendas do mês'];
+  function chatPinta() { const m = $('flChatMsgs'); if (!m) return;
+    m.innerHTML = CH.h.length ? CH.h.map(x => `<div style="${x.role === 'user' ? 'align-self:flex-end;background:var(--bg4);' : 'background:rgba(156,109,255,.08);border-left:3px solid var(--pu);'}border-radius:10px;padding:8px 11px;max-width:92%;">${x.role === 'user' ? esc(x.content) : (window.ATX_IA ? ATX_IA.md(x.content) : esc(x.content))}</div>`).join('')
+      : '<div style="color:var(--t2);">Pergunte qualquer coisa sobre os seus leads e o funil. Eu só consulto: não movo nem envio nada — indico o botão certo para agir.</div>';
+    const s = $('flChatSug'); if (s) s.innerHTML = CH.h.length ? '' : SUG.map(t => `<button class="btn" style="font-size:10px;text-align:left;" onclick="FLORESTA.chatEnviar(this.textContent)">${esc(t)}</button>`).join(''); m.scrollTop = m.scrollHeight; }
+  async function chatEnviar(fixo) { const inp = $('flChatIn'), btn = $('flChatBtn'), q = String(fixo || (inp && inp.value) || '').trim(); if (!q) return; if (inp && !fixo) inp.value = '';
+    const hist = CH.h.slice(); CH.h.push({ role: 'user', content: q }); chatPinta(); if (btn) btn.disabled = true;
+    const m = $('flChatMsgs'); const box = document.createElement('div'); box.style.cssText = 'background:rgba(156,109,255,.08);border-left:3px solid var(--pu);border-radius:10px;padding:8px 11px;max-width:92%;'; box.textContent = '⏳ Lendo a floresta…'; m && (m.appendChild(box), m.scrollTop = m.scrollHeight);
+    try { const r = await api('floresta_chat', { mensagem: q, historico: hist }); CH.h.push({ role: 'assistant', content: r.resposta }); box.remove(); chatPinta(); }
+    catch (e) { box.style.borderLeftColor = 'var(--red)'; box.textContent = '⛔ ' + e.message; }
+    finally { if (btn) btn.disabled = false; } }
+  function chatLimpar() { CH.h = []; chatPinta(); }
   async function ia() { const b = $('flIaBtn'); if (b) { b.disabled = true; b.textContent = '🤖 Lendo a floresta… (até 2 min)'; }
     try { const r = await api('floresta_ia', {}); nota(r.novas ? r.novas + ' decisão(ões) para aprovar' : 'Nenhum estourado novo — veja os insights'); painel = r.novas ? 'fila' : 'ins'; await carregar(false); }
     catch (e) { nota('Erro: ' + e.message, 'error'); } finally { if (b) { b.disabled = false; b.textContent = '🤖 IA: decidir os estourados'; } } }
@@ -529,5 +554,5 @@
   async function reler(id) { nota('Lendo o HubSpot…', 'info'); try { await carregar(true); document.getElementById('flModal')?.remove(); ver(id); nota('Card atualizado com o HubSpot', 'success'); } catch (e) { nota('Não atualizou: ' + e.message, 'error'); } }
   window.FLORESTA = { editar, editarSalvar, novo, novoBuscar, novoEscolher, novoSalvar, reler, semTelEmail, movLog, abordagemTodo, linkedinEnviar, enriquecer, rascunho, copiarMsg, conversa, iaraRetornos, ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
     vozLigar, vozTeste, vozConfig, abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
-    painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, avancar, devolver, devolverSemContato, ver, congelar, ia, iaUm, decidir, wa, mail, sla, liberar, parados, qualSalvar, qualExcluir, _d: () => D };
+    painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, avancar, chat, chatEnviar, chatLimpar, devolver, devolverSemContato, ver, congelar, ia, iaUm, decidir, wa, mail, sla, liberar, parados, qualSalvar, qualExcluir, _d: () => D };
 })();
