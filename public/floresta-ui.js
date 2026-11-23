@@ -53,6 +53,7 @@
       .fl-ch{padding:8px 10px;border-bottom:1px solid var(--bd)}.fl-cn{font-size:11.5px;font-weight:700}.fl-cs{font-size:9.5px;color:var(--t3)}
       .fl-cb{padding:6px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:6px}
       .fl-card{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:7px 9px;cursor:grab;position:relative;transition:transform .12s,box-shadow .12s}
+      .fl-nx{position:absolute;right:5px;bottom:5px;z-index:2;background:var(--bg3);color:var(--t1);border:1px solid var(--bd2);border-radius:6px;font-size:11px;line-height:1;padding:3px 6px;cursor:pointer;opacity:.75}.fl-nx:hover{opacity:1;background:var(--pu)}
       .fl-card:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.25)}
       .fl-card,.fl-card *{min-width:0}.fl-card .tp{position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px}
       .fl-ring{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:8.5px;font-weight:700;flex:0 0 30px}
@@ -160,7 +161,7 @@
   function cardHtml(c) {
     const pct = c.sla ? Math.min(100, Math.round((c.dias || 0) / c.sla * 100)) : 0, cs = corSla(c);
     return `<div class="fl-card${SEL.has(c.id) ? ' fl-sel' : ''}" draggable="true" ondragstart="FLORESTA.drag('${esc(c.id)}')" onclick="FLORESTA.ver('${esc(c.id)}')" title="${esc([c.etapa_hs || '', c.prop_lead ? 'Propriedade do Lead: ' + c.prop_lead : ''].filter(Boolean).join(' · '))}">
-      <div class="tp" style="background:${corTemp(c.temperatura)};"></div>
+      <div class="tp" style="background:${corTemp(c.temperatura)};"></div>${proxEtapa(c) ? `<button class="fl-nx" draggable="false" ondragstart="event.preventDefault();event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();FLORESTA.avancar('${esc(c.id)}')" title="Próximo passo: ${esc((D.etapas.find(e => e.id === proxEtapa(c)) || {}).nome || '')}">➡</button>` : ''}
       <div style="display:flex;gap:7px;align-items:flex-start;padding-left:4px;"><div style="flex:1;min-width:0;">
         <div style="font-size:11.5px;font-weight:700;${c.etapa === 'negociacao' && c.tipo === 'negocio' ? 'white-space:normal;word-break:break-word;' : 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}"><label class="fl-mk" draggable="false" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ondragstart="event.preventDefault();event.stopPropagation()" title="Marcar (IARA, remarketing, excluir)"><input type="checkbox" ${SEL.has(c.id) ? 'checked' : ''} onchange="FLORESTA.marcar('${esc(c.id)}',this.checked)"/></label>${c.tipo === 'negocio' ? '💼 ' : ''}${esc(c.nome)}</div>
         ${c.etapa === 'negociacao' && c.tipo === 'negocio' ? `<div style="font-size:10.5px;line-height:1.4;margin-top:2px;white-space:normal;word-break:break-word;"><div title="Nome do contato">👤 <b>${esc(c.contato || '—')}</b>${c.cargo ? `<span style="color:var(--t3);"> · ${esc(c.cargo)}</span>` : ''}</div><div title="Empresa">🏢 <b>${esc(c.empresa || '—')}</b></div></div>` : `<div style="font-size:9.5px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc([c.tipo === 'negocio' ? c.contato : c.cargo, c.empresa].filter(Boolean).join(' · ') || '—')}</div>`}</div>
@@ -282,6 +283,12 @@
         <button class="btn btn-g" style="font-size:10.5px;margin-left:auto;" onclick="FLORESTA.editar('${esc(c.id)}')">✏️ Editar</button><button class="btn btn-g" style="font-size:10.5px;" title="Lê o HubSpot de novo (valor, etapa, datas…) e reabre este card" onclick="FLORESTA.reler('${esc(c.id)}')">↻ Atualizar do HubSpot</button><button class="btn btn-g" style="font-size:10.5px;" onclick="document.getElementById('flModal').remove()">Fechar</button></div></div>`;
     document.body.appendChild(m); conversa(c.id);
   }
+  // v3.573: botão ➡ no card = mover automaticamente para o PRÓXIMO PASSO do funil (mesma confirmação e mesmas regras do arrastar)
+  const PROX = { frio: 'frio_qualificado', frio_qualificado: 'iara', iara: 'engajado', ligacao: 'qualificado', abordagem_email: 'engajado', abordado: 'engajado', engajado: 'qualificado', qualificado: 'reuniao', reuniao: 'proposta', proposta: 'negociacao', negociacao: 'cliente' };
+  const proxEtapa = c => { const p = PROX[c.etapa]; return p && !(c.tipo === 'negocio' && ['frio', 'frio_qualificado', 'iara', 'abordado', 'engajado'].includes(p)) ? p : null; };
+  async function avancar(id) {
+    const c = D.cards.find(x => x.id === id); const p = c && proxEtapa(c); if (!p) return nota('Este card não tem próximo passo automático', 'info');
+    const tinha = SEL.delete(id); arrastando = id; try { await soltar(p); } finally { if (tinha) SEL.add(id); } }
   async function soltar(para) {
     const id = arrastando; arrastando = null; if (!id) return;
     if (SEL.has(id) && SEL.size > 1) return soltarLote(para);   // v3.547: arrastou um card MARCADO com outros marcados → move todos
@@ -303,9 +310,9 @@
     const antes = L.map(c => [c, c.etapa]); L.forEach(c => { c.etapa_real = c.etapa_real || c.etapa; c.etapa = para; MOVENDO[c.id] = para; }); _redesenhar(); nota('Movendo ' + L.length + ' cards… pode levar alguns segundos', 'info');
     try { // v3.555: em partes de 4 (cada card faz chamadas ao HubSpot; 40 de uma vez estouravam o tempo do servidor e os cards voltavam)
       const r = { resultados: [], ok: 0, total: L.length }; const ids = L.map(c => c.id);
-      for (let i = 0; i < ids.length; i += 4) { nota('Movendo ' + Math.min(i + 4, ids.length) + ' de ' + ids.length + '…', 'info');
-        try { const p = await api('floresta_mover_lote', { card_ids: ids.slice(i, i + 4), para, congelar_ate: ate, motivo, avisar: i + 4 >= ids.length }); r.resultados.push(...(p.resultados || [])); r.ok += p.ok || 0; }
-        catch (ep) { ids.slice(i, i + 4).forEach(id => r.resultados.push({ card_id: id, nome: (D.cards.find(y => y.id === id) || {}).nome, ok: false, motivo: ep.message })); } }
+      const PT = para === 'frio_qualificado' ? 8 : 4; for (let i = 0; i < ids.length; i += PT) { nota('Movendo ' + Math.min(i + PT, ids.length) + ' de ' + ids.length + '…', 'info');
+        try { const p = await api('floresta_mover_lote', { card_ids: ids.slice(i, i + PT), para, congelar_ate: ate, motivo, avisar: i + PT >= ids.length }); r.resultados.push(...(p.resultados || [])); r.ok += p.ok || 0; }
+        catch (ep) { ids.slice(i, i + PT).forEach(id => r.resultados.push({ card_id: id, nome: (D.cards.find(y => y.id === id) || {}).nome, ok: false, motivo: ep.message })); } }
       const f = (r.resultados || []).filter(x => !x.ok);
       L.forEach(c => delete MOVENDO[c.id]); f.forEach(x => { const a = antes.find(z => z[0].id === x.card_id), k = D.cards.find(y => y.id === x.card_id); if (a && k) k.etapa = a[1]; });
       nota(r.ok + ' de ' + r.total + ' movido(s) para ' + e.nome + (f.length ? ' · ' + f.length + ' não moveram: ' + f.slice(0, 5).map(x => (x.nome || '') + ' (' + x.motivo + ')').join('; ') : ''), f.length ? 'error' : 'success');
@@ -515,5 +522,5 @@
   async function reler(id) { nota('Lendo o HubSpot…', 'info'); try { await carregar(true); document.getElementById('flModal')?.remove(); ver(id); nota('Card atualizado com o HubSpot', 'success'); } catch (e) { nota('Não atualizou: ' + e.message, 'error'); } }
   window.FLORESTA = { editar, editarSalvar, novo, novoBuscar, novoEscolher, novoSalvar, reler, semTelEmail, movLog, abordagemTodo, linkedinEnviar, enriquecer, rascunho, copiarMsg, conversa, iaraRetornos, ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
     vozLigar, vozTeste, vozConfig, abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
-    painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, ver, congelar, ia, iaUm, decidir, wa, mail, sla, liberar, parados, qualSalvar, qualExcluir, _d: () => D };
+    painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, avancar, ver, congelar, ia, iaUm, decidir, wa, mail, sla, liberar, parados, qualSalvar, qualExcluir, _d: () => D };
 })();
