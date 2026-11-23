@@ -10,7 +10,7 @@
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'Demorou demais — tente de novo' : 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
-  const TABS = ['comercial', 'marketing', 'financeiro', 'projetos', 'estrategia', 'pessoas', 'juridico', 'dados', 'produtos', 'atendimento', 'desenvolvimento', 'email', 'dashboards', 'integracoes'];   // v3.578: todas as áreas de atuação do menu
+  const TABS = ['comercial', 'vendas', 'marketing', 'financeiro', 'projetos', 'estrategia', 'pessoas', 'juridico', 'dados', 'produtos', 'atendimento', 'desenvolvimento', 'email', 'dashboards', 'integracoes'];   // v3.578: todas as áreas de atuação do menu
   const ICO = { comercial: '🤝', marketing: '📣', financeiro: '💰', projetos: '🗂️', estrategia: '🧭', integracoes: '🔌', pessoas: '👥', juridico: '⚖️', dados: '🗄️', produtos: '📦' };
   Object.assign(ICO, { atendimento: '🎧', desenvolvimento: '🛠️', email: '📬', dashboards: '📊' });
   const TICO = { agente: '🤖', relatorio: '📄', analise: '🔎', tela: '🖥️' };
@@ -35,6 +35,7 @@
   };
   // v3.578: cada área abre as telas que já existem dela (tecla = número) e mantém os pedidos ao ATLAS
   const TELAS = {
+    vendas: [['Floresta de Vendas', 's7floresta'], ['Painel de Vendas IA', 's7painel'], ['Elaboração de Propostas', 's7propostas'], ['Pipeline HubSpot', 's7pipe'], ['Leads esquecidos', 's7esquecidos'], ['Metas + KPIs', 's7kpi'], ['Feed de Prospecção', 's7feed'], ['Clientes do CRM', 's7clientes'], ['Reuniões + Briefings', 's7meet'], ['Outreach em lote', 's7outreach']],
     projetos: [['Status Report', 's9status'], ['Painel Mestre', 's9painel'], ['Raio-X do projeto', 's9raiox'], ['Agenda do GP', 's9agenda']],
     estrategia: [['Plano estratégico', 's1plano'], ['Visão e Metas', 's1metas'], ['Placar de Metas', 's1placar'], ['OKRs', 's1okr'], ['Business Plan', 's1bp']],
     pessoas: [['Departamento Pessoal', 's8rh'], ['Cadastro de funcionários', 's8funcionarios'], ['Organograma', 's8organograma'], ['Papéis e responsabilidades', 's8papeis']],
