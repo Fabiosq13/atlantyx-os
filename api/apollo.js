@@ -157,7 +157,7 @@ async function handler(req, res) {
         people = people.filter(p => { const ok = testes.some(f => f(norm(p.title))); if (!ok) removidos.cargo++; return ok; });
       }
       // v3.234: nunca devolve cargo técnico/operacional (analista, engenheiro, desenvolvedor, coordenador, estagiário…)
-      if (!params.nome_exato) people = people.filter(p => { const ok = !['fora', 'gerencia'].includes(classificarCargo(p.title)); if (!ok) removidos.fora_icp++; return ok; });
+      if (!params.nome_exato && !params.sem_filtro_icp) people = people.filter(p => { const ok = !['fora', 'gerencia'].includes(classificarCargo(p.title)); if (!ok) removidos.fora_icp++; return ok; });
       if (locais.length) {
         const ls = locais.map(norm);
         people = people.filter(p => { const onde = norm([p.city, p.state, p.country, p.location_city, p.location_country].filter(Boolean).join(' '));
