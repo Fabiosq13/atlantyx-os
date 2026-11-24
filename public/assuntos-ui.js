@@ -1,4 +1,4 @@
-// v3.564 — ASSUNTOS · tela do ATLAS por assunto (abas, opções numeradas, "Precisa de você", biblioteca do que o ATLAS criou, barra embaixo)
+// v3.591: item = conversa em fluxo (ajustar, testar e implantar pelo chat) · v3.564 — ASSUNTOS · tela do ATLAS por assunto (abas, opções numeradas, "Precisa de você", biblioteca do que o ATLAS criou, barra embaixo)
 // Dados reais: só o que o ATLAS criou (api/s1-intel atlas_*). Rascunho (só você) → Em teste → Publicado no assunto. Agente/tela exigem aprovação do dono.
 (function () {
   const $ = id => document.getElementById(id);
@@ -113,34 +113,107 @@
   }
   async function enviar() {
     const inp = $('asIn'); const p = (inp?.value || '').trim(); if (!p || S.ocupado) return; S.tipo = $('asTipo')?.value || S.tipo;
-    S.ocupado = true; render(); nota('O ATLAS está preparando… (até 1 min)', 'info');
-    try { const d = await api('atlas_criar', { assunto: S.assunto, tipo: S.tipo, pedido: p }); nota(d.item.ajuste_tipo || (d.item.com_dados ? 'Pronto: feito com dados reais do sistema; ficou em rascunho, só você vê' : 'Pronto: ficou em rascunho, só você vê (esta área ainda não tem dados ligados)')); S.ocupado = false; await carregar(); ver(d.item.id); }
+    S.ocupado = true; render();
+    try { const d = await api('atlas_iniciar', { assunto: S.assunto, tipo: S.tipo, pedido: p }); S.ocupado = false; await carregar(); await ver(d.item.id, p); }
     catch (e) { S.ocupado = false; nota(e.message, 'error'); render(); const i2 = $('asIn'); if (i2) i2.value = p; }
   }
-  function md(t) { // markdown mínimo e seguro: escapa tudo antes
-    return esc(t).replace(/^### (.*)$/gm, '<h4>$1</h4>').replace(/^## (.*)$/gm, '<h3>$1</h3>').replace(/^# (.*)$/gm, '<h2>$1</h2>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '<li>$1</li>').replace(/\n{2,}/g, '<br><br>').replace(/\n/g, '<br>');
+  function md(t) { // markdown mínimo e seguro: escapa tudo antes (títulos, negrito, listas, tabelas)
+    const linhas = esc(t).split('\n'), out = []; let tab = null, lista = false;
+    const fechaLista = () => { if (lista) { out.push('</ul>'); lista = false; } };
+    const fechaTab = () => { if (tab) { out.push('<table class="as-tb">' + tab.map((r, i) => '<tr>' + r.map(c => (i === 0 ? '<th>' : '<td>') + c + (i === 0 ? '</th>' : '</td>')).join('') + '</tr>').join('') + '</table>'); tab = null; } };
+    const inl = x => x.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    for (const l of linhas) {
+      if (/^\s*\|.*\|\s*$/.test(l)) { fechaLista(); if (/^\s*\|[\s:|-]+\|\s*$/.test(l)) continue; (tab = tab || []).push(l.trim().replace(/^\||\|$/g, '').split('|').map(c => inl(c.trim()))); continue; }
+      fechaTab();
+      let m;
+      if ((m = l.match(/^(#{1,3}) (.*)$/))) { fechaLista(); out.push('<h' + (m[1].length + 1) + '>' + inl(m[2]) + '</h' + (m[1].length + 1) + '>'); }
+      else if ((m = l.match(/^\s*(?:[-*]|\d+\.) (.*)$/))) { if (!lista) { out.push('<ul>'); lista = true; } out.push('<li>' + inl(m[1]) + '</li>'); }
+      else if (!l.trim()) { fechaLista(); out.push('<div class="sp"></div>'); }
+      else { fechaLista(); out.push('<p>' + inl(l) + '</p>'); }
+    }
+    fechaLista(); fechaTab(); return out.join('');
   }
-  function ver(id) {
-    const i = S.itens.find(x => x.id === id); if (!i) return; $('asModal')?.remove();
-    const b = []; const mud = (para, rot, cls) => b.push('<button class="as-bt ' + (cls || '') + '" onclick="ASSUNTOS.mudar(\'' + id + '\',\'' + para + '\')">' + rot + '</button>');
-    if (i.estado === 'rascunho' && i.meu) mud('teste', 'Testar (nada sai para fora)', 'p');
-    if (i.estado === 'teste' && i.meu && i.aprovacao === 'necessaria') mud('pedir_aprovacao', 'Pedir aprovação do dono do assunto', 'p');
-    if (i.estado !== 'publicado' && ((i.aprovacao === 'dispensada' && i.meu && i.estado !== 'rascunho') || (i.aprovacao === 'pedida' && i.pode_aprovar))) mud('publicado', 'Publicar em ' + esc(nomeA(i.assunto)), 'p');
-    if (i.estado !== 'rascunho' && (i.meu || i.pode_aprovar)) mud('rascunho', 'Desfazer (voltar a rascunho)');
-    if (i.meu || i.pode_aprovar) mud('descartado', 'Descartar');
-    const m = document.createElement('div'); m.id = 'asModal'; m.className = 'as-modal'; m.onclick = e => { if (e.target === m) m.remove(); };
-    m.innerHTML = '<div class="as-card"><div class="as-ch"><b>' + TICO[i.tipo] + ' ' + esc(i.titulo) + '</b><span class="as-st ' + EST[i.estado][1] + '">' + EST[i.estado][0] + '</span><button class="as-x" onclick="this.closest(\'.as-modal\').remove()">✕</button></div>'
-      + (i.aviso ? '<div class="as-aviso">⚠ ' + esc(i.aviso) + '</div>' : '') + '<div class="as-meta">Salvo em ' + esc(nomeA(i.assunto)) + ' › ' + esc(S.cat.pastas[i.tipo]) + ' · pedido por ' + esc(i.criado_por) + ' em ' + dt(i.criado_em) + (i.publicado_por ? ' · publicado por ' + esc(i.publicado_por) : '') + '</div>'
-      + (i.aprovacao === 'necessaria' || i.aprovacao === 'pedida' ? '<div class="as-meta">' + (i.tipo === 'agente' ? 'Agente: em teste não envia nada para fora; precisa da aprovação do dono do assunto.' : 'Tela: fica privada até a revisão do dono, depois entra no menu.') + '</div>' : '')
-      + '<div class="as-txt">' + md(i.conteudo) + '</div><div class="as-btns">' + b.join('') + '</div>'
-      + '<details class="as-log"><summary>Registro (' + (i.log || []).length + ')</summary>' + (i.log || []).map(l => '<div>' + dt(l.em) + ' · <b>' + esc(l.por) + '</b> ' + esc(l.acao) + (l.detalhe ? ' — ' + esc(l.detalhe) : '') + '</div>').join('') + '</details></div>';
-    document.body.appendChild(m);
+  // ── Conversa com o item (estilo chat) ─────────────────────────────────────────────────────────────────────────────
+  const W = { id: null, item: null, vendo: null, ocupado: false, parcial: '', aba: 'chat' };
+  const sep = t => { const i = t.indexOf('<documento>'); if (i < 0) return { chat: t.trim(), doc: null, aberto: false }; const f = t.indexOf('</documento>', i);
+    return { chat: (t.slice(0, i) + (f < 0 ? '' : t.slice(f + 12))).trim(), doc: t.slice(i + 11, f < 0 ? undefined : f).replace(/^\s*\n/, ''), aberto: f < 0 }; };
+  const SUG = it => it.conteudo ? ['Deixe mais curto', 'Acrescente o que ele NUNCA faz', 'Explique como testar'] : [];
+  async function ver(id, primeira) {
+    $('asModal')?.remove(); W.id = id; W.vendo = null; W.parcial = ''; W.aba = 'chat';
+    try { W.item = (await api('atlas_obter', { id })).item; } catch (e) { return nota(e.message, 'error'); }
+    const m = document.createElement('div'); m.id = 'asModal'; m.className = 'as-modal'; document.body.appendChild(m); desenhar();
+    if (primeira && !W.item.conteudo && !(W.item.conversa || []).length) enviarMsg(primeira);
   }
-  async function mudar(id, para) {
-    let motivo = ''; if (para === 'descartado' && !confirm('Descartar este item?')) return;
-    try { await api('atlas_mudar', { id, para, motivo }); nota({ teste: 'Em teste', pedir_aprovacao: 'Aprovação pedida', publicado: 'Publicado', rascunho: 'Voltou a rascunho', descartado: 'Descartado' }[para]); $('asModal')?.remove(); await carregar(); if (para !== 'descartado') ver(id); }
+  function bolha(c) {
+    if (c.papel === 'user') return '<div class="as-m u"><div class="b">' + esc(c.texto).replace(/\n/g, '<br>') + '</div></div>';
+    return '<div class="as-m a"><div class="av">✨</div><div class="b' + (c.teste ? ' tst' : '') + '">' + (c.teste ? '<div class="tt">🧪 Resultado do teste — simulação, nada saiu para fora</div>' : '') + md(c.texto) + (c.versao ? '<div class="vv">Texto atualizado → versão ' + c.versao + '</div>' : '') + '</div></div>';
+  }
+  function desenhar(manter) {
+    const m = $('asModal'), i = W.item; if (!m || !i) return;
+    const vend = W.vendo, doc = W.ocupado && W.parcialDoc != null ? W.parcialDoc : (vend ? vend.conteudo : i.conteudo), vs = i.versoes || [], ult = vs.length ? vs[vs.length - 1].n : 0;
+    const feed = (i.conversa || []).map(bolha).join('') + (W.ocupado ? '<div class="as-m a"><div class="av">✨</div><div class="b" id="asLive">' + (W.parcial ? md(W.parcial) : '<span class="as-dots"><i></i><i></i><i></i></span>') + '</div></div>' : '');
+    const ac = (i.acoes || []).map(a => '<button class="as-bt' + (a.forte ? ' p' : '') + '" ' + (W.ocupado ? 'disabled ' : '') + 'onclick="ASSUNTOS.chip(\'' + a.id + '\')">' + esc(a.rotulo) + '</button>').join('');
+    const sug = SUG(i).map(t => '<span onclick="ASSUNTOS.msgRapida(this.textContent)">' + esc(t) + '</span>').join('');
+    const antes = manter ? m.querySelector('.as-feed')?.scrollTop : null, ta = manter ? m.querySelector('#asMsg')?.value : '';
+    m.innerHTML = '<div class="as-w ' + (W.aba === 'doc' ? 'ver-doc' : 'ver-chat') + '"><div class="as-wh"><b>' + TICO[i.tipo] + ' ' + esc(i.titulo) + '</b><span class="as-st ' + EST[i.estado][1] + '">' + EST[i.estado][0] + '</span>'
+      + '<button class="as-x" title="Fechar" onclick="ASSUNTOS.fechar()">✕</button></div>'
+      + '<div class="as-wtabs"><button class="' + (W.aba === 'chat' ? 'on' : '') + '" onclick="ASSUNTOS.aba(\'chat\')">💬 Conversa</button><button class="' + (W.aba === 'doc' ? 'on' : '') + '" onclick="ASSUNTOS.aba(\'doc\')">📄 ' + esc(S.cat.tipos[i.tipo]) + '</button></div>'
+      + '<div class="as-wb"><div class="as-wd"><div class="as-wdh"><span>' + esc(S.cat.tipos[i.tipo]) + ' · ' + esc(nomeA(i.assunto)) + '</span>'
+      + (vs.length > 1 ? '<select onchange="ASSUNTOS.versao(this.value)">' + vs.slice().reverse().map(v => '<option value="' + v.n + '"' + ((vend ? vend.n : ult) === v.n ? ' selected' : '') + '>Versão ' + v.n + (v.n === ult ? ' (atual)' : '') + ' · ' + dt(v.em) + '</option>').join('') + '</select>' : '')
+      + (vend && vend.n !== ult ? '<button class="as-bt" onclick="ASSUNTOS.restaurar(' + vend.n + ')">Voltar a esta versão</button>' : '') + '</div>'
+      + (i.aviso ? '<div class="as-aviso">⚠ ' + esc(i.aviso) + '</div>' : '') + (i.ajuste_tipo ? '<div class="as-meta">' + esc(i.ajuste_tipo) + '</div>' : '')
+      + '<div class="as-txt as-doc" id="asDoc">' + (doc ? md(doc) : '<div class="as-vazio">O texto aparece aqui enquanto o ATLAS escreve. Peça ajustes na conversa ao lado.</div>') + '</div>'
+      + '<div class="as-meta">Pedido por ' + esc(i.criado_por) + ' em ' + dt(i.criado_em) + (i.publicado_por ? ' · implantado por ' + esc(i.publicado_por) : '') + '</div>'
+      + '<details class="as-log"><summary>Registro (' + (i.log || []).length + ')</summary>' + (i.log || []).map(l => '<div>' + dt(l.em) + ' · <b>' + esc(l.por) + '</b> ' + esc(l.acao) + (l.detalhe ? ' — ' + esc(l.detalhe) : '') + '</div>').join('') + '</details>'
+      + ((i.meu || i.pode_aprovar) && i.estado !== 'descartado' ? '<button class="as-bt as-desc" onclick="ASSUNTOS.descartar()">Descartar</button>' : '') + '</div>'
+      + '<div class="as-wc"><div class="as-feed" id="asFeed">' + (feed || '<div class="as-vazio">Conte o que você quer. Eu escrevo, você ajusta, testa e implanta aqui mesmo.</div>') + '</div>'
+      + '<div class="as-chips">' + ac + '</div>' + (sug ? '<div class="as-sug2">' + sug + '</div>' : '')
+      + '<div class="as-in"><textarea id="asMsg" rows="1" placeholder="Peça um ajuste, tire uma dúvida, escreva “testa” ou “implantar”…" onkeydown="ASSUNTOS.teclaMsg(event)" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,140)+\'px\'"></textarea>'
+      + '<button class="as-send" ' + (W.ocupado ? 'disabled' : '') + ' onclick="ASSUNTOS.enviarMsg()">' + (W.ocupado ? '…' : 'Enviar') + '</button></div></div></div></div>';
+    const f = $('asFeed'); if (f) f.scrollTop = antes != null && !W.ocupado ? antes : f.scrollHeight; const t = $('asMsg'); if (t) { if (ta) t.value = ta; if (!W.ocupado && window.innerWidth > 700) t.focus(); }
+  }
+  function teclaMsg(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMsg(); } }
+  function msgRapida(t) { enviarMsg(t, /teste/i.test(t) ? 'testar' : null); }
+  function chip(id) { if (id === 'testar') return enviarMsg('Rodar teste agora', 'testar'); return acao(id); }
+  async function enviarMsg(texto, acaoId) {
+    if (W.ocupado) return; const ta = $('asMsg'); const msg = String(texto || ta?.value || '').trim(); if (!msg) return; if (ta) { ta.value = ''; ta.style.height = 'auto'; }
+    const i = W.item; i.conversa = (i.conversa || []).concat({ papel: 'user', texto: msg, em: new Date().toISOString() }); W.ocupado = true; W.parcial = ''; W.parcialDoc = null; W.vendo = null; desenhar();
+    let acum = '', fimItem = null, erro = null;
+    try {
+      const r = await fetch('/api/s1-intel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'atlas_conversar', id: W.id, mensagem: msg, acao: acaoId || undefined }) });
+      if (!r.ok || !/event-stream/.test(r.headers.get('content-type') || '')) { const d = await r.json().catch(() => ({})); throw new Error(d.error || (r.status === 504 ? 'Demorou demais — tente de novo' : 'HTTP ' + r.status)); }
+      const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let k;
+        while ((k = buf.indexOf('\n\n')) >= 0) { const bloco = buf.slice(0, k).trim(); buf = buf.slice(k + 2); if (!bloco.startsWith('data:')) continue; let ev; try { ev = JSON.parse(bloco.slice(5)); } catch (_) { continue; }
+          if (ev.tipo === 'texto') { acum += ev.d; const p = sep(acum); W.parcial = p.chat; W.parcialDoc = p.doc; vivo(p); }
+          else if (ev.tipo === 'fim') fimItem = ev.item; else if (ev.tipo === 'erro') erro = ev.erro; }
+      }
+    } catch (e) { erro = e.message; }
+    W.ocupado = false; W.parcial = ''; W.parcialDoc = null;
+    if (fimItem) W.item = fimItem; else { try { W.item = (await api('atlas_obter', { id: W.id })).item; } catch (_) {} }
+    if (erro) { nota(erro, 'error'); const it = W.item; if (it && it.conversa) it.conversa = it.conversa.concat({ papel: 'atlas', texto: 'Não consegui responder: ' + erro + ' Tente de novo.', em: new Date().toISOString() }); }
+    if ($('asModal')) desenhar(); carregar().catch(() => {});
+  }
+  function vivo(p) { // atualiza só os pedaços que mudam (sem redesenhar o modal inteiro a cada trecho)
+    const l = $('asLive'), d = $('asDoc'), f = $('asFeed'), perto = f && f.scrollHeight - f.scrollTop - f.clientHeight < 80;
+    if (l) l.innerHTML = p.chat ? md(p.chat) : (p.doc != null ? '<span class="as-dots"><i></i><i></i><i></i></span> escrevendo o texto…' : '<span class="as-dots"><i></i><i></i><i></i></span>');
+    if (d && p.doc != null) { d.innerHTML = md(p.doc) + (p.aberto ? '<span class="as-cur"></span>' : ''); if (W.aba === 'doc') d.scrollTop = d.scrollHeight; }
+    if (f && perto) f.scrollTop = f.scrollHeight;
+  }
+  async function acao(para) {
+    if (W.ocupado) return;
+    try { await api('atlas_mudar', { id: W.id, para, motivo: '' }); W.item = (await api('atlas_obter', { id: W.id })).item;
+      const t = { teste: 'Marcado como em teste.', pedir_aprovacao: 'Pedi a aprovação ao dono do assunto.', publicado: 'Implantado em ' + nomeA(W.item.assunto) + '.', rascunho: 'Voltou a rascunho.' }[para] || 'Feito.';
+      W.item.conversa = (W.item.conversa || []).concat({ papel: 'atlas', texto: '✅ ' + t, em: new Date().toISOString() }); nota(t); desenhar(); carregar().catch(() => {}); }
     catch (e) { nota(e.message, 'error'); }
   }
+  async function descartar() { if (!confirm('Descartar este item?')) return; try { await api('atlas_mudar', { id: W.id, para: 'descartado', motivo: '' }); nota('Descartado'); fechar(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
+  async function versao(n) { try { const d = await api('atlas_versao', { id: W.id, n }); const vs = W.item.versoes || [], ult = vs.length ? vs[vs.length - 1].n : 0; W.vendo = Number(n) === ult ? null : d.versao; desenhar(true); } catch (e) { nota(e.message, 'error'); } }
+  async function restaurar(n) { try { W.item = (await api('atlas_restaurar', { id: W.id, n })).item; W.vendo = null; nota('Texto voltou à versão ' + n); desenhar(); carregar().catch(() => {}); } catch (e) { nota(e.message, 'error'); } }
+  function aba(a) { W.aba = a; desenhar(true); }
+  function fechar() { $('asModal')?.remove(); }
+  async function mudar(id, para) { W.id = id; return acao(para); }
   document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && $('page-s0assuntos')?.classList.contains('active')) { e.preventDefault(); $('asIn')?.focus(); } });
-  window.ASSUNTOS = { abrir, trocar, exec, ver, mudar, sugerir, avulso, digitando, tecla, enviar };
+  window.ASSUNTOS = { abrir, trocar, exec, ver, mudar, sugerir, avulso, digitando, tecla, enviar, enviarMsg, msgRapida, teclaMsg, chip, aba, fechar, descartar, versao, restaurar };
 })();

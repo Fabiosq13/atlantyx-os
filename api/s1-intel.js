@@ -43,6 +43,15 @@ async function handler(req, res) {
         if (action === 'atlas_listar') return res.status(200).json({ success: true, ...(await AT.listar(req.body, login, admin)), atividade: await AT.resumoAtividade(req.body.assunto) });
         if (action === 'atlas_criar') return res.status(200).json({ success: true, item: await AT.criar(req.body, login, (sys, usr, mx) => claude(sys, usr, mx)) });
         if (action === 'atlas_orcamento') { if (req.body.mensal != null) { if (!admin) throw Object.assign(new Error('Só o CEO altera o orçamento'), { status: 403 }); return res.status(200).json({ success: true, orcamento: await AT.salvarOrcamentoPago(req.body, login) }); } return res.status(200).json({ success: true, orcamento: await AT.orcamentoPago() }); }
+        if (action === 'atlas_iniciar') return res.status(200).json({ success: true, item: await AT.iniciar(req.body, login) });
+        if (action === 'atlas_obter') return res.status(200).json({ success: true, item: await AT.obter(req.body, login, admin) });
+        if (action === 'atlas_versao') return res.status(200).json({ success: true, versao: await AT.versao(req.body, login, admin) });
+        if (action === 'atlas_restaurar') return res.status(200).json({ success: true, item: await AT.restaurar(req.body, login, admin) });
+        if (action === 'atlas_conversar') { // v3.591: chat em fluxo (SSE) — o texto aparece enquanto o ATLAS escreve
+          let aberto = false; const emitir = ev => { if (!aberto) { aberto = true; res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('X-Accel-Buffering', 'no'); if (res.flushHeaders) res.flushHeaders(); } res.write('data: ' + JSON.stringify(ev) + '\n\n'); };
+          try { await AT.conversar(req.body, login, admin, (sys, msgs, mx, onD) => claudeChat(sys, msgs, mx, onD), emitir); if (!aberto) emitir({ tipo: 'fim' }); return res.end(); }
+          catch (e) { if (!aberto) return res.status(e.status || 500).json({ success: false, error: e.message }); emitir({ tipo: 'erro', erro: e.message }); return res.end(); }
+        }
         if (action === 'atlas_mudar') return res.status(200).json({ success: true, item: await AT.mudar(req.body, login, admin) });
         return res.status(400).json({ success: false, error: 'Ação do ATLAS desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
@@ -842,6 +851,26 @@ async function claude(system, user, maxTokens = 2000) {
     if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');
     return (d.content || []).map(c => c.text || '').join('');
   } catch (e) { if (e.name === 'AbortError') throw new Error('A IA não respondeu em ' + Math.round(prazo / 1000) + 's — tente de novo'); throw e; } finally { clearTimeout(t); }
+}
+
+// v3.591: conversa em fluxo — devolve o texto inteiro e chama onDelta(pedaço) a cada trecho recebido
+async function claudeChat(system, messages, maxTokens = 3800, onDelta = () => {}) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const resta = Math.max(30000, 285000 - (Date.now() - (_inicioReq || Date.now()))), prazo = Math.min(240000, resta);
+  const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), prazo); let txt = '';
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, stream: true, system, messages }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error?.message || 'Erro Claude API [' + r.status + ']'); }
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (!l.startsWith('data:')) continue;
+        let ev; try { ev = JSON.parse(l.slice(5)); } catch (_) { continue; }
+        if (ev.type === 'content_block_delta' && ev.delta?.text) { txt += ev.delta.text; onDelta(ev.delta.text); }
+        if (ev.type === 'error') throw new Error(ev.error?.message || 'Erro na IA'); } }
+    return txt;
+  } catch (e) { if (e.name === 'AbortError') { if (txt.length > 200) return txt; throw new Error('A IA não respondeu em ' + Math.round(prazo / 1000) + 's — tente de novo'); } throw e; } finally { clearTimeout(t); }
 }
 
 // v3.94: JSON cortado no meio é consertado (fecha strings/listas/objetos abertos) em vez de virar {erro}
