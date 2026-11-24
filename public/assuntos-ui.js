@@ -114,7 +114,7 @@
   async function enviar() {
     const inp = $('asIn'); const p = (inp?.value || '').trim(); if (!p || S.ocupado) return; S.tipo = $('asTipo')?.value || S.tipo;
     S.ocupado = true; render(); nota('O ATLAS está preparando… (até 1 min)', 'info');
-    try { const d = await api('atlas_criar', { assunto: S.assunto, tipo: S.tipo, pedido: p }); nota('Pronto: ficou em rascunho, só você vê'); S.ocupado = false; await carregar(); ver(d.item.id); }
+    try { const d = await api('atlas_criar', { assunto: S.assunto, tipo: S.tipo, pedido: p }); nota(d.item.ajuste_tipo || (d.item.com_dados ? 'Pronto: feito com dados reais do sistema; ficou em rascunho, só você vê' : 'Pronto: ficou em rascunho, só você vê (esta área ainda não tem dados ligados)')); S.ocupado = false; await carregar(); ver(d.item.id); }
     catch (e) { S.ocupado = false; nota(e.message, 'error'); render(); const i2 = $('asIn'); if (i2) i2.value = p; }
   }
   function md(t) { // markdown mínimo e seguro: escapa tudo antes
