@@ -269,6 +269,7 @@ async function removerDuplicados({ aplicar = false, dias = 60, blog_id, ids = nu
 
 // v3.74: corpo LIMPO para reenviar um post ao Metricool. O GET devolve campos só de leitura (status por rede,
 // datas, ids, links públicos) que o PUT/POST recusam com "Type definition error ... PublicationStatusCode".
+const _msgMc = e => { const t = String(e?.message || e || ''); const m = t.match(/<(?:message|detail|description)>([^<]+)</i); return (m ? m[1] : t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim().slice(0, 140); };
 function _corpoPostMc(fonte, extra) {
   const ok = ['text', 'firstCommentText', 'publicationDate', 'autoPublish', 'draft', 'shortener', 'mediaAltText', 'videoThumbnailMilliseconds', 'instagramData', 'facebookData', 'linkedinData', 'twitterData', 'pinterestData', 'youtubeData', 'tiktokData', 'gmbData', 'smartLinkData', 'saveExternalMediaFiles'];
   const c = {}; ok.forEach(k => { if (fonte[k] !== undefined && fonte[k] !== null) c[k] = fonte[k]; });
@@ -2770,19 +2771,23 @@ async function campanhaCompleta({ forcar = false, onPasso = () => {}, ativarAnun
     let est; try { const [A, B] = await Promise.all([chamar(JSON_A, 3500), chamar(JSON_B, 3000).catch(() => ({ futuros_reescrever: [] }))]); est = { ...A, futuros_reescrever: B.futuros_reescrever || [] }; passo(true, 'Aprendi com os resultados e defini o que muda'); } catch (e) { throw new Error('Não consegui montar a estratégia do dia: ' + e.message); }    R.est = est; R.concorrencia = conc; R.verba = { teto: tetoMensal, comprometido, disponivel, dia: verbaDia };
     // 5) corrige as futuras: reescreve o que a IA apontou (links preservados, fora do ICP barrado) e desfaz conflitos de horário
     if (leuMc) {
-      const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID; let nTexto = 0, nHora = 0;
+      const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID; let nTexto = 0, nHora = 0, fRecusado = 0; const fTexto = [], fHora = [];
       for (const w of (est.futuros_reescrever || []).slice(0, 6)) {
         const p = futuros.find(x => String(x.id) === String(w.id)), novo = String(w.novo_texto || '').trim(); if (!p || novo.length < 40 || novo.length > 3000) continue;
-        if (!_urls(p.text).every(u => novo.includes(u)) || _icpTexto(novo) || /meetings\.hubspot|\/reuniao/i.test(novo)) { R.ajustes.push(`Não troquei o texto do post ${p.id}: a versão nova perdia um link ou saía do ICP`); continue; }
-        try { await _recriarSemDuplicar(p.id, _corpoPostMc(p, { text: novo }), { USERID, BLOGID, TOKEN }); nTexto++; R.ajustes.push(`Reescrevi o post de ${_quandoPost(p).replace('T', ' ')}: ${String(w.motivo || '').slice(0, 120)}`); } catch (e) { R.ajustes.push(`Não consegui reescrever o post ${p.id}: ${String(e.message).slice(0, 100)}`); }
+        if (!_urls(p.text).every(u => novo.includes(u)) || _icpTexto(novo) || /meetings\.hubspot|\/reuniao/i.test(novo)) { fRecusado++; continue; }
+        try { await _recriarSemDuplicar(p.id, _corpoPostMc(p, { text: novo }), { USERID, BLOGID, TOKEN }); nTexto++; R.ajustes.push(`Reescrevi o post de ${_quandoPost(p).replace('T', ' ')}: ${String(w.motivo || '').slice(0, 120)}`); } catch (e) { fTexto.push(_msgMc(e)); }
       }
       const ocup = futuros.map(_quandoPost).filter(Boolean);
       for (const pr of R.problemas.filter(x => x.tipo === 'conflito de horário').slice(0, 6)) {
         const p = futuros.find(x => String(x.id) === pr.id); if (!p) continue; const q = _quandoPost(p), dia = q.substring(0, 10); let m = _minutos(q.substring(11)), achou = null;
         for (let k = 1; k <= 6 && !achou; k++) { const c = m + 60 * k; if (c > 20 * 60) break; if (!ocup.some(o => o !== q && o.substring(0, 10) === dia && Math.abs(_minutos(o.substring(11)) - c) < 45)) achou = c; }
         if (!achou) continue; const hh = String(Math.floor(achou / 60)).padStart(2, '0') + ':' + String(achou % 60).padStart(2, '0'), novoQ = dia + 'T' + hh + ':00';
-        try { await _recriarSemDuplicar(p.id, _corpoPostMc(p, { publicationDate: { dateTime: novoQ, timezone: 'America/Sao_Paulo' } }), { USERID, BLOGID, TOKEN }); ocup.push(novoQ.substring(0, 16)); nHora++; R.ajustes.push(`Mudei o post de ${q.replace('T', ' ')} para ${hh} (estava em conflito de horário)`); } catch (e) { R.ajustes.push(`Não consegui mudar o horário do post ${p.id}: ${String(e.message).slice(0, 100)}`); }
+        try { await _recriarSemDuplicar(p.id, _corpoPostMc(p, { publicationDate: { dateTime: novoQ, timezone: 'America/Sao_Paulo' } }), { USERID, BLOGID, TOKEN }); ocup.push(novoQ.substring(0, 16)); nHora++; R.ajustes.push(`Mudei o post de ${q.replace('T', ' ')} para ${hh} (estava em conflito de horário)`); } catch (e) { fHora.push(_msgMc(e)); }
       }
+      const grp = a => { const c = {}; a.forEach(x => c[x] = (c[x] || 0) + 1); return Object.entries(c).map(([k, v]) => `${v}× ${k}`).join('; '); };
+      if (fTexto.length) R.ajustes.push(`Metricool recusou a reescrita de ${fTexto.length} post(s): ${grp(fTexto)}`);
+      if (fHora.length) R.ajustes.push(`Metricool recusou a troca de horário de ${fHora.length} post(s): ${grp(fHora)}`);
+      if (fRecusado) R.ajustes.push(`Não troquei o texto de ${fRecusado} post(s): a versão nova perdia um link ou saía do ICP`);
       if (nTexto || nHora) passo(true, `Corrigi campanhas futuras: ${nTexto} texto(s) reescrito(s), ${nHora} horário(s) ajustado(s)`);
       else passo(true, 'Campanhas futuras: não precisei mudar nada');
     }
@@ -2794,18 +2799,22 @@ async function campanhaCompleta({ forcar = false, onPasso = () => {}, ativarAnun
     // 7) as 3 campanhas do dia: cadastra e agenda cada uma num horário livre
     const doDia = (est.campanhas_do_dia || []).slice(0, CAMPANHAS_POR_DIA); let slots = [];
     try {
-      let jaHoje = 0; try { const sql = await _filaTabela(); jaHoje = (await sql`SELECT COUNT(*)::int AS n FROM autocampanha_fila WHERE data = ${hojeSP} AND status <> 'falhou' AND COALESCE(tipo, 'post') <> 'story'`)[0]?.n || 0; } catch (_) {}
-      const faltam = Math.max(0, CAMPANHAS_POR_DIA - jaHoje);
-      if (!faltam) passo(true, `Hoje já foram geradas as ${CAMPANHAS_POR_DIA} campanhas do dia`);
-      else { const { plano } = await autoCampanhaPlanejar({ dias: 1, horarios: HORARIOS_CANDIDATOS, data_inicio: hojeSP });
-        if (!plano.vagos.length) passo(false, plano.resumo + ' Hoje não gero campanha (fim de semana, horários passados ou agenda cheia).');
-        else { for (const h of HORARIOS_CANDIDATOS) { const v = plano.vagos.find(x => x.hora === h); if (v && slots.length < faltam && slots.every(s => Math.abs(_minutos(s.hora) - _minutos(v.hora)) >= 90)) slots.push(v); }
-          slots.sort((a, b) => a.hora.localeCompare(b.hora)); if (slots.length < faltam) passo(false, `Só achei ${slots.length} horário(s) livre(s) hoje para ${faltam} campanha(s)`); } }
+      const sql = await _filaTabela().catch(() => null); let alvo = hojeSP, faltam = CAMPANHAS_POR_DIA, ultimoResumo = '';
+      for (let d = 0; d <= 5; d++) {
+        alvo = _addDias(hojeSP, d); let ja = 0; try { ja = sql ? (await sql`SELECT COUNT(*)::int AS n FROM autocampanha_fila WHERE data = ${alvo} AND status <> 'falhou' AND COALESCE(tipo, 'post') <> 'story'`)[0]?.n || 0 : 0; } catch (_) {}
+        faltam = Math.max(0, CAMPANHAS_POR_DIA - ja); if (!faltam) { if (d === 0) passo(true, `Hoje já foram geradas as ${CAMPANHAS_POR_DIA} campanhas do dia`); continue; }
+        const { plano } = await autoCampanhaPlanejar({ dias: 1, horarios: HORARIOS_CANDIDATOS, data_inicio: alvo }); ultimoResumo = plano.resumo;
+        const vagos = plano.vagos || []; const pegos = [];
+        for (const h of HORARIOS_CANDIDATOS) { const v = vagos.find(x => x.hora === h); if (v && pegos.length < faltam && pegos.every(x => Math.abs(_minutos(x.hora) - _minutos(v.hora)) >= 90)) pegos.push(v); }
+        if (!pegos.length) { if (d === 0) passo(true, 'Hoje não há mais horário livre (fim de semana, horário já passado ou agenda cheia): vou gerar para o próximo dia com vaga'); continue; }
+        slots = pegos.sort((a, b) => a.hora.localeCompare(b.hora)); if (d > 0) passo(true, `Campanhas geradas para ${alvo.slice(8)}/${alvo.slice(5, 7)} (primeiro dia com horário livre)`); if (slots.length < faltam) passo(false, `Só achei ${slots.length} horário(s) livre(s) em ${alvo.slice(8)}/${alvo.slice(5, 7)} para ${faltam} campanha(s)`); break;
+      }
+      if (!slots.length) passo(false, 'Não achei horário livre nos próximos 5 dias. ' + String(ultimoResumo).slice(0, 120));
     } catch (e) { passo(false, 'Horários do dia: ' + String(e.message).slice(0, 140)); }
     const C = await import('./campanhas.js').catch(() => null), icp = est.icp || {}; R.itens = [];
     for (let i = 0; i < slots.length; i++) {
       const c = doDia[i] || { nome: 'Campanha ' + (i + 1), angulo: est.mudancas?.[0] || '', objetivo: 'Gerar leads do ICP' }, s = slots[i]; let camp = null;
-      try { camp = (await C._salvar({ campanha: { nome: `${hojeSP.slice(8)}/${hojeSP.slice(5, 7)} ${s.hora} · ${String(c.nome).slice(0, 55)}`, objetivo: c.objetivo || 'Gerar leads do ICP e convertê-los em reuniões', inicio: hojeSP, fim: hojeSP, orcamento: 0,
+      try { camp = (await C._salvar({ campanha: { nome: `${s.data.slice(8)}/${s.data.slice(5, 7)} ${s.hora} · ${String(c.nome).slice(0, 55)}`, objetivo: c.objetivo || 'Gerar leads do ICP e convertê-los em reuniões', inicio: s.data, fim: s.data, orcamento: 0,
         plano: { tipo: 'proprio', objetivo: c.objetivo || 'Gerar leads qualificados do ICP', publico: icp.quem_compra || 'C-levels e donos de empresas médias e grandes', oferta: 'Mapa de Oportunidades com IA (grátis, sem reunião, no WhatsApp)', dor: (icp.dores || []).join('; '), prova: '17 anos de mercado; clientes de energia e financeiro', mensagem: c.angulo || '', racional: [`Criada em ${hojeSP} pelo agente de marketing`, ...(est.aprendizados || [])].join('\n') },
         metas: { leads: Number(c.meta_leads) || null, reunioes: null } } }, 'agente-marketing')).campanha; } catch (e) { passo(false, `Não consegui cadastrar a campanha das ${s.hora}: ${String(e.message).slice(0, 100)}`); }
       try { const tema = [c.angulo, est.mudancas?.[0], 'Evitar: ' + ((icp.evitar || []).join('; ') || 'conteúdo fora do ICP')].filter(Boolean).join(' · ').substring(0, 700);
@@ -2819,12 +2828,13 @@ async function campanhaCompleta({ forcar = false, onPasso = () => {}, ativarAnun
     if (est.anuncios?.novo?.criar && !jaTem) {
       if (verbaDia < 6) passo(false, 'Anúncio pago: sem verba hoje (R$ ' + verbaDia.toFixed(2) + '; mínimo R$ 6/dia). Teto mensal R$ ' + tetoMensal);
       else try {
+        const diarioAd = Math.floor(verbaDia / 2 * 100) / 100; if (diarioAd < 6) throw new Error('verba de hoje (R$ ' + verbaDia.toFixed(2) + ') não dá para 2 dias de anúncio com mínimo de R$ 6/dia'); const fimAd = _addDias(hojeSP, 1);
         const cp = await patrocinadoCopy({ tema: est.anuncios.novo.tema || doDia[0]?.angulo || '', publico: est.anuncios.novo.publico_obs || '' });
         const arte = await arteOrganica({ texto: cp.texto, titulo: cp.titulo, rede: 'instagram', campanha: 'ads-' + hojeSP });
-        const r = await patrocinadoCriar({ nome: ('Dia ' + hojeSP + ' · anúncio').slice(0, 80), texto: cp.texto, titulo: cp.titulo, descricao: cp.descricao, imagem: arte.url, orcamento_diario: verbaDia, inicio: hojeSP, fim: hojeSP, meta_leads: Number(doDia[0]?.meta_leads) || 0, arte: cp.arte }, null);
-        const reg = r.campanha || r.kit; R.anuncio = { modo: r.modo, id: reg?.id || null, total_maximo: reg?.total_maximo || verbaDia, diario: verbaDia };
-        if (r.modo === 'meta' && ativarAnuncio && (reg.total_maximo || verbaDia) <= verbaDia + 0.01) { await patrocinadoEstado({ id: reg.id, estado: 'ACTIVE' }); R.anuncio.estado = 'ACTIVE'; passo(true, 'Anúncio pago criado e ATIVADO (R$ ' + verbaDia.toFixed(2) + ' no dia)'); }
-        else { R.anuncio.estado = r.modo === 'meta' ? 'PAUSED' : 'kit'; passo(true, r.modo === 'meta' ? 'Anúncio pago criado PAUSADO (R$ ' + verbaDia.toFixed(2) + ' no dia): ative na aba Resultados e leads' : 'Meta não está ligado: montei o kit do anúncio para criar no Metricool'); }
+        const r = await patrocinadoCriar({ nome: ('Dia ' + hojeSP + ' · anúncio').slice(0, 80), texto: cp.texto, titulo: cp.titulo, descricao: cp.descricao, imagem: arte.url, orcamento_diario: diarioAd, inicio: hojeSP, fim: fimAd, meta_leads: Number(doDia[0]?.meta_leads) || 0, arte: cp.arte }, null);
+        const reg = r.campanha || r.kit; R.anuncio = { modo: r.modo, id: reg?.id || null, total_maximo: reg?.total_maximo || diarioAd * 2, diario: diarioAd };
+        if (r.modo === 'meta' && ativarAnuncio && (reg.total_maximo || diarioAd * 2) <= verbaDia + 0.01) { await patrocinadoEstado({ id: reg.id, estado: 'ACTIVE' }); R.anuncio.estado = 'ACTIVE'; passo(true, 'Anúncio pago criado e ATIVADO (R$ ' + diarioAd.toFixed(2) + ' por dia, 2 dias)'); }
+        else { R.anuncio.estado = r.modo === 'meta' ? 'PAUSED' : 'kit'; passo(true, r.modo === 'meta' ? 'Anúncio pago criado PAUSADO (R$ ' + diarioAd.toFixed(2) + ' por dia, 2 dias): ative na aba Resultados e leads' : 'Meta não está ligado: montei o kit do anúncio para criar no Metricool'); }
       } catch (e) { passo(false, 'Anúncio pago: ' + String(e.message).slice(0, 140)); }
     } else if (jaTem) passo(true, 'Já existe anúncio pago em andamento hoje: não crio outro (teto R$ ' + tetoMensal + '/mês)');
     // 9) guarda o aprendizado (ponto de partida do dia seguinte)
@@ -2868,7 +2878,7 @@ async function verificarPublicacoes() {
 function _relatorioCiclo(R, est) {
   const L = a => (a || []).map(x => '- ' + x).join('\n') || '- (nada)', icp = est.icp || {}, rs = R.resumo || {};
   return [`## Marketing de ${R.data}`, `**Leitura dos resultados:** ${est.leitura || '—'}`,
-    `### Análise de tudo que existe\nPublicadas (45 dias): ${rs.publicados_45d ?? '—'} com sucesso, ${rs.com_erro_45d ?? '—'} com erro · Futuras agendadas: ${rs.futuros ?? '—'}\nProblemas achados nas futuras: ${(R.problemas || []).length ? (R.problemas || []).slice(0, 12).map(p => `${p.tipo} (${p.detalhe})`).join('; ') : 'nenhum'}`,
+    `### Análise de tudo que existe\nPublicadas (45 dias): ${rs.publicados_45d ?? '—'} com sucesso, ${rs.com_erro_45d ?? '—'} com erro · Futuras agendadas: ${rs.futuros ?? '—'}\nProblemas achados nas futuras: ${(() => { const c = {}; (R.problemas || []).forEach(p => c[p.tipo] = (c[p.tipo] || 0) + 1); const l = Object.entries(c).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} com ${k}`); return l.length ? l.join(' · ') : 'nenhum'; })()}`,
     `### O que corrigi\n${L(R.ajustes)}`, `### O que aprendi\n${L(est.aprendizados)}`, `### O que muda daqui para frente\n${L(est.mudancas)}`,
     `### ICP alinhado\nQuem compra: ${icp.quem_compra || '—'}\nDores: ${(icp.dores || []).join('; ') || '—'}\nGatilhos: ${(icp.gatilhos || []).join('; ') || '—'}\nEvitar: ${(icp.evitar || []).join('; ') || '—'}`,
     `### Concorrência\n${(est.concorrentes || []).map(c => `- **${c.nome}**: ${c.posicionamento || ''} → brecha: ${c.brecha || ''}`).join('\n') || '- (sem novidade hoje)'}`,
