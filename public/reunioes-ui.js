@@ -21,7 +21,7 @@
     let m = $('ritModal'); if (m) m.remove();
     m = document.createElement('div'); m.id = 'ritModal';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px;';
-    m.addEventListener('click', e => { if (e.target === m) fechar(); });
+    // v3.586: clicar FORA não fecha mais (perdia o que estava sendo editado); fecha só pelo ✕ / botão Fechar
     m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(${largura || 860}px,100%);box-shadow:0 20px 60px rgba(0,0,0,.5);">${html}</div>`;
     document.body.appendChild(m); return m;
   }
