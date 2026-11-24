@@ -1565,7 +1565,7 @@ async function _filaTabela() {
   try { await sql`ALTER TABLE autocampanha_fila ADD COLUMN IF NOT EXISTS story_json TEXT`; } catch (_) {}
   return sql;
 }
-async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunho = true, com_imagem = true, stories = false, story_hora = '10:00' } = {}) {
+async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunho = true, com_imagem = true, stories = false, story_hora = '10:00', avisar = false } = {}) {
   if (!slots.length) throw new Error('nenhum slot');
   const sql = await _filaTabela();
   const lote = 'lt_' + Date.now().toString(36);
@@ -1589,7 +1589,36 @@ async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunh
       VALUES (${id}, ${lote}, ${s.data}, ${s.hora}, ${s.dia_semana || null}, ${tema || null}, ${JSON.stringify(redes || ['linkedin'])}, ${blog_id || null}, ${!!apenas_rascunho}, ${!!com_imagem})
       ON CONFLICT (id) DO NOTHING`;
   }
-  return { lote, enfileirados: slots.length, stories: stories ? [...new Set(slots.map(s => s.data))].length : 0 };
+  // v3.584: geração em segundo plano — o cron termina sozinho (aba pode fechar / celular em standby) e avisa por e-mail ao acabar
+  if (avisar) { try { await _kvMc('mc:fila_aviso:' + lote, { pendente: true, criado_em: new Date().toISOString(), apenas_rascunho: !!apenas_rascunho, tentativas: 0 }); } catch (_) {} }
+  return { lote, enfileirados: slots.length, stories: stories ? [...new Set(slots.map(s => s.data))].length : 0, aviso_email: !!avisar };
+}
+// v3.584: lote em segundo plano concluído (nada pendente/processando) → UM e-mail interno com o resumo. Só e-mail; nenhuma mensagem externa.
+async function filaAvisarConclusao() {
+  const sql = await _filaTabela();
+  const lotes = await sql`SELECT lote, COUNT(*)::int AS n, COUNT(*) FILTER (WHERE status IN ('pendente','processando'))::int AS abertos, COUNT(*) FILTER (WHERE status = 'pronto')::int AS prontos,
+    COUNT(*) FILTER (WHERE status = 'falhou')::int AS falhas, COUNT(*) FILTER (WHERE metricool_id IS NOT NULL)::int AS agendados, COUNT(*) FILTER (WHERE tipo = 'story')::int AS stories
+    FROM autocampanha_fila WHERE criado_em >= NOW() - INTERVAL '3 days' GROUP BY lote HAVING COUNT(*) FILTER (WHERE status IN ('pendente','processando')) = 0 ORDER BY MAX(criado_em) DESC LIMIT 5`;
+  const out = [];
+  for (const l of lotes) {
+    const k = 'mc:fila_aviso:' + l.lote, a = await _kvMc(k).catch(() => null);
+    if (!a || !a.pendente || (a.tentativas || 0) >= 3) continue;
+    await _kvMc(k, { ...a, tentativas: (a.tentativas || 0) + 1 });
+    try {
+      const { enviarEmailGmail } = await import('./financeiro.js');
+      const para = process.env.AUTOCAMPANHA_AVISO_PARA || 'contato@atlanteam.com.br';
+      const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+      const rasc = a.apenas_rascunho;
+      const html = `<p>A Autocampanha gerada em segundo plano terminou.</p><ul><li><b>${l.prontos}</b> de ${l.n} item(ns) prontos${l.stories ? ' (' + l.stories + ' story/stories)' : ''}</li>`
+        + (rasc ? '<li>Gerados como <b>rascunho</b>: nada foi ao Metricool. Revise e agende na tela.</li>' : `<li><b>${l.agendados}</b> agendado(s) no Metricool</li>`)
+        + (l.falhas ? `<li style="color:#b00020"><b>${l.falhas}</b> com falha: abra a fila para ver o motivo (itens que falham no agendamento não são reenviados sozinhos).</li>` : '') + `</ul>`
+        + `<p><a href="${base}">Abrir o Atlantyx OS → Marketing → Autocampanha → Ver fila</a></p><p>Fabio Quintanilha / CEO – Atlantyx</p>`;
+      await enviarEmailGmail({ para, assunto: `Autocampanha concluída: ${l.prontos}/${l.n} posts${l.falhas ? ' (' + l.falhas + ' com falha)' : ''}`, html });
+      await _kvMc(k, { ...a, pendente: false, enviado_em: new Date().toISOString(), tentativas: (a.tentativas || 0) + 1 });
+      out.push({ lote: l.lote, enviado: true });
+    } catch (e) { out.push({ lote: l.lote, erro: String(e.message || e).slice(0, 160) }); }
+  }
+  return out;
 }
 async function filaStatus({ lote, todos = false } = {}) {
   const sql = await _filaTabela();
@@ -2162,8 +2191,9 @@ async function handler(req, res) {
   if (req.method === 'GET' && req.query?.cron === 'fila') {
     // v3.237: UM passo por chamada (dois passos + guardiões passavam dos 60 s e a função era cortada no meio)
     try { const t0 = Date.now(); const out = [await filaProcessar({})];
-      let icp = null, icpConteudo = null, leads = null;
+      let icp = null, icpConteudo = null, leads = null, avisoFila = null;
       if (out[0].ocioso) {
+        try { avisoFila = await filaAvisarConclusao(); } catch (e) { avisoFila = { erro: e.message }; } // v3.584
         // leads que ficaram sem processar (aba fechada antes do 2º passo) — 1 por minuto
         try { const { processarLeadsPendentes, reabordarLeadsPendentes } = await import('./lead-capture.js'); leads = await processarLeadsPendentes({ limite: 1 });
           if (!leads?.processados) { const r = await reabordarLeadsPendentes({ limite: 1 }); if (r.processados) leads = { ...leads, reabordados: r.itens }; } } catch (e) { leads = { erro: e.message }; } // v3.396
@@ -2180,7 +2210,7 @@ async function handler(req, res) {
             const imgs = await corrigirImagensAgendadas({ dias: 30, aplicar: true }).catch(e => ({ erro: e.message }));
             agendados = { links: { feitos: links.feitos?.length ?? links.erro, falhas: links.falhas?.length }, imagens: { corrigidos: imgs.corrigidos ?? imgs.erro, afetados: imgs.afetados?.length } };
             await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify({ em: new Date().toISOString(), ...agendados })}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } } catch (e) { agendados = { erro: e.message }; } }
-      return res.status(200).json({ success: true, passos: out, leads, icp, icp_conteudo: icpConteudo, agendados }); }
+      return res.status(200).json({ success: true, passos: out, aviso_fila: avisoFila, leads, icp, icp_conteudo: icpConteudo, agendados }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   res.setHeader('Access-Control-Allow-Origin', '*');

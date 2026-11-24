@@ -5141,6 +5141,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         <button class="btn" onclick="acPlanejar()" id="btnAcPlan">&#128269; Ver horarios vagos</button>
         <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc" title="Gera os posts e deixa no Kanban em Gerado para revisar — nada vai ao Metricool">&#9998; Gerar rascunhos</button>
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec" title="Gera e já agenda no Metricool nas redes marcadas">&#128228; Gerar e agendar</button>
+        <button class="btn" onclick="acSegundoPlano(true)" id="btnAcBgR" style="border-color:var(--blue,#4f7cff);" title="O servidor gera os rascunhos sozinho: pode fechar a aba ou deixar o celular em standby. Avisa por e-mail ao terminar">&#127769; Rascunhos em 2º plano</button>
+        <button class="btn" onclick="acSegundoPlano(false)" id="btnAcBgA" style="border-color:var(--blue,#4f7cff);" title="O servidor gera e agenda no Metricool sozinho: pode fechar a aba ou deixar o celular em standby. Avisa por e-mail ao terminar">&#127769; Agendar em 2º plano</button>
         <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
       <!-- v3.58: ferramentas separadas das ações principais -->
@@ -26350,6 +26352,27 @@ async function acVerFila() {
         ${x.status === 'pronto' && !x.metricool_id && x.texto ? `<button class="btn" style="font-size:9px;margin-top:6px;" onclick="acAgendarRascunhos(['${x.id}'])">📤 agendar só este</button>` : ''}</div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Fila vazia.</div>'}</div></div>`;
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
 }
+// v3.584: GERAÇÃO EM SEGUNDO PLANO — enfileira os horários vagos na fila do servidor (cron a cada minuto: texto → imagem → agenda) e libera a tela.
+// Pode fechar a aba ou deixar o celular em standby; ao terminar o servidor manda um e-mail. Posts + stories do dia; Reel e Carrossel exigem o
+// navegador (montam o vídeo/imagens aqui) e continuam só no botão "Gerar" com a aba aberta.
+async function acSegundoPlano(rascunho) {
+  const c = _acCfg(), box = document.getElementById('acResultado');
+  const comImagem = document.getElementById('ac_imagens')?.checked !== false, stories = !!document.getElementById('ac_stories')?.checked;
+  const btns = ['btnAcBgR', 'btnAcBgA'].map(i => document.getElementById(i)).filter(Boolean); btns.forEach(b => { b.disabled = true; });
+  try {
+    box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t2);padding:22px;font-size:12px;">⏳ Planejando os horários vagos…</div></div>';
+    const plano = (await mcApi('autocampanha_planejar', c)).plano;
+    const ocup = (_publicacoes || []).filter(p => !p.nao_encontrado && p.status !== 'erro' && p.metodo === 'metricool').map(p => new Date(p.agendado_para || p.data).getTime()).filter(t => !isNaN(t));
+    const vagos = (plano?.vagos || []).filter(v => v.data && v.hora).filter(v => { const t = Date.parse(v.data + 'T' + v.hora + ':00-03:00'); return !ocup.some(o => Math.abs(o - t) <= 45 * 60000); });
+    if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
+    if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'} em segundo plano: ${vagos.length} post(s)${stories ? ' + 1 story por dia' : ''}.\n\nO servidor faz tudo sozinho (cerca de 1 post por minuto). Você pode fechar esta aba ou deixar o celular em standby — avisamos por e-mail quando terminar.\n\nObs.: Reel e Carrossel não rodam em segundo plano (precisam do navegador). Continuar?`)) { box.innerHTML = ''; return; }
+    const r = await mcApi('fila_enfileirar', { slots: vagos, tema: c.tema, redes: c.redes?.length ? c.redes : ['linkedin', 'instagram', 'facebook'], blog_id: c.blog_id, apenas_rascunho: !!rascunho, com_imagem: comImagem, stories, avisar: true });
+    try { await mcApi('fila_processar', { lote: r.lote }); } catch (_) {} // já dá o 1º passo; o cron continua a cada minuto
+    box.innerHTML = `<div class="panel"><div class="pb" style="padding:18px;font-size:12px;line-height:1.7;"><b style="color:var(--green,#22d3a3)">✔ Enviado ao servidor</b><br>${r.enfileirados} post(s)${r.stories ? ' + ' + r.stories + ' story(s)' : ''} na fila (${rascunho ? 'rascunho' : 'com agendamento no Metricool'}).<br>Pode <b>fechar a aba ou deixar o celular em standby</b>: o processo continua no servidor e um e-mail avisa quando terminar.<br><button class="btn" style="margin-top:10px" onclick="acVerFila()">📋 Acompanhar a fila</button></div></div>`;
+    toast('Autocampanha enviada ao servidor — pode fechar a tela', 'success');
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;font-size:11.5px;">Erro: ${String(e.message).replace(/</g, '&lt;')}${e.dica ? '<br><span style="color:var(--t3);">' + e.dica + '</span>' : ''}</div></div>`; }
+  finally { btns.forEach(b => { b.disabled = false; }); }
+}
 async function acExecutar(rascunho) {
   // v2.94: MESMO mecanismo do botão "Auto-campanha IA" do Kanban — a função gerarCampanhaAutomatica —
   // aplicada aos horários vagos do período (7 dias). Plano da IA com as métricas do Metricool, imagem com
@@ -37471,7 +37494,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.583] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.584] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37487,7 +37510,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.583';
+window.__ATX_BUILD_ID__ = 'ATX-v3.584';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
