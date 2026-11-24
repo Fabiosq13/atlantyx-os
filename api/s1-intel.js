@@ -42,6 +42,7 @@ async function handler(req, res) {
         if (action === 'atlas_catalogo') return res.status(200).json({ success: true, assuntos: AT.ASSUNTOS, tipos: AT.TIPOS, pastas: AT.PASTA });
         if (action === 'atlas_listar') return res.status(200).json({ success: true, ...(await AT.listar(req.body, login, admin)), atividade: await AT.resumoAtividade(req.body.assunto) });
         if (action === 'atlas_criar') return res.status(200).json({ success: true, item: await AT.criar(req.body, login, (sys, usr, mx) => claude(sys, usr, mx)) });
+        if (action === 'atlas_orcamento') { if (req.body.mensal != null) { if (!admin) throw Object.assign(new Error('Só o CEO altera o orçamento'), { status: 403 }); return res.status(200).json({ success: true, orcamento: await AT.salvarOrcamentoPago(req.body, login) }); } return res.status(200).json({ success: true, orcamento: await AT.orcamentoPago() }); }
         if (action === 'atlas_mudar') return res.status(200).json({ success: true, item: await AT.mudar(req.body, login, admin) });
         return res.status(400).json({ success: false, error: 'Ação do ATLAS desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }

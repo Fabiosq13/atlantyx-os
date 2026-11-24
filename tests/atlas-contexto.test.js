@@ -21,3 +21,8 @@ test('criar: o pedido ao modelo leva os dados do sistema e o tipo ajustado', asy
   assert.match(recebido.usr, /DADOS REAIS DO SISTEMA/); assert.match(recebido.sys, /ESPECIFICAÇÃO de um AGENTE/);
   delete globalThis.__ATLAS_MEM;
 });
+test('orçamento de mídia paga: padrão R$ 2.000/mês e entra no contexto de marketing', async () => {
+  const { orcamentoPago } = await import('../lib/atlas-itens.js');
+  assert.equal((await orcamentoPago()).mensal, 2000);
+  assert.match(await contextoDados('marketing'), /ORÇAMENTO MENSAL MÁXIMO PARA MÍDIA PAGA: R\$ 2\.000/);
+});
