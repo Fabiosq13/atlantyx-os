@@ -170,3 +170,18 @@ test('registrarStatusMarketing escreve em Execuções do agente de marketing imp
   assert.equal(await AT.registrarStatusMarketing('## Status\n✅ Campanha das 08:30: publicada com sucesso'), 1);
   const o = await AT.obter({ id: it.id }, 'ana', false); assert.equal(o.execucoes[0].modo, 'status'); assert.match(o.execucoes[0].saida, /publicada com sucesso/);
 });
+
+test('agente de marketing pronto: CEO já recebe em teste com aprovação pedida, agenda 07h, ciclo ligado; clicar de novo não duplica', async () => {
+  novo(); const a = await AT.criarAgenteMarketing('fabio', true);
+  assert.equal(a.tipo, 'agente'); assert.equal(a.assunto, 'marketing'); assert.equal(a.autocampanha, true); assert.equal(a.estado, 'teste'); assert.equal(a.aprovacao, 'pedida');
+  assert.equal(a.agenda.hora, 7); assert.equal(a.agenda.freq, 'diaria'); assert.match(a.conteudo, /3 campanhas por dia/); assert.match(a.conteudo, /PAUSADO/); assert.ok(!a.ativar_anuncio);
+  const b = await AT.criarAgenteMarketing('fabio', true); assert.equal(b.id, a.id); assert.equal(b.ja_existia, true);
+  assert.equal((await AT.listar({ assunto: 'marketing' }, 'fabio', true)).itens.filter(x => x.autocampanha).length, 1);
+  const p = await AT.mudar({ id: a.id, para: 'publicado' }, 'fabio', true); assert.equal(p.estado, 'publicado');
+});
+
+test('agente de marketing pronto: quem não é CEO recebe rascunho e não consegue publicar sozinho', async () => {
+  novo(); const a = await AT.criarAgenteMarketing('ana', false);
+  assert.equal(a.estado, 'rascunho'); assert.equal(a.aprovacao, 'necessaria');
+  await assert.rejects(() => AT.mudar({ id: a.id, para: 'publicado' }, 'ana', false));
+});

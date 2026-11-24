@@ -84,6 +84,7 @@
       + (at.total ? '<div class="as-act">No assunto: ' + at.total + ' item(ns) no total · ' + at.publicados + ' publicado(s)</div>' : '') + '</div></div>'
       + '<div class="as-right"><div class="as-sec">Precisa de você <span>' + prec.length + '</span></div>'
       + (prec.length ? prec.map(([i, t, p, b]) => '<div class="as-d' + (i.aprovacao === 'pedida' ? ' hot' : '') + '"><b>' + esc(t) + '</b><p>' + p + '</p><button class="as-bt p" onclick="ASSUNTOS.ver(\'' + i.id + '\')">' + b + '</button></div>').join('') : '<div class="as-d"><p style="margin:0">Nada esperando por você neste assunto.</p></div>')
+      + (S.assunto === 'marketing' && !S.itens.some(i => i.tipo === 'agente' && i.autocampanha && i.estado !== 'descartado') ? '<div class="as-d hot"><b>🤖 Agente de marketing diário</b><p>Já vem pronto: 3 campanhas por dia, análise de tudo o que foi publicado e agendado, concorrência e ICP. Anúncio sempre pausado e dentro do teto.</p><button class="as-bt p" onclick="ASSUNTOS.agenteMarketing()">Criar agente de marketing pronto</button></div>' : '')
       + '<div class="as-sec">Criar com o ATLAS, sob demanda</div><div class="as-d">' + [['relatorio', 'Relatório avulso', 'Um relatório só desta vez'], ['agente', 'Agente avulso', 'Uma rotina que roda sozinha'], ['analise', 'Análise avulsa', 'Pergunta de negócio com recomendações'], ['tela', 'Tela ou funcionalidade', 'Pedido para a Esteira de Demandas']].map(([t, a, b]) => '<div class="as-av" onclick="ASSUNTOS.avulso(\'' + t + '\')">' + TICO[t] + ' <span><b>' + a + '</b><small>' + b + '</small></span></div>').join('') + '<small class="as-nota">Tudo que o ATLAS criar fica salvo em ' + esc(nomeA(S.assunto)) + '.</small></div></div></div>'
       + '<div class="as-comp"><div class="as-ac" id="asAc"></div><div class="as-sug">' + ['Resumir a semana', 'Criar relatório avulso', 'Criar agente avulso', 'Analisar um tema', 'Criar uma tela nova'].map(t => '<span onclick="ASSUNTOS.sugerir(this.textContent)">✨ ' + t + '</span>').join('') + '</div>'
       + '<div class="as-bar"><span class="as-ctx">✨ Salva em ' + esc(nomeA(S.assunto)) + '</span><select id="asTipo" class="as-tipo">' + Object.entries(S.cat.tipos).map(([k, v]) => '<option value="' + k + '"' + (k === S.tipo ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>'
@@ -232,11 +233,12 @@
     catch (e) { nota(e.message, 'error'); }
   }
   async function descartar() { if (!confirm('Descartar este item?')) return; try { await api('atlas_mudar', { id: W.id, para: 'descartado', motivo: '' }); nota('Descartado'); fechar(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
+  async function agenteMarketing() { try { const d = await api('atlas_agente_marketing', {}); await carregar(); ver(d.item.id); } catch (e) { nota(e.message, 'error'); } }
   async function versao(n) { try { const d = await api('atlas_versao', { id: W.id, n }); const vs = W.item.versoes || [], ult = vs.length ? vs[vs.length - 1].n : 0; W.vendo = Number(n) === ult ? null : d.versao; desenhar(true); } catch (e) { nota(e.message, 'error'); } }
   async function restaurar(n) { try { W.item = (await api('atlas_restaurar', { id: W.id, n })).item; W.vendo = null; nota('Texto voltou à versão ' + n); desenhar(); carregar().catch(() => {}); } catch (e) { nota(e.message, 'error'); } }
   function aba(a) { W.aba = a; desenhar(true); }
   function fechar() { $('asModal')?.remove(); }
   async function mudar(id, para) { W.id = id; return acao(para); }
   document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && $('page-s0assuntos')?.classList.contains('active')) { e.preventDefault(); $('asIn')?.focus(); } });
-  window.ASSUNTOS = { abrir, trocar, exec, ver, mudar, sugerir, avulso, digitando, tecla, enviar, enviarMsg, agendaSalvar, agendaAtiva, agendaAuto, agendaAds, agendaFreq, msgRapida, teclaMsg, chip, aba, fechar, descartar, versao, restaurar };
+  window.ASSUNTOS = { agenteMarketing, abrir, trocar, exec, ver, mudar, sugerir, avulso, digitando, tecla, enviar, enviarMsg, agendaSalvar, agendaAtiva, agendaAuto, agendaAds, agendaFreq, msgRapida, teclaMsg, chip, aba, fechar, descartar, versao, restaurar };
 })();

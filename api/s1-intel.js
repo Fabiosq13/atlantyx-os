@@ -59,6 +59,7 @@ async function handler(req, res) {
           try { await AT.conversar(req.body, login, admin, (sys, msgs, mx, onD) => claudeChat(sys, msgs, mx, onD), emitir); if (!aberto) emitir({ tipo: 'fim' }); return res.end(); }
           catch (e) { if (!aberto) return res.status(e.status || 500).json({ success: false, error: e.message }); emitir({ tipo: 'erro', erro: e.message }); return res.end(); }
         }
+        if (action === 'atlas_agente_marketing') return res.status(200).json({ success: true, item: await AT.criarAgenteMarketing(login, admin) });
         if (action === 'atlas_agendar') return res.status(200).json({ success: true, item: await AT.agendar(req.body, login, admin) });
         if (action === 'atlas_mudar') return res.status(200).json({ success: true, item: await AT.mudar(req.body, login, admin) });
         return res.status(400).json({ success: false, error: 'Ação do ATLAS desconhecida' });
