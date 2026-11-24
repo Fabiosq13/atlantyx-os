@@ -130,7 +130,7 @@ function _normPostMetrica(p) {
     engajamento: _pegaNum(p, ['engagement', 'engagementRate', 'engagement_rate', 'interactions']),
   };
 }
-async function _postsMetricasRede(rede, ini, fim, { TOKEN, USERID, BLOGID }) {
+export async function _postsMetricasRede(rede, ini, fim, { TOKEN, USERID, BLOGID }) { // v3.587: exportada p/ o contexto do ATLAS
   const r = String(rede).toLowerCase(), f = d => d.replaceAll('-', '');
   const base = `userId=${USERID}&blogId=${BLOGID}`;
   const tentativas = [
