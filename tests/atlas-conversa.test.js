@@ -130,3 +130,18 @@ test('pausar a agenda impede o cron', async () => {
   novo(); const a = await criarPublicado('marketing', 'agente'); await AT.agendar({ id: a.id, freq: 'diaria', hora: 6, ativa: true }, 'ana', false); await AT.agendar({ id: a.id, ativa: false }, 'ana', false);
   assert.equal((await AT.rodarAgendados(iaFalsa(['x']), { agora: new Date('2026-12-01T12:00:00Z') })).feitos.length, 0);
 });
+
+// ── v3.593: ciclo diário de marketing ──
+test('ligar o ciclo de marketing cria agenda diária 07:00; só o CEO autoriza ativar anúncio; fora de marketing não liga', async () => {
+  novo(); const it = await criarPublicado('marketing', 'agente');
+  const o = await AT.agendar({ id: it.id, autocampanha: true }, 'ana', false);
+  assert.equal(o.autocampanha, true); assert.deepEqual({ f: o.agenda.freq, h: o.agenda.hora, a: o.agenda.ativa }, { f: 'diaria', h: 7, a: true });
+  await assert.rejects(() => AT.agendar({ id: it.id, ativar_anuncio: true }, 'ana', false), /Só o CEO/);
+  assert.equal((await AT.agendar({ id: it.id, ativar_anuncio: true }, 'ceo', true)).ativar_anuncio, true);
+  const f = await criarPublicado('financeiro', 'agente'); await assert.rejects(() => AT.agendar({ id: f.id, autocampanha: true }, 'ana', false), /marketing/i);
+});
+
+test('ciclo de marketing: sem chave de IA/banco falha sem derrubar, devolve relatório com o erro e não altera nada', async () => {
+  const { campanhaCompleta } = await import('../api/metricool.js'); const k = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY; const passos = [];
+  try { const r = await campanhaCompleta({ forcar: true, onPasso: t => passos.push(t) }); assert.ok(r.erro); assert.match(r.relatorio, /não rodou/); assert.ok(passos.some(t => t.startsWith('✗'))); } finally { if (k) process.env.ANTHROPIC_API_KEY = k; }
+});

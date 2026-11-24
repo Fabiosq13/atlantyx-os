@@ -184,4 +184,4 @@ async function handler(req, res) {
   } catch (e) { console.error('[campanhas]', e.message); return res.status(500).json({ success: false, error: e.message }); }
 }
 export default comGuarda(handler, 'campanhas');
-export { slugRef as _slugRef, statusDe as _statusDe };
+export { slugRef as _slugRef, statusDe as _statusDe, salvar as _salvar, acaoSalvar as _acaoSalvar };

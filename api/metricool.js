@@ -2675,4 +2675,114 @@ function extrairRedes(marca) {
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 export default comGuarda(handler, 'metricool');
 
-export { autoCampanhaSegunda }; // v3.592: o agente de marketing do ATLAS aciona (só rascunhos)
+
+// ═══ v3.593: CICLO DIÁRIO DO AGENTE DE MARKETING — analisa o que foi feito, lê os resultados, aprende e muda as campanhas daqui para frente ═══
+// Todo dia: (1) lê números reais (posts, leads por campanha, conversão, anúncios pagos); (2) uma vez por semana pesquisa a concorrência na web e realinha o ICP;
+// (3) a IA decide o que muda (tema, ângulos, o que evitar, anúncio a pausar/renovar); (4) registra/atualiza a campanha da semana; (5) completa os próximos 7 dias de posts
+// (o que a Autocampanha faz, agora com o aprendizado) e AGENDA no Metricool; (6) cria o anúncio pago da semana dentro do teto mensal (nasce PAUSADO; só ativa sozinho
+// se o dono ligou essa opção); (7) guarda o aprendizado (alimenta o dia seguinte) e manda o resumo por e-mail. Falha de um passo não derruba os outros.
+const _addDias = (iso, n) => new Date(Date.parse(iso + 'T12:00:00Z') + n * 864e5).toISOString().substring(0, 10);
+async function _claudeEstrategia(system, user, { tools = null, max = 4500, ms = 110000 } = {}) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: max, system, messages: [{ role: 'user', content: user }], ...(tools ? { tools } : {}) }) });
+    const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API [' + r.status + ']');
+    return (d.content || []).filter(c => c.type === 'text').map(c => c.text || '').join('');
+  } catch (e) { throw new Error(e.name === 'AbortError' ? 'A IA demorou demais' : e.message); } finally { clearTimeout(tm); }
+}
+const _jsonDe = t => { const s = String(t || '').replace(/```json|```/g, ''), i = s.indexOf('{'), j = s.lastIndexOf('}'); if (i < 0 || j < i) throw new Error('A IA não devolveu JSON'); return JSON.parse(s.slice(i, j + 1)); };
+async function campanhaCompleta({ forcar = false, onPasso = () => {}, ativarAnuncio = false } = {}) {
+  const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const ult = await _kvMc('mkt:camp_completa').catch(() => null);
+  if (!forcar && ult?.data === hojeSP && !ult.erro) return { pulado: 'já rodou hoje', ...ult };
+  await _kvMc('mkt:camp_completa', { data: hojeSP, iniciado_em: new Date().toISOString() }).catch(() => {});
+  const R = { data: hojeSP, passos: [], ajustes: [] }, passo = (ok, t) => { R.passos.push({ ok, t }); try { onPasso((ok ? '✓ ' : '✗ ') + t + '\n'); } catch (_) {} };
+  const memo = (await _kvMc('mkt:aprendizados').catch(() => null)) || {}, hist = Array.isArray(memo.historico) ? memo.historico : [];
+  try {
+    const AT = await import('../lib/atlas-itens.js');
+    // 1) números reais
+    let dados = ''; try { dados = await AT.contextoDados('marketing'); passo(true, 'Li os números reais: posts, engajamento, leads por campanha e conversão'); } catch (e) { passo(false, 'Não consegui ler todos os números (' + String(e.message).slice(0, 80) + ')'); }
+    let pagos = []; try { pagos = (await patrocinadoListar()).campanhas || (await _kvMc('mkt:patrocinados')) || []; } catch (_) { pagos = (await _kvMc('mkt:patrocinados').catch(() => null)) || []; }
+    const pagosResumo = pagos.slice(0, 8).map(r => ({ id: String(r.id), nome: r.nome, rede: r.rede || 'instagram', estado: r.estado_meta || r.estado, inicio: r.inicio, fim: r.fim, total_maximo: r.total_maximo, gasto: r.resultado?.spend ?? r.resultado?.gasto ?? null, impressoes: r.resultado?.impressions ?? null, cliques: r.resultado?.inline_link_clicks ?? r.resultado?.cliques ?? null, visitas_pagina: r.funil?.visitas ?? null, comecaram_form: r.funil?.comecaram ?? null, leads_reais: r.funil?.leads ?? null }));
+    passo(true, pagosResumo.length ? 'Li os resultados dos anúncios pagos (' + pagosResumo.length + ')' : 'Ainda não há anúncio pago para avaliar');
+    // 2) concorrência + ICP (1x por semana; nos outros dias reaproveita)
+    let conc = memo.concorrencia_texto || '', renovou = false;
+    if (forcar || !memo.concorrencia_em || memo.concorrencia_em < _addDias(hojeSP, -6)) {
+      try { conc = await _claudeEstrategia('Você é analista de inteligência competitiva B2B no Brasil. Pesquise na web e responda em português, objetivo.',
+        `A Atlantyx (engenharia de dados, indicadores/BI, IA aplicada e software sob medida para empresas médias e grandes no Brasil; clientes do setor de energia e financeiro) quer VENDER mais. Pesquise 4 a 6 concorrentes e consultorias semelhantes (no Brasil) e resuma em até 450 palavras: quem são, posicionamento, ofertas e iscas de captura, ângulos e formatos de conteúdo que usam (LinkedIn/Instagram), o que parece funcionar e as BRECHAS que a Atlantyx pode ocupar. Não copie textos nem marcas. Cite o nome da empresa e o que viu; se não achou algo, diga.`,
+        { tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }], max: 3000 }); renovou = true; passo(true, 'Pesquisei a concorrência na web e achei as brechas'); }
+      catch (e) { passo(false, 'Concorrência: ' + String(e.message).slice(0, 100) + (conc ? ' (usei a pesquisa anterior)' : '')); }
+    } else passo(true, 'Concorrência: reaproveitei a pesquisa de ' + memo.concorrencia_em + ' (renova a cada 7 dias)');
+    // 3) a IA decide o que muda
+    const teto = (await _kvMc('mkt:orcamento_pago').catch(() => null)), tetoMensal = teto && Number(teto.mensal) > 0 ? Number(teto.mensal) : 2000, mes = hojeSP.slice(0, 7);
+    const comprometido = pagos.filter(r => String(r.criado_em || '').startsWith(mes) && r.estado !== 'DELETED').reduce((s, r) => s + (Number(r.total_maximo) || 0), 0);
+    const disponivel = Math.max(0, Math.round((tetoMensal - comprometido) * 100) / 100), verbaSemana = Math.min(disponivel, Math.round(tetoMensal * 0.25 * 100) / 100);
+    const SYS = `Você é o gerente de marketing da Atlantyx e seu objetivo é VENDER: gerar leads do ICP certo, que viram reunião e proposta. Todo dia você lê os resultados do que já foi feito, aprende e muda as campanhas daqui para frente. Português do Brasil. Nunca invente número: use só os DADOS fornecidos e diga quando faltar. Nunca cite clientes reais por nome nos textos de campanha. ${ICP_TEXTO}\nOFERTA da página de captura (todo post/anúncio promete só isto): ${OFERTA_LP}`;
+    const USR = `HOJE: ${hojeSP}\n\nDADOS REAIS:\n${dados || '(indisponíveis hoje)'}\n\nANÚNCIOS PAGOS (resultado acumulado):\n${JSON.stringify(pagosResumo)}\n\nO QUE JÁ APRENDEMOS (últimos ciclos):\n${hist.slice(-5).map(h => `- ${h.data}: ${(h.aprendizados || []).join(' | ')} || mudanças: ${(h.mudancas || []).join(' | ')}`).join('\n') || '(primeiro ciclo)'}\n\nCONCORRÊNCIA:\n${conc || '(sem pesquisa)'}\n\nTETO DE MÍDIA PAGA: R$ ${tetoMensal}/mês; já comprometido neste mês: R$ ${comprometido}; verba que posso usar em um NOVO anúncio nesta semana: R$ ${verbaSemana}.\n\nDevolva SOMENTE JSON: {"leitura":"2-3 frases com o que funcionou e o que não funcionou, com números dos dados","aprendizados":["3 a 5 aprendizados novos e específicos"],"icp":{"quem_compra":"cargo+porte+setor","dores":["..."],"gatilhos":["..."],"mensagens_que_funcionam":["..."],"evitar":["..."]},"concorrentes":[{"nome":"","posicionamento":"","brecha":""}],"mudancas":["o que muda daqui para frente: temas, ângulos, formatos, horários, oferta"],"tema_semana":"até 300 caracteres, guia os posts dos próximos 7 dias","angulos":["até 5"],"anuncios":{"pausar":[{"id":"id de anúncio ACTIVE que está caro ou sem resposta","motivo":""}],"novo":{"criar":true,"tema":"","publico_obs":"","motivo":""}},"campanha":{"nome":"nome curto da campanha da semana","objetivo":"","meta_leads":0,"meta_reunioes":0},"riscos":["..."]}`;
+    let est; try { est = _jsonDe(await _claudeEstrategia(SYS, USR, { max: 4500 })); passo(true, 'Aprendi com os resultados e defini o que muda'); } catch (e) { throw new Error('Não consegui montar a estratégia do dia: ' + e.message); }
+    R.est = est; R.concorrencia = conc; R.verba = { teto: tetoMensal, comprometido, disponivel, semana: verbaSemana };
+    // 4) campanha da semana (cria ou atualiza)
+    let camp = null; const atual = await _kvMc('mkt:camp_atual').catch(() => null), vigente = atual && atual.fim >= hojeSP;
+    try {
+      const C = await import('./campanhas.js'), icp = est.icp || {}, plano = { tipo: 'proprio', objetivo: est.campanha?.objetivo || 'Gerar leads qualificados do ICP e convertê-los em reuniões', publico: icp.quem_compra || 'C-levels e donos de empresas médias e grandes', oferta: 'Mapa de Oportunidades com IA (grátis, sem reunião, no WhatsApp)',
+        dor: (icp.dores || []).join('; '), prova: '17 anos de mercado; clientes de energia e financeiro', mensagem: (est.angulos || []).join(' | '), racional: [`Atualizado em ${hojeSP}`, ...(est.aprendizados || []), ...(est.mudancas || [])].join('\n') };
+      const dadosCamp = { id: vigente ? atual.id : undefined, nome: vigente ? atual.nome : String(est.campanha?.nome || 'Semana ' + hojeSP).slice(0, 80), objetivo: est.campanha?.objetivo || '', inicio: vigente ? atual.inicio : hojeSP, fim: vigente ? atual.fim : _addDias(hojeSP, 6), orcamento: Math.max(0, verbaSemana), plano,
+        metas: { leads: Number(est.campanha?.meta_leads) || null, reunioes: Number(est.campanha?.meta_reunioes) || null } };
+      camp = (await C._salvar({ campanha: dadosCamp }, 'agente-marketing')).campanha; await _kvMc('mkt:camp_atual', { id: camp.id, nome: camp.nome, inicio: camp.inicio, fim: camp.fim });
+      passo(true, (vigente ? 'Atualizei a campanha em andamento: ' : 'Cadastrei a campanha da semana: ') + camp.nome);
+    } catch (e) { passo(false, 'Não consegui cadastrar/atualizar a campanha: ' + String(e.message).slice(0, 120)); }
+    // 5) anúncios: pausa os que não entregam (só pausar; nunca mexe em verba de anúncio no ar)
+    for (const p of (est.anuncios?.pausar || []).slice(0, 3)) {
+      const reg = pagos.find(r => String(r.id) === String(p.id)); if (!reg || (reg.estado_meta || reg.estado) !== 'ACTIVE') continue;
+      try { await patrocinadoEstado({ id: p.id, estado: 'PAUSED' }); R.ajustes.push(`Pausei o anúncio "${reg.nome}": ${String(p.motivo || '').slice(0, 140)}`); passo(true, 'Pausei o anúncio "' + reg.nome + '" (' + String(p.motivo || '').slice(0, 80) + ')'); } catch (e) { passo(false, 'Não consegui pausar "' + reg.nome + '": ' + String(e.message).slice(0, 80)); }
+    }
+    // 6) posts: completa os próximos 7 dias e AGENDA (a fila gera texto e imagem; o cron termina sozinho)
+    try {
+      const { plano: pl } = await autoCampanhaPlanejar({ dias: 7 });
+      if (!pl.vagos.length) passo(true, 'Próximos 7 dias já estão completos na agenda (' + (pl.ja_agendados || []).length + ' posts)');
+      else { const tema = [est.tema_semana, 'Ângulos: ' + (est.angulos || []).join('; '), 'Evitar: ' + ((est.icp?.evitar || []).join('; ') || 'conteúdo fora do ICP')].join(' · ').substring(0, 700);
+        const f = await filaEnfileirar({ slots: pl.vagos, tema, redes: ['linkedin', 'instagram', 'facebook'], apenas_rascunho: false, com_imagem: true, stories: false, avisar: false }); R.posts = { lote: f.lote, enfileirados: f.enfileirados };
+        passo(true, f.enfileirados + ' posts entram na fila com o tema novo; texto, imagem e agendamento no Metricool saem em segundo plano'); }
+    } catch (e) { passo(false, 'Posts: ' + String(e.message).slice(0, 120)); }
+    // 7) anúncio pago novo da semana (dentro do teto; nasce PAUSADO)
+    const jaTem = pagos.some(r => (r.estado_meta || r.estado) !== 'DELETED' && !r.encerrada && String(r.fim || '') >= _addDias(hojeSP, 2));
+    if (est.anuncios?.novo?.criar && !jaTem) {
+      const diario = Math.floor(verbaSemana / 7 * 100) / 100;
+      if (diario < 6) passo(false, 'Anúncio pago: sem verba nesta semana (disponível R$ ' + verbaSemana.toFixed(2) + '; mínimo R$ 6/dia por 7 dias). Teto mensal R$ ' + tetoMensal);
+      else try {
+        const cp = await patrocinadoCopy({ tema: est.anuncios.novo.tema || est.tema_semana, publico: est.anuncios.novo.publico_obs || '' });
+        const arte = await arteOrganica({ texto: cp.texto, titulo: cp.titulo, rede: 'instagram', campanha: 'ads-' + hojeSP });
+        const r = await patrocinadoCriar({ nome: ('Semana ' + hojeSP + ' · ' + (camp?.nome || 'Atlantyx')).slice(0, 80), texto: cp.texto, titulo: cp.titulo, descricao: cp.descricao, imagem: arte.url, orcamento_diario: diario, inicio: _addDias(hojeSP, 1), fim: _addDias(hojeSP, 7), meta_leads: Number(est.campanha?.meta_leads) || 0, arte: cp.arte }, null);
+        const reg = r.campanha || r.kit; R.anuncio = { modo: r.modo, id: reg?.id || null, total_maximo: reg?.total_maximo || null, diario };
+        if (r.modo === 'meta' && ativarAnuncio && reg.total_maximo <= verbaSemana + 0.01) { await patrocinadoEstado({ id: reg.id, estado: 'ACTIVE' }); R.anuncio.estado = 'ACTIVE'; passo(true, 'Anúncio pago criado e ATIVADO (R$ ' + diario.toFixed(2) + '/dia por 7 dias, máximo R$ ' + reg.total_maximo + ')'); }
+        else { R.anuncio.estado = r.modo === 'meta' ? 'PAUSED' : 'kit'; passo(true, r.modo === 'meta' ? 'Anúncio pago criado PAUSADO (R$ ' + diario.toFixed(2) + '/dia, máximo R$ ' + reg.total_maximo + '): ative na aba Resultados e leads' : 'Meta não está ligado: montei o kit do anúncio para criar no Metricool'); }
+        if (camp && reg?.id) try { const C = await import('./campanhas.js'); await C._acaoSalvar({ campanha_id: camp.id, acao: { tipo: 'anuncio', nome: 'Anúncio pago · semana ' + hojeSP, inicio: _addDias(hojeSP, 1), fim: _addDias(hojeSP, 7), custo_previsto: reg.total_maximo || null, ref: r.modo === 'meta' ? { kind: 'anuncio', id: String(reg.id), nome: reg.nome } : null } }); } catch (_) {}
+      } catch (e) { passo(false, 'Anúncio pago: ' + String(e.message).slice(0, 140)); }
+    } else if (jaTem) passo(true, 'Já existe anúncio pago em andamento ou programado: não crio outro (teto R$ ' + tetoMensal + '/mês)');
+    // 8) guarda o aprendizado: é o ponto de partida do dia seguinte
+    const entrada = { data: hojeSP, aprendizados: est.aprendizados || [], mudancas: est.mudancas || [], tema: est.tema_semana, angulos: est.angulos || [] };
+    await _kvMc('mkt:aprendizados', { historico: [...hist.filter(h => h.data !== hojeSP), entrada].slice(-30), icp: est.icp || memo.icp || null, concorrentes: (est.concorrentes && est.concorrentes.length ? est.concorrentes : memo.concorrentes) || [], concorrencia_texto: conc, concorrencia_em: renovou ? hojeSP : memo.concorrencia_em || null, atualizado_em: new Date().toISOString() }).catch(() => {});
+    R.relatorio = _relatorioCiclo(R, est, camp); R.campanha_id = camp?.id || null;
+    await _kvMc('mkt:camp_completa', { data: hojeSP, ok: true, lote: R.posts?.lote, enfileirados: R.posts?.enfileirados, campanha_id: R.campanha_id, anuncio: R.anuncio || null, fim: new Date().toISOString() }).catch(() => {});
+    try { await _emailMkt('Marketing de hoje: ' + (est.campanha?.nome || 'ciclo diário'), '<pre style="white-space:pre-wrap;font-family:inherit">' + R.relatorio.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>'); } catch (_) {}
+    return R;
+  } catch (e) {
+    await _kvMc('mkt:camp_completa', { data: hojeSP, erro: String(e.message || e).slice(0, 200) }).catch(() => {}); passo(false, String(e.message || e).slice(0, 200));
+    try { await _emailMkt('Marketing de hoje: não consegui rodar', `<p>${String(e.message || e).slice(0, 300)}</p><p>Nada foi alterado. Abra Atlantyx OS → Assuntos → Marketing para rodar de novo.</p>`); } catch (_) {}
+    R.erro = String(e.message || e).slice(0, 200); R.relatorio = '**O ciclo de hoje não rodou:** ' + R.erro; return R;
+  }
+}
+function _relatorioCiclo(R, est, camp) {
+  const L = a => (a || []).map(x => '- ' + x).join('\n') || '- (nada)', icp = est.icp || {};
+  return [`## Marketing de ${R.data}`, `**Leitura dos resultados:** ${est.leitura || '—'}`,
+    `### O que aprendi\n${L(est.aprendizados)}`, `### O que muda daqui para frente\n${L(est.mudancas)}\nTema da semana: ${est.tema_semana || '—'}\nÂngulos: ${(est.angulos || []).join(' · ') || '—'}`,
+    `### ICP alinhado\nQuem compra: ${icp.quem_compra || '—'}\nDores: ${(icp.dores || []).join('; ') || '—'}\nGatilhos: ${(icp.gatilhos || []).join('; ') || '—'}\nEvitar: ${(icp.evitar || []).join('; ') || '—'}`,
+    `### Concorrência\n${(est.concorrentes || []).map(c => `- **${c.nome}**: ${c.posicionamento || ''} → brecha: ${c.brecha || ''}`).join('\n') || '- (sem novidade hoje)'}`,
+    `### Campanha\n${camp ? camp.nome + ' (' + camp.inicio + ' a ' + camp.fim + ') — cadastrada em Campanhas de Marketing' : 'não consegui cadastrar hoje'}\nMeta de leads: ${est.campanha?.meta_leads ?? '—'} · reuniões: ${est.campanha?.meta_reunioes ?? '—'}`,
+    `### O que foi feito hoje\n${R.passos.map(p => (p.ok ? '✓ ' : '✗ ') + p.t).join('\n')}${R.ajustes.length ? '\n' + R.ajustes.join('\n') : ''}`,
+    `### Verba de mídia paga\nTeto R$ ${R.verba.teto}/mês · comprometido R$ ${R.verba.comprometido} · disponível R$ ${R.verba.disponivel}`, `### Riscos\n${L(est.riscos)}`].join('\n\n');
+}
+
+export { autoCampanhaSegunda, campanhaCompleta }; // v3.593: o agente de marketing do ATLAS roda o ciclo diário completo
