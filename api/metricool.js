@@ -2027,6 +2027,31 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
     resumo: `${vagos.length} horário(s) vago(s) e ${jaAgendados.length} já preenchido(s) em ${nDias} dia(s) a partir de ${de.split('-').reverse().join('/')}.` } };
 }
 
+// v3.589: AUTOCAMPANHA DA SEGUNDA (07:00 de Brasília) — o "agente de marketing" do fundador. Planeja os próximos 7 dias, enfileira SÓ RASCUNHOS
+// (nada vai ao Metricool, nada é publicado, nenhum anúncio é criado) e a fila do servidor gera texto+imagem; o e-mail avisa quando terminar.
+// Uma vez por dia (kv mkt:seg_auto); se não conseguir planejar, avisa por e-mail em vez de ficar calada.
+async function _emailMkt(assunto, html) {
+  const { enviarEmailGmail } = await import('./financeiro.js');
+  await enviarEmailGmail({ para: process.env.AUTOCAMPANHA_AVISO_PARA || 'contato@atlanteam.com.br', assunto, html: html + '<p>Fabio Quintanilha / CEO – Atlantyx</p>' });
+}
+async function autoCampanhaSegunda({ forcar = false } = {}) {
+  const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const ult = await _kvMc('mkt:seg_auto').catch(() => null);
+  if (!forcar && ult?.data === hojeSP) return { pulado: 'já rodou hoje', ...ult };
+  await _kvMc('mkt:seg_auto', { data: hojeSP, iniciado_em: new Date().toISOString() });
+  try {
+    const { plano } = await autoCampanhaPlanejar({ dias: 7 });
+    if (!plano.vagos.length) { await _kvMc('mkt:seg_auto', { data: hojeSP, vagos: 0, resumo: plano.resumo }); return { enfileirados: 0, resumo: plano.resumo }; }
+    const r = await filaEnfileirar({ slots: plano.vagos, tema: 'dados, IA aplicada e eficiencia operacional para grandes empresas', redes: ['linkedin', 'instagram', 'facebook'], apenas_rascunho: true, com_imagem: true, stories: false, avisar: true });
+    await _kvMc('mkt:seg_auto', { data: hojeSP, lote: r.lote, enfileirados: r.enfileirados, resumo: plano.resumo });
+    return { lote: r.lote, enfileirados: r.enfileirados, resumo: plano.resumo };
+  } catch (e) {
+    await _kvMc('mkt:seg_auto', { data: hojeSP, erro: String(e.message || e).slice(0, 200) }).catch(() => {});
+    try { await _emailMkt('Autocampanha de segunda: não consegui planejar', `<p>A geração automática de segunda às 7h falhou antes de começar:</p><p><b>${String(e.message || e).slice(0, 300)}</b></p><p>Nada foi gerado nem publicado. Abra o Atlantyx OS → Marketing → Autocampanha para rodar manualmente.</p>`); } catch (_) {}
+    return { erro: String(e.message || e).slice(0, 200) };
+  }
+}
+
 // Gera o conteúdo e agenda, um slot por vez
 async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null, cta_instagram = '', data_inicio = null } = {}) {
   const _t0 = Date.now();
@@ -2186,6 +2211,10 @@ async function handler(req, res) {
     const pg = (ok, msg) => res.status(ok ? 200 : 400).setHeader('Content-Type', 'text/html; charset=utf-8').end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LinkedIn</title><body style="font-family:system-ui,sans-serif;background:#05080c;color:#e8eef3;display:flex;align-items:center;justify-content:center;min-height:90vh;margin:0;padding:16px;"><div style="max-width:460px;text-align:center;"><div style="font-size:40px;">' + (ok ? '✅' : '⚠️') + '</div><h2 style="font-size:18px;">' + (ok ? 'LinkedIn conectado' : 'LinkedIn não conectado') + '</h2><p style="font-size:14px;line-height:1.5;color:#9fb0bf;">' + String(msg).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</p><p><a href="/" style="color:#00C4CC;">Voltar ao Atlantyx OS</a></p></div><script>try{window.opener&&window.opener.postMessage({atxLinkedin:' + (ok ? 'true' : 'false') + '},location.origin)}catch(e){}</script>');
     try { await liCallback(req.query || {}, _baseDe(req)); return pg(true, 'A conta de anúncios foi ligada ao sistema. Pode fechar esta aba e voltar para a campanha patrocinada.'); }
     catch (e) { return pg(false, e.message); }
+  }
+  // v3.589: cron semanal da Autocampanha (segunda 07:00 BRT): só rascunhos, avisa por e-mail
+  if (req.method === 'GET' && req.query?.cron === 'segunda') {
+    try { return res.status(200).json({ success: true, ...(await autoCampanhaSegunda({ forcar: req.query?.forcar === '1' })) }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   // v2.68: cron da fila — um passo por minuto, em segundo plano
   if (req.method === 'GET' && req.query?.cron === 'fila') {

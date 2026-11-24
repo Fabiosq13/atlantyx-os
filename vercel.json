@@ -266,6 +266,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/metricool?cron=segunda",
+      "schedule": "0 10 * * 1"
+    },
+    {
       "path": "/api/campanha-disparo?cron=1",
       "schedule": "*/15 * * * *"
     },
