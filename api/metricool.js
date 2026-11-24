@@ -2674,3 +2674,5 @@ function extrairRedes(marca) {
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 export default comGuarda(handler, 'metricool');
+
+export { autoCampanhaSegunda }; // v3.592: o agente de marketing do ATLAS aciona (só rascunhos)

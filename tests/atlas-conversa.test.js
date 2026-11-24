@@ -13,7 +13,7 @@ test('separarResposta: texto do chat × documento, inclusive com a tag ainda abe
 
 test('intencao: frase curta vira ação; pedido longo é ajuste do texto', () => {
   assert.equal(AT.intencao('testa'), 'testar'); assert.equal(AT.intencao('roda um teste'), 'testar'); assert.equal(AT.intencao('publica'), 'publicar'); assert.equal(AT.intencao('pode publicar'), 'publicar');
-  assert.equal(AT.intencao('roda toda segunda às 7 e gera 3 posts'), null);
+  assert.equal(AT.intencao('roda toda segunda às 7 e gera 3 posts'), 'agendar');
   assert.equal(AT.intencao('o agente deve publicar rascunhos de posts toda semana, só rascunho'), null);
   assert.equal(AT.intencao('volta a rascunho'), 'rascunho');
 });
@@ -68,4 +68,65 @@ test('privacidade: outra pessoa não conversa com o item; nome de cliente real g
   await assert.rejects(() => AT.conversar({ id: it.id, mensagem: 'oi' }, 'bia', false, iaFalsa([]), ev()), /não encontrado|Só quem criou/);
   await AT.conversar({ id: it.id, mensagem: 'Escreva o texto completo' }, 'ana', false, iaFalsa(['ok\n<documento>\n# Análise sobre a CPFL e metas\n</documento>']), ev());
   assert.match((await AT.obter({ id: it.id }, 'ana', false)).aviso, /cliente real/);
+});
+
+// ── v3.592: rodar, agendar e rodar sozinho ──
+const criarPublicado = async (assunto = 'marketing', tipo = 'relatorio') => { const it = await AT.iniciar({ assunto, tipo, pedido: 'Relatório semanal de leads por origem' }, 'ana');
+  await AT.conversar({ id: it.id, mensagem: 'Escreva o texto completo' }, 'ana', false, iaFalsa(['ok\n<documento>\n# Relatório semanal de leads por origem\n</documento>']), ev());
+  await AT.mudar({ id: it.id, para: 'teste' }, 'ana', false); if (tipo === 'agente') { await AT.mudar({ id: it.id, para: 'pedir_aprovacao' }, 'ana', false); await AT.mudar({ id: it.id, para: 'publicado' }, 'ceo', true); } else await AT.mudar({ id: it.id, para: 'publicado' }, 'ana', false); return it; };
+
+test('lerAgenda entende frases em português (hora de Brasília)', () => {
+  assert.deepEqual(AT.lerAgenda('agende toda segunda às 7h'), { freq: 'semanal', dia: 1, hora: 7 });
+  assert.deepEqual(AT.lerAgenda('todo dia 5 às 9h'), { freq: 'mensal', dia: 5, hora: 9 });
+  assert.deepEqual(AT.lerAgenda('todo dia às 8 da manhã'), { freq: 'diaria', dia: null, hora: 8 });
+  assert.deepEqual(AT.lerAgenda('toda sexta às 3 da tarde'), { freq: 'semanal', dia: 5, hora: 15 });
+  assert.equal(AT.lerAgenda('deixe mais curto'), null);
+  assert.equal(AT.intencao('agende toda segunda às 7h'), 'agendar'); assert.equal(AT.intencao('cancela a agenda'), 'desagendar'); assert.equal(AT.intencao('roda agora valendo'), 'executar');
+});
+
+test('agendar pelo chat grava a agenda; sem implantar ainda não roda', async () => {
+  novo(); const it = await AT.iniciar({ assunto: 'marketing', tipo: 'agente', pedido: 'Agente de posts semanal' }, 'ana');
+  await AT.conversar({ id: it.id, mensagem: 'Escreva o texto completo' }, 'ana', false, iaFalsa(['ok\n<documento>\n# Agente de posts semanal completo\n</documento>']), ev());
+  const ia = iaFalsa([]); await AT.conversar({ id: it.id, mensagem: 'agende toda segunda às 7h' }, 'ana', false, ia, ev()); assert.equal(ia.chamadas.length, 0);
+  const o = await AT.obter({ id: it.id }, 'ana', false); assert.deepEqual({ f: o.agenda.freq, d: o.agenda.dia, h: o.agenda.hora, a: o.agenda.ativa }, { f: 'semanal', d: 1, h: 7, a: true });
+  assert.equal(AT.vencido(o, new Date('2026-11-30T11:00:00Z')), false); // segunda 08:00 BRT, mas ainda não está implantado
+});
+
+test('rodar agora (valendo): só publicado; guarda a execução e não muda o texto', async () => {
+  novo(); const it = await AT.iniciar({ assunto: 'financeiro', tipo: 'agente', pedido: 'Agente de cobrança que só gera rascunhos' }, 'ana');
+  await AT.conversar({ id: it.id, mensagem: 'Escreva o texto completo' }, 'ana', false, iaFalsa(['ok\n<documento>\n# Agente de cobrança completo\n</documento>']), ev());
+  const ia0 = iaFalsa([]); await AT.conversar({ id: it.id, mensagem: 'roda agora valendo' }, 'ana', false, ia0, ev()); assert.equal(ia0.chamadas.length, 0); // rascunho: pede implantar
+  const p = await criarPublicado(); const ia = iaFalsa(['**Resumo** 3 leads. **Rascunhos** post 1.']);
+  await AT.conversar({ id: p.id, acao: 'executar' }, 'ana', false, ia, ev()); assert.match(ia.chamadas[0].sys, /EXECUTANDO agora/);
+  const o = await AT.obter({ id: p.id }, 'ana', false); assert.equal(o.execucoes[0].modo, 'manual'); assert.equal(o.estado, 'publicado'); assert.equal(o.versoes.length, 1); assert.ok(o.conversa.at(-1).execucao);
+});
+
+test('agendar(): valida e só dono/aprovador mexe; Autocampanha só em marketing', async () => {
+  novo(); const it = await criarPublicado('marketing', 'agente');
+  const o = await AT.agendar({ id: it.id, freq: 'semanal', dia: 1, hora: 7, ativa: true }, 'ana', false); assert.equal(o.agenda.hora, 7);
+  await assert.rejects(() => AT.agendar({ id: it.id, freq: 'mensal', dia: 31, hora: 7 }, 'ana', false), /dia do mês/i);
+  await assert.rejects(() => AT.agendar({ id: it.id, freq: 'diaria', hora: 25 }, 'ana', false), /Hora/);
+  await assert.rejects(() => AT.agendar({ id: it.id, freq: 'diaria', hora: 7 }, 'bia', false), /não encontrado|permissão/);
+  assert.equal((await AT.agendar({ id: it.id, autocampanha: true }, 'ana', false)).autocampanha, true);
+  const f = await criarPublicado('financeiro', 'agente'); await assert.rejects(() => AT.agendar({ id: f.id, autocampanha: true }, 'ana', false), /Marketing/);
+});
+
+test('cron: roda só o publicado vencido, uma vez por dia, e registra a execução (falha não derruba)', async () => {
+  novo(); const a = await criarPublicado('marketing', 'agente'), b = await criarPublicado('financeiro', 'relatorio');
+  await AT.agendar({ id: a.id, freq: 'semanal', dia: 1, hora: 7, ativa: true }, 'ana', false); await AT.agendar({ id: b.id, freq: 'semanal', dia: 3, hora: 7, ativa: true }, 'ana', false);
+  const seg8h = new Date('2026-11-30T11:00:00Z'); // segunda 08:00 em Brasília
+  const antes = new Date('2026-11-30T09:00:00Z'); assert.equal((await AT.rodarAgendados(iaFalsa(['x']), { agora: antes })).feitos.length, 0); // 06:00: ainda não
+  const ia = iaFalsa(['**Resumo** rodou pela agenda.']); const r = await AT.rodarAgendados(ia, { agora: seg8h });
+  assert.equal(r.feitos.length, 1); assert.equal(r.feitos[0].id, a.id); assert.equal(ia.chamadas.length, 1); // só o de segunda
+  assert.equal((await AT.rodarAgendados(iaFalsa(['y']), { agora: seg8h })).feitos.length, 0); // mesmo dia: não repete
+  const o = await AT.obter({ id: a.id }, 'ana', false); assert.equal(o.execucoes[0].modo, 'agenda'); assert.equal(o.agenda.ultimo, '2026-11-30');
+  // falha da IA: registra e segue
+  const c = await criarPublicado('marketing', 'agente'); await AT.agendar({ id: c.id, freq: 'diaria', hora: 6, ativa: true }, 'ana', false);
+  const r2 = await AT.rodarAgendados(async () => { throw new Error('IA fora'); }, { agora: new Date('2026-12-01T12:00:00Z') });
+  assert.ok(r2.feitos.some(f => f.id === c.id && f.ok === false)); assert.match((await AT.obter({ id: c.id }, 'ana', false)).execucoes[0].erro, /IA fora/);
+});
+
+test('pausar a agenda impede o cron', async () => {
+  novo(); const a = await criarPublicado('marketing', 'agente'); await AT.agendar({ id: a.id, freq: 'diaria', hora: 6, ativa: true }, 'ana', false); await AT.agendar({ id: a.id, ativa: false }, 'ana', false);
+  assert.equal((await AT.rodarAgendados(iaFalsa(['x']), { agora: new Date('2026-12-01T12:00:00Z') })).feitos.length, 0);
 });

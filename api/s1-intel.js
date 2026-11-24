@@ -15,6 +15,12 @@ async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method === 'GET' && req.query?.cron === 'agentes') { // v3.592: cron de hora em hora — roda os agentes publicados que venceram (lib/atlas-itens.js)
+    _inicioReq = Date.now();
+    try { const { iaEstado } = await import('../lib/qa-guard.js'); const e = await iaEstado(true); if (!e.ligada) return res.status(200).json({ success: true, pulado: 'IA desligada (chave mestra)' });
+      return res.status(200).json({ success: true, ...(await AT.rodarAgendados((sys, msgs, mx) => claudeChat(sys, msgs, mx)) ) }); }
+    catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
@@ -52,6 +58,7 @@ async function handler(req, res) {
           try { await AT.conversar(req.body, login, admin, (sys, msgs, mx, onD) => claudeChat(sys, msgs, mx, onD), emitir); if (!aberto) emitir({ tipo: 'fim' }); return res.end(); }
           catch (e) { if (!aberto) return res.status(e.status || 500).json({ success: false, error: e.message }); emitir({ tipo: 'erro', erro: e.message }); return res.end(); }
         }
+        if (action === 'atlas_agendar') return res.status(200).json({ success: true, item: await AT.agendar(req.body, login, admin) });
         if (action === 'atlas_mudar') return res.status(200).json({ success: true, item: await AT.mudar(req.body, login, admin) });
         return res.status(400).json({ success: false, error: 'Ação do ATLAS desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }

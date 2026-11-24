@@ -218,6 +218,10 @@
   },
   "crons": [
     {
+      "path": "/api/s1-intel?cron=agentes",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/placar?cron=1",
       "schedule": "30 10 * * *"
     },

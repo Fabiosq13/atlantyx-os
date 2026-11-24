@@ -137,7 +137,7 @@
   const W = { id: null, item: null, vendo: null, ocupado: false, parcial: '', aba: 'chat' };
   const sep = t => { const i = t.indexOf('<documento>'); if (i < 0) return { chat: t.trim(), doc: null, aberto: false }; const f = t.indexOf('</documento>', i);
     return { chat: (t.slice(0, i) + (f < 0 ? '' : t.slice(f + 12))).trim(), doc: t.slice(i + 11, f < 0 ? undefined : f).replace(/^\s*\n/, ''), aberto: f < 0 }; };
-  const SUG = it => it.conteudo ? ['Deixe mais curto', 'Acrescente o que ele NUNCA faz', 'Explique como testar'] : [];
+  const SUG = it => it.conteudo ? ['Deixe mais curto', 'Acrescente o que ele NUNCA faz'].concat(it.tipo === 'agente' || it.tipo === 'relatorio' ? ['Agende toda segunda às 7h'] : []) : [];
   async function ver(id, primeira) {
     $('asModal')?.remove(); W.id = id; W.vendo = null; W.parcial = ''; W.aba = 'chat';
     try { W.item = (await api('atlas_obter', { id })).item; } catch (e) { return nota(e.message, 'error'); }
@@ -146,7 +146,7 @@
   }
   function bolha(c) {
     if (c.papel === 'user') return '<div class="as-m u"><div class="b">' + esc(c.texto).replace(/\n/g, '<br>') + '</div></div>';
-    return '<div class="as-m a"><div class="av">✨</div><div class="b' + (c.teste ? ' tst' : '') + '">' + (c.teste ? '<div class="tt">🧪 Resultado do teste — simulação, nada saiu para fora</div>' : '') + md(c.texto) + (c.versao ? '<div class="vv">Texto atualizado → versão ' + c.versao + '</div>' : '') + '</div></div>';
+    return '<div class="as-m a"><div class="av">✨</div><div class="b' + (c.teste || c.execucao ? ' tst' : '') + '">' + (c.teste ? '<div class="tt">🧪 Resultado do teste — simulação, nada saiu para fora</div>' : '') + (c.execucao ? '<div class="tt">▶ Execução valendo — nada saiu para fora, só relatório e rascunhos</div>' : '') + md(c.texto) + (c.versao ? '<div class="vv">Texto atualizado → versão ' + c.versao + '</div>' : '') + '</div></div>';
   }
   function desenhar(manter) {
     const m = $('asModal'), i = W.item; if (!m || !i) return;
@@ -162,9 +162,9 @@
       + (vs.length > 1 ? '<select onchange="ASSUNTOS.versao(this.value)">' + vs.slice().reverse().map(v => '<option value="' + v.n + '"' + ((vend ? vend.n : ult) === v.n ? ' selected' : '') + '>Versão ' + v.n + (v.n === ult ? ' (atual)' : '') + ' · ' + dt(v.em) + '</option>').join('') + '</select>' : '')
       + (vend && vend.n !== ult ? '<button class="as-bt" onclick="ASSUNTOS.restaurar(' + vend.n + ')">Voltar a esta versão</button>' : '') + '</div>'
       + (i.aviso ? '<div class="as-aviso">⚠ ' + esc(i.aviso) + '</div>' : '') + (i.ajuste_tipo ? '<div class="as-meta">' + esc(i.ajuste_tipo) + '</div>' : '')
-      + '<div class="as-txt as-doc" id="asDoc">' + (doc ? md(doc) : '<div class="as-vazio">O texto aparece aqui enquanto o ATLAS escreve. Peça ajustes na conversa ao lado.</div>') + '</div>'
+      + agendaBox(i) + '<div class="as-txt as-doc" id="asDoc">' + (doc ? md(doc) : '<div class="as-vazio">O texto aparece aqui enquanto o ATLAS escreve. Peça ajustes na conversa ao lado.</div>') + '</div>'
       + '<div class="as-meta">Pedido por ' + esc(i.criado_por) + ' em ' + dt(i.criado_em) + (i.publicado_por ? ' · implantado por ' + esc(i.publicado_por) : '') + '</div>'
-      + '<details class="as-log"><summary>Registro (' + (i.log || []).length + ')</summary>' + (i.log || []).map(l => '<div>' + dt(l.em) + ' · <b>' + esc(l.por) + '</b> ' + esc(l.acao) + (l.detalhe ? ' — ' + esc(l.detalhe) : '') + '</div>').join('') + '</details>'
+      + execBox(i) + '<details class="as-log"><summary>Registro (' + (i.log || []).length + ')</summary>' + (i.log || []).map(l => '<div>' + dt(l.em) + ' · <b>' + esc(l.por) + '</b> ' + esc(l.acao) + (l.detalhe ? ' — ' + esc(l.detalhe) : '') + '</div>').join('') + '</details>'
       + ((i.meu || i.pode_aprovar) && i.estado !== 'descartado' ? '<button class="as-bt as-desc" onclick="ASSUNTOS.descartar()">Descartar</button>' : '') + '</div>'
       + '<div class="as-wc"><div class="as-feed" id="asFeed">' + (feed || '<div class="as-vazio">Conte o que você quer. Eu escrevo, você ajusta, testa e implanta aqui mesmo.</div>') + '</div>'
       + '<div class="as-chips">' + ac + '</div>' + (sug ? '<div class="as-sug2">' + sug + '</div>' : '')
@@ -172,9 +172,31 @@
       + '<button class="as-send" ' + (W.ocupado ? 'disabled' : '') + ' onclick="ASSUNTOS.enviarMsg()">' + (W.ocupado ? '…' : 'Enviar') + '</button></div></div></div></div>';
     const f = $('asFeed'); if (f) f.scrollTop = antes != null && !W.ocupado ? antes : f.scrollHeight; const t = $('asMsg'); if (t) { if (ta) t.value = ta; if (!W.ocupado && window.innerWidth > 700) t.focus(); }
   }
+  const DIASN = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+  const txtAg = a => !a || !a.freq ? '' : (a.freq === 'diaria' ? 'Todo dia' : a.freq === 'semanal' ? 'Toda ' + DIASN[a.dia] : 'Todo dia ' + a.dia + ' do mês') + ' às ' + String(a.hora).padStart(2, '0') + ':00' + (a.ativa === false ? ' · pausada' : '');
+  function agendaBox(i) {
+    if (i.tipo !== 'agente' && i.tipo !== 'relatorio') return ''; const a = i.agenda || {}, pode = i.meu || i.pode_aprovar;
+    const opt = (v, r, sel) => '<option value="' + v + '"' + (String(sel) === String(v) ? ' selected' : '') + '>' + r + '</option>', fr = a.freq || 'semanal';
+    const diaSel = fr === 'semanal' ? '<select id="agDia">' + DIASN.map((d, k) => opt(k, d, a.dia ?? 1)).join('') + '</select>' : fr === 'mensal' ? '<select id="agDia">' + Array.from({ length: 28 }, (_, k) => opt(k + 1, 'dia ' + (k + 1), a.dia ?? 1)).join('') + '</select>' : '';
+    const prox = i.estado === 'publicado' ? '' : ' · só roda depois de implantado';
+    return '<div class="as-ag"><div class="as-agh"><b>⏰ Agenda</b><span>' + (a.freq ? esc(txtAg(a)) + prox : 'Não agendado') + '</span>' + (a.freq && pode ? '<button class="as-bt" onclick="ASSUNTOS.agendaAtiva(' + (a.ativa === false ? 'true' : 'false') + ')">' + (a.ativa === false ? 'Retomar' : 'Pausar') + '</button>' : '') + '</div>'
+      + (pode ? '<div class="as-agf"><select id="agFreq" onchange="ASSUNTOS.agendaFreq()">' + opt('diaria', 'Todo dia', fr) + opt('semanal', 'Toda semana', fr) + opt('mensal', 'Todo mês', fr) + '</select>' + diaSel + '<select id="agHora">' + Array.from({ length: 24 }, (_, h) => opt(h, String(h).padStart(2, '0') + ':00', a.hora ?? 7)).join('') + '</select><button class="as-bt p" onclick="ASSUNTOS.agendaSalvar()">' + (a.freq ? 'Atualizar' : 'Agendar') + '</button></div>'
+        + (i.assunto === 'marketing' ? '<label class="as-agc"><input type="checkbox" id="agAuto"' + (i.autocampanha ? ' checked' : '') + ' onchange="ASSUNTOS.agendaAuto(this.checked)"> Também acionar a Autocampanha (só cria rascunhos de posts)</label>' : '') + '<div class="as-meta">Horário de Brasília. O agente só gera relatório e rascunhos: nada é enviado ou publicado fora, e você recebe um aviso por e-mail a cada execução.</div>' : '') + '</div>';
+  }
+  function execBox(i) {
+    const E = i.execucoes || []; if (!E.length) return '';
+    return '<details class="as-log as-ex"><summary>Execuções (' + E.length + ')</summary>' + E.map(x => '<details><summary>' + dt(x.em) + ' · ' + ({ teste: '🧪 teste', manual: '▶ valendo', agenda: '⏰ agenda' }[x.modo] || x.modo) + ' · ' + esc(x.por) + (x.erro ? ' · <span style="color:#B42318">falhou</span>' : '') + '</summary><div class="as-txt" style="font-size:12px">' + (x.erro ? esc(x.erro) : md(x.saida || '')) + (x.autocampanha ? '<div class="as-meta">Autocampanha: ' + esc(x.autocampanha.erro ? 'erro — ' + x.autocampanha.erro : x.autocampanha.pulado ? 'já tinha rodado hoje' : (x.autocampanha.enfileirados ?? 0) + ' rascunho(s) na fila') + '</div>' : '') + '</div></details>').join('') + '</details>';
+  }
+  function agendaFreq() { const f = $('agFreq')?.value; W.item.agenda = { ...(W.item.agenda || {}), freq: f, dia: f === 'diaria' ? null : 1, hora: Number($('agHora')?.value || 7) }; desenhar(true); }
+  async function agendaSalvar() {
+    const freq = $('agFreq')?.value, dia = $('agDia')?.value, hora = $('agHora')?.value;
+    try { W.item = (await api('atlas_agendar', { id: W.id, freq, dia, hora, ativa: true })).item; nota('Agendado: ' + txtAg(W.item.agenda)); desenhar(true); carregar().catch(() => {}); } catch (e) { nota(e.message, 'error'); }
+  }
+  async function agendaAtiva(v) { try { W.item = (await api('atlas_agendar', { id: W.id, ativa: v })).item; nota(v ? 'Agenda retomada' : 'Agenda pausada'); desenhar(true); } catch (e) { nota(e.message, 'error'); } }
+  async function agendaAuto(v) { try { W.item = (await api('atlas_agendar', { id: W.id, autocampanha: v })).item; nota(v ? 'Autocampanha ligada (só rascunhos)' : 'Autocampanha desligada'); desenhar(true); } catch (e) { nota(e.message, 'error'); desenhar(true); } }
   function teclaMsg(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMsg(); } }
-  function msgRapida(t) { enviarMsg(t, /teste/i.test(t) ? 'testar' : null); }
-  function chip(id) { if (id === 'testar') return enviarMsg('Rodar teste agora', 'testar'); return acao(id); }
+  function msgRapida(t) { enviarMsg(t); }
+  function chip(id) { if (id === 'testar') return enviarMsg('Rodar teste agora', 'testar'); if (id === 'executar') { if (!confirm('Rodar o agente valendo agora? Ele só gera relatório e rascunhos; nada é enviado nem publicado fora.')) return; return enviarMsg('Rodar agora (valendo)', 'executar'); } return acao(id); }
   async function enviarMsg(texto, acaoId) {
     if (W.ocupado) return; const ta = $('asMsg'); const msg = String(texto || ta?.value || '').trim(); if (!msg) return; if (ta) { ta.value = ''; ta.style.height = 'auto'; }
     const i = W.item; i.conversa = (i.conversa || []).concat({ papel: 'user', texto: msg, em: new Date().toISOString() }); W.ocupado = true; W.parcial = ''; W.parcialDoc = null; W.vendo = null; desenhar();
@@ -215,5 +237,5 @@
   function fechar() { $('asModal')?.remove(); }
   async function mudar(id, para) { W.id = id; return acao(para); }
   document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && $('page-s0assuntos')?.classList.contains('active')) { e.preventDefault(); $('asIn')?.focus(); } });
-  window.ASSUNTOS = { abrir, trocar, exec, ver, mudar, sugerir, avulso, digitando, tecla, enviar, enviarMsg, msgRapida, teclaMsg, chip, aba, fechar, descartar, versao, restaurar };
+  window.ASSUNTOS = { abrir, trocar, exec, ver, mudar, sugerir, avulso, digitando, tecla, enviar, enviarMsg, agendaSalvar, agendaAtiva, agendaAuto, agendaFreq, msgRapida, teclaMsg, chip, aba, fechar, descartar, versao, restaurar };
 })();

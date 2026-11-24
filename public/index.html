@@ -2833,6 +2833,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .as-tb{border-collapse:collapse;margin:8px 0;font-size:12px;width:100%}.as-tb th,.as-tb td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}.as-tb th{background:#E8F2F4}
 .as-cur{display:inline-block;width:7px;height:14px;background:var(--pet);margin-left:2px;vertical-align:-2px;animation:asBl 1s steps(2) infinite}@keyframes asBl{50%{opacity:0}}
 .as-desc{align-self:flex-start;margin-top:10px;color:var(--red)}
+.as-ag{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:10px;background:#F4F8F9;font-size:12px}.as-agh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.as-agh span{color:var(--mut);flex:1}.as-agf{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.as-agf select{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:#fff}.as-agc{display:flex;gap:6px;align-items:center;margin-top:8px;font-weight:600}.as-ex details{margin:4px 0}.as-ex summary{cursor:pointer}
 .as-wc{display:flex;flex-direction:column;min-height:0;background:#F6FAFB}.as-feed{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
 .as-m{display:flex;gap:8px;max-width:100%}.as-m.u{justify-content:flex-end}.as-m .av{flex:none;width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--cy),var(--mint));display:flex;align-items:center;justify-content:center;font-size:13px}
 .as-m .b{font-size:13px;line-height:1.55;padding:10px 14px;border-radius:16px;max-width:88%;overflow-wrap:anywhere}.as-m.u .b{background:var(--ink);color:#fff;border-bottom-right-radius:4px}.as-m.a .b{background:#fff;border:1px solid var(--line);border-top-left-radius:4px}
@@ -37511,7 +37512,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.591] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.592] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37527,7 +37528,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.591';
+window.__ATX_BUILD_ID__ = 'ATX-v3.592';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
