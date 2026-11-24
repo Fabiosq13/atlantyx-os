@@ -185,3 +185,15 @@ test('agente de marketing pronto: quem não é CEO recebe rascunho e não conseg
   assert.equal(a.estado, 'rascunho'); assert.equal(a.aprovacao, 'necessaria');
   await assert.rejects(() => AT.mudar({ id: a.id, para: 'publicado' }, 'ana', false));
 });
+
+test('"implantar" no chat: CEO publica direto (rascunho → no ar) sem botão e sem IA; não-CEO continua precisando de aprovação', async () => {
+  novo(); const it = await AT.iniciar({ assunto: 'financeiro', tipo: 'agente', pedido: 'Agente que resume contas a pagar toda semana' }, 'fabio');
+  await AT.conversar({ id: it.id, mensagem: it.pedido }, 'fabio', true, iaFalsa(['ok\n<documento>\n# Agente\nResume contas.\n</documento>']), ev());
+  const ia = iaFalsa([]); await AT.conversar({ id: it.id, mensagem: 'implantar' }, 'fabio', true, ia, ev());
+  assert.equal(ia.chamadas.length, 0); const o = await AT.obter({ id: it.id }, 'fabio', true); assert.equal(o.estado, 'publicado'); assert.equal(o.aprovacao, 'aprovada');
+  assert.match(o.conversa.at(-1).texto, /Implantado/);
+  const b = await AT.iniciar({ assunto: 'financeiro', tipo: 'agente', pedido: 'Agente que resume contas a pagar toda semana' }, 'ana');
+  await AT.conversar({ id: b.id, mensagem: b.pedido }, 'ana', false, iaFalsa(['ok\n<documento>\n# Agente\nResume contas.\n</documento>']), ev());
+  await AT.conversar({ id: b.id, mensagem: 'implantar' }, 'ana', false, iaFalsa([]), ev());
+  assert.notEqual((await AT.obter({ id: b.id }, 'ana', false)).estado, 'publicado');
+});
