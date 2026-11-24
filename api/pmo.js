@@ -902,6 +902,16 @@ async function maestroPainel({ forcar } = {}) {
   _maeCache = { em: Date.now(), v }; return v;
 }
 
+// Jornada de Projetos (Tático): leitura bruta (só leitura) das chaves do Maestro, pela mesma conexão e configuração do maestroPainel.
+export async function maestroStore(chaves) {
+  const sql = await getSqlCrono(); let cfg = {};
+  try { const sqlCfg = await getSql(); (await sqlCfg`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'cronodb_%'`).forEach(r => cfg[r.chave.replace('cronodb_', '')] = r.valor); } catch (_) {}
+  const tabela = cfg.chave && cfg.tabela ? cfg.tabela : 'atlx_store', ck = cfg.chave ? (cfg.col_chave || 'key') : 'key', cv = cfg.chave ? (cfg.col_valor || 'value') : 'value';
+  const rows = await _q(sql, `SELECT ${_id(ck)} AS k, (${_id(cv)})::text AS v FROM ${_id(tabela)} WHERE ${_id(ck)} = ANY($1)`, [chaves]);
+  const S = {}; rows.forEach(r => { try { S[r.k] = JSON.parse(r.v); } catch (_) {} }); return S;
+}
+export { maestroPainel };
+
 // ═══ v3.226: IMPORTAR DO MAESTRO (módulo de projetos) — marcos de faturamento + projetos novos ═══
 // Fonte: a mesma base do Maestro (CRONOGRAMA_DATABASE_URL → atlx_store: atlx_projetos_cad e atlx_proj_marcos).
 // • Projeto do Maestro que não existe aqui é criado (id proj_dash_<nome>, o mesmo que o Maestro usa ao enviar).
