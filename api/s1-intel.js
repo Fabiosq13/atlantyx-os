@@ -17,8 +17,9 @@ async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method === 'GET' && req.query?.cron === 'agentes') { // v3.592: cron de hora em hora — roda os agentes publicados que venceram (lib/atlas-itens.js)
     _inicioReq = Date.now();
-    try { const { iaEstado } = await import('../lib/qa-guard.js'); const e = await iaEstado(true); if (!e.ligada) return res.status(200).json({ success: true, pulado: 'IA desligada (chave mestra)' });
-      return res.status(200).json({ success: true, ...(await AT.rodarAgendados((sys, msgs, mx) => claudeChat(sys, msgs, mx)) ) }); }
+    try { const { iaEstado } = await import('../lib/qa-guard.js'); const e = await iaEstado(true); if (!e.ligada) { let pub = null; try { pub = await (await import('./metricool.js')).verificarPublicacoes(); } catch (e2) { pub = { erro: String(e2.message).slice(0, 120) }; } return res.status(200).json({ success: true, pulado: 'IA desligada (chave mestra)', publicacoes: pub }); }
+      const r = await AT.rodarAgendados((sys, msgs, mx) => claudeChat(sys, msgs, mx)); let pub = null; try { pub = await (await import('./metricool.js')).verificarPublicacoes(); } catch (e2) { pub = { erro: String(e2.message).slice(0, 120) }; }
+      return res.status(200).json({ success: true, ...r, publicacoes: pub }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   if (req.method !== 'POST') return res.status(405).end();

@@ -145,3 +145,28 @@ test('ciclo de marketing: sem chave de IA/banco falha sem derrubar, devolve rela
   const { campanhaCompleta } = await import('../api/metricool.js'); const k = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY; const passos = [];
   try { const r = await campanhaCompleta({ forcar: true, onPasso: t => passos.push(t) }); assert.ok(r.erro); assert.match(r.relatorio, /não rodou/); assert.ok(passos.some(t => t.startsWith('✗'))); } finally { if (k) process.env.ANTHROPIC_API_KEY = k; }
 });
+
+// ── v3.594: 3 campanhas/dia, análise de todas as publicadas e futuras ──
+test('_estadoPost: publicado × erro (com motivo) × agendado, por rede', async () => {
+  const { _estadoPost } = await import('../api/metricool.js');
+  assert.equal(_estadoPost({ published: true, providers: [{ network: 'linkedin', status: 'PUBLISHED' }] }).estado, 'publicado');
+  const e = _estadoPost({ providers: [{ network: 'instagram', status: 'ERROR', error: 'imagem inválida' }, { network: 'linkedin', status: 'PUBLISHED' }] });
+  assert.equal(e.estado, 'erro'); assert.match(e.motivo, /imagem inválida/); assert.equal(e.redes.find(r => r.rede === 'instagram').erro, true);
+  assert.equal(_estadoPost({ providers: [{ network: 'facebook', status: 'PENDING' }] }).estado, 'agendado');
+});
+
+test('_problemasFuturos acha conflito de horário, fora do ICP, oferta errada, Instagram sem imagem e erro', async () => {
+  const { _problemasFuturos } = await import('../api/metricool.js');
+  const p = (id, q, text, extra = {}) => ({ id, text, publicationDate: { dateTime: q + ':00' }, providers: [{ network: 'linkedin', status: 'PENDING' }], media: ['https://x/y.jpg'], ...extra });
+  const r = _problemasFuturos([p(1, '2026-12-01T08:30', 'Indicadores ao vivo para CFOs'), p(2, '2026-12-01T08:50', 'Outro post'), p(3, '2026-12-01T12:15', 'Agende uma reunião com a gente em https://meetings.hubspot.com/x'),
+    p(4, '2026-12-02T08:30', 'Post', { providers: [{ network: 'instagram', status: 'PENDING' }], media: [] }), p(5, '2026-12-03T08:30', 'Post', { providers: [{ network: 'linkedin', status: 'ERROR', error: 'token expirado' }] })]);
+  const tipos = r.map(x => x.tipo + ':' + x.id);
+  assert.ok(tipos.includes('conflito de horário:2')); assert.ok(tipos.includes('oferta errada:3')); assert.ok(tipos.includes('sem imagem (Instagram exige):4')); assert.ok(tipos.includes('erro de publicação:5'));
+  assert.ok(!tipos.some(t => t.endsWith(':1')));
+});
+
+test('registrarStatusMarketing escreve em Execuções do agente de marketing implantado', async () => {
+  novo(); const it = await criarPublicado('marketing', 'agente'); await AT.agendar({ id: it.id, autocampanha: true }, 'ana', false);
+  assert.equal(await AT.registrarStatusMarketing('## Status\n✅ Campanha das 08:30: publicada com sucesso'), 1);
+  const o = await AT.obter({ id: it.id }, 'ana', false); assert.equal(o.execucoes[0].modo, 'status'); assert.match(o.execucoes[0].saida, /publicada com sucesso/);
+});
