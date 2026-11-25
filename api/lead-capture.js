@@ -131,6 +131,11 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, lead_id: null });
     }
     const lead = normalizeLead(body);
+    // v3.603: o formulário público EXIGE e-mail válido e site (antes o lead entrava só com WhatsApp, sem e-mail para HubSpot, score e pesquisa)
+    if (body.form_name === 'captura-publica') {
+      if (!lead.email) return res.status(400).json({ success: false, error: lead.email_invalido ? 'Confira o e-mail informado' : 'Informe o seu e-mail corporativo' });
+      if (!lead.site) return res.status(400).json({ success: false, error: 'Informe o site da empresa (ex.: www.suaempresa.com.br)' });
+    }
     if (!confiavel) lead.exige_consentimento = true; // v3.300: envio anônimo fora do formulário do site também precisa de consentimento para WhatsApp
     lead.title = lead.job_title || null; // v3.234: banco e alerta liam lead.title (sempre vazio) — cargo nunca aparecia
   lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
@@ -181,7 +186,7 @@ async function handler(req, res) {
 
     // v2.87: upsert robusto (não falha com e-mail já existente nem com propriedade personalizada ausente)
     try { const { enviarContatoHubSpot } = await import('../lib/hubspot-sync.js');
-      const hsr = await enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
+      const hsr = await enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, site: lead.site, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
         { nota: `<b>Lead capturado</b><br>Origem: ${lead.origem || '?'} · campanha: ${lead.campanha || '—'}`, origem: 'Captura · ' + (lead.origem || 'formulário') });
       contactId = hsr.contato_id; dealId = hsr.negocio_id || null; etapas.hubspot = `ok — contato ${hsr.acao}`; }
     catch (e) { etapas.hubspot = 'falha: ' + e.message; }
@@ -293,7 +298,7 @@ export async function processarLeadGravado(leadId) {
     (async () => alertarNovoLead(lead, await mapaP))(),
     (async () => (await mapaP)?.texto || gerarMensagemClaude(lead))(), // com mapa, a 1ª mensagem É o mapa prometido
     (async () => { const { enviarContatoHubSpot } = await import('../lib/hubspot-sync.js');
-      return enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
+      return enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, site: lead.site, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
         { nota: `<b>Lead capturado</b><br>Origem: ${lead.origem || '?'} · campanha: ${lead.campanha || '—'}`, origem: 'Captura · ' + (lead.origem || 'formulário') }); })(),
   ]);
   etapas.alerta = al.status === 'fulfilled' ? 'ok' : 'falha: ' + al.reason?.message;
@@ -323,7 +328,7 @@ async function atualizarLeadLocal(id, campos) {
 async function gerarMapaOportunidades(lead) {
   if (!lead.company) return null;
   // v3.602: plano de exceção — se a pesquisa falhar ou não achar oportunidade, entrega o MAPA MÍNIMO por setor e porte (hipóteses), nunca a mensagem genérica
-  let a = null; try { const { analisarEmpresa } = await import('./prospeccao.js'); a = await analisarEmpresa({ empresa: lead.company, email: lead.email }); } catch (e) { console.warn('[mapa] pesquisa falhou:', e.message); }
+  let a = null; try { const { analisarEmpresa } = await import('./prospeccao.js'); a = await analisarEmpresa({ empresa: lead.company, email: lead.email, site: lead.site }); } catch (e) { console.warn('[mapa] pesquisa falhou:', e.message); }
   const ops = (a?.oportunidades || []).filter(o => o && (o.solucao || o.como_ajuda)).slice(0, 3);
   if (!ops.length) { const { mapaMinimo } = await import('../lib/mapa-minimo.js'); return mapaMinimo(lead, a); }
   const pn = String(lead.name || '').trim().split(/\s+/)[0] || '';
@@ -348,6 +353,7 @@ async function alertarNovoLead(lead, mapa = null) {
       <table style="font-size:13px;border-collapse:collapse;">
         <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Nome</td><td><b>${_esc(lead.name)}</b></td></tr>
         <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Empresa</td><td>${_esc(lead.company || '—')}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Site</td><td>${_esc(lead.site || '—')}</td></tr>
         <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Cargo</td><td>${_esc(lead.title || '—')}</td></tr>
         <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">E-mail</td><td>${_esc(lead.email || '—')}</td></tr>
         <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">WhatsApp</td><td>${_esc(lead.phone || '—')}</td></tr>
@@ -359,6 +365,11 @@ async function alertarNovoLead(lead, mapa = null) {
       <p style="font-size:12px;color:#8a93a8;margin-top:14px;">Atlantyx OS · alerta automático de captura</p></div>` });
 }
 
+// v3.603: "https://www.Empresa.com.br/pagina?x=1" → "empresa.com.br"; devolve '' se não parecer um domínio
+export function siteLimpo(s) {
+  const d = String(s || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/^www\./, '').split(/[\/?#\s]/)[0].replace(/:\d+$/, '');
+  return /^([a-z0-9-]+\.)+[a-z]{2,}$/.test(d) && d.length <= 100 ? d : '';
+}
 function normalizeLead(body) {
   const lead = {
     name:      body.name || body.full_name || body.nome || body.field_data?.find(f => f.name === 'full_name')?.values?.[0] || 'Não informado',
@@ -377,6 +388,8 @@ function normalizeLead(body) {
   for (const k of ['name', 'email', 'phone', 'company', 'job_title', 'source']) lead[k] = String(lead[k] ?? '').trim().slice(0, k === 'phone' ? 30 : 160);
   if (lead.email && !/^[^@\s<>"']+@[^@\s<>"']+\.[a-z]{2,}$/i.test(lead.email)) { lead.email_invalido = lead.email.slice(0, 80); lead.email = ''; }
   if (!lead.name) lead.name = 'Não informado';
+  // v3.603: site da empresa (só o domínio, sem protocolo, caminho nem www); aceita os nomes de campo da captura, do Meta e do LinkedIn
+  lead.site = siteLimpo(body.site || body.site_empresa || body.company_site || body.company_website || body.field_data?.find(f => f.name === 'website' || f.name === 'company_website')?.values?.[0] || '');
 
   // Score ICP Atlantyx
   // v1.43 (report DEV, item 4): "todos os leads com score C" NÃO é bug de algoritmo nem cron

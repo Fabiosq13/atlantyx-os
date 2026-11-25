@@ -121,7 +121,8 @@ const PORTFOLIO_ATLANTYX = `Soluções da Atlantyx (17 anos, B2B):
 Casos reais: CPFL Energia (sustentação Big Data, data warehouse de parques eólicos, cadastro/tarifação), Enel, Caixa Capitalização, Grupo Jelta Veículos.`;
 export async function analisarEmpresa(c) { // v3.327: também usada no Mapa de Oportunidades da página de captura
   const key = process.env.ANTHROPIC_API_KEY;
-  const dominio = c.email && !/gmail|hotmail|outlook|yahoo|icloud|uol|bol|terra|live\./i.test(c.email) ? c.email.split('@')[1] : null;
+  // v3.603: o site informado no formulário vale mais do que o domínio do e-mail
+  const dominio = c.site || (c.email && !/gmail|hotmail|outlook|yahoo|icloud|uol|bol|terra|live\./i.test(c.email) ? c.email.split('@')[1] : null);
   const alvo = c.empresa || (dominio ? dominio.split('.')[0] : null);
   if (!key || !alvo) return null;
   const system = `Você é analista de pré-vendas da Atlantyx. Pesquise a empresa-alvo na web (site oficial, notícias recentes, setor, porte, movimentos como expansão, M&A, regulação, transformação digital) e identifique DORES PROVÁVEIS ligadas a dados, operação, tecnologia e eficiência.
