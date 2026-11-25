@@ -97,3 +97,11 @@ test('v3.609: sem campo "resultado" da Retell, a IA lê a transcrição e marca 
   await m.V.ligar({ card_ids: ['c:7'], avulso: true }); const s = await m.V.sincronizar({ card_id: 'c:7' });
   assert.equal(s.ligacoes[0].resultado, 'reuniao'); assert.equal(m.resultados[0].data_reuniao, '2026-11-26T11:00');
 });
+
+test('v3.615: a ligação segue o contato quando o card vira negócio (n:ID), a nota vai para o contato e o último webhook é registrado', async () => {
+  const notas = []; const m = montarComGet({ call_id: 'call_1', call_status: 'ended', transcript: 'Lead: ok', call_analysis: { call_summary: 'Resumo' } });
+  m.V.webhook; await m.V.ligar({ card_ids: ['c:7'], avulso: true });
+  const h = await m.V.historico({ card_id: 'n:999', contato_id: '7' }); assert.equal(h.ligacoes.length, 1);
+  void notas; assert.equal((await m.V.status()).ultimo_webhook, null);
+  await m.V.webhook({ event: 'call_ended', call: { call_id: 'call_1', transcript: 'Lead: ok' } }); assert.equal((await m.V.status()).ultimo_webhook.evento, 'call_ended');
+});
