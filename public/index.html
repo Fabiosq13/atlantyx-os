@@ -2921,7 +2921,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div style="display:flex;gap:6px;margin-bottom:10px;border-bottom:1px solid var(--bd);" role="tablist">
       <button class="btn btn-p" id="peTabBtnPlano" role="tab" aria-selected="true" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="peAba('plano')">📌 Plano cadastrado e alavancas</button>
       <button class="btn" id="peTabBtnIA" role="tab" aria-selected="false" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="peAba('ia')">✨ Análise gerada pela IA</button>
+      <button class="btn" id="peTabBtnCen" role="tab" aria-selected="false" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="peAba('cen')">📊 Cenários 2027</button>
     </div>
+    <div id="peTabCen" style="display:none;"><div style="font-size:11px;color:var(--t3);padding:20px;text-align:center;">Carregando os cenários…</div></div>
     <div id="peTab"><div style="font-size:11px;color:var(--t3);padding:20px;text-align:center;">Carregando o plano…</div></div>
     <div id="peTabIA" style="display:none;">
     <div class="panel"><div class="ph"><div class="pt">Planejamento Estratégico — 90d · 1 Ano · 3 Anos</div><span class="tag on">Claude IA</span><button class="btn btn-p" id="btnPlano" style="font-size:9px;padding:4px 9px;" onclick="runIntel('planejamento_estrategico','s1PlanoResult','btnPlano')">&#9670; Gerar Plano</button></div>
@@ -26690,9 +26692,13 @@ async function estApiPE(action, corpo = {}) {
   if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status); return d;
 }
 function peAba(a) {
-  const ia = a === 'ia'; document.getElementById('peTab').style.display = ia ? 'none' : ''; document.getElementById('peTabIA').style.display = ia ? '' : 'none';
-  const b1 = document.getElementById('peTabBtnPlano'), b2 = document.getElementById('peTabBtnIA');
-  b1.className = 'btn' + (ia ? '' : ' btn-p'); b2.className = 'btn' + (ia ? ' btn-p' : ''); b1.setAttribute('aria-selected', String(!ia)); b2.setAttribute('aria-selected', String(ia));
+  const mapa = { plano: ['peTab', 'peTabBtnPlano'], ia: ['peTabIA', 'peTabBtnIA'], cen: ['peTabCen', 'peTabBtnCen'] };
+  Object.keys(mapa).forEach(k => { const p = document.getElementById(mapa[k][0]), b = document.getElementById(mapa[k][1]); if (p) p.style.display = k === a ? '' : 'none'; if (b) { b.className = 'btn' + (k === a ? ' btn-p' : ''); b.setAttribute('aria-selected', String(k === a)); } });
+  if (a === 'cen') { // v3.605: carrega o módulo de cenários só quando a aba é aberta
+    if (window.CENARIOS) return window.CENARIOS.abrir();
+    const s = document.createElement('script'); s.src = '/cenarios-ui.js?v=3605'; s.onload = () => window.CENARIOS && window.CENARIOS.abrir();
+    s.onerror = () => { const el = document.getElementById('peTabCen'); if (el) el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;">Não consegui carregar os cenários. Recarregue a página (Ctrl+F5).</div>'; }; document.head.appendChild(s);
+  }
 }
 async function peAbrir() {
   const el = document.getElementById('peTab'); if (!el) return;
@@ -37563,7 +37569,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.604] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.605] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37579,7 +37585,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.604';
+window.__ATX_BUILD_ID__ = 'ATX-v3.605';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 

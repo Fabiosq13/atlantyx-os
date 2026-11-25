@@ -42,6 +42,18 @@ async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'Ação desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
     }
+    // v3.605: CENÁRIOS 2027 (Gelta, IARA, Maestro, grandes projetos, sustentação, funil isca→IA) — só o CEO/administrador; só calcula, não envia nem gasta IA
+    if (/^cenarios_/.test(String(action))) {
+      const login = req.sessao?.login || req.usuario || '', admin = req.sessao ? !!req.sessao.admin : true;
+      try {
+        if (!admin) throw Object.assign(new Error('Cenários e preços são do CEO/administrador'), { status: 403 });
+        const CE = await import('../lib/cenarios.js'), { kvPadrao } = await import('../lib/playbook-svc.js'), kv = kvPadrao();
+        if (action === 'cenarios_obter') return res.status(200).json({ success: true, ...(await CE.estado(kv)) });
+        if (action === 'cenarios_salvar') return res.status(200).json({ success: true, ...(await CE.salvar(kv, req.body.valores, login)) });
+        if (action === 'cenarios_restaurar') return res.status(200).json({ success: true, ...(await CE.salvar(kv, {}, login)) });
+        return res.status(400).json({ success: false, error: 'Ação desconhecida' });
+      } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
+    }
     // v3.600: PLAYBOOK 2027 — o Norte de marketing e vendas, ligado ao Plano Estratégico (lib/playbook.js, lib/playbook-svc.js)
     if (/^playbook_/.test(String(action))) {
       const login = req.sessao?.login || req.usuario || '', admin = req.sessao ? !!req.sessao.admin : true; _inicioReq = Date.now();
