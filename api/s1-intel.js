@@ -42,6 +42,19 @@ async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'Ação desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
     }
+    // v3.600: PLAYBOOK 2027 — o Norte de marketing e vendas, ligado ao Plano Estratégico (lib/playbook.js, lib/playbook-svc.js)
+    if (/^playbook_/.test(String(action))) {
+      const login = req.sessao?.login || req.usuario || '', admin = req.sessao ? !!req.sessao.admin : true; _inicioReq = Date.now();
+      try {
+        const PS = await import('../lib/playbook-svc.js'), escreve = () => { if (!AT.podeAprovar('marketing', login, admin)) throw Object.assign(new Error('Só o CEO ou o dono de Marketing altera o Playbook'), { status: 403 }); };
+        if (action === 'playbook_obter') return res.status(200).json({ success: true, ...(await PS.estado({ dias: Math.min(7, Number(req.body.dias) || 3) })) });
+        if (action === 'playbook_gerar') { escreve(); const r = await PS.gerar({ orientacao: req.body.orientacao }, login, (sys, usr, mx) => claude(sys, usr, mx)); return res.status(200).json({ success: true, pendentes: r.pendentes, ...(await PS.estado({})) }); }
+        if (action === 'playbook_ajustar') { escreve(); return res.status(200).json({ success: true, ...(await PS.ajustar(req.body, login)) }); }
+        if (action === 'playbook_restaurar') { escreve(); return res.status(200).json({ success: true, ...(await PS.restaurar(req.body, login)) }); }
+        if (action === 'playbook_exportar') return res.status(200).json({ success: true, markdown: await PS.exportarMarkdown() });
+        return res.status(400).json({ success: false, error: 'Ação desconhecida' });
+      } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
+    }
     // v3.564: ATLAS por assunto — rascunho → teste → publicado (lib/atlas-itens.js)
     if (/^atlas_/.test(String(action))) {
       const login = req.sessao?.login || req.usuario || '', admin = req.sessao ? !!req.sessao.admin : true; _inicioReq = Date.now();
