@@ -306,7 +306,7 @@ export async function processarLeadGravado(leadId) {
   } else etapas.whatsapp = !podeB.ok ? 'pulado: ' + podeB.motivo : 'sem mensagem';
   try { if (mensagem && etapas.whatsapp === 'ok') { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem 1ª mensagem no WhatsApp'; }
   catch (e) { etapas.followup = 'falha: ' + e.message; }
-  try { const mp = await mapaP; etapas.mapa = lead.oferta === 'mapa_ia' ? (mp ? 'ok — ' + (etapas.whatsapp === 'ok' ? 'enviado no WhatsApp' : 'rascunho no e-mail de alerta (enviar à mão)') : 'falhou — preparar à mão') : undefined; } catch (_) {}
+  try { const mp = await mapaP; etapas.mapa = lead.oferta === 'mapa_ia' ? (mp ? (mp.minimo ? 'ok (mapa mínimo por setor e porte; a pesquisa não achou oportunidades) — ' : 'ok — ') + (etapas.whatsapp === 'ok' ? 'enviado no WhatsApp' : 'rascunho no e-mail de alerta (enviar à mão)') : 'falhou — preparar à mão') : undefined; } catch (_) {}
   try { await atualizarLeadLocal(leadId, { hubspot_contact: contactId, hubspot_deal: dealId, etapas }); } catch (_) {}
   return { lead_id: leadId, etapas, hubspot_contact: contactId, hubspot_deal: dealId };
 }
@@ -322,10 +322,10 @@ async function atualizarLeadLocal(id, campos) {
 // em texto de WhatsApp. Hipóteses soam como hipóteses (a análise não afirma o que não achou).
 async function gerarMapaOportunidades(lead) {
   if (!lead.company) return null;
-  const { analisarEmpresa } = await import('./prospeccao.js');
-  const a = await analisarEmpresa({ empresa: lead.company, email: lead.email });
+  // v3.602: plano de exceção — se a pesquisa falhar ou não achar oportunidade, entrega o MAPA MÍNIMO por setor e porte (hipóteses), nunca a mensagem genérica
+  let a = null; try { const { analisarEmpresa } = await import('./prospeccao.js'); a = await analisarEmpresa({ empresa: lead.company, email: lead.email }); } catch (e) { console.warn('[mapa] pesquisa falhou:', e.message); }
   const ops = (a?.oportunidades || []).filter(o => o && (o.solucao || o.como_ajuda)).slice(0, 3);
-  if (!ops.length) return null;
+  if (!ops.length) { const { mapaMinimo } = await import('../lib/mapa-minimo.js'); return mapaMinimo(lead, a); }
   const pn = String(lead.name || '').trim().split(/\s+/)[0] || '';
   const texto = `Olá${pn ? ' ' + pn : ''}, aqui é da Atlantyx. Segue o seu *Mapa de Oportunidades com IA* para a ${a.empresa || lead.company}:\n\n`
     + ops.map((o, i) => `*${i + 1}. ${String(o.solucao || '').trim()}*\n${o.dor ? 'Ponto de atenção: ' + String(o.dor).trim() + '\n' : ''}${o.como_ajuda ? 'Como ajuda: ' + String(o.como_ajuda).trim() : ''}`).join('\n\n')
