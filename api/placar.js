@@ -73,7 +73,7 @@ async function lerFontes(ano, hoje) {
   L.ticket_medio = { real: nG > 0 && num(gan.valor) != null ? Math.round(num(gan.valor) / nG) : null, meta: num(FY.meta_base?.ticket_medio), idade_dias: 0, erro: er(fy) };
   L.entregas_prazo = { real: PM && PM.total > 0 ? Math.round(PM.verde / PM.total * 1000) / 10 : null, idade_dias: 0, erro: er(pm) };
   // v3.618: % recorrente (ARR ÷ receita) agora vem do motor Produtos do QuickBooks (depende de cada cliente estar no motor certo: projeto parcelado = Projetos; sustentação e alocações recorrentes = Produtos/Pessoas)
-  { const kr = (v(fp)?.fin_v2?.kpis || []).find(k => k.id === 'recorrencia'); L.recorrente_pct = { real: kr?.valor != null ? num(kr.valor) : null, meta: num(cad.recorrencia_pct), idade_dias: 0, erro: er(fp), rotulo: 'QuickBooks · motor Produtos' }; }
+  { const kr = (v(fp)?.fin_v2?.kpis || []).find(k => k.id === 'recorrencia'); L.recorrente_pct = { real: kr?.valor != null ? num(kr.valor) : null, arr_qb: kr?.extra?.arr != null ? num(kr.extra.arr) : null, receita_12m: kr?.extra?.receita_12m != null ? num(kr.extra.receita_12m) : null, meta: num(cad.recorrencia_pct), idade_dias: 0, erro: er(fp), rotulo: 'QuickBooks · motor Produtos' }; }
   return L;
 }
 

@@ -158,15 +158,43 @@
   function horizonte() {
     const C = S.cen; if (!C) return `<div class="ck-vazio">${esc(S.erroCen || 'Carregando os cenários…')}</div>`;
     const m = k => (C[k]?.cenarios || [])[1] || {}, F = C.frentes || {}, B = i => (F[i] || [])[1] || {};
-    const A = C.atual || {}, base = [['ARR ATUAL real (sustentação Xplann + Big Data + alocações)', A.arr || 0, '#e6edf3']];
-    const linhas = [['Produto p/ concessionárias (hipótese) · recorrente/ano', m('gelta').arr, '#22d3a3'], ['IARA · receita recorrente/ano', m('iara').arr, '#9c6dff'], ['Maestro (fora do plano 2027) · recorrente/ano', m('maestro').arr, '#38bdf8'], ['Funil isca → IA · recorrente/ano', B('funil').arrIA, '#f5b83d']];
-    const res = [['Grandes projetos · contribuição', B('gp').contrib, '#fb7185'], ['Sustentação · contribuição', B('sust').contrib, '#2dd4bf'], ['Funil isca → IA → projeto · contribuição', B('funil').contrib, '#a3e635']];
+    const A = C.atual || {}, rq = S.placar && (S.placar.indicadores || []).find(x => x.id === 'recorrente_pct'), qb = rq && rq.arr_qb != null ? rq.arr_qb : null;
+    const base = [A.arr ? ['ARR ATUAL (Xplann + Big Data + alocações · informado)', A.arr, '#e6edf3', 'arr'] : ['ARR ATUAL · informe Xplann, Big Data e alocações', 0, '#e6edf3', 'arr']]; if (qb != null) base.push(['Referência QuickBooks · motor Produtos × 12', qb, '#8b949e', 'qb']);
+    const linhas = [['Produto p/ concessionárias (hipótese, ' + (m('gelta').clientes || 0) + ' grupos) · recorrente/ano', m('gelta').arr, '#22d3a3', 'gelta'], ['IARA (hipótese, ' + (m('iara').clientes || 0) + ' clientes) · recorrente/ano', m('iara').arr, '#9c6dff', 'iara'], ['Funil isca → IA (hipótese, ' + Math.round(B('funil').servicos || 0) + ' clientes) · recorrente/ano', B('funil').arrIA, '#f5b83d', 'funil_arr']];
+    const res = [['Grandes projetos · contribuição', B('gp').contrib, '#fb7185', 'gp'], ['Sustentação · contribuição', B('sust').contrib, '#2dd4bf', 'sust'], ['Funil isca → IA → projeto · contribuição', B('funil').contrib, '#a3e635', 'funil_contrib']];
     const mx = Math.max(1, ...linhas.map(l => l[1] || 0), ...res.map(l => Math.max(0, l[1] || 0)));
-    const bar = l => `<div class="ck-bar"><span>${esc(l[0])}</span><div class="tr"><i style="width:${Math.max(2, Math.max(0, l[1] || 0) / mx * 100).toFixed(1)}%;background:${l[2]}"></i></div><b>${R(l[1])}</b></div>`;
+    const bar = l => `<div class="ck-bar" style="cursor:pointer" title="Clique para ver o que compõe este número" onclick="CENTRAL.detalhe('${l[3] || ''}')"><span>${esc(l[0])}</span><div class="tr"><i style="width:${Math.max(2, Math.max(0, l[1] || 0) / mx * 100).toFixed(1)}%;background:${l[2]}"></i></div><b>${R(l[1])}</b></div>`;
     const cp = C.comparativo || {};
     return base.map(bar).join('') + (A.arr ? '' : '<div class="ck-cap">Informe os valores mensais reais em Plano Estratégico → Cenários 2027 → Premissas → "ARR atual (real)".</div>') + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (não são receita de hoje)</div>' + linhas.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
-      `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>.</div>`;
+      `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Entre Gelta e IARA — maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>. O Maestro está fora do plano 2027 e não entra nestas contas.</div>`;
   }
+
+
+  // ── clique numa barra do Horizonte → mostra o que compõe o número (conta e premissas usadas)
+  function composicao(id) {
+    const C = S.cen; if (!C) return null; const P = C.entradas || {}, g = (C.gelta.cenarios || [])[1] || {}, i = (C.iara.cenarios || [])[1] || {}, F = C.frentes || {}, gp = (F.gp || [])[1] || {}, su = (F.sust || [])[1] || {}, fu = (F.funil || [])[1] || {}, A = C.atual || {};
+    const pc = v => nf((v || 0) * 100, 1) + '%', rq = S.placar && (S.placar.indicadores || []).find(x => x.id === 'recorrente_pct');
+    const T = {
+      arr: { t: 'ARR atual (informado)', f: '(Xplann + Big Data + alocações) × 12', l: [['Sustentação Xplann / mês', R(A.xplann)], ['Sustentação Big Data / mês', R(A.bigdata)], ['Alocações recorrentes / mês', R(A.alocacoes)], ['Total / mês', R(A.mensal)], ['× 12 = ARR atual', R(A.arr)]], n: A.arr ? 'Valores digitados em Cenários 2027 → Premissas → "ARR atual (real)". O Jelta não entra: é projeto parcelado.' : 'Ainda zerado: informe os três valores mensais em Cenários 2027 → Premissas → "ARR atual (real)".', ir: 'Cenários 2027' },
+      qb: { t: 'Referência QuickBooks', f: 'receita do motor Produtos no último mês fechado × 12', l: [['ARR (motor Produtos × 12)', R(rq && rq.arr_qb)], ['Receita dos últimos 12 meses', R(rq && rq.receita_12m)], ['ARR ÷ receita', rq && rq.real != null ? nf(rq.real, 1) + '%' : '—']], n: 'Só vale se cada cliente estiver no motor certo em Financeiro → Custo por Projeto & Piso da Hora. É referência, não substitui o ARR informado.', ir: 'p:s3custohora' },
+      gelta: { t: 'Produto para concessionárias (hipótese)', f: 'grupos × receita mensal por grupo (ponderada pela adoção) × 12', l: [['Grupos no cenário B', nf(g.clientes)], ['Lojas por grupo', nf(P['gelta.lojas'])], ['Receita mensal por grupo (módulos × adoção)', R(C.gelta.suite.recPond)], ['ARR = grupos × mensal × 12', R(g.arr)], ['Implantação cobrada / grupo', R((P['gelta.impl_base'] || 0) + (P['gelta.impl_loja'] || 0) * (P['gelta.lojas'] || 0))]].concat((C.gelta.modulos || []).map(m => ['• ' + m.nome + ' (adoção ' + pc(m.adocao) + ')', R(m.rec) + '/mês'])), n: 'Hipótese, não é receita de hoje. O Jelta é projeto parcelado e não entra aqui.', ir: 'Cenários 2027' },
+      iara: { t: 'IARA (hipótese)', f: 'clientes × (mensalidade + leads × preço por lead) × 12', l: [['Clientes no cenário B', nf(i.clientes)], ['Mensalidade fixa', R(P['iara.mensal'])], ['Contatos/mês × taxa = leads', nf(P['iara.contatos']) + ' × ' + pc(P['iara.taxa']) + ' = ' + nf(C.iara.cliente.leadsMes, 1)], ['Variável (leads × ' + R(P['iara.preco_lead']) + ')', R(C.iara.cliente.variavel)], ['Receita mensal por cliente', R(C.iara.cliente.rec)], ['ARR = clientes × mensal × 12', R(i.arr)]], n: 'Hipótese: a IARA ainda não vende; as taxas precisam ser medidas.', ir: 'Cenários 2027' },
+      funil_arr: { t: 'Funil isca → IA · recorrência (hipótese)', f: 'leads × 12 → reunião → diagnóstico → serviço de IA mensal × 12', l: [['Leads por mês (B)', nf(fu.leads)], ['Reuniões/ano (lead→reunião ' + pc(P['funil.c1']) + ')', nf(fu.reunioes, 1)], ['Diagnósticos (' + pc(P['funil.c2']) + ')', nf(fu.diagnosticos, 1)], ['Serviços de IA (' + pc(P['funil.c3']) + ')', nf(fu.servicos, 1)], ['Mensalidade do serviço', R(P['funil.mensal_ia'])], ['ARR = serviços × mensalidade × 12', R(fu.arrIA)]], n: 'As taxas de conversão são hipóteses; trocar pelas reais do Time de Vendas.', ir: 'Playbook 2027' },
+      gp: { t: 'Grandes projetos · contribuição', f: 'receita − imposto − custo da equipe', l: [['Projetos × ticket', nf(gp.projetos) + ' × ' + R(gp.ticket)], ['Receita bruta', R(gp.bruta)], ['Imposto (' + pc(P['comum.imposto']) + ')', '−' + R(gp.impostos)], ['Custo da equipe (' + nf(gp.dias) + ' dias × ' + R(P['comum.custo_dia']) + ')', '−' + R(gp.custo)], ['Contribuição', R(gp.contrib)]], n: 'Preço médio por pessoa-dia: ' + R(P['gp.preco_dia']) + '.', ir: 'Cenários 2027' },
+      sust: { t: 'Sustentação · contribuição', f: 'valor entregue × 22% − imposto 29% − custo de entrega', l: [['Valor entregue sustentado', R(su.valor)], ['× ' + pc(P['comum.sust_pct']) + ' = receita anual', R(su.rec)], ['Imposto (' + pc(P['comum.imposto_sust']) + ')', '−' + R(su.impostos)], ['Custo de entrega (' + pc(P['sust.custo_pct']) + ')', '−' + R(su.custo)], ['Contribuição', R(su.contrib)]], n: 'Regra do Fabio: sustentação = 22% do custo do produto + 29% de imposto.', ir: 'Cenários 2027' },
+      funil_contrib: { t: 'Funil isca → IA → projeto · contribuição', f: 'diagnósticos + serviço de IA + projetos − imposto − marketing − equipe', l: [['Diagnósticos pagos', R(fu.recD)], ['Serviço de IA no ano', R(fu.recS)], ['Projetos grandes originados', R(fu.recP)], ['Receita bruta', R(fu.bruta)], ['Imposto', '−' + R(fu.impostos)], ['Marketing (' + R(P['funil.mkt_lead']) + ' por lead)', '−' + R(fu.mkt)], ['Equipe', '−' + R(fu.equipe)], ['Contribuição', R(fu.contrib)]], n: 'Hipótese: depende do volume de leads e das conversões.', ir: 'Cenários 2027' }
+    }; return T[id] || null;
+  }
+  function detalhe(id) {
+    const d = composicao(id); if (!d) return; fechar();
+    const m = document.createElement('div'); m.id = 'ckModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+    m.onclick = e => { if (e.target === m) fechar(); };
+    m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:14px;max-width:560px;width:100%;max-height:86vh;overflow:auto;padding:16px 18px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><b style="font-size:14px">${esc(d.t)}</b><div class="ck-cap" style="margin-top:3px">Conta: ${esc(d.f)}</div></div><button class="ck-btn" onclick="CENTRAL.fechar()">✕</button></div>
+      <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px">${d.l.map(([k, v]) => `<tr style="border-top:1px solid var(--bd)"><td style="padding:5px 4px">${esc(k)}</td><td style="padding:5px 4px;text-align:right;font-variant-numeric:tabular-nums"><b>${esc(v)}</b></td></tr>`).join('')}</table>
+      <div class="ck-cap" style="margin-top:10px">${esc(d.n)}</div><div class="ck-act"><button class="ck-btn p" onclick="CENTRAL.fechar();${d.ir.startsWith('p:') ? `CENTRAL.irP('${d.ir.slice(2)}')` : `CENTRAL.irN('${d.ir}')`}">Abrir a tela de origem ›</button></div></div>`;
+    document.body.appendChild(m);
+  }
+  function fechar() { const m = $('ckModal'); if (m) m.remove(); }
 
   function luzes() {
     const P = S.placar; if (!P) return `<div class="ck-vazio">${esc(S.erroPlacar || 'Carregando o placar…')}</div>`;
@@ -309,6 +337,7 @@
     ir(i) { navegar(TODAS[i]); },
     irP(p) { navegar(TODAS.find(t => t.p === p && !t.aba && !t.pos) || { p }); },
     irN(nome) { navegar(TODAS.find(t => t.n === nome)); },
+    detalhe, fechar,
     torreAbrir() { T.aberto = !T.aberto; torreRender(); },
     torreNova() { torreCalar(); T.modo = false; T.conv = null; T.msgs = []; T.rasc = ''; torreRender(); },
     modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } } torreBotoes(); },
