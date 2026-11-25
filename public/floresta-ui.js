@@ -213,14 +213,14 @@
   // v3.608: 🤖 IARA de voz — resultado, resumo e transcrição das ligações do card (busca direto na Retell)
   function vozBox(c) { if (!c.telefone) return '';
     return `<div style="margin-top:10px;border:1px solid rgba(124,58,237,.35);background:rgba(124,58,237,.05);border-radius:10px;padding:9px 11px;"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><b style="flex:1;">🤖 Ligações da IARA de voz</b><button class="btn btn-p" style="font-size:10px;padding:2px 8px;" onclick="FLORESTA.vozResultado('${esc(c.id)}')">🔄 Buscar resultado</button><button class="btn" style="font-size:10px;padding:2px 8px;" title="URL do webhook da Retell, limites e variáveis" onclick="FLORESTA.vozConfig()">⚙️ Configuração</button></div><div id="flVozRes" style="margin-top:6px;font-size:10.5px;color:var(--t3);">Ligou pela IARA? Clique em "Buscar resultado" para trazer o resumo, a transcrição e a reunião combinada.</div></div>`; }
-  async function vozResultado(id) { const el = document.getElementById('flVozRes'); if (el) el.textContent = 'Buscando na Retell…';
-    try { const r = await api('floresta_voz_sincronizar', { card_id: id }); const L = r.ligacoes || [];
-      if (!L.length) { if (el) el.textContent = 'Nenhuma ligação da IARA de voz registrada para este card.'; return; }
+  async function vozResultado(id, soGuardado) { const el = document.getElementById('flVozRes'); if (el && !soGuardado) el.textContent = 'Buscando na Retell…';
+    try { const r = await api(soGuardado ? 'floresta_voz_historico' : 'floresta_voz_sincronizar', { card_id: id }); const L = r.ligacoes || [];
+      if (!L.length) { if (el && !soGuardado) el.textContent = 'Nenhuma ligação da IARA de voz registrada para este card.'; return; }
       const rot = Object.fromEntries(RES);
       if (el) el.innerHTML = L.map(l => `<div style="border-top:1px solid var(--bd);padding:6px 0;color:var(--t1);"><div><b>${l.em ? new Date(l.em).toLocaleString('pt-BR').slice(0, 17) : ''}</b>${l.duracao_s ? ' · ' + l.duracao_s + 's' : ''}${l.fim ? ' · ' + esc(l.fim) : ''} · ${l.resultado ? '<b style="color:var(--green);">registrado: ' + esc(rot[l.resultado] || l.resultado) + '</b>' : l.erro ? '<span style="color:var(--red);">' + esc(l.erro) + '</span>' : '<span style="color:var(--amber,#b45309);">sem resultado claro — registre abaixo</span>'}${l.data_reuniao_ia ? ' · reunião: ' + esc(l.data_reuniao_ia) : ''}</div>${l.resumo ? `<div style="margin-top:3px;">${esc(l.resumo)}</div>` : ''}${l.transcricao ? `<details style="margin-top:3px;"><summary style="cursor:pointer;color:var(--t3);">Transcrição</summary><div style="white-space:pre-wrap;max-height:200px;overflow:auto;">${esc(l.transcricao)}</div></details>` : ''}${l.feito?.length ? `<div style="color:var(--t3);">${l.feito.map(esc).join(' · ')}</div>` : ''}</div>`).join('');
       const u = L.find(l => l.resumo || l.transcricao); const n = document.getElementById('flLigNota'); if (u && n && !n.value) n.value = ('IARA de voz: ' + (u.resumo || '')).slice(0, 300);
       if (L.some(l => l.feito?.length)) { nota('Resultado da IARA registrado no card ✅', 'success'); await carregar(true); }
-    } catch (e) { if (el) el.textContent = 'Erro: ' + e.message; } }
+    } catch (e) { if (el && !soGuardado) el.textContent = 'Erro: ' + e.message; } }
   function ligBox(c) {
     if (c.etapa !== 'ligacao' || !c.ligacao) return '';
     const L = c.ligacao, tel = String(c.telefone || '').replace(/[^\d+]/g, ''), rot = Object.fromEntries(RES);
@@ -294,7 +294,7 @@
         ${wa ? `<a class="btn" style="font-size:10.5px;text-decoration:none;color:#25d366;border-color:#25d366;" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
         ${c.email ? `<a class="btn" style="font-size:10.5px;text-decoration:none;" href="https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${encodeURIComponent(c.email)}" target="_blank" rel="noopener">E-mail</a>` : ''}
         <button class="btn btn-g" style="font-size:10.5px;margin-left:auto;" onclick="FLORESTA.editar('${esc(c.id)}')">✏️ Editar</button><button class="btn btn-g" style="font-size:10.5px;" title="Lê o HubSpot de novo (valor, etapa, datas…) e reabre este card" onclick="FLORESTA.reler('${esc(c.id)}')">↻ Atualizar do HubSpot</button><button class="btn btn-g" style="font-size:10.5px;" onclick="document.getElementById('flModal').remove()">Fechar</button></div></div>`;
-    document.body.appendChild(m); conversa(c.id);
+    document.body.appendChild(m); conversa(c.id); vozResultado(c.id, true);
   }
   // v3.573: botão ➡ no card = mover automaticamente para o PRÓXIMO PASSO do funil (mesma confirmação e mesmas regras do arrastar)
   const PROX = { frio: 'frio_qualificado', frio_qualificado: 'iara', iara: 'engajado', ligacao: 'qualificado', abordagem_email: 'engajado', abordado: 'engajado', engajado: 'qualificado', qualificado: 'reuniao', reuniao: 'proposta', proposta: 'negociacao', negociacao: 'cliente' };

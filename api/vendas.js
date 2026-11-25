@@ -1027,6 +1027,7 @@ async function handler(req, res) {
     floresta_ligacao_placar: () => floresta().ligacaoPlacar(),
     floresta_voz_config: async () => ({ ...voz().config(base), ...(await voz().status()) }),          // v3.530: IARA de voz (Retell)
     floresta_voz_ligar: () => voz().ligar(payload, req.sessao?.login),
+    floresta_voz_historico: () => voz().historico(payload),
     floresta_voz_sincronizar: () => voz().sincronizar(payload),   // v3.608: busca o resultado/transcrição da ligação na Retell
     floresta_voz_teste: () => voz().teste(payload),
     floresta_abordagem: () => floresta().abordagemSalvar(payload),
