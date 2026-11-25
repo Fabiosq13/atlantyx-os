@@ -109,6 +109,10 @@
     .ck-tile b{display:block;font-size:11.5px}.ck-tile span{display:block;font-size:9.8px;color:var(--t3);margin-top:3px;line-height:1.35}
     .ck-tile em{font-style:normal;font-size:8.5px;background:var(--pu);color:#fff;border-radius:7px;padding:1px 6px;margin-left:5px;vertical-align:middle}
     .ck-vazio{color:var(--t3);font-size:11px;padding:10px 4px}
+    .ck-tbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+    .ck-msgs{max-height:340px;overflow-y:auto;padding:4px 2px;background:var(--bg);border:1px solid var(--bd);border-radius:10px}
+    .ck-mu{display:flex;justify-content:flex-end;margin:6px 8px}.ck-mu div{max-width:80%;background:var(--pu);color:#fff;border-radius:10px 10px 2px 10px;padding:7px 11px;font-size:12px;line-height:1.5}
+    .ck-ma{display:flex;gap:8px;margin:6px 8px}.ck-ma>div{max-width:88%;background:var(--bg3);border:1px solid var(--bd);border-radius:2px 10px 10px 10px;padding:7px 11px;font-size:12px;line-height:1.55}
     .ck-jor{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px}
     .ck-mt{background:var(--bg);border:1px solid var(--bd);border-top:3px solid var(--c,var(--bd));border-radius:10px;padding:8px 10px;cursor:pointer;text-align:left;color:var(--t1);position:relative}
     .ck-mt:hover,.ck-mt.on{border-color:var(--pu)}
@@ -178,6 +182,7 @@
   const JCOR = ['#7c6cf0', '#3b9eff', '#2fbf71', '#f0a030', '#e5594f', '#c06cf0'];
   function jornada() {
     const J = S.jor; if (!J) return `<div class="ck-vazio">${esc(S.erroJor || 'Carregando a jornada…')}</div>`;
+    if (!J.reunioes || !J.reunioes.length) return '<div class="ck-vazio">Jornada ainda sem reuniões cadastradas.</div>';
     const prox = J.proxima, sel = S.reuniaoAberta || prox || 1;
     const cards = J.reunioes.map((r, i) => { const est = r.feito ? '✅ feita' + (r.realizada_em ? ' em ' + r.realizada_em.split('-').reverse().join('/') : '') : r.n === prox ? '▶ próxima' : r.bloqueada_por.length ? '🔒 aguarda ' + r.bloqueada_por.join(', ') : 'pendente';
       return `<button class="ck-mt${r.n === sel ? ' on' : ''}" style="--c:${JCOR[i]}" onclick="CENTRAL.reuniao(${r.n})">${r.n === prox ? '<div class="ck-aqui">você está aqui</div>' : ''}<b>${r.n}. ${esc(r.titulo)}</b><span>${esc(r.duracao)} · ${est}</span><div class="tr"><i style="width:${r.feito ? 100 : r.progresso}%"></i></div></button>`; }).join('');
@@ -191,6 +196,69 @@
         <div class="ck-act" style="margin-top:8px"><button class="ck-btn p" onclick="CENTRAL.jornadaAbrir(${r.n})">Abrir esta reunião na Trilha ›</button>${r.n === 3 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Estúdio de Produtos e Esteira\')">Estúdio ›</button>' : ''}${r.n === 4 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Cenários 2027\')">Cenários ›</button>' : ''}${r.n === 6 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Sala do Conselho\')">Conselho ›</button>' : ''}</div></div></div>`;
     const A = S.cen && S.cen.atual, pre = [['Valor e parcelas do Jelta', null], ['ARR atual real (Xplann, Big Data, alocações)', A ? !!A.arr : null], ['Motor de cada cliente (QuickBooks)', null], ['Placar de metas carregado', !!S.placar], ['Sócios convocados', J.reunioes[0].checklist.find(c => c.chave === 'socios')?.ok ?? null]];
     return `<div class="ck-jor">${cards}</div>${det}<div class="ck-cap" style="margin-top:8px">${J.feitas} de ${J.total} reuniões feitas. A ordem não se inverte: cada reunião usa a decisão da anterior.</div><div class="ck-pre"><b style="color:var(--t3)">Antes da Reunião 1:</b>${pre.map(([t, ok]) => `<span>${ok === true ? '☑' : '☐'} ${esc(t)}</span>`).join('')}</div>`;
+  }
+
+  // ── 🗼 TORRE DE CONTROLE · ATLAS por chat e voz contínua (reaproveita /api/estrategia chat)
+  const T = { msgs: [], conv: null, env: false, modo: false, voz: true, rec: null, falando: false, rasc: '', aberto: true, tm: null };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SUG = ['Por onde começo amanhã?', 'O que está em vermelho agora?', 'Me guie pela próxima reunião da jornada', 'Qual decisão está travando o plano?', 'Resuma onde estamos em 5 frases'];
+  const mdT = t => (window.ATX_IA && ATX_IA.md) ? ATX_IA.md(t) : esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^[-•] (.+)$/gm, '<div style="padding-left:12px">• $1</div>').replace(/\n/g, '<br>');
+  function digest() {
+    const o = { tela: 'Central de Planejamento e Estratégia', hoje: new Date().toLocaleDateString('pt-BR') };
+    if (S.jor) o.jornada = { feitas: S.jor.feitas, total: S.jor.total, proxima: S.jor.proxima, reunioes: S.jor.reunioes.map(r => ({ n: r.n, titulo: r.titulo, feita: r.feito, progresso: r.progresso, abertos: r.checklist.filter(c => !c.ok).map(c => c.texto), decisoes: r.decisoes.slice(0, 4).map(d => d.texto), alertas: r.alertas })) };
+    if (S.placar) o.placar = { resumo: S.placar.resumo, indicadores: (S.placar.indicadores || []).slice(0, 30).map(x => ({ nome: x.nome, real: x.real, meta: x.meta, projecao: x.projecao, cor: x.cor, unidade: x.unidade })), acoes_abertas: S.placar.acoes_abertas, pendentes_acao: S.placar.pendentes_acao };
+    if (S.cen) o.cenarios = { arr_atual_real: (S.cen.atual || {}).arr || 0, atual: S.cen.atual, comparativo: S.cen.comparativo, frentes_b: Object.fromEntries(Object.entries(S.cen.frentes || {}).map(([k, v]) => [k, (v || [])[1]])) };
+    return JSON.stringify(o).substring(0, 8500);
+  }
+  function torreCalar() { try { speechSynthesis.cancel(); } catch (_) {} T.falando = false; }
+  function torreFalar(texto, fim) {
+    if (!window.speechSynthesis || !T.voz) { fim && fim(); return; }
+    const limpo = String(texto).replace(/[*#_`>|]/g, '').replace(/✅.*$/s, '').replace(/\n+/g, '. ').substring(0, 2200);
+    const partes = limpo.match(/[^.!?]+[.!?]*/g) || [limpo]; const blocos = []; let cur = '';
+    partes.forEach(x => { if ((cur + x).length > 180) { if (cur) blocos.push(cur); cur = x; } else cur += x; }); if (cur.trim()) blocos.push(cur);
+    const vz = speechSynthesis.getVoices().filter(v => /pt[-_]BR/i.test(v.lang))[0]; T.falando = true; torreBotoes();
+    blocos.forEach((b, i) => { const u = new SpeechSynthesisUtterance(b); u.lang = 'pt-BR'; u.rate = 1.06; if (vz) u.voice = vz; if (i === blocos.length - 1) { u.onend = u.onerror = () => { T.falando = false; torreBotoes(); fim && fim(); }; } speechSynthesis.speak(u); });
+  }
+  function torreOuvir() {
+    if (!SR) { try { toast('Este navegador não reconhece voz — use o Chrome ou o Edge', 'error'); } catch (_) {} T.modo = false; return; }
+    if (T.rec || T.env) return; torreCalar();
+    const r = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; T.rec = r; let final = '';
+    const base = T.rasc ? T.rasc + ' ' : '';
+    const el = () => $('ckTxt');
+    r.onresult = e => { let parc = ''; for (let i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) final += e.results[i][0].transcript + ' '; else parc += e.results[i][0].transcript; }
+      T.rasc = (base + final + parc).trim(); if (el()) el().value = T.rasc; clearTimeout(T.tm);
+      if (T.modo && (final.trim())) T.tm = setTimeout(() => { try { r.stop(); } catch (_) {} }, 1600); }; // pausa de 1,6 s = terminou de falar
+    r.onerror = e => { if (e.error === 'not-allowed') { T.modo = false; try { toast('Libere o microfone no cadeado da barra de endereço', 'error'); } catch (_) {} } };
+    r.onend = () => { T.rec = null; clearTimeout(T.tm); torreBotoes(); const txt = (T.rasc || '').trim();
+      if (txt && (T.modo || final.trim())) torreEnviar(); else if (T.modo && $('ckTorre') && !T.env && !T.falando) setTimeout(torreOuvir, 300); };
+    try { r.start(); } catch (_) { T.rec = null; } torreBotoes();
+  }
+  async function torreEnviar(texto) {
+    const m = String(texto ?? T.rasc ?? '').trim(); if (!m || T.env) return; const veioDaVoz = T.modo || !!T.rec;
+    if (T.rec) { try { T.rec.onend = null; T.rec.stop(); } catch (_) {} T.rec = null; } torreCalar();
+    T.rasc = ''; T.env = true; T.msgs.push({ r: 'u', t: m }, { r: 'a', t: '', pensando: true }); torreRender();
+    try {
+      const d = await api('/api/estrategia', { action: 'chat', conversa_id: T.conv, mensagem: m, voz: T.voz && (veioDaVoz || T.modo), persona: 'atlas', titulo_extra: 'Central de Planejamento e Estratégia', contexto_extra: 'Você é a TORRE DE CONTROLE da Central de Planejamento e Estratégia: o fundador conversa com você para ser guiado, tirar dúvidas e decidir. Estado atual da tela (jornada das 6 reuniões, placar de metas, cenários 2027):\n' + digest() });
+      T.conv = d.conversa_id; T.msgs.pop(); T.msgs.push({ r: 'a', t: d.resposta }); T.env = false; torreRender();
+      if (T.voz && (T.modo || veioDaVoz)) torreFalar(d.resposta, () => { if (T.modo && $('ckTorre')) setTimeout(torreOuvir, 350); });
+    } catch (e) { T.msgs.pop(); T.msgs.push({ r: 'a', t: '⚠ ' + e.message }); T.env = false; T.modo = false; torreRender(); }
+  }
+  function torreBotoes() {
+    const m = $('ckBtModo'), mic = $('ckBtMic'), vz = $('ckBtVoz'), st = $('ckStatus');
+    if (m) { m.className = 'ck-btn' + (T.modo ? ' p' : ''); m.textContent = T.modo ? '⏹ Encerrar conversa contínua' : '🎙 Conversa contínua'; }
+    if (mic) { mic.textContent = T.rec ? '⏺ ouvindo…' : '🎤 Falar'; mic.style.background = T.rec ? 'var(--red,#e5594f)' : ''; mic.style.color = T.rec ? '#fff' : ''; }
+    if (vz) vz.textContent = T.voz ? '🔊 Voz ligada' : '🔇 Voz desligada';
+    if (st) st.innerHTML = T.env ? '⏳ ATLAS está pensando com os números da empresa…' : T.falando ? '🔊 ATLAS falando — <a href="#" onclick="event.preventDefault();CENTRAL.interromper()">interromper e falar</a>' : T.rec ? '🎧 Estou ouvindo — fale, faça uma pausa e eu respondo' : T.modo ? '🎙 Conversa contínua ligada' : '';
+  }
+  function torreRender() {
+    const box = $('ckTorre'); if (!box) return;
+    const msgs = T.msgs.length ? T.msgs.map(m => m.r === 'u' ? `<div class="ck-mu"><div>${esc(m.t)}</div></div>` : `<div class="ck-ma"><span>🗼</span><div>${m.pensando ? '<span style="color:var(--t3)">pensando…</span>' : mdT(m.t)}</div></div>`).join('')
+      : `<div class="ck-vazio">Chame a torre para guiar, tirar dúvidas ou decidir. Ela enxerga o placar, os cenários, a jornada e os números da empresa.<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${SUG.map((q, i) => `<button class="ck-btn" onclick="CENTRAL.sug(${i})">${esc(q)}</button>`).join('')}</div></div>`;
+    box.innerHTML = `<div class="ck-sec">🗼 Torre de controle · ATLAS, estrategista-chefe<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.torreAbrir()">${T.aberto ? '▴ recolher' : '▾ abrir'}</button></div>
+    ${T.aberto ? `<div class="ck-tbar"><button class="ck-btn" id="ckBtModo" onclick="CENTRAL.modo()">🎙 Conversa contínua</button><button class="ck-btn" id="ckBtVoz" onclick="CENTRAL.vozToggle()">🔊 Voz ligada</button><button class="ck-btn" onclick="CENTRAL.torreNova()">＋ Nova conversa</button><span id="ckStatus" class="ck-cap" style="margin:0 0 0 6px"></span></div>
+    <div id="ckMsgs" class="ck-msgs">${msgs}</div>
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end"><textarea id="ckTxt" class="ck-find" style="max-width:none;min-height:48px;resize:vertical" placeholder="Escreva ou fale com a torre… (Enter envia)" oninput="CENTRAL.rasc(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();CENTRAL.enviar()}">${esc(T.rasc)}</textarea><div style="display:flex;flex-direction:column;gap:4px"><button class="ck-btn" id="ckBtMic" onclick="CENTRAL.mic()">🎤 Falar</button><button class="ck-btn p" onclick="CENTRAL.enviar()" ${T.env ? 'disabled' : ''}>Enviar ➤</button></div></div>` : ''}`;
+    const mm = $('ckMsgs'); if (mm) mm.scrollTop = mm.scrollHeight; torreBotoes();
   }
 
   function comandos() {
@@ -210,12 +278,14 @@
     <div class="ck-top"><div class="ck-ti"><b>🛩️ Central de Planejamento e Estratégia</b><div>Instrumentos ao vivo no alto; todas as telas de estratégia no painel de comandos, embaixo. O menu lateral continua com cada tela individual.</div></div>
       <div class="ck-hud"><div><b>${diasAno}</b><span>dias para ${ano + 1}</span></div><div><b>${hoje.toLocaleDateString('pt-BR')}</b><span>hoje</span></div><div><b>${TODAS.length}</b><span>telas ligadas</span></div></div>
       <button class="ck-btn" onclick="CENTRAL.carregar(true)" title="Atualizar os instrumentos">↻ Atualizar</button></div>
+    <div class="ck-bezel" id="ckTorre" style="margin-bottom:12px"></div>
     <div class="ck-bezel" style="margin-bottom:12px"><div class="ck-sec">🧭 Jornada do Planejamento 2027 · 6 reuniões<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.jornadaAbrir()">abrir na Trilha ›</button></div>${jornada()}</div>
     <div class="ck-bezel"><div class="ck-sec">Instrumentos<i></i></div>${inst.length ? `<div class="ck-inst">${inst.map(gauge).join('')}</div>` : `<div class="ck-vazio">${esc(S.erroPlacar || 'Carregando os instrumentos…')}</div>`}</div>
     <div class="ck-mid"><div class="ck-bezel"><div class="ck-sec">Horizonte 2027 · cenários<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.irN('Cenários 2027')">abrir ›</button></div>${horizonte()}</div>
       <div class="ck-bezel"><div class="ck-sec">Luzes de alerta<i></i></div>${luzes()}</div></div>
     <div class="ck-act"><button class="ck-btn p" onclick="CENTRAL.irN('Sala do Conselho')">🏛️ Convocar o Conselho</button><button class="ck-btn" onclick="CENTRAL.irN('ATLAS · Estrategista')">🧠 Falar com o ATLAS</button><button class="ck-btn" onclick="CENTRAL.irN('Cenários 2027')">📊 Editar premissas dos cenários</button><button class="ck-btn" onclick="CENTRAL.irN('Plano de Ação 90 dias')">▶ Plano de 90 dias</button><button class="ck-btn" onclick="CENTRAL.irN('Relatório Executivo')">📄 Relatório executivo</button></div>
     <div class="ck-bezel ck-cmd"><div class="ck-sec">Painel de comandos<i></i><input class="ck-find" id="ckFind" placeholder="Buscar tela… (ex.: caixa, conselho, metas)" value="${esc(S.filtro)}" oninput="CENTRAL.buscar(this.value)"/></div><div id="ckCmd">${comandos()}</div></div>`;
+    torreRender();
   }
 
   async function carregar(forcar) {
@@ -239,6 +309,15 @@
     ir(i) { navegar(TODAS[i]); },
     irP(p) { navegar(TODAS.find(t => t.p === p && !t.aba && !t.pos) || { p }); },
     irN(nome) { navegar(TODAS.find(t => t.n === nome)); },
+    torreAbrir() { T.aberto = !T.aberto; torreRender(); },
+    torreNova() { torreCalar(); T.modo = false; T.conv = null; T.msgs = []; T.rasc = ''; torreRender(); },
+    modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } } torreBotoes(); },
+    mic() { if (T.rec) { try { T.rec.stop(); } catch (_) {} } else torreOuvir(); },
+    vozToggle() { T.voz = !T.voz; if (!T.voz) torreCalar(); torreBotoes(); },
+    interromper() { torreCalar(); torreOuvir(); },
+    rasc(v) { T.rasc = v; },
+    enviar() { torreEnviar(); },
+    sug(i) { torreEnviar(SUG[i]); },
     reuniao(n) { S.reuniaoAberta = n; render(); },
     jornadaAbrir(n) { navegar({ p: 's0estrategia', aba: 'trilha', pos: () => { try { ESTT.sub('jornada'); } catch (_) {} } }); },
     buscar(v) { S.filtro = v; const c = $('ckCmd'); if (c) c.innerHTML = comandos(); }
