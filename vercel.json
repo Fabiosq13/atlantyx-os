@@ -234,6 +234,10 @@
       "schedule": "30 10 * * 1-5"
     },
     {
+      "path": "/api/rfp-monitor?acao=caixa",
+      "schedule": "45 9 * * *"
+    },
+    {
       "path": "/api/followup-cron",
       "schedule": "0 * * * *"
     },

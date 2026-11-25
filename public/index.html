@@ -10134,8 +10134,8 @@ function rfpPetronectBarra(p) {
     : quando ? 'Caixa <b>' + e(p.conta || '') + '</b> · ' + (p.emails_avaliados || 0) + ' e-mail(s) avaliados · <b>' + (p.aderentes_abertas || 0) + '</b> oportunidade(s) aderentes em aberto · última leitura ' + e(quando)
     : 'Ainda não lido — clique para ler os e-mails dos últimos 3 meses.';
   return '<div id="rfpPetroBox" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;text-align:left;font-size:10.5px;color:var(--t2);background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
-    + '<b style="color:var(--t1);">&#128231; Petronect (Petrobras)</b><span id="rfpPetroSt" style="flex:1;min-width:200px;">' + st + '</span>'
-    + '<button class="btn btn-g" style="font-size:10px;" id="btnPetro" ' + (window._petroLendo ? 'disabled ' : '') + 'onclick="rfpLerPetronect()">Ler e-mails (3 meses)</button></div>';
+    + '<b style="color:var(--t1);">&#128231; E-mails (Petronect + RFPs e pedidos de clientes da caixa contato@)</b><span id="rfpPetroSt" style="flex:1;min-width:200px;">' + st + '</span>'
+    + '<button class="btn btn-g" style="font-size:10px;" id="btnPetro" ' + (window._petroLendo ? 'disabled ' : '') + 'onclick="rfpLerPetronect()">Ler e-mails (60 dias)</button></div>';
 }
 function rfpPetronectAuto(p, eraCache) {
   // ao abrir a tela: lê os e-mails novos se a última leitura tem mais de 6h (ou nunca foi feita)
@@ -10149,14 +10149,18 @@ async function rfpLerPetronect(auto) {
   const set = t => { window._petroLendo = t; const el = document.getElementById('rfpPetroSt'); if (el) el.innerHTML = '<span style="color:var(--blue);">' + String(t).replace(/</g, '&lt;') + '</span>'; const b = document.getElementById('btnPetro'); if (b) b.disabled = true; };
   let avaliados = 0, aderentes = 0, erro = null, d = null;
   try {
-    for (let i = 0; i < 10; i++) {
-      set('Lendo e-mails da Petronect' + (i ? ' (parte ' + (i + 1) + ')' : '') + '… ' + (avaliados ? avaliados + ' avaliados até agora' : 'pode levar alguns minutos'));
-      const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'petronect', dias: 90 }) });
-      const txt = await r.text(); try { d = JSON.parse(txt); } catch (_) { throw new Error(r.status === 504 ? 'tempo limite do servidor (HTTP 504)' : 'HTTP ' + r.status); }
-      if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
-      avaliados += d.diag?.avaliados_agora || 0; aderentes += d.diag?.aderentes_novas || 0;
-      if (d.erro) { erro = d.erro; break; }
-      if (!(d.diag?.faltam > 0) || (!(d.diag?.avaliados_agora > 0) && (i >= 2 || !d.diag?.aviso))) break; // v3.296: lote abortado por tempo não para a leitura
+    // v3.606: lê a Petronect (90 dias) e depois QUALQUER pedido de proposta da caixa contato@ (60 dias)
+    for (const [alvo, rotulo, dias] of [['petronect', 'Petronect', 90], ['caixa', 'RFPs e pedidos de clientes da caixa contato@', 60]]) {
+      for (let i = 0; i < 10; i++) {
+        set('Lendo e-mails — ' + rotulo + (i ? ' (parte ' + (i + 1) + ')' : '') + '… ' + (avaliados ? avaliados + ' avaliados até agora' : 'pode levar alguns minutos'));
+        const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: alvo, dias }) });
+        const txt = await r.text(); try { d = JSON.parse(txt); } catch (_) { throw new Error(r.status === 504 ? 'tempo limite do servidor (HTTP 504)' : 'HTTP ' + r.status); }
+        if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
+        avaliados += d.diag?.avaliados_agora || 0; aderentes += d.diag?.aderentes_novas || 0;
+        if (d.erro) { erro = d.erro; break; }
+        if (!(d.diag?.faltam > 0) || (!(d.diag?.avaliados_agora > 0) && (i >= 2 || !d.diag?.aviso))) break; // v3.296: lote abortado por tempo não para a leitura
+      }
+      if (erro) break;
     }
   } catch (e) { erro = e.message; }
   window._petroLendo = null;
@@ -18357,15 +18361,22 @@ async function _dashRfpUrgentes() {
   try {
     const r = await fetch('/api/rfp-monitor?urgente=true');
     const d = await r.json().catch(() => ({}));
-    if (!d.success || !d.count) { box.innerHTML = ''; return; }
+    if (!d.success || (!d.count && !d.novas_count)) { box.innerHTML = ''; return; }
     const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const quando = n => n === 0 ? 'vence hoje' : n === 1 ? 'falta 1 dia' : 'faltam ' + n + ' dias';
-    box.innerHTML = '<div style="background:var(--r2);border:1px solid rgba(255,77,106,.35);border-left:3px solid var(--red);border-radius:9px;padding:11px 14px;margin-bottom:13px;">'
+    const urg = !d.count ? '' : '<div style="background:var(--r2);border:1px solid rgba(255,77,106,.35);border-left:3px solid var(--red);border-radius:9px;padding:11px 14px;margin-bottom:13px;">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><b style="font-size:12px;color:var(--red);">&#9888; ' + d.count + ' RFP' + (d.count > 1 ? 's' : '') + ' com prazo em até 3 dias</b>'
       + '<button class="btn btn-or" style="font-size:9.5px;padding:3px 9px;margin-left:auto;" onclick="nav(\'s2rfps\', document.querySelector(\'.sbi[onclick*=&quot;s2rfps&quot;]\'))">Abrir Monitor RFPs</button></div>'
       + d.rfps.slice(0, 5).map(x => '<div style="font-size:11px;color:var(--t1);margin-top:2px;">• <b>' + e(x.empresa) + '</b> — ' + e(x.titulo) + ' <span style="font-family:var(--M);font-size:9.5px;color:var(--red);">(' + quando(x.dias) + ')</span></div>').join('')
       + (d.count > 5 ? '<div style="font-size:10px;color:var(--t2);margin-top:3px;">+ ' + (d.count - 5) + ' outra(s)</div>' : '')
       + '</div>';
+    // v3.606: alerta de entrada — oportunidades novas lidas dos e-mails (caixa contato@ e Petronect) nos últimos 7 dias
+    const nov = !d.novas_count ? '' : '<div style="background:var(--bg3);border:1px solid var(--bd);border-left:3px solid var(--blue);border-radius:9px;padding:11px 14px;margin-bottom:13px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><b style="font-size:12px;color:var(--blue);">&#128231; ' + d.novas_count + ' oportunidade' + (d.novas_count > 1 ? 's' : '') + ' de RFP nova' + (d.novas_count > 1 ? 's' : '') + ' nos e-mails (últimos 7 dias)</b>'
+      + '<button class="btn btn-or" style="font-size:9.5px;padding:3px 9px;margin-left:auto;" onclick="nav(\'s2rfps\', document.querySelector(\'.sbi[onclick*=&quot;s2rfps&quot;]\'))">Ver na lista</button></div>'
+      + d.novas.slice(0, 5).map(x => '<div style="font-size:11px;color:var(--t1);margin-top:2px;">• <b>' + e(x.empresa) + '</b> — ' + e(x.titulo) + ' <span style="font-family:var(--M);font-size:9.5px;color:var(--t2);">(aderência ' + (x.compatibilidade || 0) + '%' + (x.prazo ? ' · prazo ' + e(x.prazo.split('-').reverse().join('/')) : '') + ')</span></div>').join('')
+      + (d.novas_count > 5 ? '<div style="font-size:10px;color:var(--t2);margin-top:3px;">+ ' + (d.novas_count - 5) + ' outra(s)</div>' : '') + '</div>';
+    box.innerHTML = urg + nov;
   } catch (_) { box.innerHTML = ''; }
 }
 // S2 Social: impressões e engajamento reais do Metricool (últimos 30 dias, LinkedIn + Instagram)
@@ -37569,7 +37580,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.605] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.606] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37585,7 +37596,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.605';
+window.__ATX_BUILD_ID__ = 'ATX-v3.606';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
