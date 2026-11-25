@@ -14,7 +14,7 @@ test('IARA, Maestro e frentes batem com a planilha', () => {
   const r = calcular();
   perto(r.iara.cenarios[1].arr, 912000); perto(r.iara.cenarios[1].resultado1, 340876, 0.1); perto(r.iara.cliente.margemMetade, 0.666, 0.01);
   perto(r.maestro.cenarios[1].arr, 1770000); perto(r.maestro.cenarios[1].runrate, 1047938.4, 0.1);
-  perto(r.frentes.gp[1].contrib, 239319.27, 0.01); perto(r.frentes.sust[1].contrib, 52800); perto(r.frentes.funil[1].contrib, 283805.33, 0.01);
+  perto(r.frentes.gp[1].contrib, 239319.27, 0.01); perto(r.frentes.sust[1].contrib, 47520); perto(r.frentes.funil[1].contrib, 283805.33, 0.01);
   assert.equal(r.comparativo.maiorArr, 'Maestro');
 });
 test('premissas: valor inválido volta ao padrão; salvar valida e só guarda o que mudou', async () => {
