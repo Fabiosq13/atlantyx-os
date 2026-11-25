@@ -22,14 +22,23 @@ test('janela legal: seg–sex 9–21h, sáb 10–14h, nunca domingo', () => {
   assert.equal(dentroDoHorario(new Date('2026-11-21T19:00:00Z')), false);  // sáb 16h
   assert.equal(dentroDoHorario(new Date('2026-11-22T15:00:00Z')), false);  // domingo
 });
-test('liga só caminho B, manda variáveis e o card_id, e bloqueia A e descadastrados', async () => {
+test('liga só caminho B (um por vez), manda variáveis e o card_id, e bloqueia A e descadastrados', async () => {
   const { V, chamadas } = montar({ cards: [card('c:1', 'B'), card('c:2', 'A'), card('c:3', 'B', { telefone: '21977776666' })], optout: ['5521977776666'] });
-  const r = await V.ligar({ card_ids: ['c:1', 'c:2', 'c:3'] }, 'fabio');
+  const r = await V.ligar({ card_ids: ['c:1'] }, 'fabio');
   assert.equal(r.ok, 1); assert.equal(chamadas.length, 1);
   assert.equal(chamadas[0].corpo.to_number, '+5521988887777'); assert.equal(chamadas[0].corpo.override_agent_id, 'agent_teste');
   assert.equal(chamadas[0].corpo.metadata.card_id, 'c:1'); assert.equal(chamadas[0].corpo.retell_llm_dynamic_variables.primeiro_nome, 'Ana');
-  assert.match(r.resultados[1].motivo, /caminho A/); assert.match(r.resultados[2].motivo, /descadastro/);
+  assert.match((await V.ligar({ card_ids: ['c:2'] })).resultados[0].motivo, /caminho A/); assert.match((await V.ligar({ card_ids: ['c:3'] })).resultados[0].motivo, /descadastro/);
   const de = await V.ligar({ card_ids: ['c:1'] }); assert.match(de.resultados[0].motivo, /andamento|hoje/, 'não liga duas vezes seguidas');
+});
+test('v3.607: ligação em massa desabilitada (vários cards numa chamada são recusados, nada é discado)', async () => {
+  const { V, chamadas } = montar({ cards: [card('c:1', 'B'), card('c:2', 'B')] });
+  await assert.rejects(() => V.ligar({ card_ids: ['c:1', 'c:2'] }, 'fabio'), /massa.*desabilitada/i); assert.equal(chamadas.length, 0);
+});
+test('v3.607: ligação avulsa do card (ícone) funciona para lead fora da etapa de ligação, 1 por clique', async () => {
+  const { V, chamadas } = montar({ cards: [card('c:5', 'B', { etapa: 'engajado', ligacao: null })] });
+  assert.match((await V.ligar({ card_ids: ['c:5'] })).resultados[0].motivo, /abordagem telefônica/, 'sem o ícone, só quem está na ligação');
+  const r = await V.ligar({ card_ids: ['c:5'], avulso: true }, 'fabio'); assert.equal(r.ok, 1); assert.equal(chamadas.length, 1); assert.equal(chamadas[0].corpo.metadata.card_id, 'c:5');
 });
 test('webhook: resultado vira ligacaoResultado uma única vez; não atendeu sem análise também', async () => {
   const { V, resultados } = montar({ cards: [card('c:1', 'B'), card('c:9', 'B')] });
