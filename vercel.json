@@ -302,6 +302,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/vendas?cron=time_vendas",
+      "schedule": "30 10 * * 1-5"
+    },
+    {
       "path": "/api/vendas?cron=floresta",
       "schedule": "13 11 * * 1-5"
     },

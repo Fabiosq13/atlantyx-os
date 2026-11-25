@@ -15,6 +15,7 @@ import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desli
 import { calcularFormatos, PARAMS_PADRAO, FORMATOS } from '../lib/proposta-calc.js';
 import { lerPlanoVigente, planoInicial } from '../lib/plano-estrategico.js';
 import { criarFloresta } from '../lib/floresta.js';
+import * as TV from '../lib/time-vendas.js'; import { kvPadrao as _kvTV } from '../lib/playbook-svc.js';   // v3.601: time de vendas virtual
 import { funilDoLogin, ACOES_GLOBAIS } from '../lib/floresta-acesso.js'; // v3.569
 import { criarVoz, tokenWebhook } from '../lib/floresta-voz.js';
 import { criarIaraRetorno } from '../lib/iara-retorno.js';   // v3.495: retorno das conversas da IARA   // v3.440: Floresta de Vendas
@@ -911,6 +912,8 @@ async function handler(req, res) {
     try { const g = await liberado('abordagem_todo'); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); const r = await floresta().abordagemTodo({ max: await opcao('abordagem_todo', 'max', 2) }); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta_fq') { // v3.531: diário (dias úteis, 08:30 Brasília) — libera o Frio qualificado e alerta/move qualificados parados (tudo desligado por padrão)
     try { const lib = await floresta().liberarDia({}, 'rotina'); const par = await floresta().moverParados({}, 'rotina'); let lig = null; try { lig = await floresta().avisarLigacao(); } catch (e) { lig = { ok: false, erro: e.message }; } return res.status(200).json({ success: true, liberacao: lib, parados: par, ligacao_aviso: lig }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
+  if (req.method === 'GET' && req.query?.cron === 'time_vendas') { // v3.601: dias úteis 07:30 — os agentes preparam abordagens e colocam na FILA DE APROVAÇÃO (só se o CEO ligou a rotina; nada é enviado)
+    try { const kv = _kvTV(), cfg = await TV.lerCfg(kv); if (!cfg.rodar_automatico || cfg.desligar_tudo) return res.status(200).json({ success: true, pulado: 'rotina do time desligada' }); const g = await liberado('time_vendas'); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); const cards = (await floresta().carregar({})).cards || []; const r = await TV.rodar({ kv, cards, claude, login: 'rotina', admin: true }); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'GET' && req.query?.cron === 'floresta') {
     try { const g = await liberado('floresta'); if (!g.ok) return res.status(200).json({ success: true, pulado: g.motivo }); const r = await floresta().analisarIA({}); return res.status(200).json({ success: true, ...r }); } catch (e) { return res.status(500).json({ success: false, error: e.message }); } }
   if (req.method === 'POST' && req.query?.webhook === 'retell') { // v3.530: resultado das ligações da IARA de voz (Retell) — chave própria na URL
@@ -919,6 +922,7 @@ async function handler(req, res) {
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
   const { action, payload = {} } = body;
   const base = `https://${req.headers['x-forwarded-host'] || req.headers.host || 'atlantyx-os.vercel.app'}`;
+  const _tvAdmin = () => (req.sessao ? !!req.sessao.admin : true);   // v3.601
   const sqlRun = async f => { await tabelas(); return f(await getSql()); };
   const acoes = {
     prop_config: () => propConfig(),
@@ -979,6 +983,12 @@ async function handler(req, res) {
     oport_voz_criar: () => oportVozCriar(payload, req.usuario || null),
     oport_voz_buscar: async () => ({ empresas: await _hsBuscarEmpresa(payload.nome, payload.dominio), contatos: await _hsBuscarContato(payload.contato || {}) }),
     leads_esquecidos: () => leadsEsquecidos(payload), // v3.422
+    // v3.601: TIME DE VENDAS VIRTUAL — agentes preparam, pessoas aprovam; nada é enviado por aqui
+    time_estado: async () => { let cards = []; try { cards = (await floresta().carregar({})).cards || []; } catch (_) {} return TV.estado({ kv: _kvTV(), cards, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); },
+    time_rodar: async () => { const cards = (await floresta().carregar({ forcar: !!payload.forcar })).cards || []; return TV.rodar({ kv: _kvTV(), cards, claude, agente: payload.agente || null, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); },
+    time_decidir: async () => ({ item: await TV.decidir({ kv: _kvTV(), id: payload.id, decisao: payload.decisao, motivo: payload.motivo, assunto: payload.assunto, corpo: payload.corpo, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }) }),
+    time_enviado: async () => ({ item: await TV.marcarEnviado({ kv: _kvTV(), id: payload.id, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }) }),
+    time_cfg: async () => ({ cfg: await TV.salvarCfg({ kv: _kvTV(), patch: payload.patch || {}, login: req.sessao?.login, admin: _tvAdmin() }) }),
     floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
     floresta_ia: () => floresta().analisarIA(payload),
     floresta_chat: () => floresta().perguntar(payload),   // v3.578: consulta livre à IA (só leitura; respeita o funil do login)
