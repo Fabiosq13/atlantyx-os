@@ -110,7 +110,9 @@
     .ck-tile em{font-style:normal;font-size:8.5px;background:var(--pu);color:#fff;border-radius:7px;padding:1px 6px;margin-left:5px;vertical-align:middle}
     .ck-vazio{color:var(--t3);font-size:11px;padding:10px 4px}
     .ck-tbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
-    .ck-msgs{max-height:340px;overflow-y:auto;padding:4px 2px;background:var(--bg);border:1px solid var(--bd);border-radius:10px}
+    .ck-dock{position:fixed;bottom:0;z-index:60;background:var(--bg2);border:1px solid var(--bd);border-bottom:0;border-radius:14px 14px 0 0;box-shadow:0 -8px 28px rgba(0,0,0,.38);padding:8px 12px 10px;box-sizing:border-box}
+    @media(max-width:900px){.ck-dock{left:0!important;width:100%!important}}
+    .ck-msgs{max-height:40vh;overflow-y:auto;padding:4px 2px;background:var(--bg);border:1px solid var(--bd);border-radius:10px}
     .ck-mu{display:flex;justify-content:flex-end;margin:6px 8px}.ck-mu div{max-width:80%;background:var(--pu);color:#fff;border-radius:10px 10px 2px 10px;padding:7px 11px;font-size:12px;line-height:1.5}
     .ck-ma{display:flex;gap:8px;margin:6px 8px}.ck-ma>div{max-width:88%;background:var(--bg3);border:1px solid var(--bd);border-radius:2px 10px 10px 10px;padding:7px 11px;font-size:12px;line-height:1.55}
     .ck-jor{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px}
@@ -227,7 +229,7 @@
   }
 
   // ── 🗼 TORRE DE CONTROLE · ATLAS por chat e voz contínua (reaproveita /api/estrategia chat)
-  const T = { msgs: [], conv: null, env: false, modo: false, voz: true, rec: null, falando: false, rasc: '', aberto: true, tm: null };
+  const T = { msgs: [], conv: null, env: false, modo: false, voz: true, rec: null, falando: false, rasc: '', aberto: false, tm: null };
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const SUG = ['Por onde começo amanhã?', 'O que está em vermelho agora?', 'Me guie pela próxima reunião da jornada', 'Qual decisão está travando o plano?', 'Resuma onde estamos em 5 frases'];
   const mdT = t => (window.ATX_IA && ATX_IA.md) ? ATX_IA.md(t) : esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^[-•] (.+)$/gm, '<div style="padding-left:12px">• $1</div>').replace(/\n/g, '<br>');
@@ -264,7 +266,7 @@
   async function torreEnviar(texto) {
     const m = String(texto ?? T.rasc ?? '').trim(); if (!m || T.env) return; const veioDaVoz = T.modo || !!T.rec;
     if (T.rec) { try { T.rec.onend = null; T.rec.stop(); } catch (_) {} T.rec = null; } torreCalar();
-    T.rasc = ''; T.env = true; T.msgs.push({ r: 'u', t: m }, { r: 'a', t: '', pensando: true }); torreRender();
+    T.rasc = ''; T.env = true; T.aberto = true; T.msgs.push({ r: 'u', t: m }, { r: 'a', t: '', pensando: true }); torreRender();
     try {
       const d = await api('/api/estrategia', { action: 'chat', conversa_id: T.conv, mensagem: m, voz: T.voz && (veioDaVoz || T.modo), persona: 'atlas', titulo_extra: 'Central de Planejamento e Estratégia', contexto_extra: 'Você é a TORRE DE CONTROLE da Central de Planejamento e Estratégia: o fundador conversa com você para ser guiado, tirar dúvidas e decidir. Estado atual da tela (jornada das 6 reuniões, placar de metas, cenários 2027):\n' + digest() });
       T.conv = d.conversa_id; T.msgs.pop(); T.msgs.push({ r: 'a', t: d.resposta }); T.env = false; torreRender();
@@ -278,15 +280,19 @@
     if (vz) vz.textContent = T.voz ? '🔊 Voz ligada' : '🔇 Voz desligada';
     if (st) st.innerHTML = T.env ? '⏳ ATLAS está pensando com os números da empresa…' : T.falando ? '🔊 ATLAS falando — <a href="#" onclick="event.preventDefault();CENTRAL.interromper()">interromper e falar</a>' : T.rec ? '🎧 Estou ouvindo — fale, faça uma pausa e eu respondo' : T.modo ? '🎙 Conversa contínua ligada' : '';
   }
+  function torreEnc() {
+    const b = $('ckTorre'), a = $('ckApp'); if (!b || !a) return; const r = a.getBoundingClientRect(); if (!r.width) return;
+    const l = Math.max(0, r.left); b.style.left = l + 'px'; b.style.width = Math.min(r.width, innerWidth - l) + 'px'; a.style.paddingBottom = (b.offsetHeight + 24) + 'px';
+  }
+  if (!window._ckResize) { window._ckResize = true; window.addEventListener('resize', () => { try { torreEnc(); } catch (_) {} }); }
   function torreRender() {
-    const box = $('ckTorre'); if (!box) return;
+    const box = $('ckTorre'); if (!box) return; const foco = document.activeElement && document.activeElement.id === 'ckTxt';
     const msgs = T.msgs.length ? T.msgs.map(m => m.r === 'u' ? `<div class="ck-mu"><div>${esc(m.t)}</div></div>` : `<div class="ck-ma"><span>🗼</span><div>${m.pensando ? '<span style="color:var(--t3)">pensando…</span>' : mdT(m.t)}</div></div>`).join('')
       : `<div class="ck-vazio">Chame a torre para guiar, tirar dúvidas ou decidir. Ela enxerga o placar, os cenários, a jornada e os números da empresa.<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${SUG.map((q, i) => `<button class="ck-btn" onclick="CENTRAL.sug(${i})">${esc(q)}</button>`).join('')}</div></div>`;
-    box.innerHTML = `<div class="ck-sec">🗼 Torre de controle · ATLAS, estrategista-chefe<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.torreAbrir()">${T.aberto ? '▴ recolher' : '▾ abrir'}</button></div>
-    ${T.aberto ? `<div class="ck-tbar"><button class="ck-btn" id="ckBtModo" onclick="CENTRAL.modo()">🎙 Conversa contínua</button><button class="ck-btn" id="ckBtVoz" onclick="CENTRAL.vozToggle()">🔊 Voz ligada</button><button class="ck-btn" onclick="CENTRAL.torreNova()">＋ Nova conversa</button><span id="ckStatus" class="ck-cap" style="margin:0 0 0 6px"></span></div>
-    <div id="ckMsgs" class="ck-msgs">${msgs}</div>
-    <div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end"><textarea id="ckTxt" class="ck-find" style="max-width:none;min-height:48px;resize:vertical" placeholder="Escreva ou fale com a torre… (Enter envia)" oninput="CENTRAL.rasc(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();CENTRAL.enviar()}">${esc(T.rasc)}</textarea><div style="display:flex;flex-direction:column;gap:4px"><button class="ck-btn" id="ckBtMic" onclick="CENTRAL.mic()">🎤 Falar</button><button class="ck-btn p" onclick="CENTRAL.enviar()" ${T.env ? 'disabled' : ''}>Enviar ➤</button></div></div>` : ''}`;
-    const mm = $('ckMsgs'); if (mm) mm.scrollTop = mm.scrollHeight; torreBotoes();
+    box.innerHTML = `<div class="ck-tbar"><b style="font-size:12px">🗼 Torre de controle · ATLAS</b><button class="ck-btn" id="ckBtModo" onclick="CENTRAL.modo()">🎙 Conversa contínua</button><button class="ck-btn" id="ckBtVoz" onclick="CENTRAL.vozToggle()">🔊 Voz ligada</button><button class="ck-btn" onclick="CENTRAL.torreNova()">＋ Nova</button><span id="ckStatus" class="ck-cap" style="margin:0 0 0 4px;flex:1"></span><button class="ck-btn" onclick="CENTRAL.torreAbrir()">${T.aberto ? '▾ recolher conversa' : '▴ abrir conversa'}</button></div>
+    ${T.aberto ? `<div id="ckMsgs" class="ck-msgs">${msgs}</div>` : ''}
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:flex-end"><textarea id="ckTxt" class="ck-find" style="max-width:none;min-height:40px;height:40px;resize:none" placeholder="Escreva ou fale com a torre… (Enter envia)" oninput="CENTRAL.rasc(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();CENTRAL.enviar()}">${esc(T.rasc)}</textarea><button class="ck-btn" id="ckBtMic" onclick="CENTRAL.mic()">🎤 Falar</button><button class="ck-btn p" onclick="CENTRAL.enviar()" ${T.env ? 'disabled' : ''}>Enviar ➤</button></div>`;
+    const mm = $('ckMsgs'); if (mm) mm.scrollTop = mm.scrollHeight; torreBotoes(); torreEnc(); if (foco && $('ckTxt')) { const t = $('ckTxt'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
   }
 
   function comandos() {
@@ -306,7 +312,7 @@
     <div class="ck-top"><div class="ck-ti"><b>🛩️ Central de Planejamento e Estratégia</b><div>Instrumentos ao vivo no alto; todas as telas de estratégia no painel de comandos, embaixo. O menu lateral continua com cada tela individual.</div></div>
       <div class="ck-hud"><div><b>${diasAno}</b><span>dias para ${ano + 1}</span></div><div><b>${hoje.toLocaleDateString('pt-BR')}</b><span>hoje</span></div><div><b>${TODAS.length}</b><span>telas ligadas</span></div></div>
       <button class="ck-btn" onclick="CENTRAL.carregar(true)" title="Atualizar os instrumentos">↻ Atualizar</button></div>
-    <div class="ck-bezel" id="ckTorre" style="margin-bottom:12px"></div>
+    <div id="ckTorre" class="ck-dock"></div>
     <div class="ck-bezel" style="margin-bottom:12px"><div class="ck-sec">🧭 Jornada do Planejamento 2027 · 6 reuniões<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.jornadaAbrir()">abrir na Trilha ›</button></div>${jornada()}</div>
     <div class="ck-bezel"><div class="ck-sec">Instrumentos<i></i></div>${inst.length ? `<div class="ck-inst">${inst.map(gauge).join('')}</div>` : `<div class="ck-vazio">${esc(S.erroPlacar || 'Carregando os instrumentos…')}</div>`}</div>
     <div class="ck-mid"><div class="ck-bezel"><div class="ck-sec">Horizonte 2027 · cenários<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.irN('Cenários 2027')">abrir ›</button></div>${horizonte()}</div>
