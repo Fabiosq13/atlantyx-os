@@ -109,6 +109,16 @@
     .ck-tile b{display:block;font-size:11.5px}.ck-tile span{display:block;font-size:9.8px;color:var(--t3);margin-top:3px;line-height:1.35}
     .ck-tile em{font-style:normal;font-size:8.5px;background:var(--pu);color:#fff;border-radius:7px;padding:1px 6px;margin-left:5px;vertical-align:middle}
     .ck-vazio{color:var(--t3);font-size:11px;padding:10px 4px}
+    .ck-jor{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px}
+    .ck-mt{background:var(--bg);border:1px solid var(--bd);border-top:3px solid var(--c,var(--bd));border-radius:10px;padding:8px 10px;cursor:pointer;text-align:left;color:var(--t1);position:relative}
+    .ck-mt:hover,.ck-mt.on{border-color:var(--pu)}
+    .ck-mt b{display:block;font-size:11.5px}.ck-mt span{display:block;font-size:9.8px;color:var(--t3);margin-top:2px}
+    .ck-mt .tr{height:5px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-top:6px}.ck-mt .tr i{display:block;height:100%;background:var(--c,var(--pu))}
+    .ck-aqui{position:absolute;top:-9px;right:8px;background:var(--pu);color:#fff;font-size:9px;border-radius:7px;padding:1px 7px;box-shadow:0 0 10px var(--pu)}
+    .ck-det{margin-top:10px;background:var(--bg);border:1px solid var(--pu);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;font-size:11px}
+    .ck-det h4{margin:0 0 5px;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--t3)}
+    .ck-det ul{margin:0;padding-left:15px;line-height:1.5}.ck-det li.ok{color:var(--gn,#3fb950)}
+    .ck-pre{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;font-size:10.5px}.ck-pre span{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:3px 8px}
     `;
     document.head.appendChild(s);
   }
@@ -164,6 +174,25 @@
     return ls.map(l => `<div class="ck-lamp" onclick="CENTRAL.irP('${l.p}')"><u style="color:${l.cor};background:${l.cor}"></u><div><b>${esc(l.t)}</b><div style="color:var(--t3);font-size:10px">${esc(l.s)}</div></div></div>`).join('');
   }
 
+  // ── Jornada do Planejamento 2027 (6 reuniões) · lê est:jornada (só fundador)
+  const JCOR = ['#7c6cf0', '#3b9eff', '#2fbf71', '#f0a030', '#e5594f', '#c06cf0'];
+  function jornada() {
+    const J = S.jor; if (!J) return `<div class="ck-vazio">${esc(S.erroJor || 'Carregando a jornada…')}</div>`;
+    const prox = J.proxima, sel = S.reuniaoAberta || prox || 1;
+    const cards = J.reunioes.map((r, i) => { const est = r.feito ? '✅ feita' + (r.realizada_em ? ' em ' + r.realizada_em.split('-').reverse().join('/') : '') : r.n === prox ? '▶ próxima' : r.bloqueada_por.length ? '🔒 aguarda ' + r.bloqueada_por.join(', ') : 'pendente';
+      return `<button class="ck-mt${r.n === sel ? ' on' : ''}" style="--c:${JCOR[i]}" onclick="CENTRAL.reuniao(${r.n})">${r.n === prox ? '<div class="ck-aqui">você está aqui</div>' : ''}<b>${r.n}. ${esc(r.titulo)}</b><span>${esc(r.duracao)} · ${est}</span><div class="tr"><i style="width:${r.feito ? 100 : r.progresso}%"></i></div></button>`; }).join('');
+    const r = J.reunioes.find(x => x.n === sel) || J.reunioes[0];
+    const lista = a => '<ul>' + a.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>';
+    const det = `<div class="ck-det">
+      <div><h4>Reunião ${r.n} · ${esc(r.titulo)}</h4>${r.perguntas.length ? `<div style="margin-bottom:6px">Perguntas do roteiro: ${r.perguntas_estado.map(p => `<b title="${esc(p.estado)}">${p.n}${p.estado === 'validada' ? '✅' : p.estado === 'rascunho' ? '✏️' : '⚪'}</b>`).join(' ')}</div>` : ''}<h4>Traga para a mesa</h4>${lista(r.entradas)}</div>
+      <div><h4>Passo a passo (telas)</h4>${lista(r.telas)}<h4 style="margin-top:8px">Decisões que saem</h4>${lista(r.decisoes)}</div>
+      <div><h4>Checklist · ${r.progresso}%</h4><ul style="list-style:none;padding:0">${r.checklist.map(c => `<li class="${c.ok ? 'ok' : ''}">${c.ok ? '☑' : '☐'} ${esc(c.texto)}</li>`).join('')}</ul>
+        ${r.alertas.length ? `<div style="color:var(--gold,#f0a030);margin-top:6px">⚠ ${esc(r.alertas[0])}</div>` : ''}
+        <div class="ck-act" style="margin-top:8px"><button class="ck-btn p" onclick="CENTRAL.jornadaAbrir(${r.n})">Abrir esta reunião na Trilha ›</button>${r.n === 3 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Estúdio de Produtos e Esteira\')">Estúdio ›</button>' : ''}${r.n === 4 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Cenários 2027\')">Cenários ›</button>' : ''}${r.n === 6 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Sala do Conselho\')">Conselho ›</button>' : ''}</div></div></div>`;
+    const A = S.cen && S.cen.atual, pre = [['Valor e parcelas do Jelta', null], ['ARR atual real (Xplann, Big Data, alocações)', A ? !!A.arr : null], ['Motor de cada cliente (QuickBooks)', null], ['Placar de metas carregado', !!S.placar], ['Sócios convocados', J.reunioes[0].checklist.find(c => c.chave === 'socios')?.ok ?? null]];
+    return `<div class="ck-jor">${cards}</div>${det}<div class="ck-cap" style="margin-top:8px">${J.feitas} de ${J.total} reuniões feitas. A ordem não se inverte: cada reunião usa a decisão da anterior.</div><div class="ck-pre"><b style="color:var(--t3)">Antes da Reunião 1:</b>${pre.map(([t, ok]) => `<span>${ok === true ? '☑' : '☐'} ${esc(t)}</span>`).join('')}</div>`;
+  }
+
   function comandos() {
     const q = S.filtro.trim().toLowerCase(), norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     return GRUPOS.map(g => {
@@ -181,6 +210,7 @@
     <div class="ck-top"><div class="ck-ti"><b>🛩️ Central de Planejamento e Estratégia</b><div>Instrumentos ao vivo no alto; todas as telas de estratégia no painel de comandos, embaixo. O menu lateral continua com cada tela individual.</div></div>
       <div class="ck-hud"><div><b>${diasAno}</b><span>dias para ${ano + 1}</span></div><div><b>${hoje.toLocaleDateString('pt-BR')}</b><span>hoje</span></div><div><b>${TODAS.length}</b><span>telas ligadas</span></div></div>
       <button class="ck-btn" onclick="CENTRAL.carregar(true)" title="Atualizar os instrumentos">↻ Atualizar</button></div>
+    <div class="ck-bezel" style="margin-bottom:12px"><div class="ck-sec">🧭 Jornada do Planejamento 2027 · 6 reuniões<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.jornadaAbrir()">abrir na Trilha ›</button></div>${jornada()}</div>
     <div class="ck-bezel"><div class="ck-sec">Instrumentos<i></i></div>${inst.length ? `<div class="ck-inst">${inst.map(gauge).join('')}</div>` : `<div class="ck-vazio">${esc(S.erroPlacar || 'Carregando os instrumentos…')}</div>`}</div>
     <div class="ck-mid"><div class="ck-bezel"><div class="ck-sec">Horizonte 2027 · cenários<i></i><button class="ck-btn" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.irN('Cenários 2027')">abrir ›</button></div>${horizonte()}</div>
       <div class="ck-bezel"><div class="ck-sec">Luzes de alerta<i></i></div>${luzes()}</div></div>
@@ -190,7 +220,8 @@
 
   async function carregar(forcar) {
     if (S.carregando) return; S.carregando = true; render();
-    const [p, c] = await Promise.allSettled([api('/api/placar', { action: 'status', params: { _forcar: !!forcar } }), api('/api/s1-intel', { action: 'cenarios_obter' })]);
+    const [p, c, j] = await Promise.allSettled([api('/api/placar', { action: 'status', params: { _forcar: !!forcar } }), api('/api/s1-intel', { action: 'cenarios_obter' }), api('/api/estrategia', { action: 'jornada_obter' })]);
+    if (j.status === 'fulfilled') { S.jor = j.value.jornada; S.erroJor = null; } else S.erroJor = /403|fundador|permiss/i.test(j.reason.message) ? 'A jornada é visível só para o fundador.' : 'Jornada indisponível: ' + j.reason.message;
     if (p.status === 'fulfilled') { S.placar = p.value.placar; S.erroPlacar = null; } else S.erroPlacar = 'Placar indisponível: ' + p.reason.message;
     if (c.status === 'fulfilled') { S.cen = c.value.resultado; S.erroCen = null; } else S.erroCen = /403|CEO|admin/i.test(c.reason.message) ? 'Cenários são do CEO/administrador.' : 'Cenários indisponíveis: ' + c.reason.message;
     S.carregando = false; render();
@@ -208,6 +239,8 @@
     ir(i) { navegar(TODAS[i]); },
     irP(p) { navegar(TODAS.find(t => t.p === p && !t.aba && !t.pos) || { p }); },
     irN(nome) { navegar(TODAS.find(t => t.n === nome)); },
+    reuniao(n) { S.reuniaoAberta = n; render(); },
+    jornadaAbrir(n) { navegar({ p: 's0estrategia', aba: 'trilha', pos: () => { try { ESTT.sub('jornada'); } catch (_) {} } }); },
     buscar(v) { S.filtro = v; const c = $('ckCmd'); if (c) c.innerHTML = comandos(); }
   };
 })();
