@@ -72,3 +72,28 @@ test('limite mensal de 120 minutos: o webhook soma a duração uma vez por liga�
   await assert.rejects(() => V.ligar({ card_ids: ['c:2'] }, 'fabio'), /120 minutos por mês/); await assert.rejects(() => V.teste({ telefone: '21999998888' }), /120 minutos por mês/);
   assert.equal(chamadas.length, 1, 'nenhuma ligação nova saiu');
 });
+
+test('v3.608: sincronizar busca a ligação na Retell, guarda resumo/transcrição e registra o resultado sem webhook', async () => {
+  const { V, resultados } = montar({ cards: [card('c:7', 'B', { etapa: 'engajado', ligacao: null })] });
+  await V.ligar({ card_ids: ['c:7'], avulso: true });
+  const call = { call_id: 'call_1', call_status: 'ended', transcript: 'IARA: oi\nLead: pode ser quinta', duration_ms: 90000, call_analysis: { call_summary: 'Marcou reunião', custom_analysis_data: { resultado: 'reuniao', data_reuniao: '2026-11-26T11:00' } } };
+  V._fetch = null;
+  const { V: V2 } = (() => { const kvm = {}; return {}; })(); void V2;
+  // reaproveita o mesmo fetch fake: get-call devolve a ligação encerrada
+  const orig = globalThis.fetch;
+  const r = await (async () => { const m = montarComGet(call); await m.V.ligar({ card_ids: ['c:7'], avulso: true }); return { m, s: await m.V.sincronizar({ card_id: 'c:7' }) }; })();
+  assert.equal(r.s.ligacoes[0].resultado, 'reuniao'); assert.match(r.s.ligacoes[0].transcricao, /quinta/); assert.equal(r.m.resultados[0].data_reuniao, '2026-11-26T11:00'); void orig; void resultados;
+});
+function montarComGet(call, classificar) {
+  const kvm = {}; const resultados = [];
+  const sql = async (strs, ...v) => { const q = strs.join('?'); if (/FROM disparo_optout/i.test(q)) return []; if (/SELECT value/i.test(q)) return kvm[v[0]] !== undefined ? [{ value: kvm[v[0]] }] : []; if (/INSERT INTO kv_store/i.test(q)) { kvm[v[0]] = JSON.parse(v[1]); return []; } return []; };
+  const floresta = { carregar: async () => ({ cards: [card('c:7', 'B', { etapa: 'engajado', ligacao: null })] }), ligacaoResultado: async (a) => { resultados.push(a); return { feito: ['ok'] }; } };
+  const fetchFn = async (url, o) => url.includes('get-call') ? { ok: true, text: async () => JSON.stringify(call) } : { ok: true, text: async () => JSON.stringify({ call_id: 'call_1' }) };
+  return { V: criarVoz({ floresta, getSql: async () => sql, normTelefone: x => '55' + String(x).replace(/\D/g, ''), fetchFn, agora: seg15h, classificar }), resultados };
+}
+
+test('v3.609: sem campo "resultado" da Retell, a IA lê a transcrição e marca a reunião com a data', async () => {
+  const m = montarComGet({ call_id: 'call_1', call_status: 'ended', transcript: 'Lead: pode ser amanhã às 11', call_analysis: { call_summary: 'Combinou reunião' } }, async () => ({ resultado: 'reuniao', data_reuniao: '2026-11-26T11:00' }));
+  await m.V.ligar({ card_ids: ['c:7'], avulso: true }); const s = await m.V.sincronizar({ card_id: 'c:7' });
+  assert.equal(s.ligacoes[0].resultado, 'reuniao'); assert.equal(m.resultados[0].data_reuniao, '2026-11-26T11:00');
+});

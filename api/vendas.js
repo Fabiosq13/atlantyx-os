@@ -897,7 +897,9 @@ async function _apolloBuscar(params, acao) { // v3.441: mesma busca da tela de p
   return out;
 }
 let _iaraRet = null; const iaraRetorno = () => (_iaraRet = _iaraRet || criarIaraRetorno({ hs: _hs, getSql, claude, todoCriar: _todoCriar, floresta: floresta(), normTelefone: _normTel }));
-let _voz = null; const voz = () => (_voz = _voz || criarVoz({ floresta: floresta(), getSql, normTelefone: _normTel }));
+let _voz = null; const voz = () => (_voz = _voz || criarVoz({ floresta: floresta(), getSql, normTelefone: _normTel, classificar: async ({ transcricao, resumo, hoje }) => {   // v3.608: lê a transcrição quando a Retell não devolve o resultado
+  const t = await claude('Você classifica o resultado de uma ligação de prospecção da Atlantyx (IARA, SDR de voz). Responda SOMENTE JSON: {"resultado":"reuniao|interessado|agora_nao|sem_interesse|nao_atendeu|numero_errado|nao_ligar","data_reuniao":"YYYY-MM-DDTHH:MM ou null"}. "reuniao" só se o lead aceitou uma reunião (data pode faltar). Hoje é ' + hoje + ' (horário de Brasília): converta "amanhã às 11" etc. em data e hora absolutas. Na dúvida, "interessado".', 'Resumo: ' + resumo + '\n\nTranscrição:\n' + transcricao, 300, 25000);
+  const m = /\{[\s\S]*\}/.exec(t); return m ? JSON.parse(m[0]) : null; } }));
 let _floresta = null; const floresta = () => (_floresta = _floresta || criarFloresta({ hs: _hs, getSql, claude, todoCriar: _todoCriar, todoListar: () => _todoAcao('listar', {}), todoConcluir: (id, por) => _todoAcao('salvar', { id, concluido: true }), normTelefone: _normTel, apolloBuscar: _apolloBuscar }));
 function _normTel(v) { let p = String(v || '').replace(/\D/g, ''); if (!p) return null; if (p.startsWith('00')) p = p.slice(2); if (p.length === 10 || p.length === 11) p = '55' + p; if (!/^55\d{10,11}$/.test(p)) return /^\d{11,15}$/.test(p) && !p.startsWith('55') ? p : null; return p; }
 
@@ -1025,6 +1027,7 @@ async function handler(req, res) {
     floresta_ligacao_placar: () => floresta().ligacaoPlacar(),
     floresta_voz_config: async () => ({ ...voz().config(base), ...(await voz().status()) }),          // v3.530: IARA de voz (Retell)
     floresta_voz_ligar: () => voz().ligar(payload, req.sessao?.login),
+    floresta_voz_sincronizar: () => voz().sincronizar(payload),   // v3.608: busca o resultado/transcrição da ligação na Retell
     floresta_voz_teste: () => voz().teste(payload),
     floresta_abordagem: () => floresta().abordagemSalvar(payload),
     floresta_props_ia: () => floresta().propsIA(true),

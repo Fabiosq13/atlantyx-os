@@ -210,6 +210,17 @@
   }
   // ══ v3.463: 📞 Abordagem telefônica — caixa na ficha do card
   const RES = [['reuniao', 'Reunião marcada'], ['interessado', 'Interessado, sem data'], ['agora_nao', 'Agora não (retornar depois)'], ['sem_interesse', 'Sem interesse'], ['nao_atendeu', 'Não atendeu'], ['numero_errado', 'Número errado'], ['nao_ligar', 'Pediu para não ligar']];
+  // v3.608: 🤖 IARA de voz — resultado, resumo e transcrição das ligações do card (busca direto na Retell)
+  function vozBox(c) { if (!c.telefone) return '';
+    return `<div style="margin-top:10px;border:1px solid rgba(124,58,237,.35);background:rgba(124,58,237,.05);border-radius:10px;padding:9px 11px;"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><b style="flex:1;">🤖 Ligações da IARA de voz</b><button class="btn btn-p" style="font-size:10px;padding:2px 8px;" onclick="FLORESTA.vozResultado('${esc(c.id)}')">🔄 Buscar resultado</button></div><div id="flVozRes" style="margin-top:6px;font-size:10.5px;color:var(--t3);">Ligou pela IARA? Clique em "Buscar resultado" para trazer o resumo, a transcrição e a reunião combinada.</div></div>`; }
+  async function vozResultado(id) { const el = document.getElementById('flVozRes'); if (el) el.textContent = 'Buscando na Retell…';
+    try { const r = await api('floresta_voz_sincronizar', { card_id: id }); const L = r.ligacoes || [];
+      if (!L.length) { if (el) el.textContent = 'Nenhuma ligação da IARA de voz registrada para este card.'; return; }
+      const rot = Object.fromEntries(RES);
+      if (el) el.innerHTML = L.map(l => `<div style="border-top:1px solid var(--bd);padding:6px 0;color:var(--t1);"><div><b>${l.em ? new Date(l.em).toLocaleString('pt-BR').slice(0, 17) : ''}</b>${l.duracao_s ? ' · ' + l.duracao_s + 's' : ''}${l.fim ? ' · ' + esc(l.fim) : ''} · ${l.resultado ? '<b style="color:var(--green);">registrado: ' + esc(rot[l.resultado] || l.resultado) + '</b>' : l.erro ? '<span style="color:var(--red);">' + esc(l.erro) + '</span>' : '<span style="color:var(--amber,#b45309);">sem resultado claro — registre abaixo</span>'}${l.data_reuniao_ia ? ' · reunião: ' + esc(l.data_reuniao_ia) : ''}</div>${l.resumo ? `<div style="margin-top:3px;">${esc(l.resumo)}</div>` : ''}${l.transcricao ? `<details style="margin-top:3px;"><summary style="cursor:pointer;color:var(--t3);">Transcrição</summary><div style="white-space:pre-wrap;max-height:200px;overflow:auto;">${esc(l.transcricao)}</div></details>` : ''}${l.feito?.length ? `<div style="color:var(--t3);">${l.feito.map(esc).join(' · ')}</div>` : ''}</div>`).join('');
+      const u = L.find(l => l.resumo || l.transcricao); const n = document.getElementById('flLigNota'); if (u && n && !n.value) n.value = ('IARA de voz: ' + (u.resumo || '')).slice(0, 300);
+      if (L.some(l => l.feito?.length)) { nota('Resultado da IARA registrado no card ✅', 'success'); await carregar(true); }
+    } catch (e) { if (el) el.textContent = 'Erro: ' + e.message; } }
   function ligBox(c) {
     if (c.etapa !== 'ligacao' || !c.ligacao) return '';
     const L = c.ligacao, tel = String(c.telefone || '').replace(/[^\d+]/g, ''), rot = Object.fromEntries(RES);
@@ -259,6 +270,7 @@
         ${D.props_ia?.abordagem ? `<div style="font-size:9.5px;color:var(--t3);margin-top:8px;text-transform:uppercase;">Abordagem</div><div id="flAbTags" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${(D.props_ia.abordagem_opcoes || []).length ? D.props_ia.abordagem_opcoes.map(o => `<label class="fl-chip" style="cursor:pointer;"><input type="${D.props_ia.abordagem_unica ? 'radio' : 'checkbox'}" name="flAbR" value="${esc(o.v)}" ${String(c.abordagem || '').split(', ').includes(o.l) ? 'checked' : ''} style="margin:0 3px 0 0;vertical-align:-1px;"/>${esc(o.l)}</label>`).join('') : `<input class="fi" id="flAbTxt" value="${esc(c.abordagem || '')}" style="max-width:260px;"/>`}<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="FLORESTA.abordagem('${esc(c.id)}')">Salvar no HubSpot</button></div>` : ''}
       </div>` : ''}
       ${qualBox(c)}
+      ${vozBox(c)}
       ${ligBox(c)}
       <div style="margin-top:10px;border:1px solid var(--bd);border-radius:10px;padding:9px 11px;"><div style="display:flex;align-items:center;gap:6px;"><b style="flex:1;">💬 Conversa e histórico (HubSpot)</b><button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="FLORESTA.conversa('${esc(c.id)}')">↻</button></div><div id="flConv" style="margin-top:6px;max-height:260px;overflow:auto;color:var(--t3);">Carregando…</div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;">
@@ -559,6 +571,6 @@
     try { const r = await api('floresta_editar', d); document.getElementById('flModal')?.remove(); nota(r.resultado, 'success'); await carregar(true); ver(id); } catch (e) { b.disabled = false; b.textContent = 'Salvar no HubSpot'; nota('Não salvou: ' + e.message, 'error'); } }
   async function reler(id) { nota('Lendo o HubSpot…', 'info'); try { await carregar(true); document.getElementById('flModal')?.remove(); ver(id); nota('Card atualizado com o HubSpot', 'success'); } catch (e) { nota('Não atualizou: ' + e.message, 'error'); } }
   window.FLORESTA = { editar, editarSalvar, novo, novoBuscar, novoEscolher, novoSalvar, reler, semTelEmail, movLog, abordagemTodo, linkedinEnviar, enriquecer, rascunho, copiarMsg, conversa, iaraRetornos, ligar, desligar, ligRes, tirarIara, abordagem, lote, csvRmk, marcar, sel: id => SEL.has(id), marcarCol: (et, on) => { filtrados().filter(c => c.etapa === et).forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, marcarTodos: on => { filtrados().forEach(c => on ? SEL.add(c.id) : SEL.delete(c.id)); _redesenhar(); }, limpar: () => { SEL.clear(); _redesenhar(); }, iara, apollo,
-    vozLigar, vozTeste, vozConfig, abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
+    vozLigar, vozTeste, vozConfig, vozResultado, abrir, carregar, vista: v => { vista = v; render(); }, f: (k, v) => { filtro[k] = v; render(); if (k === 'q') { const i = document.querySelector('#flApp input.fi'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } },
     painel: p => { painel = p; render(); }, drag: id => { arrastando = id; }, soltar, avancar, chat, chatEnviar, chatLimpar, devolver, devolverSemContato, ver, congelar, ia, iaUm, decidir, wa, mail, sla, liberar, parados, qualSalvar, qualExcluir, _d: () => D };
 })();
