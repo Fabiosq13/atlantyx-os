@@ -125,11 +125,8 @@ async function handler(req, res) {
         const r = await sq`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, '1'::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = to_jsonb(COALESCE((kv_store.value)::text::int, 0) + 1), updated_at = NOW() RETURNING value`;
         if (Number(r[0]?.value) > 10) return res.status(429).json({ success: false, error: 'Muitos envios — tente mais tarde' }); } catch (_) {}
     }
-    if ((body.form_name === 'captura-publica' || !confiavel) && (String(body.website || '').trim() || (Number(body.t_preenchimento_ms) > 0 && Number(body.t_preenchimento_ms) < 3000))) {
-      console.warn('[S2] envio descartado (robô):', String(body.email || '').substring(0, 60));
-      try { await _funilConta(body.utm?.campaign, 'descartado'); } catch (_) {} // v3.326: aparece no funil — se um humano cair aqui, dá para ver
-      return res.status(200).json({ success: true, lead_id: null });
-    }
+    // v3.604: RETIRADO o anti-robô silencioso (campo-armadilha "website" e envio em menos de 3 s) por decisão do CEO — nenhum cadastro é mais descartado por isso.
+    // Fica só o limite de envios por conexão (acima), que protege o custo de IA e de WhatsApp.
     const lead = normalizeLead(body);
     // v3.603: o formulário público EXIGE e-mail válido e site (antes o lead entrava só com WhatsApp, sem e-mail para HubSpot, score e pesquisa)
     if (body.form_name === 'captura-publica') {

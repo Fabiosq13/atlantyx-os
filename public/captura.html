@@ -208,7 +208,7 @@ document.head.appendChild(o)}initApollo();</script>
         <p class="ajuda">Leva 1 minuto · o mapa chega no seu WhatsApp em até 1 dia útil.</p>
         <label for="nome">Seu nome</label><input id="nome" name="name" autocomplete="name" required>
         <label for="empresa">Empresa</label><input id="empresa" name="company" autocomplete="organization" required placeholder="Nome da empresa em que você trabalha">
-        <!-- v3.603: site da empresa — a pesquisa do mapa parte dele (nome do campo NÃO pode ser "website": esse é a armadilha anti-robô) -->
+        <!-- v3.603: site da empresa — a pesquisa do mapa parte dele -->
         <label for="site">Site da empresa</label><input id="site" name="company_site" type="text" inputmode="url" autocomplete="url" required placeholder="www.suaempresa.com.br">
         <!-- v3.394: cargo — é o critério de maior peso do score (decisor x operacional); combo com os 10 cargos mais comuns no ICP + Outro -->
         <label for="cargo">Seu cargo</label><select id="cargo" name="job_title" autocomplete="organization-title" required onchange="document.getElementById('cargoOutroBox').style.display=this.value==='Outro'?'block':'none';if(this.value==='Outro')document.getElementById('cargoOutro').focus();">
@@ -229,7 +229,6 @@ document.head.appendChild(o)}initApollo();</script>
         <!-- v3.603: e-mail corporativo — antes o formulário não pedia e-mail (o lead entrava só com WhatsApp) -->
         <label for="email">E-mail corporativo</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="voce@suaempresa.com.br">
         <label for="telefone">WhatsApp</label><input id="telefone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="(21) 99999-9999">
-        <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Deixe em branco</label><input id="website" name="hp_x7q" tabindex="-1" autocomplete="new-password" data-lpignore="true" data-form-type="other"></div>
         <button class="btn" id="btn" type="submit">Quero meu mapa grátis <span class="seta">→</span></button>
         <!-- v3.338: alternativa para quem prefere conversar (público 35–60 anos) — o pedido chega direto no WhatsApp comercial -->
         <a id="formWa" href="#" target="_blank" rel="noopener" style="display:none;margin-top:10px;text-align:center;padding:12px;border-radius:10px;border:1.5px solid #25D366;color:#128C4A;font-weight:700;font-size:14.5px;text-decoration:none;">💬 Prefiro pedir pelo WhatsApp</a>
@@ -322,7 +321,7 @@ document.head.appendChild(o)}initApollo();</script>
         body: JSON.stringify({
           name: g('nome'), company: g('empresa'), site: g('site'), email: g('email'), phone: g('telefone'), job_title: cargo,
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
-          page: location.href, form_name: 'captura-publica', oferta: 'mapa_ia', rapido: true, website: g('website'), t_preenchimento_ms: Date.now() - _t0, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
+          page: location.href, form_name: 'captura-publica', oferta: 'mapa_ia', rapido: true, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
         }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
