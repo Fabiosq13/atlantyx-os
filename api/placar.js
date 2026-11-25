@@ -34,7 +34,7 @@ export const CATALOGO = [
     formula: 'Lucro líquido ÷ faturamento acumulado no ano (QuickBooks). Sempre lida junto com a receita' },
   { id: 'margem_ebitda', nome: 'Margem EBITDA', grupo: 'Resultado e crescimento', unidade: '%', tipo: 'nivel', sentido: 'maior', fonte: 'auto', periodicidade: 'diária', dono: 'CEO', visivel_tv: false, tolerancia: 3,
     formula: 'EBITDA ÷ faturamento acumulado no ano (QuickBooks); meta de Metas da Empresa → margem EBITDA' },
-  { id: 'recorrente_pct', nome: '% da receita recorrente (ARR)', grupo: 'Resultado e crescimento', unidade: '%', tipo: 'nivel', sentido: 'maior', fonte: 'manual', periodicidade: 'mensal', dono: 'CEO', visivel_tv: true, tolerancia: 3, max_idade_dias: 45,
+  { id: 'recorrente_pct', nome: '% da receita recorrente (ARR)', grupo: 'Resultado e crescimento', unidade: '%', tipo: 'nivel', sentido: 'maior', fonte: 'financeiro', periodicidade: 'mensal', dono: 'CEO', visivel_tv: true, tolerancia: 3, max_idade_dias: 45,
     formula: 'ARR atual + contratos assinados com início futuro ÷ receita. Nunca soma pipeline em aberto. Meta de Metas da Empresa → recorrência' },
   { id: 'caixa_minimo', nome: 'Caixa contra o caixa mínimo', grupo: 'Resultado e crescimento', unidade: 'R$', tipo: 'nivel', sentido: 'maior', fonte: 'auto', periodicidade: 'diária', dono: 'CEO', visivel_tv: false, privado: true, tolerancia: null,
     formula: 'Saldo em caixa hoje contra o caixa mínimo cadastrado em Metas da Empresa (só login; nunca vai à TV)' },
@@ -55,10 +55,10 @@ const defs = async () => { const o = (await kv('placar:catalogo')) || {}; return
 
 // ── LEITURA DAS FONTES (cada falha deixa só aquele indicador cinza, com a causa) ──────────────────────────────────────────────────────
 async function lerFontes(ano, hoje) {
-  const [me, ml, rk, ks, fy, pm] = await Promise.allSettled([
+  const [me, ml, rk, ks, fy, pm, fp] = await Promise.allSettled([
     chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }), chamar('financeiro', { action: 'metas_empresa_ler', params: { ano } }),
     chamar('financeiro', { action: 'resultado_kpis', params: { ano, _max_idade: 300 } }), chamar('financeiro', { action: 'kpis_saude', params: {} }),
-    chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'ano', ref: String(ano), pipeline: 'todos' } }, 58000), chamar('pmo', { action: 'painel_mestre', payload: {} })]);
+    chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'ano', ref: String(ano), pipeline: 'todos' } }, 58000), chamar('pmo', { action: 'painel_mestre', payload: {} }), chamar('financeiro', { action: 'fin_v2', params: { tela: 'produtos' } }, 40000)]);
   const v = p => p.status === 'fulfilled' ? p.value : null, er = p => p.status === 'rejected' ? tx(p.reason?.message || p.reason, 110) : null;
   const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, MG = ME.margem || {}, cad = v(ml)?.todos_anos?.[String(ano)] || v(ml)?.metas || v(ml)?.meta_padrao || {};
   const K = v(rk)?.resultado || {}, P = K.periodo_res || {}, KS = v(ks)?.kpis || {}, FY = v(fy) || {}, R = FY.resumo || {}, PM = v(pm)?.resumo || null;
@@ -72,7 +72,8 @@ async function lerFontes(ano, hoje) {
   L.conversao_ganho = { real: nG != null && nP != null && nG + nP > 0 ? Math.round(nG / (nG + nP) * 1000) / 10 : null, idade_dias: 0, erro: er(fy), rotulo: 'estimado' };
   L.ticket_medio = { real: nG > 0 && num(gan.valor) != null ? Math.round(num(gan.valor) / nG) : null, meta: num(FY.meta_base?.ticket_medio), idade_dias: 0, erro: er(fy) };
   L.entregas_prazo = { real: PM && PM.total > 0 ? Math.round(PM.verde / PM.total * 1000) / 10 : null, idade_dias: 0, erro: er(pm) };
-  L.recorrente_pct = { meta: num(cad.recorrencia_pct) };
+  // v3.618: % recorrente (ARR ÷ receita) agora vem do motor Produtos do QuickBooks (depende de cada cliente estar no motor certo: projeto parcelado = Projetos; sustentação e alocações recorrentes = Produtos/Pessoas)
+  { const kr = (v(fp)?.fin_v2?.kpis || []).find(k => k.id === 'recorrencia'); L.recorrente_pct = { real: kr?.valor != null ? num(kr.valor) : null, meta: num(cad.recorrencia_pct), idade_dias: 0, erro: er(fp), rotulo: 'QuickBooks · motor Produtos' }; }
   return L;
 }
 

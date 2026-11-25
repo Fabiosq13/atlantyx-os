@@ -8,7 +8,7 @@ test('Gelta: suíte, ARR e resultado batem com a planilha', () => {
   const r = calcular(); const g = r.gelta;
   perto(g.suite.recPond, 6096); perto(g.suite.custoPond, 1839, 0.01); perto(g.suite.margemPond, 0.5978, 0.001);
   perto(g.cenarios[1].arr, 731520); perto(g.cenarios[1].runrate, 327959.9, 0.1); perto(g.cenarios[1].resultado1, 201249.1, 0.1); perto(g.cenarios[0].payback, 7.08, 0.01);
-  perto(g.sanidade.mensal, 23100); perto(g.sanidade.mesesParaIgualar, 8.66, 0.01);
+  perto(g.sanidade.mensal, 23100); assert.equal(g.sanidade.mesesParaIgualar, 0);   // v3.618: valor do projeto Jelta não informado (antes havia um número hipotético)
 });
 test('IARA, Maestro e frentes batem com a planilha', () => {
   const r = calcular();

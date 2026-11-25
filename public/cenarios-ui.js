@@ -52,7 +52,7 @@
     const cam = tab(['Caminho de venda', 'Receita/mês', '% do gasto com Dealer Net', 'Margem', 'Como usar (hipótese)'], g.caminhos.map(c => ({ c: [esc(c.nome), R(c.rec), P(c.pctDealerNet), P(c.margem), esc(c.uso)] })), 1);
     const sa = g.sanidade;
     return mods + '<h4>Cenários por número de grupos</h4>' + cenTab(g.cenarios, 'grupos') + '<h4>Caminhos de venda frente ao Dealer Net</h4>' + cam +
-      `<h4>Teste de sanidade com a Gelta (${sa.lojas} lojas)</h4><p style="font-size:11px;color:var(--t2);margin:2px 0">Pagaram ${R(sa.pago)} uma vez (${R(sa.porLoja)} por loja). A suíte completa para ${sa.lojas} lojas seria ${R(sa.mensal)} por mês (${R(sa.anual)} por ano): iguala o sob medida em ${N1(sa.mesesParaIgualar)} meses.</p>` + '<h4>Leitura</h4>' + lista(r.leitura.gelta);
+      `<h4>Teste de sanidade com o Jelta (${sa.lojas} lojas)</h4><p style="font-size:11px;color:var(--t2);margin:2px 0">${sa.pago > 0 ? `O projeto do Jelta soma ${R(sa.pago)}${sa.parcelas > 0 ? ' em ' + N1(sa.parcelas) + ' parcelas mensais de ' + R(sa.parcela) : ''} (${R(sa.porLoja)} por loja) — é receita de PROJETO, não recorrente. ` : 'Informe nas premissas o valor total e as parcelas do projeto Jelta (parcelado mensal) para comparar. '}A suíte completa em subscrição para ${sa.lojas} lojas seria ${R(sa.mensal)} por mês (${R(sa.anual)} por ano)${sa.pago > 0 ? ': equivale ao valor do projeto em ' + N1(sa.mesesParaIgualar) + ' meses' : ''}.</p>` + '<h4>Leitura</h4>' + lista(r.leitura.gelta);
   }
   function produto(r, k, rot, linhas) {
     return tab(['Economia de um cliente (por mês)', 'Valor'], linhas.map(l => ({ c: [l[0], l[1]] }))) + '<h4>Cenários por número de clientes</h4>' + cenTab(r[k].cenarios, 'clientes') + '<h4>Leitura</h4>' + lista(r.leitura[k]);

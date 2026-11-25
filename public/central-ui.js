@@ -144,13 +144,14 @@
   function horizonte() {
     const C = S.cen; if (!C) return `<div class="ck-vazio">${esc(S.erroCen || 'Carregando os cenários…')}</div>`;
     const m = k => (C[k]?.cenarios || [])[1] || {}, F = C.frentes || {}, B = i => (F[i] || [])[1] || {};
-    const linhas = [['Gelta · receita recorrente/ano', m('gelta').arr, '#22d3a3'], ['IARA · receita recorrente/ano', m('iara').arr, '#9c6dff'], ['Maestro · receita recorrente/ano', m('maestro').arr, '#38bdf8'], ['Funil isca → IA · recorrente/ano', B('funil').arrIA, '#f5b83d']];
+    const A = C.atual || {}, base = [['ARR ATUAL real (sustentação Xplann + Big Data + alocações)', A.arr || 0, '#e6edf3']];
+    const linhas = [['Produto p/ concessionárias (hipótese) · recorrente/ano', m('gelta').arr, '#22d3a3'], ['IARA · receita recorrente/ano', m('iara').arr, '#9c6dff'], ['Maestro (fora do plano 2027) · recorrente/ano', m('maestro').arr, '#38bdf8'], ['Funil isca → IA · recorrente/ano', B('funil').arrIA, '#f5b83d']];
     const res = [['Grandes projetos · contribuição', B('gp').contrib, '#fb7185'], ['Sustentação · contribuição', B('sust').contrib, '#2dd4bf'], ['Funil isca → IA → projeto · contribuição', B('funil').contrib, '#a3e635']];
     const mx = Math.max(1, ...linhas.map(l => l[1] || 0), ...res.map(l => Math.max(0, l[1] || 0)));
     const bar = l => `<div class="ck-bar"><span>${esc(l[0])}</span><div class="tr"><i style="width:${Math.max(2, Math.max(0, l[1] || 0) / mx * 100).toFixed(1)}%;background:${l[2]}"></i></div><b>${R(l[1])}</b></div>`;
     const cp = C.comparativo || {};
-    return linhas.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
-      `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. Maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>.</div>`;
+    return base.map(bar).join('') + (A.arr ? '' : '<div class="ck-cap">Informe os valores mensais reais em Plano Estratégico → Cenários 2027 → Premissas → "ARR atual (real)".</div>') + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (não são receita de hoje)</div>' + linhas.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
+      `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>.</div>`;
   }
 
   function luzes() {
