@@ -229,7 +229,7 @@
   }
 
   // ── 🗼 TORRE DE CONTROLE · ATLAS por chat e voz contínua (reaproveita /api/estrategia chat)
-  const T = { msgs: [], conv: null, env: false, modo: false, voz: true, rec: null, falando: false, rasc: '', aberto: false, tm: null };
+  const T = { msgs: [], conv: null, env: false, modo: false, voz: true, vel: 1.3, rec: null, falando: false, rasc: '', aberto: false, tm: null };
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const SUG = ['Por onde começo amanhã?', 'O que está em vermelho agora?', 'Me guie pela próxima reunião da jornada', 'Qual decisão está travando o plano?', 'Resuma onde estamos em 5 frases'];
   const mdT = t => (window.ATX_IA && ATX_IA.md) ? ATX_IA.md(t) : esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^[-•] (.+)$/gm, '<div style="padding-left:12px">• $1</div>').replace(/\n/g, '<br>');
@@ -240,28 +240,39 @@
     if (S.cen) o.cenarios = { arr_atual_real: (S.cen.atual || {}).arr || 0, atual: S.cen.atual, comparativo: S.cen.comparativo, frentes_b: Object.fromEntries(Object.entries(S.cen.frentes || {}).map(([k, v]) => [k, (v || [])[1]])) };
     return JSON.stringify(o).substring(0, 8500);
   }
-  function torreCalar() { try { speechSynthesis.cancel(); } catch (_) {} T.falando = false; }
+  function torreCalar() { try { speechSynthesis.cancel(); } catch (_) {} clearInterval(T.poll); clearTimeout(T.ini); T.falando = false; }
+  // voz feminina pt-BR: prefere as "Natural/Online" (Edge) e as do Google; evita nomes masculinos
+  function torreVoz() {
+    const vs = (window.speechSynthesis ? speechSynthesis.getVoices() : []).filter(v => /pt[-_]BR/i.test(v.lang)); if (!vs.length) return null;
+    const fem = /francisca|maria|luciana|camila|vit[oó]ria|fernanda|raquel|helena|google portugu[eê]s|feminin|female|thalita/i, masc = /daniel|antonio|ant[oô]nio|felipe|ricardo|jorge|masculin|male(?!.*fe)/i;
+    const pontos = v => (/natural|online/i.test(v.name) ? 4 : 0) + (/google/i.test(v.name) ? 3 : 0) + (fem.test(v.name) ? 3 : 0) - (masc.test(v.name) ? 10 : 0);
+    return vs.slice().sort((a, b) => pontos(b) - pontos(a))[0];
+  }
+  if (window.speechSynthesis) { try { speechSynthesis.onvoiceschanged = () => {}; speechSynthesis.getVoices(); } catch (_) {} }
   function torreFalar(texto, fim) {
     if (!window.speechSynthesis || !T.voz) { fim && fim(); return; }
-    const limpo = String(texto).replace(/[*#_`>|]/g, '').replace(/✅.*$/s, '').replace(/\n+/g, '. ').substring(0, 2200);
+    torreCalar();
+    const limpo = String(texto).replace(/[*#_`>|]/g, '').replace(/✅.*$/s, '').replace(/\n+/g, '. ').substring(0, 2400);
     const partes = limpo.match(/[^.!?]+[.!?]*/g) || [limpo]; const blocos = []; let cur = '';
-    partes.forEach(x => { if ((cur + x).length > 180) { if (cur) blocos.push(cur); cur = x; } else cur += x; }); if (cur.trim()) blocos.push(cur);
-    const vz = speechSynthesis.getVoices().filter(v => /pt[-_]BR/i.test(v.lang))[0]; T.falando = true; torreBotoes();
-    blocos.forEach((b, i) => { const u = new SpeechSynthesisUtterance(b); u.lang = 'pt-BR'; u.rate = 1.06; if (vz) u.voice = vz; if (i === blocos.length - 1) { u.onend = u.onerror = () => { T.falando = false; torreBotoes(); fim && fim(); }; } speechSynthesis.speak(u); });
+    partes.forEach(x => { if ((cur + x).length > 170) { if (cur) blocos.push(cur); cur = x; } else cur += x; }); if (cur.trim()) blocos.push(cur);
+    const vz = torreVoz(); T.falando = true; torreBotoes(); let acabou = false;
+    const terminar = () => { if (acabou) return; acabou = true; clearInterval(T.poll); clearTimeout(T.ini); if (!T.falando) return; T.falando = false; torreBotoes(); fim && fim(); };
+    blocos.forEach(b => { const u = new SpeechSynthesisUtterance(b); u.lang = 'pt-BR'; u.rate = T.vel; u.pitch = 1.08; if (vz) u.voice = vz; speechSynthesis.speak(u); });
+    T.ini = setTimeout(() => { T.poll = setInterval(() => { if (!speechSynthesis.speaking && !speechSynthesis.pending) terminar(); }, 350); }, 900); // não depende de onend (que falha no Chrome)
   }
+  function torreParar() { const estava = T.falando; torreCalar(); torreBotoes(); if (estava && T.modo && $('ckTorre')) setTimeout(torreOuvir, 250); }
   function torreOuvir() {
-    if (!SR) { try { toast('Este navegador não reconhece voz — use o Chrome ou o Edge', 'error'); } catch (_) {} T.modo = false; return; }
+    if (!SR) { try { toast('Este navegador não reconhece voz — use o Chrome ou o Edge', 'error'); } catch (_) {} T.modo = false; torreBotoes(); return; }
     if (T.rec || T.env) return; torreCalar();
-    const r = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; T.rec = r; let final = '';
-    const base = T.rasc ? T.rasc + ' ' : '';
-    const el = () => $('ckTxt');
+    const r = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; T.rec = r; let final = '', ouviu = false;
+    const base = T.rasc ? T.rasc + ' ' : ''; const el = () => $('ckTxt');
     r.onresult = e => { let parc = ''; for (let i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) final += e.results[i][0].transcript + ' '; else parc += e.results[i][0].transcript; }
-      T.rasc = (base + final + parc).trim(); if (el()) el().value = T.rasc; clearTimeout(T.tm);
-      if (T.modo && (final.trim())) T.tm = setTimeout(() => { try { r.stop(); } catch (_) {} }, 1600); }; // pausa de 1,6 s = terminou de falar
-    r.onerror = e => { if (e.error === 'not-allowed') { T.modo = false; try { toast('Libere o microfone no cadeado da barra de endereço', 'error'); } catch (_) {} } };
+      T.rasc = (base + final + parc).trim(); ouviu = !!T.rasc; if (el()) el().value = T.rasc; clearTimeout(T.tm);
+      if (T.modo && ouviu) T.tm = setTimeout(() => { try { r.stop(); } catch (_) {} }, 1700); }; // 1,7 s de silêncio = terminou de falar (conta também o texto provisório)
+    r.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { T.modo = false; try { toast('Libere o microfone no cadeado da barra de endereço', 'error'); } catch (_) {} } };
     r.onend = () => { T.rec = null; clearTimeout(T.tm); torreBotoes(); const txt = (T.rasc || '').trim();
-      if (txt && (T.modo || final.trim())) torreEnviar(); else if (T.modo && $('ckTorre') && !T.env && !T.falando) setTimeout(torreOuvir, 300); };
-    try { r.start(); } catch (_) { T.rec = null; } torreBotoes();
+      if (txt) { if (T.modo || ouviu) torreEnviar(); } else if (T.modo && $('ckTorre') && !T.env && !T.falando) setTimeout(torreOuvir, 250); };
+    try { r.start(); } catch (_) { T.rec = null; setTimeout(() => { if (T.modo) torreOuvir(); }, 500); } torreBotoes();
   }
   async function torreEnviar(texto) {
     const m = String(texto ?? T.rasc ?? '').trim(); if (!m || T.env) return; const veioDaVoz = T.modo || !!T.rec;
@@ -274,6 +285,7 @@
     } catch (e) { T.msgs.pop(); T.msgs.push({ r: 'a', t: '⚠ ' + e.message }); T.env = false; T.modo = false; torreRender(); }
   }
   function torreBotoes() {
+    const pr = $('ckBtParar'); if (pr) pr.style.display = (T.falando || T.env) ? '' : 'none'; const ve = $('ckBtVel'); if (ve) ve.textContent = '⚡ ' + String(T.vel).replace('.', ',') + '×';
     const m = $('ckBtModo'), mic = $('ckBtMic'), vz = $('ckBtVoz'), st = $('ckStatus');
     if (m) { m.className = 'ck-btn' + (T.modo ? ' p' : ''); m.textContent = T.modo ? '⏹ Encerrar conversa contínua' : '🎙 Conversa contínua'; }
     if (mic) { mic.textContent = T.rec ? '⏺ ouvindo…' : '🎤 Falar'; mic.style.background = T.rec ? 'var(--red,#e5594f)' : ''; mic.style.color = T.rec ? '#fff' : ''; }
@@ -289,7 +301,7 @@
     const box = $('ckTorre'); if (!box) return; const foco = document.activeElement && document.activeElement.id === 'ckTxt';
     const msgs = T.msgs.length ? T.msgs.map(m => m.r === 'u' ? `<div class="ck-mu"><div>${esc(m.t)}</div></div>` : `<div class="ck-ma"><span>🗼</span><div>${m.pensando ? '<span style="color:var(--t3)">pensando…</span>' : mdT(m.t)}</div></div>`).join('')
       : `<div class="ck-vazio">Chame a torre para guiar, tirar dúvidas ou decidir. Ela enxerga o placar, os cenários, a jornada e os números da empresa.<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${SUG.map((q, i) => `<button class="ck-btn" onclick="CENTRAL.sug(${i})">${esc(q)}</button>`).join('')}</div></div>`;
-    box.innerHTML = `<div class="ck-tbar"><b style="font-size:12px">🗼 Torre de controle · ATLAS</b><button class="ck-btn" id="ckBtModo" onclick="CENTRAL.modo()">🎙 Conversa contínua</button><button class="ck-btn" id="ckBtVoz" onclick="CENTRAL.vozToggle()">🔊 Voz ligada</button><button class="ck-btn" onclick="CENTRAL.torreNova()">＋ Nova</button><span id="ckStatus" class="ck-cap" style="margin:0 0 0 4px;flex:1"></span><button class="ck-btn" onclick="CENTRAL.torreAbrir()">${T.aberto ? '▾ recolher conversa' : '▴ abrir conversa'}</button></div>
+    box.innerHTML = `<div class="ck-tbar"><b style="font-size:12px">🗼 Torre de controle · ATLAS</b><button class="ck-btn" id="ckBtModo" onclick="CENTRAL.modo()">🎙 Conversa contínua</button><button class="ck-btn" id="ckBtVoz" onclick="CENTRAL.vozToggle()">🔊 Voz ligada</button><button class="ck-btn" id="ckBtVel" onclick="CENTRAL.vel()" title="Velocidade da fala">⚡ 1,3×</button><button class="ck-btn" onclick="CENTRAL.torreNova()">＋ Nova</button><button class="ck-btn p" id="ckBtParar" style="display:none;background:var(--red,#e5594f);border-color:var(--red,#e5594f)" onclick="CENTRAL.parar()">⏹ Parar</button><span id="ckStatus" class="ck-cap" style="margin:0 0 0 4px;flex:1"></span><button class="ck-btn" onclick="CENTRAL.torreAbrir()">${T.aberto ? '▾ recolher conversa' : '▴ abrir conversa'}</button></div>
     ${T.aberto ? `<div id="ckMsgs" class="ck-msgs">${msgs}</div>` : ''}
     <div style="display:flex;gap:6px;margin-top:6px;align-items:flex-end"><textarea id="ckTxt" class="ck-find" style="max-width:none;min-height:40px;height:40px;resize:none" placeholder="Escreva ou fale com a torre… (Enter envia)" oninput="CENTRAL.rasc(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();CENTRAL.enviar()}">${esc(T.rasc)}</textarea><button class="ck-btn" id="ckBtMic" onclick="CENTRAL.mic()">🎤 Falar</button><button class="ck-btn p" onclick="CENTRAL.enviar()" ${T.env ? 'disabled' : ''}>Enviar ➤</button></div>`;
     const mm = $('ckMsgs'); if (mm) mm.scrollTop = mm.scrollHeight; torreBotoes(); torreEnc(); if (foco && $('ckTxt')) { const t = $('ckTxt'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
@@ -346,10 +358,12 @@
     detalhe, fechar,
     torreAbrir() { T.aberto = !T.aberto; torreRender(); },
     torreNova() { torreCalar(); T.modo = false; T.conv = null; T.msgs = []; T.rasc = ''; torreRender(); },
-    modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } } torreBotoes(); },
+    modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; T.rasc = ''; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } } torreBotoes(); },
     mic() { if (T.rec) { try { T.rec.stop(); } catch (_) {} } else torreOuvir(); },
     vozToggle() { T.voz = !T.voz; if (!T.voz) torreCalar(); torreBotoes(); },
     interromper() { torreCalar(); torreOuvir(); },
+    parar() { torreParar(); },
+    vel() { T.vel = T.vel >= 1.5 ? 1.1 : Math.round((T.vel + 0.2) * 10) / 10; torreBotoes(); },
     rasc(v) { T.rasc = v; },
     enviar() { torreEnviar(); },
     sug(i) { torreEnviar(SUG[i]); },
