@@ -130,10 +130,10 @@
   }
 
   // ── instrumentos
-  function gauge({ pct, cor, centro, rotulo, sub, p }) {
+  function gauge({ pct, cor, centro, rotulo, sub, p, ind, formula }) {
     const f = Math.max(0, Math.min(1, pct == null ? 0 : pct)), L = Math.PI * 46, a = f * Math.PI, nx = 60 - 38 * Math.cos(a), ny = 64 - 38 * Math.sin(a);
     let ticks = ''; for (let k = 0; k <= 10; k++) { const t = k / 10 * Math.PI, x1 = 60 - 53 * Math.cos(t), y1 = 64 - 53 * Math.sin(t), x2 = 60 - 57 * Math.cos(t), y2 = 64 - 57 * Math.sin(t); ticks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--t3)" stroke-width="${k % 5 ? .8 : 1.6}" opacity=".6"/>`; }
-    return `<div class="ck-gw" onclick="CENTRAL.irP('${p}')" title="${esc(rotulo)}"><svg class="ck-g" viewBox="0 0 120 80"><path d="M14 64 A46 46 0 0 1 106 64" fill="none" stroke="var(--bg3)" stroke-width="9" stroke-linecap="round"/><path d="M14 64 A46 46 0 0 1 106 64" fill="none" stroke="${cor}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(f * L).toFixed(1)} ${L.toFixed(1)}"/>${ticks}<line x1="60" y1="64" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="var(--t1)" stroke-width="2.4" stroke-linecap="round"/><circle cx="60" cy="64" r="4" fill="var(--t1)"/><text x="60" y="79" text-anchor="middle" class="ck-gv">${esc(centro)}</text></svg><div class="ck-gl">${esc(rotulo)}</div><div class="ck-gs">${esc(sub || '')}</div></div>`;
+    return `<div class="ck-gw" onclick="${ind ? `CENTRAL.kpid('${ind}')` : `CENTRAL.irP('${p}')`}" title="${ind ? 'Clique para ver o que compõe este número' : esc(rotulo)}"><svg class="ck-g" viewBox="0 0 120 80"><path d="M14 64 A46 46 0 0 1 106 64" fill="none" stroke="var(--bg3)" stroke-width="9" stroke-linecap="round"/><path d="M14 64 A46 46 0 0 1 106 64" fill="none" stroke="${cor}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(f * L).toFixed(1)} ${L.toFixed(1)}"/>${ticks}<line x1="60" y1="64" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="var(--t1)" stroke-width="2.4" stroke-linecap="round"/><circle cx="60" cy="64" r="4" fill="var(--t1)"/><text x="60" y="79" text-anchor="middle" class="ck-gv">${esc(centro)}</text></svg><div class="ck-gl">${esc(rotulo)}</div><div class="ck-gs">${esc(sub || '')}</div></div>`;
   }
   // indicador do placar → ponteiro (quanto da meta já está no lugar)
   function pctInd(x) {
@@ -149,7 +149,7 @@
       const r = P.resumo || {}, tot = r.total || 0, ver = r.verde || 0;
       out.push({ pct: tot ? ver / tot : 0, cor: r.vermelho ? COR.vermelho : r.amarelo ? COR.amarelo : COR.verde, centro: ver + '/' + tot, rotulo: 'Placar de Metas', sub: (r.vermelho || 0) + ' vermelho · ' + (r.amarelo || 0) + ' atenção', p: 's1placar' });
       const inds = P.indicadores || []; const dest = DESTAQUES.map(id => inds.find(x => x.id === id)).filter(Boolean);
-      (dest.length ? dest : inds.slice(0, 4)).slice(0, 4).forEach(x => { const p = pctInd(x); out.push({ pct: p == null ? 0 : Math.min(1, p), cor: COR[x.cor] || COR.cinza, centro: fv(x.projecao != null && x.tipo === 'acumulado' ? x.projecao : x.real, x.unidade), rotulo: x.nome, sub: x.meta != null ? 'meta ' + fv(x.meta, x.unidade) : (x.texto || 'sem meta'), p: 's1placar' }); });
+      (dest.length ? dest : inds.slice(0, 4)).slice(0, 4).forEach(x => { const p = pctInd(x); out.push({ pct: p == null ? 0 : Math.min(1, p), cor: COR[x.cor] || COR.cinza, centro: fv(x.projecao != null && x.tipo === 'acumulado' ? x.projecao : x.real, x.unidade), rotulo: x.nome, sub: x.meta != null ? 'meta ' + fv(x.meta, x.unidade) : (x.texto || 'sem meta'), p: 's1placar', ind: x.id, formula: x.formula }); });
     }
     const dec = parseInt(($('s1DecCnt') || {}).textContent, 10); const ide = parseInt(($('s1PipeCnt') || {}).textContent, 10);
     if (!isNaN(dec)) out.push({ pct: dec ? Math.min(1, dec / 10) : 0, cor: dec ? COR.amarelo : COR.verde, centro: String(dec), rotulo: 'Aprovações pendentes', sub: dec ? 'esperando o fundador' : 'nada pendente', p: 's1fundador' });
@@ -389,6 +389,7 @@
     irP(p) { navegar(TODAS.find(t => t.p === p && !t.aba && !t.pos) || { p }); },
     irN(nome) { navegar(TODAS.find(t => t.n === nome)); },
     detalhe, fechar, arrEditar, arrSalvar,
+    kpid(id) { const i = ((S.placar || {}).indicadores || []).find(x => x.id === id) || {}; const n = i.nome, f = i.formula; if (window.KPID) return KPID.abrir(id, n, f); const sc = document.createElement('script'); sc.src = '/kpi-detalhe-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); sc.onload = () => KPID.abrir(id, n, f); document.head.appendChild(sc); },
     torreAbrir() { T.aberto = !T.aberto; torreRender(); },
     torreNova() { torreCalar(); T.modo = false; T.conv = null; T.msgs = []; T.rasc = ''; torreRender(); },
     modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; T.rasc = ''; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } } torreBotoes(); },

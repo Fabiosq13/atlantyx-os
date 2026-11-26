@@ -36,7 +36,7 @@
       + (i.aprendizado && (i.aprendizado.premissa || i.aprendizado.revisao) ? '<div class="pl-nota">' + (i.aprendizado.premissa ? 'Premissa: ' + esc(i.aprendizado.premissa) + '. ' : '') + (i.aprendizado.revisao ? 'Revisão em ' + esc(i.aprendizado.revisao.split('-').reverse().join('/')) + (i.aprendizado.revisao_vencida ? ' (vencida)' : '') : '') + '</div>' : '')
       + (i.exige_acao ? '<div class="pl-pede">⚠ ' + esc(i.exige_acao) + ' — registre uma ação. ' + esc(S.P.pergunta) + '</div>' : '')
       + acoesI.map(a => '<div class="pl-ac">▸ ' + esc(a.o_que_muda) + ' · <b>' + esc(a.dono) + '</b> · até ' + esc(String(a.prazo).split('-').reverse().join('/')) + ' <button onclick="PLACAR.revisar(\'' + a.id + '\')">Revisar</button></div>').join('')
-      + '<div class="pl-bt"><button onclick="PLACAR.abre(\'' + i.id + '\')">' + (ab ? 'Fechar' : 'Detalhe e ações') + '</button></div>'
+      + '<div class="pl-bt"><button onclick="PLACAR.kpid(\'' + i.id + '\')">🔎 O que compõe este número</button> <button onclick="PLACAR.abre(\'' + i.id + '\')">' + (ab ? 'Fechar' : 'Detalhe e ações') + '</button></div>'
       + (ab ? detalhe(i) : '') + '</div>';
   }
   function detalhe(i) {
@@ -62,7 +62,9 @@
   }
   const ler = id => ($(id) || {}).value;
   async function fazer(fn, ok) { try { await fn(); if (ok) alert(ok); await abrir(true); } catch (e) { alert(e.message); } }
+  function kpid(id,n,f){if(window.KPID)return KPID.abrir(id,n,f);const sc=document.createElement('script');sc.src='/kpi-detalhe-ui.js?v='+encodeURIComponent(window.__ATX_BUILD_ID__||Date.now());sc.onload=()=>KPID.abrir(id,n,f);document.head.appendChild(sc);}
   window.PLACAR = {
+    kpid: id => { const i = (S.P?.indicadores || []).find(x => x.id === id) || {}; kpid(id, i.nome, i.formula); },
     abrir, recarregar: () => abrir(true), ano: d => { S.ano += d; abrir(); }, abre: id => { S.aberto = S.aberto === id ? null : id; pinta(); },
     manual: id => fazer(() => api('manual_registrar', { id, valor: ler('plv-' + id) })),
     salvaMeta: id => fazer(() => { const i = S.P.indicadores.find(x => x.id === id), p = { id, motivo: ler('plx-' + id), tolerancia: ler('plt-' + id), piso: ler('plpi-' + id), desafio: ler('plde-' + id), premissa: ler('plpr-' + id), evidencia: ler('plev-' + id), alavanca: ler('plal-' + id), frequencia: ler('plfr-' + id), revisao: ler('plre-' + id) };
