@@ -8772,7 +8772,7 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
       if (t != null && t >= P.tIni && t <= P.tFim) { L.real.qtd++; L.real.valor += v; L.ids.push(d.id); regDet(d, atual); }
     }
   }
-  const gl = linhas.find(L => L.ganho); if (gl) { gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
+  const gl = linhas.find(L => L.ganho); if (gl) { gl.real = { qtd: ganhosPer.qtd, valor: ganhosPer.valor }; gl.ids = ganhosPer.ids.slice(); /* v3.627: 'Fechado ganho' do período = os ganhos pela data de fechamento — mesma base do valor do cartão (antes quantidade e valor vinham de bases diferentes) */ gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
   // v3.364: CAMADA DE LEADS = CONTATOS DO HUBSPOT (topo do funil, antes dos negócios)
   //   real no período = contatos CRIADOS no HubSpot no período · acumulado (agora) = contatos ainda em fase de lead
   //   (lifecycle lead, MQL ou SQL — de qualquer data). Contagem pelo "total" da busca (sem baixar a lista). Falha → a camada não entra.
