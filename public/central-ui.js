@@ -167,7 +167,7 @@
     const mx = Math.max(1, ...linhas.map(l => l[1] || 0), ...res.map(l => Math.max(0, l[1] || 0)));
     const bar = l => `<div class="ck-bar" style="cursor:pointer" title="Clique para ver o que compõe este número" onclick="CENTRAL.detalhe('${l[3] || ''}')"><span>${esc(l[0])}</span><div class="tr"><i style="width:${Math.max(2, Math.max(0, l[1] || 0) / mx * 100).toFixed(1)}%;background:${l[2]}"></i></div><b>${R(l[1])}</b></div>`;
     const cp = C.comparativo || {};
-    return base.map(bar).join('') + (A.arr ? '' : '<div class="ck-cap">Informe os valores mensais reais em Plano Estratégico → Cenários 2027 → Premissas → "ARR atual (real)".</div>') + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (não são receita de hoje)</div>' + linhas.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
+    return base.map(bar).join('') + '<div class="ck-act" style="margin:6px 0 2px"><button class="ck-btn p" onclick="CENTRAL.arrEditar()">' + (A.arr ? '✎ Editar o ARR atual' : '✎ Informar o ARR atual') + '</button>' + (A.arr ? '' : '<span class="ck-cap" style="align-self:center">Xplann, Big Data e alocações, em R$ por mês</span>') + '</div>' + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (não são receita de hoje)</div>' + linhas.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
       `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Entre Gelta e IARA — maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>. O Maestro está fora do plano 2027 e não entra nestas contas.</div>`;
   }
 
@@ -193,10 +193,35 @@
     m.onclick = e => { if (e.target === m) fechar(); };
     m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:14px;max-width:560px;width:100%;max-height:86vh;overflow:auto;padding:16px 18px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><b style="font-size:14px">${esc(d.t)}</b><div class="ck-cap" style="margin-top:3px">Conta: ${esc(d.f)}</div></div><button class="ck-btn" onclick="CENTRAL.fechar()">✕</button></div>
       <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px">${d.l.map(([k, v]) => `<tr style="border-top:1px solid var(--bd)"><td style="padding:5px 4px">${esc(k)}</td><td style="padding:5px 4px;text-align:right;font-variant-numeric:tabular-nums"><b>${esc(v)}</b></td></tr>`).join('')}</table>
-      <div class="ck-cap" style="margin-top:10px">${esc(d.n)}</div><div class="ck-act"><button class="ck-btn p" onclick="CENTRAL.fechar();${d.ir.startsWith('p:') ? `CENTRAL.irP('${d.ir.slice(2)}')` : `CENTRAL.irN('${d.ir}')`}">Abrir a tela de origem ›</button></div></div>`;
+      <div class="ck-cap" style="margin-top:10px">${esc(d.n)}</div><div class="ck-act">${id === 'arr' ? '<button class="ck-btn p" onclick="CENTRAL.arrEditar()">✎ Editar valores</button>' : ''}<button class="ck-btn p" onclick="CENTRAL.fechar();${d.ir.startsWith('p:') ? `CENTRAL.irP('${d.ir.slice(2)}')` : `CENTRAL.irN('${d.ir}')`}">Abrir a tela de origem ›</button></div></div>`;
     document.body.appendChild(m);
   }
   function fechar() { const m = $('ckModal'); if (m) m.remove(); }
+  // ARR atual digitado aqui mesmo (os 3 valores mensais); preserva as demais premissas já alteradas em Cenários 2027
+  function arrEditar() {
+    const A = (S.cen && S.cen.atual) || {}; fechar();
+    const m = document.createElement('div'); m.id = 'ckModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+    m.onclick = e => { if (e.target === m) fechar(); };
+    const campo = (id, rot, v) => `<label style="display:block;margin-top:10px;font-size:11.5px">${esc(rot)}<input id="${id}" type="number" min="0" step="100" inputmode="decimal" value="${v ? v : ''}" placeholder="0" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);color:var(--t1);font-size:13px"></label>`;
+    m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:14px;max-width:460px;width:100%;padding:16px 18px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><b style="font-size:14px">ARR atual (valores reais por mês)</b><div class="ck-cap" style="margin-top:3px">ARR = (Xplann + Big Data + alocações) × 12. Não inclua o Jelta (projeto parcelado).</div></div><button class="ck-btn" onclick="CENTRAL.fechar()">✕</button></div>`
+      + campo('ckArrX', 'Sustentação Xplann (R$/mês)', A.xplann) + campo('ckArrB', 'Sustentação Big Data (R$/mês)', A.bigdata) + campo('ckArrA', 'Alocações recorrentes (R$/mês)', A.alocacoes)
+      + `<div id="ckArrTot" class="ck-cap" style="margin-top:10px"></div><div class="ck-act"><button class="ck-btn p" id="ckArrOk" onclick="CENTRAL.arrSalvar()">Salvar</button><button class="ck-btn" onclick="CENTRAL.fechar()">Cancelar</button></div></div>`;
+    document.body.appendChild(m);
+    const tot = () => { const v = id => Number($(id).value) || 0, mes = v('ckArrX') + v('ckArrB') + v('ckArrA'); $('ckArrTot').textContent = 'Total por mês ' + R(mes) + ' · ARR (× 12) ' + R(mes * 12); };
+    ['ckArrX', 'ckArrB', 'ckArrA'].forEach(id => $(id).addEventListener('input', tot)); tot();
+  }
+  async function arrSalvar() {
+    const btn = $('ckArrOk'); if (btn) btn.disabled = true;
+    try {
+      const raw = S.cenRaw || { valores: {}, alterados: [] }, v = {};
+      (raw.alterados || []).forEach(k => { if (raw.valores[k] != null) v[k] = raw.valores[k]; });
+      const n = id => Math.max(0, Number($(id).value) || 0);
+      v['atual.xplann'] = n('ckArrX'); v['atual.bigdata'] = n('ckArrB'); v['atual.alocacoes'] = n('ckArrA');
+      const d = await api('/api/s1-intel', { action: 'cenarios_salvar', valores: v });
+      S.cen = d.resultado; S.cenRaw = { valores: d.valores || {}, alterados: d.alterados || [] };
+      fechar(); render(); try { toast('ARR atual salvo', 'success'); } catch (_) {}
+    } catch (e) { if (btn) btn.disabled = false; try { toast(e.message, 'error'); } catch (_) {} }
+  }
 
   function luzes() {
     const P = S.placar; if (!P) return `<div class="ck-vazio">${esc(S.erroPlacar || 'Carregando o placar…')}</div>`;
@@ -339,7 +364,7 @@
     const [p, c, j] = await Promise.allSettled([api('/api/placar', { action: 'status', params: { _forcar: !!forcar } }), api('/api/s1-intel', { action: 'cenarios_obter' }), api('/api/estrategia', { action: 'jornada_obter' })]);
     if (j.status === 'fulfilled') { S.jor = j.value.jornada; S.erroJor = null; } else S.erroJor = /403|fundador|permiss/i.test(j.reason.message) ? 'A jornada é visível só para o fundador.' : 'Jornada indisponível: ' + j.reason.message;
     if (p.status === 'fulfilled') { S.placar = p.value.placar; S.erroPlacar = null; } else S.erroPlacar = 'Placar indisponível: ' + p.reason.message;
-    if (c.status === 'fulfilled') { S.cen = c.value.resultado; S.erroCen = null; } else S.erroCen = /403|CEO|admin/i.test(c.reason.message) ? 'Cenários são do CEO/administrador.' : 'Cenários indisponíveis: ' + c.reason.message;
+    if (c.status === 'fulfilled') { S.cen = c.value.resultado; S.cenRaw = { valores: c.value.valores || {}, alterados: c.value.alterados || [] }; S.erroCen = null; } else S.erroCen = /403|CEO|admin/i.test(c.reason.message) ? 'Cenários são do CEO/administrador.' : 'Cenários indisponíveis: ' + c.reason.message;
     S.carregando = false; render();
   }
   function navegar(t) {
@@ -355,7 +380,7 @@
     ir(i) { navegar(TODAS[i]); },
     irP(p) { navegar(TODAS.find(t => t.p === p && !t.aba && !t.pos) || { p }); },
     irN(nome) { navegar(TODAS.find(t => t.n === nome)); },
-    detalhe, fechar,
+    detalhe, fechar, arrEditar, arrSalvar,
     torreAbrir() { T.aberto = !T.aberto; torreRender(); },
     torreNova() { torreCalar(); T.modo = false; T.conv = null; T.msgs = []; T.rasc = ''; torreRender(); },
     modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; T.rasc = ''; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } } torreBotoes(); },
