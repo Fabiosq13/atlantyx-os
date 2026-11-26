@@ -619,6 +619,9 @@
   // v3.382 · redação por partes: cada parte é uma chamada própria (2 ao mesmo tempo, com repetição) — nenhum capítulo fica em branco
   const RED_PARTES = [['escopo'], ['carta', 'apresentacao'], ['contexto', 'objetivos', 'diferenciais'], ['entregaveis', 'equipe'], ['resumo_escopo', 'investimento', 'rate_card', 'bonus'], ['premissas_exec', 'premissas_com'], ['garantias'], ['suporte', 'pagamento'], ['validade', 'aceite']];
   const RED_ORDEM = RED_PARTES.flat();
+  // v3.634 · ACORDO DE POC: capítulos próprios (partes pedidas à IA), reusando investimento e aceite da proposta
+  const ACORDO_PARTES = [['acordo_objeto', 'acordo_criterios'], ['acordo_escopo', 'acordo_dados'], ['acordo_governanca', 'acordo_entregas'], ['acordo_papeis'], ['acordo_legal', 'acordo_vigencia'], ['investimento', 'aceite']];
+  const ACORDO_NOVOS = ACORDO_PARTES.flat().filter(k => /^acordo_/.test(k)), RED_TODAS = [...RED_ORDEM, ...ACORDO_NOVOS];
   const _vazios = () => { const S = PROP.documento?.secoes || []; return RED_ORDEM.filter(k => String(S.find(x => x.chave === k)?.conteudo || '').trim().length < 60); }; // v3.473: capítulo cortado (só título/meia linha) conta como em branco
   let _redRodando = false;
   // v3.471: barra de andamento (pct 0–100; null = sem barra)
@@ -640,7 +643,7 @@
     try { const t = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ia_teste' }) }).then(r => r.json());
       if (t && t.success && t.ok === false) { _redMsg(`⛔ A redação não começou: ${esc(t.msg || 'a IA não está respondendo')}${t.motivo === 'desligada' && typeof window.iaChave === 'function' ? ' <a href="javascript:void(0)" onclick="iaChave()">Ligar IA</a>' : ''}`, 'var(--red)'); nota('IA indisponível: ' + (t.msg || ''), 'error'); return ['IA indisponível: ' + (t.msg || '')]; } } catch (_) {}
     const btn = { set innerHTML(h) { _redMsg(h); if (btn0 && document.body.contains(btn0)) btn0.innerHTML = h; }, get innerHTML() { return ''; } };
-    const partes = RED_PARTES.map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = []; const t0 = Date.now(), emCurso = new Set();
+    const partes = (chavesAlvo.some(k => /^acordo_/.test(k)) ? ACORDO_PARTES : RED_PARTES).map(p => p.filter(k => chavesAlvo.includes(k))).filter(p => p.length); let feitas = 0; const erros = []; const t0 = Date.now(), emCurso = new Set();
     const prog = () => { _redPct = Math.round(feitas / partes.length * 100); const min = Math.floor((Date.now() - t0) / 60000), sg = Math.floor((Date.now() - t0) / 1000) % 60;
       btn.innerHTML = `✍ Redigindo com a IA — <b>${feitas} de ${partes.length} partes prontas (${_redPct}%)</b> · ${min}min${String(sg).padStart(2, '0')}s${emCurso.size ? ' · agora: ' + esc([...emCurso].join(' + ')) : ''}`; }; prog();
     const relogio = setInterval(prog, 1000);
@@ -666,28 +669,53 @@
         catch (e) { const lim = /\[(429|529)\]|rate|overloaded|limit/i.test(e.message); if (t === 2) { erros.push(p.join(', ') + ': ' + e.message); break; }
           await espera(lim ? 45 : 5, lim ? 'Limite de uso da IA atingido, aguardando para continuar' : 'Tentando de novo'); prog(); } } };
     // v3.471: 3 partes ao mesmo tempo (antes 1 por vez — 10+ min); escopo (o mais longo) entra primeiro
-    const fila = [...partes]; try { await Promise.all([0, 1, 2].map(async () => { while (fila.length) { if (erros.length >= 2 && feitas === erros.length) { erros.push('interrompido: as primeiras partes falharam com erro da IA'); break; } const p = fila.shift(); const rot = p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } })); } finally { clearInterval(relogio); }
+    const fila = [...partes]; try { await Promise.all([0, 1, 2].map(async () => { while (fila.length) { if (erros.length >= 2 && feitas === erros.length) { erros.push('interrompido: as primeiras partes falharam com erro da IA'); break; } const p = fila.shift(); const rot = p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_TODAS.indexOf(a.chave) - RED_TODAS.indexOf(b.chave)); renderDoc(); } })); } finally { clearInterval(relogio); }
     // v3.473: capítulos que vieram cortados ou em branco → uma segunda passada automática só para eles
-    let falta1 = RED_ORDEM.filter(k => chavesAlvo.includes(k) && String(D.secoes.find(x => x.chave === k)?.conteudo || '').trim().length < 60);
-    if (falta1.length && erros.length < 3) { const p2 = RED_PARTES.map(p => p.filter(k => falta1.includes(k))).filter(p => p.length); partes.push(...p2);
-      for (const p of p2) { const rot = 'refazendo ' + p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_ORDEM.indexOf(a.chave) - RED_ORDEM.indexOf(b.chave)); renderDoc(); } }
+    let falta1 = RED_TODAS.filter(k => chavesAlvo.includes(k) && String(D.secoes.find(x => x.chave === k)?.conteudo || '').trim().length < 60);
+    if (falta1.length && erros.length < 3) { const p2 = (chavesAlvo.some(k => /^acordo_/.test(k)) ? ACORDO_PARTES : RED_PARTES).map(p => p.filter(k => falta1.includes(k))).filter(p => p.length); partes.push(...p2);
+      for (const p of p2) { const rot = 'refazendo ' + p.join(', '); emCurso.add(rot); try { await roda(p); } finally { emCurso.delete(rot); } feitas++; prog(); D.secoes.sort((a, b) => RED_TODAS.indexOf(a.chave) - RED_TODAS.indexOf(b.chave)); renderDoc(); } }
     clearInterval(relogio);
     D._erros = erros; renderDoc(); _redPct = null;
-    const falta = _vazios(); let salvo = false; if (!falta.length && PROP.cliente) { try { await salvar(true); salvo = true; } catch (_) {} }
+    const falta = chavesAlvo.some(k => /^acordo_/.test(k)) ? chavesAlvo.filter(k => String(D.secoes.find(x => x.chave === k)?.conteudo || '').trim().length < 60) : _vazios(); let salvo = false; if (!falta.length && PROP.cliente) { try { await salvar(true); salvo = true; } catch (_) {} }
     const tempo = Math.round((Date.now() - t0) / 1000);
-    _redMsg(falta.length ? `⚠ <b>Redação PARCIAL</b> — ${RED_ORDEM.length - falta.length} de ${RED_ORDEM.length} capítulos prontos; ${falta.length} em branco (${esc(falta.join(', '))}).${erros.length ? ' Erro da IA: ' + esc(erros[0]) : ''} Clique em <b>Completar capítulos em branco</b>.` : `✅ <b>Proposta redigida — ${RED_ORDEM.length} de ${RED_ORDEM.length} capítulos</b> em ${Math.floor(tempo / 60)}min${String(tempo % 60).padStart(2, '0')}s${salvo ? ' e <b>salva</b> (' + esc(PROP.numero || '') + ')' : ' — clique em Salvar'}. Revise o texto abaixo.`, falta.length ? 'var(--red)' : 'var(--green)');
+    _redMsg(falta.length ? `⚠ <b>Redação PARCIAL</b> — ${chavesAlvo.length - falta.length} de ${chavesAlvo.length} capítulos prontos; ${falta.length} em branco (${esc(falta.join(', '))}).${erros.length ? ' Erro da IA: ' + esc(erros[0]) : ''} Clique em <b>Completar capítulos em branco</b>.` : `✅ <b>${chavesAlvo.some(k => /^acordo_/.test(k)) ? 'Acordo de POC redigido' : 'Proposta redigida'} — ${chavesAlvo.length} de ${chavesAlvo.length} capítulos</b> em ${Math.floor(tempo / 60)}min${String(tempo % 60).padStart(2, '0')}s${salvo ? ' e <b>salva</b> (' + esc(PROP.numero || '') + ')' : ' — clique em Salvar'}. Revise o texto abaixo.`, falta.length ? 'var(--red)' : 'var(--green)');
     return erros;
   }
   async function redigir() {
     lerForm(); if (!PROP.analise) return nota('Analise os formatos antes', 'error');
     if (_redRodando && Date.now() - _redDesde < 15 * 60000) return nota('A redação já está em andamento — acompanhe pela faixa acima do documento', 'error');
     const btn = $('vpBtnRedigir'), fim = ocupado(btn, '✍ Redigindo (2 a 4 min)...');
-    PROP.documento = { titulo: PROP.titulo || '', secoes: [], matriz_responsabilidades: [], validade_dias: 90, modelo_oficial: true, formato: PROP.formato, gerado_em: new Date().toISOString() };
+    PROP.documento = { titulo: PROP.titulo || '', secoes: (PROP.documento?.secoes || []).filter(x => /^acordo_/.test(x.chave)), matriz_responsabilidades: [], validade_dias: 90, modelo_oficial: true, formato: PROP.formato, gerado_em: new Date().toISOString() };
     renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' });
     const erros = await _redigirPartes(RED_ORDEM, btn); fim();
     const falta = _vazios(); if (falta.length) nota(`${falta.length} capítulo(s) não vieram (${falta.join(', ')}) — clique em "Completar capítulos em branco"${erros.length ? '. Erro: ' + erros[0] : ''}`, 'error'); else nota('Proposta redigida — todos os capítulos preenchidos. Revise e salve');
     return !falta.length || (PROP.documento.secoes.length > 0);
   }
+  // v3.634: gera o ACORDO DE POC a partir da proposta de POC (mesmo escopo, cronograma, equipe e investimento)
+  async function gerarAcordoPoc() {
+    lerForm(); const d = PROP.dados;
+    if (d.tipo_documento !== 'poc') return nota('O Acordo de POC sai de uma proposta do tipo "Prova de conceito (POC)" — mude o tipo de documento no passo ①', 'error');
+    if ((d.escopo || '').length < 30) return nota('Escreva o briefing e gere o escopo (passo ①) antes', 'error');
+    if (!(d.perfis || []).length) return nota('Monte a equipe da POC (passo ②) antes', 'error');
+    if (!PROP.analise && !(await analisar())) return;
+    const tem = (PROP.documento?.secoes || []).some(x => /^acordo_/.test(x.chave) && String(x.conteudo || '').trim().length >= 60);
+    if (tem && !confirm('Já existe texto do Acordo de POC. Redigir de novo? (para preencher só o que falta use "Completar capítulos em branco" do acordo)')) return;
+    if (!PROP.documento) PROP.documento = { titulo: PROP.titulo || '', secoes: [], matriz_responsabilidades: [], validade_dias: 90, modelo_oficial: true, formato: PROP.formato, gerado_em: new Date().toISOString() };
+    lerDoc(); const D = PROP.documento; D.modelo_oficial = true; D.secoes = D.secoes.filter(x => !/^acordo_/.test(x.chave));
+    // investimento e aceite da proposta são reaproveitados se já estiverem redigidos
+    const alvo = ACORDO_PARTES.flat().filter(k => /^acordo_/.test(k) || String(D.secoes.find(x => x.chave === k)?.conteudo || '').trim().length < 60);
+    renderDoc(); $('vpDoc').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const btn = $('vpBtnAcordo'), fim = ocupado(btn, '📝 Redigindo o Acordo (2 a 3 min)...'); const erros = await _redigirPartes(alvo, btn); fim();
+    const falta = alvo.filter(k => String(D.secoes.find(x => x.chave === k)?.conteudo || '').trim().length < 60);
+    if (falta.length) nota(`${falta.length} capítulo(s) do Acordo não vieram (${falta.join(', ')}) — clique em "Completar capítulos do Acordo"${erros.length ? '. Erro: ' + erros[0] : ''}`, 'error'); else nota('Acordo de POC redigido — revise (minuta: o jurídico deve revisar as cláusulas) e salve');
+  }
+  async function completarAcordo() {
+    lerDoc(); const D = PROP.documento; if (!D) return gerarAcordoPoc();
+    const falta = _vaziosAcordo(); if (!falta.length) return nota('Nenhum capítulo do Acordo em branco');
+    const btn = $('vdBtnComplA'), fim = ocupado(btn, '✍ Completando...'); const erros = await _redigirPartes(falta, btn); fim();
+    const ainda = _vaziosAcordo(); nota(ainda.length ? `Ainda faltam ${ainda.length}: ${ainda.join(', ')}${erros.length ? ' — ' + erros[0] : ''}` : 'Capítulos do Acordo completados — revise e salve', ainda.length ? 'error' : 'success');
+  }
+  const _vaziosAcordo = () => { const S = PROP.documento?.secoes || []; if (!S.some(x => /^acordo_/.test(x.chave))) return []; return ACORDO_PARTES.flat().filter(k => String(S.find(x => x.chave === k)?.conteudo || '').trim().length < 60); };
   // v3.385: botão sempre visível na barra de ações — faz a análise de formatos se faltar e redige
   async function redigirTudo() {
     lerForm(); const d = PROP.dados;
@@ -718,6 +746,8 @@
           <select class="fsel" style="width:auto;font-size:10.5px;margin-left:auto;" onchange="VD.modeloSet(this.value)">${[['tecnica_comercial', 'Técnica-Comercial'], ['tecnica', 'Técnica (sem valores)'], ['comercial', 'Comercial']].map(([k, v]) => `<option value="${k}"${(PROP.dados.modelo_doc || 'tecnica_comercial') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
         ${(() => { const v = _vazios(); return v.length ? `<div style="margin-top:7px;padding:6px 9px;border-radius:6px;background:rgba(220,38,38,.08);color:var(--red);font-size:10.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">⚠ ${v.length} capítulo(s) em branco: ${esc(v.map(k => ({ carta: 'Carta' }[k] || k)).join(', '))}${(PROP.documento._erros || []).length ? `<div style="width:100%;font-size:10px;color:var(--t2);">Último erro da IA: ${esc(PROP.documento._erros[0])}</div>` : ''}<button class="btn btn-or" id="vdBtnCompl2" style="font-size:10px;padding:4px 9px;margin-left:auto;" onclick="VD.completarVazios()">✍ Completar capítulos em branco</button></div>` : ''; })()}
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;">${[['tecnica', 'Técnica'], ['comercial', 'Comercial'], ['tecnica_comercial', 'Técnica-Comercial']].map(([k, v]) => `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','docx')">⬇ Word ${v}</button><button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('${k}','pdf')">⬇ PDF ${v}</button>`).join('')}</div>
+        ${PROP.dados.tipo_documento === 'poc' ? `<div style="margin-top:8px;padding:8px 10px;border:1px dashed var(--bd);border-radius:8px;font-size:10.5px;"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><b>📝 Acordo de POC</b><span style="color:var(--t2);">documento que formaliza a POC de ${+PROP.dados.poc?.semanas || 6} semanas (partes, critérios de sucesso, governança, go/no-go, cláusulas e assinatura) — minuta: o jurídico revisa antes de assinar</span></div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;"><button class="btn btn-p" id="vpBtnAcordo" style="font-size:10px;padding:4px 9px;" onclick="VD.gerarAcordoPoc()">📝 ${(d.secoes || []).some(x => /^acordo_/.test(x.chave)) ? 'Redigir o Acordo de novo' : 'Gerar Acordo de POC'}</button>${_vaziosAcordo().length ? `<button class="btn btn-or" id="vdBtnComplA" style="font-size:10px;padding:4px 9px;" onclick="VD.completarAcordo()">✍ Completar capítulos do Acordo (${_vaziosAcordo().length})</button>` : ''}${(d.secoes || []).some(x => /^acordo_/.test(x.chave)) ? `<button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('acordo_poc','docx')">⬇ Word Acordo de POC</button><button class="btn btn-g" style="font-size:10px;padding:4px 9px;" onclick="VD.baixarModelo('acordo_poc','pdf')">⬇ PDF Acordo de POC</button>` : ''}</div></div>` : ''}
         <details style="margin-top:7px;font-size:10.5px;"><summary style="cursor:pointer;color:var(--t2);">Dados da capa e da tabela "Dados do Projeto"</summary><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;">
           ${[['area', 'Área solicitante'], ['cnpj', 'CNPJ do cliente'], ['origem', 'Documento de origem'], ['local', 'Local de execução'], ['lider', 'Líder do projeto'], ['contato_tecnico', 'Contato técnico'], ['codigo', 'Código de serviço'], ['revisao', 'Linha de revisão (capa)']].map(([k, r]) => `<label style="font-size:10px;color:var(--t2);">${r}<input class="fi" value="${esc((PROP.dados.capa || {})[k] || '')}" onchange="VD.capaSet('${k}',this.value)"/></label>`).join('')}</div></details></div>`
         : `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:10.5px;">Este texto foi redigido antes do modelo oficial. Clique em <b>✍ Redigir</b> de novo para gerar no formato Técnica / Comercial / Técnica-Comercial.</div>`}
@@ -814,25 +844,27 @@
     const razao = P.empresa_razao || 'Atlanteam Soluções em TI', cnpj = P.empresa_cnpj || '10.886.193/0001-83', email = P.empresa_email || 'contato@atlanteam.com.br';
     const assin = P.assinante_nome || 'Fábio Soares Quintanilha', cargo = P.assinante_cargo || 'CEO & Sócio-Diretor', assinEmail = P.assinante_email || '';
     // v3.380: capa e cabeçalho dinâmicos — POC e piloto aparecem no título, numa faixa própria e no cabeçalho de todas as páginas
-    const poc = d.tipo_documento === 'poc', piloto = d.tipo_documento === 'piloto', suf = poc ? ' de POC' : piloto ? ' de Piloto' : '';
+    const acordo = !!M0.acordo, poc = d.tipo_documento === 'poc', piloto = d.tipo_documento === 'piloto', suf = acordo ? '' : poc ? ' de POC' : piloto ? ' de Piloto' : '';
     const semanas = +d.poc?.semanas || 6, K0 = d.crono || _cronoBase();
-    const M = { ...M0, nome: M0.nome + (poc ? ' de Prova de Conceito (POC)' : piloto ? ' de Piloto' : ''), capa: M0.capa + suf.toUpperCase(), cab: M0.cab + suf,
-      sub: [poc ? `Prova de Conceito (POC) · ${semanas} semanas · critérios de sucesso e decisão go/no-go${f?.poc_cortesia && !(f.valor_total > 0) ? ' · sem custo para cliente Atlantyx' : ''}` : piloto ? `Piloto · ${K0.total} ${K0.unidade} · uso real com escopo reduzido` : '', M0.sub || ''].filter(Boolean).join(' — ') };
+    const M = { ...M0, nome: M0.nome + (acordo ? '' : poc ? ' de Prova de Conceito (POC)' : piloto ? ' de Piloto' : ''), capa: M0.capa + suf.toUpperCase(), cab: M0.cab + suf,
+      sub: acordo ? [`Prova de Conceito (POC) · ${semanas} semanas · ${M0.sub}`, cortesiaAcordo()].filter(Boolean).join(' · ') : [poc ? `Prova de Conceito (POC) · ${semanas} semanas · critérios de sucesso e decisão go/no-go${f?.poc_cortesia && !(f.valor_total > 0) ? ' · sem custo para cliente Atlantyx' : ''}` : piloto ? `Piloto · ${K0.total} ${K0.unidade} · uso real com escopo reduzido` : '', M0.sub || ''].filter(Boolean).join(' — ') };
     const cortesia = !!(f?.poc_cortesia && !(f.valor_total > 0)), K = K0, U = K.unidade === 'semanas' ? 'Semana' : 'Mês', dias = doc.validade_dias || 90;
-    const sec = k => (doc.secoes || []).find(x => x.chave === k), txt = k => String(sec(k)?.conteudo || '').replace(/\{\{TIPO_DOC\}\}/g, M.nome);
-    const tituloCap = k => k === 'aceite' ? 'Aceite da ' + M0.nome + suf : CAPS[k].t;
+    const sec = k => (doc.secoes || []).find(x => x.chave === k), txt = k => String(sec(k)?.conteudo || '').replace(/\b(da|a) \{\{TIPO_DOC\}\}/gi, (m, a) => acordo ? (a.toLowerCase() === 'a' ? 'o' : 'do') + ' {{TIPO_DOC}}' : m).replace(/\{\{TIPO_DOC\}\}/g, M.nome);
+    function cortesiaAcordo() { return f?.poc_cortesia && !(f.valor_total > 0) ? 'sem custo para cliente Atlantyx' : ''; }
+    const tituloCap = k => k === 'aceite' ? (acordo ? 'Aceite do ' : 'Aceite da ') + M0.nome + suf : CAPS[k].t;
     const dt = new Date(), mesAno = _MESES[dt.getMonth()].replace(/^./, c => c.toUpperCase()) + ' de ' + dt.getFullYear();
     const B = [{ t: 'capa', empresa: razao, titulo: M.capa, projeto: PROP.titulo || doc.titulo || 'Proposta', sub: M.sub || '', subCor: poc || piloto ? '00708A' : '7F7F7F', area: cap.area || '', cliente: PROP.cliente || '', cnpj: cap.cnpj || '', proponente: `${razao} — CNPJ: ${cnpj}`, data: `${mesAno} | Validade: ${dias} dias | Confidencial`, revisao: cap.revisao || '' }];
     const md = (k, n) => MOD.mdBlocos(txt(k)).map(b => b.t === 'sub' && n ? { ...b, texto: b.texto.replace(/^\d+(\.\d+)/, (_, r) => n + r) } : b);
-    B.push({ t: 'h1', texto: 'Carta de Apresentação' }, ...md('carta'), { t: 'p', texto: `**${assin}**`, jc: 'left' }, { t: 'p', texto: `${cargo} — ${razao}`, jc: 'left' }, ...(assinEmail ? [{ t: 'p', texto: assinEmail, jc: 'left' }] : []));
+    if (!acordo) B.push({ t: 'h1', texto: 'Carta de Apresentação' }, ...md('carta'), { t: 'p', texto: `**${assin}**`, jc: 'left' }, { t: 'p', texto: `${cargo} — ${razao}`, jc: 'left' }, ...(assinEmail ? [{ t: 'p', texto: assinEmail, jc: 'left' }] : []));
     B.push({ t: 'h1', texto: 'Índice', quebra: 1 }, { t: 'indice', itens: M.caps.map((k, i) => `${i + 1}. ${tituloCap(k)}`) });
     const fasesF = K.fases.filter(x => x.incluir !== false), per = x => x.ini === x.fim ? `${U} ${x.ini}` : `${U} ${x.ini}–${x.fim}`;
     M.caps.forEach((k, i) => { const n = i + 1; B.push({ t: 'h1', texto: `${n}. ${tituloCap(k)}`, quebra: CAPS[k].q });
-      if (k === 'dados') { const L = [['Nome do Projeto', PROP.titulo], ['Cliente', PROP.cliente], ['CNPJ do Cliente', cap.cnpj], ['Área Solicitante', cap.area], ['Documento de Origem', cap.origem], ['Data da Proposta', _ext(dt)], ['Validade', `${dias} dias a partir da data de emissão`],
+      if (k === 'dados') { const L = [['Nome do Projeto', PROP.titulo], ['Cliente', PROP.cliente], ['CNPJ do Cliente', cap.cnpj], ['Área Solicitante', cap.area], ['Documento de Origem', cap.origem], [acordo ? 'Data do Acordo' : 'Data da Proposta', _ext(dt)], [acordo ? 'Validade da minuta' : 'Validade', `${dias} dias a partir da data de emissão`],
           ['Prazo de Execução', K.total + ' ' + K.unidade], ['Tipo de Documento', { poc: 'Prova de conceito (POC)', piloto: 'Piloto' }[d.tipo_documento] || 'Projeto'], ...(modelo !== 'tecnica' ? [['Modelo Comercial', f?.nome || '']] : []), ['Modalidade de Demanda', TIPOS[d.tipo_demanda] || ''],
           ['Local', cap.local], ['Líder do Projeto', cap.lider || `${assin} — ${cargo}`], ['Contato Comercial', `${assin}${assinEmail ? ' — ' + assinEmail : ''}`], ['Contato Técnico', cap.contato_tecnico], ['Proponente', `${razao} — CNPJ: ${cnpj}`], ['Código de Serviço', cap.codigo]].filter(x => x[1]);
         B.push({ t: 'kv', linhas: L }); return; }
       if (['investimento', 'rate_card', 'equipe', 'garantias', 'pagamento', 'aceite'].includes(k) || sec(k)) B.push(...md(k, n));
+      if (k === 'acordo_criterios' && !sec(k) && d.poc?.criterios) B.push({ t: 'p', texto: String(d.poc.criterios) });
       if (k === 'investimento') { if (cortesia) B.push({ t: 'tabela', cab: ['Item', 'Valor'], larguras: [5600, 3750], linhas: [['Investimento da POC', 'Sem custo — condição de cliente Atlantyx'], ['Duração', K.total + ' ' + K.unidade], ...(f?.custo_investimento_comercial ? [['Investimento comercial assumido pela Atlantyx', _brl(f.custo_investimento_comercial)]] : [])] });
         else if (f) { const L = [...(f.desconto_aplicado_pct ? [['Valor bruto (rate card)', _brl(f.valor_sem_desconto)], [`Desconto comercial (${String(f.desconto_aplicado_pct).replace('.', ',')}%)`, '– ' + _brl(f.valor_sem_desconto - f.valor_total)]] : []),
             ['Modelo comercial', f.nome], ['Total de horas', N(PROP.analise?.entrada?.horas) + ' h'], ['Duração', K.total + ' ' + K.unidade], ['Tributos', `inclusos (${String(PROP.analise?.custos?.impostos_efetivo_pct ?? '').replace('.', ',')}% em média no período)`],
@@ -857,15 +889,16 @@
           const tot = K.marcos.reduce((a, m) => a + (+m.pct || 0), 0); L.push(['', 'TOTAL GERAL', `${K.total} ${K.unidade}`, '', String(tot).replace('.', ',') + '%', _brl(f.valor_total * tot / 100)]);
           B.push({ t: 'tabela', cab: ['Nº', 'Fase', 'Período', 'Entrega', '% Pgto', 'Total (R$)'], larguras: [450, 2500, 1300, 2600, 900, 1600], alinhar: [null, null, null, null, 'right', 'right'], linhas: L, total: true }); }
         if (!cortesia && f && K.pagamento !== 'marcos') B.push({ t: 'tabela', cab: ['Parcela', 'Mês de emissão', 'Valor (R$)', 'Recebimento'], larguras: [3800, 1800, 2000, 1750], alinhar: [null, null, 'right', null], linhas: [...(f.cronograma || []).map(c => [c.desc, c.mes, _brl(c.valor), c.recebe || '']), ['TOTAL', '', _brl(f.valor_total), '']], total: true }); }
-      if (k === 'garantias' && (doc.matriz_responsabilidades || []).length) B.push({ t: 'sub', texto: `${n}.${(MOD.mdBlocos(txt(k)).filter(b => b.t === 'sub').length || 0) + 1} Matriz de Responsabilidades (RACI)` }, { t: 'tabela', cab: ['Atividade', 'Atlantyx', PROP.cliente || 'Cliente'], larguras: [6150, 1600, 1600], alinhar: [null, 'center', 'center'], linhas: doc.matriz_responsabilidades.map(m => [m.atividade, m.atlantyx || '—', m.cliente || '—']), nota: 'R = executa · A = aprova · C = é consultado · I = é informado' });
+      if ((k === 'garantias' || k === 'acordo_papeis') && (doc.matriz_responsabilidades || []).length) B.push({ t: 'sub', texto: `${n}.${(MOD.mdBlocos(txt(k)).filter(b => b.t === 'sub').length || 0) + 1} Matriz de Responsabilidades (RACI)` }, { t: 'tabela', cab: ['Atividade', 'Atlantyx', PROP.cliente || 'Cliente'], larguras: [6150, 1600, 1600], alinhar: [null, 'center', 'center'], linhas: doc.matriz_responsabilidades.map(m => [m.atividade, m.atlantyx || '—', m.cliente || '—']), nota: 'R = executa · A = aprova · C = é consultado · I = é informado' });
       if (k === 'pagamento' && P.dados_bancarios) B.push({ t: 'sub', texto: `${n}.2 Dados Bancários para Pagamento` }, { t: 'kv', linhas: String(P.dados_bancarios).split('\n').map(l => l.split(':')).filter(x => x.length > 1).map(x => [x[0].trim(), x.slice(1).join(':').trim()]) });
       if (k === 'aceite') B.push({ t: 'assinatura', esq: [razao, 'CNPJ: ' + cnpj, `${assin} — ${cargo.split(' ')[0]}`], dir: [PROP.cliente || 'Cliente', cap.cnpj ? 'CNPJ: ' + cap.cnpj : '', 'Responsável / Cargo'] });
     });
     return { blocos: B, cabecalho: `${M.cab} – ${PROP.titulo || ''} – ${PROP.cliente || ''}${modelo === 'tecnica' ? ' (sem valores comerciais)' : ''}`, rodape: `${razao} | CNPJ: ${cnpj} | ${email}`, nomeArq: `${M.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}_${(PROP.cliente || 'cliente').replace(/[^\w]+/g, '_')}_${PROP.numero || 'rascunho'}` };
   }
   async function baixarModelo(modelo, tipo) {
-    lerDoc(); const MODq = await _carregarModelo().catch(() => null); const caps = MODq ? ['carta', ...MODq.MODELOS[modelo].caps] : RED_ORDEM;
-    const vaz = _vazios().filter(k => caps.includes(k));
+    lerDoc(); const MODq = await _carregarModelo().catch(() => null); const caps = MODq ? (MODq.MODELOS[modelo].acordo ? MODq.MODELOS[modelo].caps : ['carta', ...MODq.MODELOS[modelo].caps]) : RED_ORDEM;
+    if (MODq?.MODELOS[modelo]?.acordo && _vaziosAcordo().length && confirm(`${_vaziosAcordo().length} capítulo(s) do Acordo estão em branco.\n\nCompletar agora com a IA antes de gerar o arquivo? (Cancelar = gerar assim mesmo)`)) { await completarAcordo(); }
+    const vaz = (MODq?.MODELOS[modelo]?.acordo ? [] : _vazios()).filter(k => caps.includes(k));
     if (vaz.length && confirm(`${vaz.length} capítulo(s) deste formato estão em branco (${vaz.join(', ')}).\n\nCompletar agora com a IA antes de gerar o arquivo? (Cancelar = gerar assim mesmo)`)) { await completarVazios(); }
     try { const MOD = await _carregarModelo(), doc = await montarModelo(modelo); const salvar = (b, n) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; a.click(); };
       if (tipo === 'docx') { salvar(await MOD.gerarDocx(doc), doc.nomeArq + '.docx'); return nota('Word gerado no modelo oficial'); }
@@ -1484,5 +1517,5 @@
 
   window.VD = { funilDet, painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    chatAplicarTodas, aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo, simAbrir, simFechar, simSet, simRender, simAplicar, simPadrao };
+    gerarAcordoPoc, completarAcordo, chatAplicarTodas, aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar, tipoDocMudou, aplicarDesconto, escopoUpload, escopoProduto, escNovo, escRemover, escSalvar, complSugerir, complDecidir, complLimpar, complAplicar, gerarApresentacao, escopoBriefing, equipeManual, statusRender, refUpload, chatEnviar, chatAplicar, chatLimpar, cronoGerar, cronoAba, cronoSet, cronoDel, cronoAdd, cronoPag, cronoTotal, cronoNormalizar, mrAdd, clienteChecar, baixarModelo, capaSet, modeloSet, escImportar, completarVazios, redigirTudo, simAbrir, simFechar, simSet, simRender, simAplicar, simPadrao };
 })();

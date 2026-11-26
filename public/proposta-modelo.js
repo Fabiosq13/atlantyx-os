@@ -18,6 +18,10 @@
     cronograma_ff: { t: 'Cronograma Físico-Financeiro', q: 1 }, entregaveis: { t: 'Entregáveis Detalhados por Fase', q: 1 }, premissas_exec: { t: 'Premissas e Condições de Execução', q: 1 },
     premissas_com: { t: 'Premissas e Condições Comerciais', q: 1 }, garantias: { t: 'Garantias, Papéis e Responsabilidades', q: 0 }, suporte: { t: 'Suporte Pós-Implantação e SLA', q: 1 },
     pagamento: { t: 'Prazo e Forma de Pagamento', q: 0 }, validade: { t: 'Validade da Proposta', q: 1 }, aceite: { t: 'Aceite da Proposta', q: 0 },
+    // v3.634: Acordo de POC
+    acordo_objeto: { t: 'Partes, Objeto e Contexto', q: 1 }, acordo_criterios: { t: 'Hipótese, Objetivos e Critérios de Sucesso', q: 0 }, acordo_escopo: { t: 'Escopo da POC', q: 0 }, acordo_dados: { t: 'Ambiente, Dados, Segurança e LGPD', q: 0 },
+    acordo_governanca: { t: 'Governança, Checkpoints e Gestão de Mudanças', q: 0 }, acordo_entregas: { t: 'Entregáveis, Relatório Final e Decisão Go/No-Go', q: 0 }, acordo_papeis: { t: 'Papéis e Responsabilidades', q: 0 },
+    acordo_legal: { t: 'Cláusulas Contratuais', q: 0 }, acordo_vigencia: { t: 'Vigência, Encerramento e Próximos Passos', q: 0 },
   };
   const MODELOS = {
     tecnica: { nome: 'Proposta Técnica', capa: 'PROPOSTA TÉCNICA', cab: 'Proposta Técnica', sub: 'Versão técnica — sem valores comerciais',
@@ -26,6 +30,9 @@
       caps: ['dados', 'resumo_escopo', 'investimento', 'rate_card', 'bonus', 'cronograma_ff', 'premissas_com', 'pagamento', 'validade', 'aceite'] },
     tecnica_comercial: { nome: 'Proposta Técnica-Comercial', capa: 'PROPOSTA TÉCNICA-COMERCIAL', cab: 'Proposta Técnica-Comercial',
       caps: ['dados', 'apresentacao', 'contexto', 'objetivos', 'escopo', 'investimento', 'rate_card', 'bonus', 'equipe', 'cronograma_ff', 'entregaveis', 'premissas_com', 'garantias', 'suporte', 'pagamento', 'validade', 'aceite'] },
+    // v3.634: Acordo de Prova de Conceito (POC Agreement) — documento contratual de POC de curta duração; sem carta de apresentação nem rate card
+    acordo_poc: { nome: 'Acordo de POC', acordo: true, capa: 'ACORDO DE PROVA DE CONCEITO (POC)', cab: 'Acordo de POC', sub: 'Termo de abertura, critérios de sucesso e aceite da POC',
+      caps: ['dados', 'acordo_objeto', 'acordo_criterios', 'acordo_escopo', 'cronograma_exec', 'acordo_dados', 'acordo_governanca', 'acordo_entregas', 'acordo_papeis', 'investimento', 'acordo_legal', 'acordo_vigencia', 'aceite'] },
   };
 
   // ───────────── texto redigido (markdown simples) → blocos ─────────────

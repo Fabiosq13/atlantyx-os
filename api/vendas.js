@@ -479,6 +479,18 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
   G.entregaveis += ' Use exatamente as etapas do cronograma físico; cada fase com 4 a 8 entregáveis concretos (documentos, artefatos, funcionalidades, evidências de teste).';
   G.equipe += ' Cada perfil com 5 a 8 atribuições específicas deste projeto.';
   G.objetivos += ' Objetivos mensuráveis e ligados ao escopo.';
+  // v3.634: ACORDO DE POC — documento contratual (assinado pelas duas partes) que formaliza a POC; usa o mesmo cronograma, equipe, investimento e matriz RACI da proposta
+  const SEM = +poc.semanas || 6;
+  Object.assign(G, {
+    acordo_objeto: 'Partes, objeto e contexto: subseções "### Das Partes" (Atlantyx e cliente, com CNPJ se houver nos dados), "### Do Objeto" (1 parágrafo: o que a POC vai provar, em ' + SEM + ' semanas, e que não é entrega de produto em produção), "### Do Contexto" (2 parágrafos específicos do cliente) e "### Definições" em marcadores (POC, Critérios de Sucesso, Relatório Final, Checkpoint, Decisão Go/No-Go).',
+    acordo_criterios: 'Hipótese, objetivos e critérios de sucesso: 1 parágrafo com a hipótese a validar; objetivos em marcadores (verbo no infinitivo); subseção "### Critérios de Sucesso" com 3 a 5 critérios MENSURÁVEIS, cada um com os rótulos **C1 — nome:** métrica, meta, como e quando será medido e fonte do dado. Use os critérios informados; se faltarem, proponha e marque "a validar com o cliente no kickoff".',
+    acordo_escopo: 'Escopo da POC: "### Dentro do Escopo" (marcadores específicos, ligados ao escopo do cliente), "### Fora do Escopo" (marcadores) e "### Premissas e Limites" (volume de dados, número de usuários, ambientes, ausência de operação em produção) — tudo cabendo em ' + SEM + ' semanas.',
+    acordo_dados: 'Ambiente, dados e segurança: "### Ambiente e Acessos", "### Dados Utilizados" (reais ou sintéticos, mínimo necessário, anonimização), "### Segurança da Informação e LGPD" (papéis de controlador e operador, eliminação ou devolução dos dados ao fim) e "### Treinamento e Analista de IA dedicado" (suporte aos usuários durante toda a POC).',
+    acordo_governanca: 'Governança e checkpoints: cadência da POC de ' + SEM + ' semanas (kickoff, checkpoints semanais, revisão intermediária, apresentação final) dizendo o que se decide em cada um; "### Gestão de Mudanças" (como pedidos extras são tratados); "### Riscos e Mitigações" (4 a 6 riscos reais deste escopo); "### Escalonamento".',
+    acordo_entregas: 'Entregáveis e decisão: "### Entregáveis" por semana/fase seguindo EXATAMENTE o cronograma físico; "### Relatório Final da POC" (o que contém: resultados por critério, evidências, aprendizados, recomendação); "### Decisão Go/No-Go" com a regra: critérios atingidos → go para o projeto; parcialmente atingidos → ajustar ou prorrogar por escrito; não atingidos → encerrar sem obrigação de compra.',
+    acordo_papeis: 'Papéis e responsabilidades: 1 parágrafo; "### Responsabilidades da Atlantyx" e "### Responsabilidades do Cliente" (ponto focal, decisor, usuários-chave, acessos e prazo de resposta) em marcadores específicos — a matriz RACI é inserida pelo sistema logo depois.',
+    acordo_legal: 'Cláusulas contratuais, redigidas como MINUTA para revisão jurídica: "### Confidencialidade" (vigência), "### Propriedade Intelectual" (a Atlantyx mantém ferramentas, modelos e métodos pré-existentes; os dados e resultados específicos do cliente são do cliente), "### Garantias e Limitação de Responsabilidade" (POC fornecida no estado, sem garantia de desempenho em produção e sem SLA), "### Não Exclusividade e Sem Compromisso de Compra" e "### Foro" (Rio de Janeiro/RJ, salvo disposição diferente).',
+    acordo_vigencia: 'Vigência, encerramento e próximos passos: "### Vigência" (início na assinatura/kickoff, duração de ' + SEM + ' semanas, prorrogação só por escrito), "### Encerramento e Rescisão" (aviso por qualquer parte; destino dos dados e acessos), "### Da POC ao Projeto" (crédito e condições de cliente EXATAMENTE como nos dados do tipo de documento; proposta do projeto em até 15 dias após o Relatório Final).' });
   if (tipoDoc === 'poc') G.rate_card = 'POC: NÃO cite valores por hora nem valores do rate card. 1 parágrafo dizendo que a equipe da POC é enxuta (perfis e horas na tabela inserida pelo sistema), com Analista de IA para suporte, e que o rate card oficial com valores por perfil será apresentado na proposta do projeto.';
   G.diferenciais += ' Ligados a este projeto (não genéricos).';
   G.garantias += ' Cada subseção com 3 a 6 marcadores específicos.';
@@ -491,7 +503,8 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
   const _parse = txt => { const t = String(txt || '').replace(/```json|```/g, '').trim(); const i = t.indexOf('{'), j = t.lastIndexOf('}');
     let ok = false; try { JSON.parse(t.substring(i, j + 1)); ok = true; } catch (_) {} const r = json(txt);
     if (!ok && Array.isArray(r.secoes) && r.secoes.length) { const ult = r.secoes.pop(); r._cortado = ult?.chave || true; } return r; };
-  const pedir = async (chaves, extra) => _parse(await claudeStream(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
+  const ACORDO_NOTA = '\nDOCUMENTO: ACORDO DE PROVA DE CONCEITO (POC) — documento contratual assinado pelas duas partes. Tom claro e preciso, frases curtas, sem marketing; não invente números, prazos ou valores além dos fornecidos; as cláusulas jurídicas são minuta para revisão do jurídico. Não repita o título do capítulo.';
+  const pedir = async (chaves, extra) => _parse(await claudeStream(sys + ' Responda APENAS JSON.', usr + FORMA + PROF + (chaves.some(k => /^acordo_/.test(k)) ? ACORDO_NOTA : '') + '\nESCREVA ESTES CAPÍTULOS (chave → o que escrever):\n' + chaves.map(k => `- ${k}: ${G[k]}`).join('\n') + extra
     + `\n${extra ? 'Escreva PRIMEIRO a "matriz_responsabilidades" e depois as secoes. ' : ''}Devolva {${extra ? '"matriz_responsabilidades":[{"atividade":"","atlantyx":"R|A|C|I","cliente":"R|A|C|I"}],' : ''}"secoes":[{"chave":"uma das chaves acima","conteudo":"..."}]}`, chaves.includes('escopo') ? 6000 : 5000, 100000));
   // v3.382: o navegador pede por partes (cada parte é uma chamada própria, com repetição) — evita estourar o tempo e o limite da IA
   const MATRIZ_X = '\nMATRIZ DE RESPONSABILIDADES: devolva também "matriz_responsabilidades" (10 a 16 linhas cobrindo cada etapa do cronograma, RACI: R executa, A aprova, C consultado, I informado).';
@@ -505,7 +518,7 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
     const texto = await claudeStream(sys, usr + FORMA + PROF + ESC + '\n' + tarefa + '\nResponda SOMENTE com o texto em markdown simples (sem JSON, sem repetir o título do capítulo).', 4500, 100000);
     if (String(texto).trim().length < 40) throw new Error('A IA não devolveu o texto do escopo'); return { texto: String(texto).replace(/^```\w*\n?|```$/g, '').trim() }; }
   if (Array.isArray(chaves) && chaves.length) { const ks = chaves.filter(k => G[k]); if (!ks.length) throw new Error('capítulos inválidos');
-    const r = await pedir(ks, ks.includes('garantias') ? MATRIZ_X : '');
+    const r = await pedir(ks, (ks.includes('garantias') || ks.includes('acordo_papeis')) ? MATRIZ_X : '');
     const sec = (r.secoes || []).filter(x => ks.includes(x.chave) && String(x.conteudo || '').trim().length >= 60).map(x => ({ chave: x.chave, titulo: TITULOS_CAP[x.chave] || x.chave, conteudo: String(x.conteudo) }));
     if (!sec.length) throw new Error('A IA não devolveu o texto destes capítulos');
     return { parte: true, secoes: sec, matriz_responsabilidades: Array.isArray(r.matriz_responsabilidades) ? r.matriz_responsabilidades : null, formato: f.formato }; }
@@ -520,7 +533,9 @@ MATRIZ DE RESPONSABILIDADES: monte de 8 a 14 linhas cobrindo as etapas do cronog
 const TITULOS_CAP = { carta: 'Carta de Apresentação', apresentacao: 'Apresentação da Atlanteam', contexto: 'Contexto e Justificativas', objetivos: 'Objetivos do Projeto', escopo: 'Escopo dos Serviços — Solução Técnica Proposta',
   diferenciais: 'Diferenciais Técnicos e Estratégicos', entregaveis: 'Entregáveis Detalhados por Fase', resumo_escopo: 'Resumo do Escopo Contratado', equipe: 'Organograma e Equipe do Projeto', investimento: 'Resumo Executivo do Investimento',
   rate_card: 'Rate Card Atlantyx — Padrão Oficial', bonus: 'Bônus e Condições Especiais', premissas_exec: 'Premissas e Condições de Execução', premissas_com: 'Premissas e Condições Comerciais', garantias: 'Garantias, Papéis e Responsabilidades',
-  suporte: 'Suporte Pós-Implantação e SLA', pagamento: 'Prazo e Forma de Pagamento', validade: 'Validade da Proposta', aceite: 'Aceite da Proposta' };
+  suporte: 'Suporte Pós-Implantação e SLA', pagamento: 'Prazo e Forma de Pagamento', validade: 'Validade da Proposta', aceite: 'Aceite da Proposta',
+  acordo_objeto: 'Partes, Objeto e Contexto', acordo_criterios: 'Hipótese, Objetivos e Critérios de Sucesso', acordo_escopo: 'Escopo da POC', acordo_dados: 'Ambiente, Dados, Segurança e LGPD', acordo_governanca: 'Governança, Checkpoints e Gestão de Mudanças',
+  acordo_entregas: 'Entregáveis, Relatório Final e Decisão Go/No-Go', acordo_papeis: 'Papéis e Responsabilidades', acordo_legal: 'Cláusulas Contratuais', acordo_vigencia: 'Vigência, Encerramento e Próximos Passos' };
 
 
 // ═══════════════════════ v3.365 · ESCOPOS (catálogo de produtos, upload e geração) ═══════════════════════
