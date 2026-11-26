@@ -271,7 +271,7 @@ async function margens() {
   const aloc = await q(() => sql`SELECT fp.projeto_id, fp.alocacao_pct, f.custo_hora, f.horas_mensais_padrao, f.nome FROM funcionarios_projetos fp JOIN funcionarios f ON f.id = fp.funcionario_id WHERE f.ativo = true`);
   const cfg = await q(() => sql`SELECT projeto_nome, tipo_projeto FROM pmo_projetos_config`);
   const tipoDe = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase()); if (c?.tipo_projeto === 'sustentacao') return 'sustentacao';
-    if (/sustent|suporte|ams|sla/i.test(p.nome)) return 'sustentacao'; if (/aloca|body ?shop|outsourc/i.test(p.nome)) return 'alocacao'; return c?.tipo_projeto === 'alocacao' ? 'alocacao' : 'entrega'; };
+    if (/sustent|suporte|ams|sla|xplann|big ?data/i.test(p.nome)) return 'sustentacao'; if (/aloca|body ?shop|outsourc/i.test(p.nome)) return 'alocacao'; return c?.tipo_projeto === 'alocacao' ? 'alocacao' : 'entrega'; };
   const imp = params.impostos_pct / 100, ovh = params.overhead_pct / 100;
   const linhas = projetos.map(p => {
     const ms = marcos.filter(m => m.projeto_id === p.id).map(m => ({ v: num(m.valor), d: String(m.data_entrega).substring(0, 10) })).sort((a, b) => a.d < b.d ? -1 : 1);

@@ -8945,7 +8945,7 @@ async function _rpSustentacoesBase(sql) {
   const projetos = await q(() => sql`SELECT id, nome, cliente, valor_total, status FROM projetos_financeiros WHERE COALESCE(status,'ativo') NOT IN ('cancelado')`);
   const contratos = await q(() => sql`SELECT projeto, projeto_id, data_inicio, data_vencimento, prazo_meses FROM contratos_financeiros`);
   const cfg = await q(() => sql`SELECT projeto_nome, tipo_projeto FROM pmo_projetos_config`);
-  const recorrenteP = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase()); return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla/i.test(p.nome); };
+  const recorrenteP = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase()); return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla|xplann|big ?data/i.test(p.nome); };
   const mesesEntre = (a, b) => { const [a1, m1] = a.split('-').map(Number), [a2, m2] = b.split('-').map(Number); return (a2 - a1) * 12 + (m2 - m1) + 1; };
   const out = [];
   for (const p of projetos) {
@@ -9055,10 +9055,13 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
     for (const s of sustentacoes) {
       const c = cfg[s.id] || {}; s.ajuste = c; const ativo = c.ativo !== false; const valor = Number(c.valor_mensal) > 0 ? Number(c.valor_mensal) : s.sugerido;
       const ini = /^\d{4}-\d{2}$/.test(c.inicio || '') ? c.inicio : s.inicio, fim = /^\d{4}-\d{2}$/.test(c.fim || '') ? c.fim : s.fim, dia = parseInt(c.dia) || diaPad;
-      s.efetivo = { ativo, valor_mensal: valor, inicio: ini, fim, dia };
-      if (ativo && (!(valor > 0) || !ini || !fim)) avisos.push('Sustentação "' + s.projeto + '" NÃO projetada: falta ' + [!(valor > 0) && 'valor mensal', !ini && 'mês de início', !fim && 'mês de fim'].filter(Boolean).join(', ') + ' (sem contrato com datas) — ajuste na aba Sustentações.'); // v3.411
-      if (!ativo || !(valor > 0) || !ini || !fim) continue;
-      for (let mes = ini < mesSombra ? mesSombra : ini; mes <= fim && mes <= ultimo; mes = _mesMais(mes, 1)) // v3.411: 2 meses "sombra" antes de hoje
+      // v3.638: sustentação com valor mas sem vigência cadastrada é tratada como vigente (início = hoje, fim = fim do horizonte) — antes sumia da agenda e o ARR saía zerado
+      let ini2 = ini, fim2 = fim, assumido = false; if (ativo && valor > 0) { if (!ini2) { ini2 = mesHoje; assumido = true; } if (!fim2) { fim2 = ultimo; assumido = true; } }
+      s.efetivo = { ativo, valor_mensal: valor, inicio: ini2, fim: fim2, dia, assumido };
+      if (ativo && !(valor > 0)) avisos.push('Sustentação "' + s.projeto + '" NÃO projetada: falta valor mensal — ajuste na aba Sustentações.'); // v3.411
+      if (assumido) avisos.push('Sustentação "' + s.projeto + '": sem datas de contrato — tratada como vigente (confirme início/fim na aba Sustentações).');
+      if (!ativo || !(valor > 0)) continue;
+      for (let mes = ini2 < mesSombra ? mesSombra : ini2; mes <= fim2 && mes <= ultimo; mes = _mesMais(mes, 1)) // v3.411: 2 meses "sombra" antes de hoje
         if (mesComMarco.has(s.id + '|' + mes)) { if (mes >= mesHoje) susPuladas++; } else oc.push({ ...(mes < mesHoje ? { _sombra: true } : {}), id: `sus_${s.id}_${mes}`, origem: 'sustentacao', ref_id: s.id, projeto: s.projeto, cliente: s.cliente, descricao: 'Sustentação ' + _MESES_PT[+mes.substring(5, 7) - 1] + '/' + mes.substring(0, 4), valor: round(valor), data: _rpDia(mes, dia), base_data: Number(c.valor_mensal) > 0 ? 'valor ajustado' : 'valor sugerido (projeto ÷ meses do contrato)' });
     }
     if (susPuladas) avisos.push(susPuladas + ' mensalidade(s) de sustentação não projetada(s): o projeto já tem marco de faturamento no mesmo mês (o marco é a cobrança).');
@@ -9317,25 +9320,25 @@ async function receitasAgenda({ meses = 13 } = {}) { const r = await receitasPre
 // ARR 2026 = recorrente dos próximos 12 meses a partir do mês corrente; "contratado em 2027" = o que já está cadastrado e segue de jan a dez/2027.
 // Não depende do QuickBooks (o motor Produtos de lá só enxerga o que já foi faturado).
 async function arrSistema() {
-  const rp = await receitasPrevistas({ meses: 13 }), hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
-  const jan = String((+hoje.substring(0, 4)) + 1) + '-01', janAno = hoje.substring(0, 4) + '-01';
-  const anoProx = jan.substring(0, 4);
+  // v3.638: ARR = receita recorrente da Agenda de Receitas nos próximos 12 meses (sustentações + recorrentes manuais + recorrentes do QuickBooks
+  // + termos de sustentação). Mesma fonte da agenda — não mais uma conta paralela que zerava quando faltava data de contrato.
+  const rp = await receitasPrevistas({ meses: 14 }), hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
+  const anoProx = String((+hoje.substring(0, 4)) + 1), jan = anoProx + '-01';
   const jan12 = Array.from({ length: 12 }, (_, i) => _mesMais(mesHoje, i)), prox12 = Array.from({ length: 12 }, (_, i) => _mesMais(jan, i));
-  const itens = [], sem = [];
-  for (const x of rp.sustentacoes || []) { const e = x.efetivo || {}; if (e.ativo === false) continue;
-    if (!(e.valor_mensal > 0) || !e.inicio || !e.fim) { sem.push({ nome: x.projeto || x.cliente, falta: [!(e.valor_mensal > 0) && 'valor mensal', !e.inicio && 'início', !e.fim && 'fim'].filter(Boolean).join(', ') }); continue; }
-    itens.push({ origem: 'sustentacao', cliente: x.cliente || x.projeto || '—', nome: x.projeto || '', valor: e.valor_mensal, passo: 1, ini: e.inicio, fim: e.fim }); }
-  for (const r of rp.manuais || []) { if (r.ativo === false || !(Number(r.valor) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(r.inicio || '')) continue;
-    const passo = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 }[r.recorrencia]; if (!passo) continue;
-    itens.push({ origem: 'recorrente', cliente: r.cliente || r.projeto || '—', nome: r.descricao || r.projeto || 'Receita recorrente', valor: Number(r.valor), passo, ini: r.inicio.substring(0, 7), fim: /^\d{4}-\d{2}-\d{2}$/.test(r.fim || '') ? r.fim.substring(0, 7) : '9999-12' }); }
-  const soma = meses => { const por = { sustentacao: 0, recorrente: 0 }, cli = {}, det = [];
-    for (const it of itens) { let t = 0; for (const m of meses) { if (m < it.ini || m > it.fim) continue; if (it.passo > 1) { const [a1, m1] = it.ini.split('-').map(Number), [a2, m2] = m.split('-').map(Number); if (((a2 - a1) * 12 + (m2 - m1)) % it.passo !== 0) continue; } t += it.valor; }
-      if (!t) continue; por[it.origem] = round(por[it.origem] + t); cli[it.cliente] = round((cli[it.cliente] || 0) + t); det.push({ origem: it.origem, cliente: it.cliente, nome: it.nome, valor: round(t) }); }
-    return { total: round(por.sustentacao + por.recorrente), por_origem: por, clientes: Object.entries(cli).map(([cliente, valor]) => ({ cliente, valor })).sort((a, b) => b.valor - a.valor), itens: det.sort((a, b) => b.valor - a.valor) }; };
+  const recorrente = o => o.origem === 'sustentacao' || o.origem === 'qb_recorrente' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica') || (o.origem === 'termo' && o._sus);
+  const base = (rp.ocorrencias || []).filter(o => recorrente(o) && o.status !== 'cancelada');
+  const soma = meses => { const set = new Set(meses), por = { sustentacao: 0, recorrente: 0, quickbooks: 0 }, cli = {}, det = {};
+    for (const o of base) { const m = String(o.data_prevista || o.data).substring(0, 7); if (!set.has(m)) continue; const v = Number(o.valor) || 0; if (!v) continue;
+      const k = o.origem === 'qb_recorrente' ? 'quickbooks' : o.origem === 'manual' ? 'recorrente' : 'sustentacao'; por[k] = round(por[k] + v);
+      const c = o.cliente || o.projeto || '—'; cli[c] = round((cli[c] || 0) + v); const dk = c + '|' + (o.projeto || ''); const d = (det[dk] = det[dk] || { origem: k, cliente: c, nome: o.projeto || o.descricao || '', valor: 0 }); d.valor = round(d.valor + v); }
+    return { total: round(por.sustentacao + por.recorrente + por.quickbooks), por_origem: por, clientes: Object.entries(cli).map(([cliente, valor]) => ({ cliente, valor })).sort((a, b) => b.valor - a.valor), itens: Object.values(det).sort((a, b) => b.valor - a.valor) }; };
   const a26 = soma(jan12), a27 = soma(prox12);
+  const sem = [], assumidas = [];
+  for (const x of rp.sustentacoes || []) { const e = x.efetivo || {}; if (e.ativo === false) continue;
+    if (!(e.valor_mensal > 0)) sem.push({ nome: x.projeto || x.cliente, falta: 'valor mensal' }); else if (e.assumido) assumidas.push({ nome: x.projeto || x.cliente, valor_mensal: e.valor_mensal }); }
   return { arr_2026: a26.total, mensal_atual: round(a26.total / 12), por_origem_2026: a26.por_origem, clientes_2026: a26.clientes.slice(0, 12), itens_2026: a26.itens.slice(0, 30),
-    contratado_proximo_ano: a27.total, ano_proximo: anoProx, clientes_proximo_ano: a27.clientes.slice(0, 12), sem_dados: sem.slice(0, 20), janela: { de: jan12[0], ate: jan12[11] },
-    regra: 'Sustentações ativas (valor mensal × meses vigentes) + receitas recorrentes da Agenda de Receitas, nos próximos 12 meses. Projetos parcelados, marcos e avulsas não entram.' };
+    contratado_proximo_ano: a27.total, ano_proximo: anoProx, clientes_proximo_ano: a27.clientes.slice(0, 12), sem_dados: sem.slice(0, 20), vigencia_assumida: assumidas.slice(0, 20), janela: { de: jan12[0], ate: jan12[11] },
+    regra: 'Receita recorrente da Agenda de Receitas nos próximos 12 meses: sustentações (Xplann, Big Data e demais), recorrentes manuais, modelos recorrentes do QuickBooks e termos de sustentação. Projetos parcelados, marcos e avulsas não entram.' };
 }
 async function receitaManualSalvar({ item } = {}) {
   const x = item || {}; if (!(Number(x.valor) > 0)) throw new Error('Informe o valor'); if (!/^\d{4}-\d{2}-\d{2}$/.test(x.inicio || '')) throw new Error('Informe a data (início)');
@@ -9433,7 +9436,7 @@ async function projetadoFontes({ meses = 12 } = {}) {
     const contratos = await q(() => sql`SELECT projeto, projeto_id, data_inicio, data_vencimento, prazo_meses FROM contratos_financeiros`);
     const cfg = await q(() => sql`SELECT projeto_nome, tipo_projeto FROM pmo_projetos_config`);
     const recorrenteP = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase());
-      return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla/i.test(p.nome); };
+      return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla|xplann|big ?data/i.test(p.nome); };
     let semVigencia = 0;
     for (const p of projetos) {
       const valor = parseFloat(p.valor_total) || 0; if (!(valor > 0) || !recorrenteP(p)) continue;
@@ -10989,7 +10992,9 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
     extra: { top: [...CL].sort((a, b) => b.receita - a.receita).slice(0, 5).map(c => ({ cliente: c.cliente, receita: c.receita })) }, formula: '% da receita do período nos 5 maiores clientes (relatório Receita por Cliente do QuickBooks)' }));
   // 9 recorrência (ARR ÷ receita) vs meta 30%
   const ult12 = serieM.filter(s => s.mes < _fv2Mes(P.hoje)).slice(-12), rec12 = ult12.reduce((a, s) => a + s.receita, 0), ultM = ult12[ult12.length - 1];
-  const arr = ultM ? round(ultM.produtos * 12) : null, recPct = rec12 > 0 && arr != null ? Math.round(arr / rec12 * 1000) / 10 : null;
+  // v3.638: ARR vem da Agenda de Receitas (sustentações Xplann/Big Data, recorrentes, QuickBooks); só cai para as contas de produto do QuickBooks se a agenda estiver vazia
+  const _arrAg = await arrSistema().then(x => x.arr_2026 > 0 ? x.arr_2026 : null).catch(() => null);
+  const arr = _arrAg != null ? _arrAg : (ultM ? round(ultM.produtos * 12) : null), recPct = rec12 > 0 && arr != null ? Math.round(arr / rec12 * 1000) / 10 : null;
   const metaRecor = metaAno.recorrencia_pct ?? L.recorrencia_meta_2027;
   kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: metaRecor, texto: metaAno.recorrencia_pct != null ? metaRecor + '% em ' + P.ini.substring(0, 4) + ' (Metas da Empresa) · ' + L.recorrencia_meta_2027 + '% até 2027' : 'hipótese de trabalho: ' + L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031 (a meta é fixada na Reunião 4)' },
     extra: { arr, receita_12m: round(rec12), mes_base: ultM?.mes }, semaforo: recPct == null ? 'cinza' : recPct >= metaRecor ? 'verde' : recPct >= metaRecor / 2 ? 'amarelo' : 'vermelho',
@@ -11158,7 +11163,8 @@ async function _fv2Produtos({ P, met, cfg, L, token, base }) {
   const contasProd = F.folhas.filter(f => f.grupo === 'Income' && _fv2MotorConta(f.nome, 'Income', cfg) === 'produtos');
   const mrrMes = mesesCol.map((m, i) => m ? { mes: m, mrr: round(contasProd.reduce((s, f) => s + (f.cols[i] || 0), 0)) } : null).filter(Boolean);
   const porProd = {}; contasProd.forEach(f => { const pn = _fv2ProdutoConta(f.nome, cfg); const iU = mesesCol.findIndex(m => m === mrrMes[mrrMes.length - 1]?.mes); porProd[pn] = (porProd[pn] || 0) + (iU >= 0 ? f.cols[iU] || 0 : 0); });
-  const mrr = mrrMes.length ? mrrMes[mrrMes.length - 1].mrr : 0, arr = round(mrr * 12);
+  const _arrAg = await arrSistema().then(x => x.arr_2026 > 0 ? x.arr_2026 : null).catch(() => null); // v3.638
+  const mrrQB = mrrMes.length ? mrrMes[mrrMes.length - 1].mrr : 0, arr = _arrAg != null ? _arrAg : round(mrrQB * 12), mrr = _arrAg != null ? round(_arrAg / 12) : mrrQB;
   const R12 = p12.status === 'fulfilled' ? dreResumo(p12.value) : null, R24 = p24.status === 'fulfilled' ? dreResumo(p24.value) : null;
   const recPct = R12?.faturamento > 0 ? Math.round(arr / R12.faturamento * 1000) / 10 : null;
   // nível cliente: razão das contas de produto (13 meses) → MRR por cliente por mês
@@ -11199,7 +11205,7 @@ async function _fv2Produtos({ P, met, cfg, L, token, base }) {
   const kpis = [
     _fv2Kpi({ id: 'mrr', titulo: 'MRR', valor: mrr, fmt: 'brl', anterior: mrrMes.length > 1 ? { valor: mrrMes[mrrMes.length - 2].mrr, var_pct: _fv2Var(mrr, mrrMes[mrrMes.length - 2].mrr) } : null, tendencia: mrrMes.slice(-7).map(x => ({ mes: x.mes, v: x.mrr })),
       formula: 'Receita das contas de produto no último mês fechado (' + (meses[meses.length - 1] || '—') + ')', drill: { tipo: 'dre' }, nota: contasProd.length ? null : 'Nenhuma conta de receita classificada como Produtos — ajuste em Configurar.' }),
-    _fv2Kpi({ id: 'arr', titulo: 'ARR', valor: arr, fmt: 'brl', formula: 'MRR × 12', drill: { tipo: 'dre' } }),
+    _fv2Kpi({ id: 'arr', titulo: 'ARR', valor: arr, fmt: 'brl', formula: 'Agenda de Receitas: recorrente dos próximos 12 meses (sustentações, recorrentes e QuickBooks)', drill: { tipo: 'dre' } }),
     _fv2Kpi({ id: 'recorrencia', titulo: 'ARR ÷ receita', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: 'hipótese: ' + L.recorrencia_meta_2027 + '% até 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
       semaforo: recPct == null ? 'cinza' : recPct >= L.recorrencia_meta_2027 ? 'verde' : recPct >= L.recorrencia_meta_2027 / 2 ? 'amarelo' : 'vermelho', formula: 'ARR ÷ receita dos últimos 12 meses fechados', extra: { receita_12m: R12?.faturamento } }),
     _fv2Kpi({ id: 'nrr', titulo: 'Net Revenue Retention', valor: nrr, fmt: 'pct', meta: { valor: L.nrr.verde, texto: 'acima de ' + L.nrr.verde + '%' }, semaforo: _fv2Sem(nrr, L.nrr), tendencia: nrrM.slice(-7).map(x => ({ mes: x.mes, v: x.nrr })),
