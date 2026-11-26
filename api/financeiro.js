@@ -202,6 +202,7 @@ async function handler(req, res) {
       crm_etapas:            () => crmEtapas(),
       // v3.211: Agenda de Receitas (marcos + sustentações + avulsas, sem lançar no QuickBooks)
       receitas_agenda:            () => receitasAgenda(params),
+      arr_sistema:                () => arrSistema(),               // v3.633
       qb_rec_receitas_cfg:        () => qbRecReceitasCfg(params),   // v3.426
       rp_regras_salvar:           () => rpRegrasSalvar(params),     // v3.427
       receitas_diagnostico:       () => receitasDiagnostico(params), // v3.444
@@ -9312,6 +9313,30 @@ async function receitasDiagnostico({ busca } = {}) {
   return { busca: q, termos, sustentacoes: sus, manuais: man, marcos_na_agenda: marcosNa, marcos_fora: marcosFora, recorrentes_qb: qbrec, faturas_qb: faturas, outras_ocorrencias: ocs.filter(o => o.origem === 'qb_recorrente').map(destino), avisos: (r.avisos || []).filter(a => _rpNc(a).includes(nq)) };
 }
 async function receitasAgenda({ meses = 13 } = {}) { const r = await receitasPrevistas({ meses, _forcar: true }); return { agenda: r }; }
+// v3.633: ARR do próprio sistema (Agenda de Receitas): sustentações ativas + receitas recorrentes cadastradas.
+// ARR 2026 = recorrente dos próximos 12 meses a partir do mês corrente; "contratado em 2027" = o que já está cadastrado e segue de jan a dez/2027.
+// Não depende do QuickBooks (o motor Produtos de lá só enxerga o que já foi faturado).
+async function arrSistema() {
+  const rp = await receitasPrevistas({ meses: 13 }), hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
+  const jan = String((+hoje.substring(0, 4)) + 1) + '-01', janAno = hoje.substring(0, 4) + '-01';
+  const anoProx = jan.substring(0, 4);
+  const jan12 = Array.from({ length: 12 }, (_, i) => _mesMais(mesHoje, i)), prox12 = Array.from({ length: 12 }, (_, i) => _mesMais(jan, i));
+  const itens = [], sem = [];
+  for (const x of rp.sustentacoes || []) { const e = x.efetivo || {}; if (e.ativo === false) continue;
+    if (!(e.valor_mensal > 0) || !e.inicio || !e.fim) { sem.push({ nome: x.projeto || x.cliente, falta: [!(e.valor_mensal > 0) && 'valor mensal', !e.inicio && 'início', !e.fim && 'fim'].filter(Boolean).join(', ') }); continue; }
+    itens.push({ origem: 'sustentacao', cliente: x.cliente || x.projeto || '—', nome: x.projeto || '', valor: e.valor_mensal, passo: 1, ini: e.inicio, fim: e.fim }); }
+  for (const r of rp.manuais || []) { if (r.ativo === false || !(Number(r.valor) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(r.inicio || '')) continue;
+    const passo = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 }[r.recorrencia]; if (!passo) continue;
+    itens.push({ origem: 'recorrente', cliente: r.cliente || r.projeto || '—', nome: r.descricao || r.projeto || 'Receita recorrente', valor: Number(r.valor), passo, ini: r.inicio.substring(0, 7), fim: /^\d{4}-\d{2}-\d{2}$/.test(r.fim || '') ? r.fim.substring(0, 7) : '9999-12' }); }
+  const soma = meses => { const por = { sustentacao: 0, recorrente: 0 }, cli = {}, det = [];
+    for (const it of itens) { let t = 0; for (const m of meses) { if (m < it.ini || m > it.fim) continue; if (it.passo > 1) { const [a1, m1] = it.ini.split('-').map(Number), [a2, m2] = m.split('-').map(Number); if (((a2 - a1) * 12 + (m2 - m1)) % it.passo !== 0) continue; } t += it.valor; }
+      if (!t) continue; por[it.origem] = round(por[it.origem] + t); cli[it.cliente] = round((cli[it.cliente] || 0) + t); det.push({ origem: it.origem, cliente: it.cliente, nome: it.nome, valor: round(t) }); }
+    return { total: round(por.sustentacao + por.recorrente), por_origem: por, clientes: Object.entries(cli).map(([cliente, valor]) => ({ cliente, valor })).sort((a, b) => b.valor - a.valor), itens: det.sort((a, b) => b.valor - a.valor) }; };
+  const a26 = soma(jan12), a27 = soma(prox12);
+  return { arr_2026: a26.total, mensal_atual: round(a26.total / 12), por_origem_2026: a26.por_origem, clientes_2026: a26.clientes.slice(0, 12), itens_2026: a26.itens.slice(0, 30),
+    contratado_proximo_ano: a27.total, ano_proximo: anoProx, clientes_proximo_ano: a27.clientes.slice(0, 12), sem_dados: sem.slice(0, 20), janela: { de: jan12[0], ate: jan12[11] },
+    regra: 'Sustentações ativas (valor mensal × meses vigentes) + receitas recorrentes da Agenda de Receitas, nos próximos 12 meses. Projetos parcelados, marcos e avulsas não entram.' };
+}
 async function receitaManualSalvar({ item } = {}) {
   const x = item || {}; if (!(Number(x.valor) > 0)) throw new Error('Informe o valor'); if (!/^\d{4}-\d{2}-\d{2}$/.test(x.inicio || '')) throw new Error('Informe a data (início)');
   const lista = (await _kvFin(_RP_MAN).catch(() => null)) || []; const id = x.id || ('rm_' + Date.now().toString(36));
