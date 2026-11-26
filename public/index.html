@@ -541,7 +541,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .rc3-at small{font-size:8.5px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;}
 .rc3-v{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border-top:1px solid var(--bd);min-width:0;}
 .rc3-v small{font-family:var(--M);font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--t2);flex:0 0 auto;white-space:nowrap;}
-.rc3-v b{font-family:var(--H);font-size:19px;font-weight:700;letter-spacing:-.3px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;min-width:0;}
+.rc3-v b{font-family:var(--H);font-size:17px;font-weight:700;letter-spacing:-.3px;color:var(--t1);white-space:normal;overflow-wrap:anywhere;line-height:1.1;text-align:right;min-width:0;}
 .rc3-v.real b{color:var(--c);}
 .rc3-v.acum{background:color-mix(in srgb,var(--blue) 6%,transparent);margin:0;padding:6px 10px;border-radius:8px;border-top:none;flex-direction:column;align-items:stretch;gap:1px;}
 .rc3-v.acum b{text-align:right;white-space:normal;overflow:visible;}
@@ -31594,7 +31594,7 @@ function vendasCardsRender() {
   const per = D.periodo?.tipo === 'mes' ? 'do mês' : 'do período', defM = "dashAba('vendas');setTimeout(()=>{try{funilMetasEditar()}catch(_){}} ,900)";
   const tipBase = '\n\nFonte: funil de vendas do HubSpot · ' + (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || '') + ' (troque na aba Vendas). Real = negócios que entraram na etapa no período. Meta = ✎ Metas por etapa (aba Vendas). Farol = real contra a meta proporcional ao período decorrido (' + (D.periodo?.decorrido_pct ?? '—') + '%). Acumulado = tudo parado na etapa agora (negócios abertos), de qualquer mês.';
   const etapa = (rot, L, tip) => { if (!L) return _resCartaoV2({ rot, tip: tip + tipBase, real: null, semPrev: true, fmt: n, meta: null });
-    const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM, linhas: [...(L.ordem > 0 ? [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')]] : []), ['Acumulado', acum(L)]] }); };
+    const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM, linhas: [...(L.ordem > 0 ? [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')]] : []), ...(L.meta?.qtd_ate_hoje != null ? [['Esperado até hoje', n(Math.round(L.meta.qtd_ate_hoje))]] : []), ['Em aberto agora', acum(L)]] }); };
   const acum = (L, comValor) => !L || !L.agora ? '—' : n(L.agora.qtd) + (comValor ? ' · ' + brl(L.agora.valor) : ''); // v3.356: negócios abertos na etapa agora
   try { const pe = document.getElementById('vendasPer'); if (pe) pe.textContent = (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || ''); } catch (_) {}
   const lead = acha(/lead|prospec/), reu = acha(/reuni|qualif/), prop = acha(/propost/), gan = E.find(L => L.ganho), R = D.resumo || {};
@@ -31604,13 +31604,13 @@ function vendasCardsRender() {
     (() => { const L = prop; if (!L) return etapa('Propostas ' + per, null, '**Propostas**'); const mq = L.meta?.qtd, mv = L.meta?.valor;
       const at = mq ? L.real.qtd / mq * 100 : mv ? L.real.valor / mv * 100 : null; // v3.358: % pela quantidade
       return _resCartaoV2({ rot: 'Propostas ' + per, tip: '**Propostas** = negócios que entraram na etapa de proposta no período: quantidade e valor. % atingido pelo valor (ou pela quantidade, se só ela tiver meta).' + tipBase,
-        real: L.real.qtd, realTxt: n(L.real.qtd) + ' · ' + brl(L.real.valor), meta: (mv || mq) || undefined, metaTxt: mv || mq ? (mq ? n(mq) : '—') + ' · ' + (mv ? brl(mv) : '—') : null, semPrev: true, luz: L.farol, ating: at, barra: at, definir: defM, linhas: [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')], ['Acumulado', acum(L, true)]] }); })(),
-    _resCartaoV2({ rot: 'Pipeline aberto', tip: '**Pipeline aberto** = valor dos negócios abertos agora (' + n(R.aberto?.qtd) + ' negócios; ponderado pela probabilidade ' + brl(R.aberto?.ponderado) + ').\n**Meta** = pipeline necessário para bater a meta de faturamento do período = o que falta ÷ taxa de ganho (' + (R.taxa_ganho_pct ?? '—') + '%).' + tipBase,
+        real: L.real.qtd, realTxt: n(L.real.qtd) + ' · ' + brl(L.real.valor), meta: (mv || mq) || undefined, metaTxt: mv || mq ? (mq ? n(mq) : '—') + ' · ' + (mv ? brl(mv) : '—') : null, semPrev: true, luz: L.farol, ating: at, barra: at, definir: defM, linhas: [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')], ...(L.meta?.qtd_ate_hoje != null ? [['Esperado até hoje', n(Math.round(L.meta.qtd_ate_hoje)) + (L.meta.valor_ate_hoje != null ? ' · ' + brl(L.meta.valor_ate_hoje) : '')]] : []), ['Em aberto agora', acum(L, true)]] }); })(),
+    _resCartaoV2({ rot: 'Pipeline aberto', tip: '**Pipeline aberto** = valor dos negócios abertos agora (' + n(R.aberto?.qtd) + ' negócios; ponderado pela probabilidade ' + brl(R.aberto?.ponderado) + ').\n**Meta** = pipeline necessário para sustentar a meta de faturamento do período = meta do período ÷ taxa de ganho (cobertura; não zera quando a meta do mês é batida) (' + (R.taxa_ganho_pct ?? '—') + '%).' + tipBase,
       real: R.aberto?.valor ?? null, meta: R.pipeline_necessario || undefined, semPrev: true, linhas: [['Ponderado', brl(R.aberto?.ponderado)]], luz: R.pipeline_necessario ? (R.aberto.valor >= R.pipeline_necessario ? 'verde' : R.aberto.valor >= R.pipeline_necessario * 0.8 ? 'amarelo' : 'vermelho') : (R.falta === 0 ? 'verde' : null), definir: 'metasEditar()' }),
     _resCartaoV2({ rot: 'Vendas fechadas ' + per, tip: '**Vendas fechadas** = negócios ganhos no período (' + n(R.ganho?.qtd) + '). Meta = meta de faturamento do período.' + tipBase,
-      real: R.ganho?.valor ?? null, meta: R.meta || undefined, semPrev: true, linhas: [['Quantidade', gan ? n(gan.real.qtd) + ' / meta ' + (gan.meta?.qtd ? n(gan.meta.qtd) : '—') + (gan.conv_meta ? ' (' + _resFmtPct(gan.conv_meta) + ' de ' + String(gan.conv_base || '').split(' /')[0].toLowerCase() + ')' : '') : '—'], ['Acumulado em negociação', (() => { const ng = acha(/negocia/); return ng ? acum(ng, true) : '—'; })()]], luz: gan?.farol, ating: R.pct_meta ?? null, definir: 'metasEditar()' }),
+      real: R.ganho?.valor ?? null, meta: R.meta || undefined, semPrev: true, linhas: [['Quantidade', gan ? n(gan.real.qtd) + ' / meta ' + (gan.meta?.qtd ? n(gan.meta.qtd) : '—') + (gan.conv_meta ? ' (' + _resFmtPct(gan.conv_meta) + ' de ' + String(gan.conv_base || '').split(' /')[0].toLowerCase() + ')' : '') : '—'], ['Em negociação agora', (() => { const ng = acha(/negocia/); return ng ? acum(ng, true) : '—'; })()]], luz: gan?.farol, ating: R.pct_meta ?? null, definir: 'metasEditar()' }),
     (() => { const t = (document.getElementById('kRfp')?.textContent || '').trim(), v = /^\d+$/.test(t) ? Number(t) : null;
-      return _resCartaoV2({ rot: 'RFPs', tip: '**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect). Sem meta cadastrada.', real: v, fmt: n, meta: null, semPrev: true, linhas: [['Acumulado', '—']] }); })(),
+      return _resCartaoV2({ rot: 'RFPs na varredura', tip: '**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect). É um total da varredura, não do mês. Sem meta cadastrada.', real: v, fmt: n, meta: null, semPrev: true }); })(),
   ];
   box.innerHTML = cards.join('');
   // v3.515: cada card abre o detalhamento (negócios, empresas e contatos) em vez de só trocar de aba
@@ -37582,7 +37582,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.625] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.626] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37598,7 +37598,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.625';
+window.__ATX_BUILD_ID__ = 'ATX-v3.626';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 

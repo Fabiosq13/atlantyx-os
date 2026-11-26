@@ -8789,14 +8789,16 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
   // v3.358: meta por CONVERSÃO — etapa sem quantidade cadastrada e com "% de conversão" usa a meta da etapa anterior que tem meta
   //   (ex.: leads 100 → reuniões 10% = 10 → propostas 10% das reuniões = 1 → venda 80% das propostas). conv_real = real ÷ real da mesma base.
   let _baseMeta = null;
+  // v3.626: com a camada de contatos no topo, 'Reuniões' converte dos LEADS (contatos) — não da coluna 'Prospecção' de negócios, que é outra população e dava conversão de 200%
+  const temContatos = !!(linhas[0] && linhas[0].contatos), prevL = L => { if (L.ordem <= 0) return null; let p = linhas[L.ordem - 1]; if (temContatos && p.id === 'm_prospeccao' && L.ordem >= 2) p = linhas[0]; return p; };
   for (const L of linhas) {
     const c = metasEt[L.id] || {};
     const convMeta = Number(c.conv_pct) > 0 ? Number(c.conv_pct) : null, base = _baseMeta;
     let qMes = Number(c.qtd_mes) > 0 ? Number(c.qtd_mes) : null, qOrig = qMes != null ? 'cadastrada' : null;
-    if (qMes == null && convMeta != null && base && base.qMes != null) { qMes = Math.round(base.qMes * convMeta / 100 * 10) / 10; qOrig = 'conversão'; }
-    const bReal = base ? base.L : (L.ordem > 0 ? linhas[L.ordem - 1] : null);
+    if (qMes == null && convMeta != null && base && base.qMes != null) { qMes = Math.ceil(base.qMes * convMeta / 100 - 1e-9); qOrig = 'conversão'; } // v3.626: meta de contagem sempre inteira (antes 16,3 reuniões / 6,5 propostas)
+    const bReal = base ? base.L : prevL(L);
     L.conv_base = bReal ? bReal.nome : null; L.conv_real = bReal && bReal.real.qtd ? Math.round(L.real.qtd / bReal.real.qtd * 1000) / 10 : null; L.conv_meta = convMeta;
-    if (qMes != null) _baseMeta = { qMes, L };
+    if (qMes != null && !(temContatos && L.id === 'm_prospeccao')) _baseMeta = { qMes, L };
     const mq = qMes != null ? qMes * P.meses : null;
     let mv = Number(c.valor_mes) > 0 ? Number(c.valor_mes) * P.meses : null, fonte = mq != null || mv != null ? 'cadastrada' : null;
     if (L.ganho && mv == null && metaFat) { mv = metaFat; fonte = 'meta de faturamento'; }
@@ -8816,7 +8818,8 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
   const resumo = { aberto, ganho: { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor) }, meta: metaFat != null ? round(metaFat) : null, meta_ate_hoje: metaFat != null ? round(metaFat * prop) : null,
     pct_meta: metaFat ? Math.round(ganhosPer.valor / metaFat * 100) : null, falta: falta != null ? round(falta) : null,
     cobertura_pct: falta ? Math.round(aberto.ponderado / falta * 100) : null, taxa_ganho_pct: Math.round(tg * 100), taxa_ganho_fonte: taxaGanho != null ? `${ganhos12.length} ganhos × ${perd12.length} perdidos em 12 meses` : 'padrão 25% (menos de 3 ganhos e 3 perdidos registrados em 12 meses)',
-    pipeline_necessario: falta ? round(falta / tg) : null, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) } };
+    // v3.626: pipeline necessário = meta do PERÍODO inteiro ÷ taxa de ganho (antes usava só o que faltava: bater a meta zerava a meta do pipeline e dava 2104% da meta)
+    pipeline_necessario: metaFat ? round(metaFat / tg) : null, pipeline_necessario_falta: falta ? round(falta / tg) : null, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) } };
   // v3.479: MOVIMENTO NO FUNIL — negócios que mudaram de etapa (data de entrada em cada etapa do HubSpot):
   // avançou = entrou numa coluna à frente (ou ganhou); recuou = voltou para uma coluna anterior (ou perdeu). Semana = 7 dias; mês = período do funil.
   try { const tSem = Date.now() - 7 * 864e5, tMes = P.tIni, z = () => ({ avancou: 0, recuou: 0, ganhos: 0, perdidos: 0 });
