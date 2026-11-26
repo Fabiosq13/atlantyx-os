@@ -157,17 +157,26 @@
     return out;
   }
 
+  // ARR 2026 = QuickBooks (placar); ponto de partida de 2027 = ajuste manual, se houver, senão o próprio ARR 2026
+  function arrBase() {
+    const rq = S.placar && (S.placar.indicadores || []).find(x => x.id === 'recorrente_pct'), qb = rq && rq.arr_qb != null ? rq.arr_qb : null;
+    const man = ((S.cen && S.cen.atual) || {}).arr_2027 || 0;
+    return { qb, manual: man > 0, valor: man > 0 ? man : qb };
+  }
   function horizonte() {
     const C = S.cen; if (!C) return `<div class="ck-vazio">${esc(S.erroCen || 'Carregando os cenários…')}</div>`;
     const m = k => (C[k]?.cenarios || [])[1] || {}, F = C.frentes || {}, B = i => (F[i] || [])[1] || {};
     const A = C.atual || {}, rq = S.placar && (S.placar.indicadores || []).find(x => x.id === 'recorrente_pct'), qb = rq && rq.arr_qb != null ? rq.arr_qb : null;
-    const base = [A.arr ? ['ARR ATUAL (Xplann + Big Data + alocações · informado)', A.arr, '#e6edf3', 'arr'] : ['ARR ATUAL · informe Xplann, Big Data e alocações', 0, '#e6edf3', 'arr']]; if (qb != null) base.push(['Referência QuickBooks · motor Produtos × 12', qb, '#8b949e', 'qb']);
+    const b27 = arrBase(), proj = b27.valor != null ? b27.valor + (m('gelta').arr || 0) + (m('iara').arr || 0) + (B('funil').arrIA || 0) : null;
+    const base = [qb != null ? ['ARR 2026 · QuickBooks (automático · motor Produtos × 12)', qb, '#e6edf3', 'qb'] : ['ARR 2026 · QuickBooks não retornou o ARR', 0, '#e6edf3', 'qb'],
+      [b27.manual ? 'ARR 2027 · ponto de partida (ajustado por você)' : 'ARR 2027 · ponto de partida = ARR 2026 (editável)', b27.valor || 0, '#58a6ff', 'arr']];
     const linhas = [['Produto p/ concessionárias (hipótese, ' + (m('gelta').clientes || 0) + ' grupos) · recorrente/ano', m('gelta').arr, '#22d3a3', 'gelta'], ['IARA (hipótese, ' + (m('iara').clientes || 0) + ' clientes) · recorrente/ano', m('iara').arr, '#9c6dff', 'iara'], ['Funil isca → IA (hipótese, ' + Math.round(B('funil').servicos || 0) + ' clientes) · recorrente/ano', B('funil').arrIA, '#f5b83d', 'funil_arr']];
+    const tot27 = proj != null ? [['ARR 2027 projetado = ponto de partida + hipóteses (cenário B)', proj, '#f0f6fc', 'tot27']] : [];
     const res = [['Grandes projetos · contribuição', B('gp').contrib, '#fb7185', 'gp'], ['Sustentação · contribuição', B('sust').contrib, '#2dd4bf', 'sust'], ['Funil isca → IA → projeto · contribuição', B('funil').contrib, '#a3e635', 'funil_contrib']];
     const mx = Math.max(1, ...linhas.map(l => l[1] || 0), ...res.map(l => Math.max(0, l[1] || 0)));
     const bar = l => `<div class="ck-bar" style="cursor:pointer" title="Clique para ver o que compõe este número" onclick="CENTRAL.detalhe('${l[3] || ''}')"><span>${esc(l[0])}</span><div class="tr"><i style="width:${Math.max(2, Math.max(0, l[1] || 0) / mx * 100).toFixed(1)}%;background:${l[2]}"></i></div><b>${R(l[1])}</b></div>`;
     const cp = C.comparativo || {};
-    return base.map(bar).join('') + '<div class="ck-act" style="margin:6px 0 2px"><button class="ck-btn p" onclick="CENTRAL.arrEditar()">' + (A.arr ? '✎ Editar o ARR atual' : '✎ Informar o ARR atual') + '</button>' + (A.arr ? '' : '<span class="ck-cap" style="align-self:center">Xplann, Big Data e alocações, em R$ por mês</span>') + '</div>' + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (não são receita de hoje)</div>' + linhas.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
+    return base.map(bar).join('') + '<div class="ck-act" style="margin:6px 0 2px"><button class="ck-btn" onclick="CENTRAL.arrEditar()">✎ Ajustar o ponto de partida de 2027</button>' + (b27.manual ? '<button class="ck-btn" onclick="CENTRAL.arrSalvar(true)">↺ Voltar ao ARR do QuickBooks</button>' : '') + '</div>' + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (somam sobre o ponto de partida)</div>' + linhas.map(bar).join('') + tot27.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
       `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Entre Gelta e IARA — maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>. O Maestro está fora do plano 2027 e não entra nestas contas.</div>`;
   }
 
@@ -177,8 +186,9 @@
     const C = S.cen; if (!C) return null; const P = C.entradas || {}, g = (C.gelta.cenarios || [])[1] || {}, i = (C.iara.cenarios || [])[1] || {}, F = C.frentes || {}, gp = (F.gp || [])[1] || {}, su = (F.sust || [])[1] || {}, fu = (F.funil || [])[1] || {}, A = C.atual || {};
     const pc = v => nf((v || 0) * 100, 1) + '%', rq = S.placar && (S.placar.indicadores || []).find(x => x.id === 'recorrente_pct');
     const T = {
-      arr: { t: 'ARR atual (informado)', f: '(Xplann + Big Data + alocações) × 12', l: [['Sustentação Xplann / mês', R(A.xplann)], ['Sustentação Big Data / mês', R(A.bigdata)], ['Alocações recorrentes / mês', R(A.alocacoes)], ['Total / mês', R(A.mensal)], ['× 12 = ARR atual', R(A.arr)]], n: A.arr ? 'Valores digitados em Cenários 2027 → Premissas → "ARR atual (real)". O Jelta não entra: é projeto parcelado.' : 'Ainda zerado: informe os três valores mensais em Cenários 2027 → Premissas → "ARR atual (real)".', ir: 'Cenários 2027' },
-      qb: { t: 'Referência QuickBooks', f: 'receita do motor Produtos no último mês fechado × 12', l: [['ARR (motor Produtos × 12)', R(rq && rq.arr_qb)], ['Receita dos últimos 12 meses', R(rq && rq.receita_12m)], ['ARR ÷ receita', rq && rq.real != null ? nf(rq.real, 1) + '%' : '—']], n: 'Só vale se cada cliente estiver no motor certo em Financeiro → Custo por Projeto & Piso da Hora. É referência, não substitui o ARR informado.', ir: 'p:s3custohora' },
+      arr: { t: 'ARR 2027 · ponto de partida', f: 'ARR 2026 do QuickBooks (ou o valor que você ajustou)', l: [['ARR 2026 (QuickBooks)', R(arrBase().qb)], ['Ajuste manual', arrBase().manual ? R(A.arr_2027) : 'nenhum'], ['Ponto de partida de 2027', R(arrBase().valor)]], n: 'Começa igual ao ARR 2026 e você pode corrigir. Jelta não entra: é projeto parcelado. O ARR 2027 projetado soma a este ponto as hipóteses do cenário B.', ir: 'Cenários 2027' },
+      tot27: { t: 'ARR 2027 projetado (cenário B)', f: 'ponto de partida + Gelta + IARA + serviço de IA do funil', l: [['Ponto de partida de 2027', R(arrBase().valor)], ['+ Produto p/ concessionárias', R(g.arr)], ['+ IARA', R(i.arr)], ['+ Serviço de IA do funil', R(fu.arrIA)], ['= ARR 2027 projetado', R((arrBase().valor || 0) + (g.arr || 0) + (i.arr || 0) + (fu.arrIA || 0))]], n: 'Hipóteses editáveis em Cenários 2027 → Premissas; nada aqui é receita já contratada.', ir: 'Cenários 2027' },
+      qb: { t: 'ARR 2026 · QuickBooks', f: 'receita do motor Produtos no último mês fechado × 12', l: [['ARR (motor Produtos × 12)', R(rq && rq.arr_qb)], ['Receita dos últimos 12 meses', R(rq && rq.receita_12m)], ['ARR ÷ receita', rq && rq.real != null ? nf(rq.real, 1) + '%' : '—']], n: 'Só vale se cada cliente estiver no motor certo em Financeiro → Custo por Projeto & Piso da Hora. É referência, não substitui o ARR informado.', ir: 'p:s3custohora' },
       gelta: { t: 'Produto para concessionárias (hipótese)', f: 'grupos × receita mensal por grupo (ponderada pela adoção) × 12', l: [['Grupos no cenário B', nf(g.clientes)], ['Lojas por grupo', nf(P['gelta.lojas'])], ['Receita mensal por grupo (módulos × adoção)', R(C.gelta.suite.recPond)], ['ARR = grupos × mensal × 12', R(g.arr)], ['Implantação cobrada / grupo', R((P['gelta.impl_base'] || 0) + (P['gelta.impl_loja'] || 0) * (P['gelta.lojas'] || 0))]].concat((C.gelta.modulos || []).map(m => ['• ' + m.nome + ' (adoção ' + pc(m.adocao) + ')', R(m.rec) + '/mês'])), n: 'Hipótese, não é receita de hoje. O Jelta é projeto parcelado e não entra aqui.', ir: 'Cenários 2027' },
       iara: { t: 'IARA (hipótese)', f: 'clientes × (mensalidade + leads × preço por lead) × 12', l: [['Clientes no cenário B', nf(i.clientes)], ['Mensalidade fixa', R(P['iara.mensal'])], ['Contatos/mês × taxa = leads', nf(P['iara.contatos']) + ' × ' + pc(P['iara.taxa']) + ' = ' + nf(C.iara.cliente.leadsMes, 1)], ['Variável (leads × ' + R(P['iara.preco_lead']) + ')', R(C.iara.cliente.variavel)], ['Receita mensal por cliente', R(C.iara.cliente.rec)], ['ARR = clientes × mensal × 12', R(i.arr)]], n: 'Hipótese: a IARA ainda não vende; as taxas precisam ser medidas.', ir: 'Cenários 2027' },
       funil_arr: { t: 'Funil isca → IA · recorrência (hipótese)', f: 'leads × 12 → reunião → diagnóstico → serviço de IA mensal × 12', l: [['Leads por mês (B)', nf(fu.leads)], ['Reuniões/ano (lead→reunião ' + pc(P['funil.c1']) + ')', nf(fu.reunioes, 1)], ['Diagnósticos (' + pc(P['funil.c2']) + ')', nf(fu.diagnosticos, 1)], ['Serviços de IA (' + pc(P['funil.c3']) + ')', nf(fu.servicos, 1)], ['Mensalidade do serviço', R(P['funil.mensal_ia'])], ['ARR = serviços × mensalidade × 12', R(fu.arrIA)]], n: 'As taxas de conversão são hipóteses; trocar pelas reais do Time de Vendas.', ir: 'Playbook 2027' },
@@ -199,27 +209,23 @@
   function fechar() { const m = $('ckModal'); if (m) m.remove(); }
   // ARR atual digitado aqui mesmo (os 3 valores mensais); preserva as demais premissas já alteradas em Cenários 2027
   function arrEditar() {
-    const A = (S.cen && S.cen.atual) || {}; fechar();
+    const B = arrBase(); fechar();
     const m = document.createElement('div'); m.id = 'ckModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
     m.onclick = e => { if (e.target === m) fechar(); };
-    const campo = (id, rot, v) => `<label style="display:block;margin-top:10px;font-size:11.5px">${esc(rot)}<input id="${id}" type="number" min="0" step="100" inputmode="decimal" value="${v ? v : ''}" placeholder="0" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);color:var(--t1);font-size:13px"></label>`;
-    m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:14px;max-width:460px;width:100%;padding:16px 18px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><b style="font-size:14px">ARR atual (valores reais por mês)</b><div class="ck-cap" style="margin-top:3px">ARR = (Xplann + Big Data + alocações) × 12. Não inclua o Jelta (projeto parcelado).</div></div><button class="ck-btn" onclick="CENTRAL.fechar()">✕</button></div>`
-      + campo('ckArrX', 'Sustentação Xplann (R$/mês)', A.xplann) + campo('ckArrB', 'Sustentação Big Data (R$/mês)', A.bigdata) + campo('ckArrA', 'Alocações recorrentes (R$/mês)', A.alocacoes)
-      + `<div id="ckArrTot" class="ck-cap" style="margin-top:10px"></div><div class="ck-act"><button class="ck-btn p" id="ckArrOk" onclick="CENTRAL.arrSalvar()">Salvar</button><button class="ck-btn" onclick="CENTRAL.fechar()">Cancelar</button></div></div>`;
+    m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:14px;max-width:460px;width:100%;padding:16px 18px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><b style="font-size:14px">Ponto de partida do ARR 2027</b><div class="ck-cap" style="margin-top:3px">Começa com o ARR 2026 do QuickBooks (${esc(R(B.qb))}). Corrija só se o valor do QuickBooks não refletir a realidade (por exemplo, cliente no motor errado).</div></div><button class="ck-btn" onclick="CENTRAL.fechar()">✕</button></div>
+      <label style="display:block;margin-top:12px;font-size:11.5px">ARR de partida de 2027 (R$ por ano)<input id="ckArrV" type="number" min="0" step="1000" inputmode="decimal" value="${B.valor ? Math.round(B.valor) : ''}" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);color:var(--t1);font-size:13px"></label>
+      <div class="ck-act"><button class="ck-btn p" id="ckArrOk" onclick="CENTRAL.arrSalvar()">Salvar</button><button class="ck-btn" onclick="CENTRAL.arrSalvar(true)">Voltar ao do QuickBooks</button><button class="ck-btn" onclick="CENTRAL.fechar()">Cancelar</button></div></div>`;
     document.body.appendChild(m);
-    const tot = () => { const v = id => Number($(id).value) || 0, mes = v('ckArrX') + v('ckArrB') + v('ckArrA'); $('ckArrTot').textContent = 'Total por mês ' + R(mes) + ' · ARR (× 12) ' + R(mes * 12); };
-    ['ckArrX', 'ckArrB', 'ckArrA'].forEach(id => $(id).addEventListener('input', tot)); tot();
   }
-  async function arrSalvar() {
+  async function arrSalvar(limpar) {
     const btn = $('ckArrOk'); if (btn) btn.disabled = true;
     try {
       const raw = S.cenRaw || { valores: {}, alterados: [] }, v = {};
       (raw.alterados || []).forEach(k => { if (raw.valores[k] != null) v[k] = raw.valores[k]; });
-      const n = id => Math.max(0, Number($(id).value) || 0);
-      v['atual.xplann'] = n('ckArrX'); v['atual.bigdata'] = n('ckArrB'); v['atual.alocacoes'] = n('ckArrA');
+      v['atual.arr_2027'] = limpar ? 0 : Math.max(0, Number(($('ckArrV') || {}).value) || 0);
       const d = await api('/api/s1-intel', { action: 'cenarios_salvar', valores: v });
       S.cen = d.resultado; S.cenRaw = { valores: d.valores || {}, alterados: d.alterados || [] };
-      fechar(); render(); try { toast('ARR atual salvo', 'success'); } catch (_) {}
+      fechar(); render(); try { toast(limpar ? 'Voltou ao ARR do QuickBooks' : 'Ponto de partida de 2027 salvo', 'success'); } catch (_) {}
     } catch (e) { if (btn) btn.disabled = false; try { toast(e.message, 'error'); } catch (_) {} }
   }
 
@@ -249,7 +255,7 @@
       <div><h4>Checklist · ${r.progresso}%</h4><ul style="list-style:none;padding:0">${r.checklist.map(c => `<li class="${c.ok ? 'ok' : ''}">${c.ok ? '☑' : '☐'} ${esc(c.texto)}</li>`).join('')}</ul>
         ${r.alertas.length ? `<div style="color:var(--gold,#f0a030);margin-top:6px">⚠ ${esc(r.alertas[0])}</div>` : ''}
         <div class="ck-act" style="margin-top:8px"><button class="ck-btn p" onclick="CENTRAL.jornadaAbrir(${r.n})">Abrir esta reunião na Trilha ›</button>${r.n === 3 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Estúdio de Produtos e Esteira\')">Estúdio ›</button>' : ''}${r.n === 4 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Cenários 2027\')">Cenários ›</button>' : ''}${r.n === 6 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Sala do Conselho\')">Conselho ›</button>' : ''}</div></div></div>`;
-    const A = S.cen && S.cen.atual, pre = [['Valor e parcelas do Jelta', null], ['ARR atual real (Xplann, Big Data, alocações)', A ? !!A.arr : null], ['Motor de cada cliente (QuickBooks)', null], ['Placar de metas carregado', !!S.placar], ['Sócios convocados', J.reunioes[0].checklist.find(c => c.chave === 'socios')?.ok ?? null]];
+    const A = S.cen && S.cen.atual, pre = [['Valor e parcelas do Jelta', null], ['ARR 2026 do QuickBooks', arrBase().qb != null], ['Motor de cada cliente (QuickBooks)', null], ['Placar de metas carregado', !!S.placar], ['Sócios convocados', J.reunioes[0].checklist.find(c => c.chave === 'socios')?.ok ?? null]];
     return `<div class="ck-jor">${cards}</div>${det}<div class="ck-cap" style="margin-top:8px">${J.feitas} de ${J.total} reuniões feitas. A ordem não se inverte: cada reunião usa a decisão da anterior.</div><div class="ck-pre"><b style="color:var(--t3)">Antes da Reunião 1:</b>${pre.map(([t, ok]) => `<span>${ok === true ? '☑' : '☐'} ${esc(t)}</span>`).join('')}</div>`;
   }
 
@@ -262,7 +268,7 @@
     const o = { tela: 'Central de Planejamento e Estratégia', hoje: new Date().toLocaleDateString('pt-BR') };
     if (S.jor) o.jornada = { feitas: S.jor.feitas, total: S.jor.total, proxima: S.jor.proxima, reunioes: S.jor.reunioes.map(r => ({ n: r.n, titulo: r.titulo, feita: r.feito, progresso: r.progresso, abertos: r.checklist.filter(c => !c.ok).map(c => c.texto), decisoes: r.decisoes.slice(0, 4).map(d => d.texto), alertas: r.alertas })) };
     if (S.placar) o.placar = { resumo: S.placar.resumo, indicadores: (S.placar.indicadores || []).slice(0, 30).map(x => ({ nome: x.nome, real: x.real, meta: x.meta, projecao: x.projecao, cor: x.cor, unidade: x.unidade })), acoes_abertas: S.placar.acoes_abertas, pendentes_acao: S.placar.pendentes_acao };
-    if (S.cen) o.cenarios = { arr_atual_real: (S.cen.atual || {}).arr || 0, atual: S.cen.atual, comparativo: S.cen.comparativo, frentes_b: Object.fromEntries(Object.entries(S.cen.frentes || {}).map(([k, v]) => [k, (v || [])[1]])) };
+    if (S.cen) o.cenarios = { arr_2026_quickbooks: arrBase().qb, arr_2027_ponto_de_partida: arrBase().valor,  comparativo: S.cen.comparativo, frentes_b: Object.fromEntries(Object.entries(S.cen.frentes || {}).map(([k, v]) => [k, (v || [])[1]])) };
     return JSON.stringify(o).substring(0, 8500);
   }
   function torreCalar() { try { speechSynthesis.cancel(); } catch (_) {} clearInterval(T.poll); clearTimeout(T.ini); T.falando = false; }
