@@ -20,6 +20,7 @@ import { moatObter, moatAnalisar, moatTeseSalvar, moatResumoTexto, K_MOAT } from
 // Nada é executado sozinho: a IA propõe, o fundador decide.
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+const MODEL_VOZ = process.env.CLAUDE_MODEL_VOZ || 'claude-haiku-4-5'; // v3.625: conversa por voz precisa de resposta rápida
 let _sql = null, _pronto = false;
 async function getSql() {
   if (!_sql) { const { neon } = await import('@neondatabase/serverless'); _sql = neon(process.env.DATABASE_URL); }
@@ -210,10 +211,13 @@ async function projecaoParaMetas({ anos = [], substituir = [] } = {}) {
     feitos.push({ ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct, ok: !!r }); }
   return { feitos, protegidos };
 }
-async function claude(system, messages, maxTokens = 1500) {
+// v3.625: `modelo` opcional (voz usa o modelo rápido) e cache do prompt (o contexto grande só é "lido" uma vez por conversa → respostas bem mais rápidas)
+async function claude(system, messages, maxTokens = 1500, modelo) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
-  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }) });
+  const chamarIA = m => fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: m, max_tokens: maxTokens, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages }) });
+  let r = await chamarIA(modelo || MODEL);
+  if (!r.ok && modelo && modelo !== MODEL) r = await chamarIA(MODEL); // modelo rápido indisponível → volta ao padrão
   const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA: ' + (d?.error?.message || r.status));
   return (d.content || []).map(c => c.text || '').join('').trim();
 }
@@ -276,9 +280,11 @@ async function chat({ conversa_id, mensagem, voz, persona, contexto_extra, titul
   let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
   const quem = persona === 'norte' ? 'norte' : 'atlas';
   if (!conv) { const id = novoId('conv'); await sql`INSERT INTO est_conversas (id, titulo) VALUES (${id}, ${(quem === 'norte' ? '🧭 ' : '') + m.substring(0, 80)})`; conv = { id, mensagens: [] }; }
-  const [ctx, prem, plano] = await Promise.all([contexto(), premissasCtx(), planoVigente()]);
-  try { ctx.amplo = ctx.amplo || await contextoAmplo(false); } catch (_) {}
-  const hist = (conv.mensagens || []).slice(-16).map(x => ({ role: x.role, content: x.content }));
+  // v3.625: no chat nunca espera reconstruir o contexto — usa o último gravado (mesmo velho) e atualiza em segundo plano
+  const velho = async (chave, fn) => { const c = await kv(chave); if (c) { if (!c.em || Date.now() - Date.parse(c.em) > 10 * 60000) fn(true).catch(() => {}); return c; } return await fn(false); };
+  const [ctx, prem, plano] = await Promise.all([velho('est:contexto', contexto), premissasCtx(), planoVigente()]);
+  try { ctx.amplo = ctx.amplo || await velho('est:contexto_amplo', contextoAmplo); } catch (_) {}
+  const hist = (conv.mensagens || []).slice(voz ? -8 : -16).map(x => ({ role: x.role, content: x.content }));
   const system = `Você é ATLAS, o estrategista-chefe de IA da Atlantyx, conversando com o fundador e CEO (Fabio). Papel: ${AGENTES.atlas.foco}
 ${REGRAS}
 ${voz ? 'A resposta será LIDA EM VOZ ALTA: frases curtas, sem markdown, sem tabelas, sem listas longas — no máximo 120 palavras, termine com uma pergunta ou próximo passo.' : 'Formato: markdown leve (negrito, listas curtas). Até 250 palavras, salvo se pedirem detalhe.'}
@@ -304,7 +310,7 @@ RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { 
   const hojeBR = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
   let blocoLeads = ''; if (quem === 'atlas' && (PEDE_LEADS.test(m) || PEDE_LEADS.test(String(contexto_extra || '').substring(0, 400)))) { try { const L = await leadsFunil(m + ' ' + String(contexto_extra || '').substring(0, 600));
     blocoLeads = `\n\nLEADS DO FUNIL DE VENDAS (Floresta/HubSpot — ${L.total} no funil, ${L.mostrados} abaixo, os citados pelo nome primeiro; por etapa: ${JSON.stringify(L.por_etapa)}): ${JSON.stringify(L.leads)}\nUse esses leads, pelo NOME, para ajudar a montar a abordagem (canal, ângulo, mensagem, ordem de prioridade), com o contexto do negócio e do que a Atlantyx vende. Não invente dados do lead: se faltar, diga. Se o lead citado não estiver na lista, avise. E-mail e telefone não estão aqui por privacidade — o sistema os usa no envio. Se recomendar uma abordagem e criar tarefa, escreva o NOME COMPLETO do lead no texto (ex.: "Enviar e-mail para Fulano de Tal (Empresa) — retomar a proposta"): o sistema liga a tarefa ao lead e já deixa o rascunho pronto para você aprovar na Floresta.`; } catch (e) { blocoLeads = '\n\n(Os leads do funil não puderam ser lidos agora: ' + String(e.message).substring(0, 80) + ')'; } }
-  const bruto = await claude((sysNorte || system) + blocoLeads + INSTR_TAREFAS(hojeBR), [...hist, { role: 'user', content: m }], voz ? 900 : 2200);
+  const bruto = await claude((sysNorte || system) + blocoLeads + INSTR_TAREFAS(hojeBR), [...hist, { role: 'user', content: m }], voz ? 450 : 2200, voz ? MODEL_VOZ : undefined);
   const X = _extrairBlocoTarefas(bruto); let resposta = X.texto; // v3.410
   const T = await _tarefasResolver(m, X.tarefas, quem === 'norte' ? 'NORTE' : 'ATLAS', titulo_extra ? 'tela ' + titulo_extra : 'chat', _usuario);
   if (T.tarefas_criadas?.length) resposta += '\n\n✅ **' + T.tarefas_criadas.length + ' tarefa(s) criada(s) no To-do:**\n' + T.tarefas_criadas.map(x => '- ' + x.texto + (x.responsavel ? ' — ' + x.responsavel : '') + (x.data ? ' · ' + x.data.split('-').reverse().join('/') : '')).join('\n') + (T.tarefas_duplicadas ? '\n(' + T.tarefas_duplicadas + ' já existia(m) e não foi(ram) duplicada(s))' : '');
