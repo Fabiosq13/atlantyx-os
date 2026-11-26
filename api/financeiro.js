@@ -10767,7 +10767,7 @@ const FV2_RX = {
 };
 // v3.312: alíquota efetiva sobre a receita POR ANO (projeções, business plan, preço de propostas e estimativa da camada 1).
 // Definida pelo fundador: 2027 = 25% (no lugar dos 16,33% do Lucro Presumido). Editável em Dashboard Financeiro → Configurar.
-const ALIQ_ANO_PADRAO = { '2027': 25 };
+const ALIQ_ANO_PADRAO = { '2027': 30 };
 const _aliqAnoNorm = o => { const out = {}; if (typeof o === 'string') o = Object.fromEntries(o.split(/[;,\n]+/).map(x => x.split(/[=:]/).map(y => y.trim())).filter(x => x.length === 2));
   for (const [a, v] of Object.entries(o || {})) { const n = Number(String(v).replace('%', '').replace(',', '.')); if (/^20\d\d$/.test(String(a).trim()) && v !== '' && v != null && isFinite(n) && n >= 0 && n <= 60) out[String(a).trim()] = Math.round(n * 100) / 100; }
   return out; };
@@ -10991,7 +10991,7 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   const ult12 = serieM.filter(s => s.mes < _fv2Mes(P.hoje)).slice(-12), rec12 = ult12.reduce((a, s) => a + s.receita, 0), ultM = ult12[ult12.length - 1];
   const arr = ultM ? round(ultM.produtos * 12) : null, recPct = rec12 > 0 && arr != null ? Math.round(arr / rec12 * 1000) / 10 : null;
   const metaRecor = metaAno.recorrencia_pct ?? L.recorrencia_meta_2027;
-  kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: metaRecor, texto: metaAno.recorrencia_pct != null ? metaRecor + '% em ' + P.ini.substring(0, 4) + ' (Metas da Empresa) · ' + L.recorrencia_meta_2027 + '% até 2027' : L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+  kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: metaRecor, texto: metaAno.recorrencia_pct != null ? metaRecor + '% em ' + P.ini.substring(0, 4) + ' (Metas da Empresa) · ' + L.recorrencia_meta_2027 + '% até 2027' : 'hipótese de trabalho: ' + L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031 (a meta é fixada na Reunião 4)' },
     extra: { arr, receita_12m: round(rec12), mes_base: ultM?.mes }, semaforo: recPct == null ? 'cinza' : recPct >= metaRecor ? 'verde' : recPct >= metaRecor / 2 ? 'amarelo' : 'vermelho',
     tendencia: serieM.slice(-7).map(s => ({ mes: s.mes, v: s.receita > 0 ? Math.round(s.produtos / s.receita * 1000) / 10 : null })), drill: { tipo: 'tela', tela: 'produtos' },
     formula: 'ARR (receita de produtos do último mês fechado × 12) ÷ receita dos últimos 12 meses fechados' }));
@@ -11200,7 +11200,7 @@ async function _fv2Produtos({ P, met, cfg, L, token, base }) {
     _fv2Kpi({ id: 'mrr', titulo: 'MRR', valor: mrr, fmt: 'brl', anterior: mrrMes.length > 1 ? { valor: mrrMes[mrrMes.length - 2].mrr, var_pct: _fv2Var(mrr, mrrMes[mrrMes.length - 2].mrr) } : null, tendencia: mrrMes.slice(-7).map(x => ({ mes: x.mes, v: x.mrr })),
       formula: 'Receita das contas de produto no último mês fechado (' + (meses[meses.length - 1] || '—') + ')', drill: { tipo: 'dre' }, nota: contasProd.length ? null : 'Nenhuma conta de receita classificada como Produtos — ajuste em Configurar.' }),
     _fv2Kpi({ id: 'arr', titulo: 'ARR', valor: arr, fmt: 'brl', formula: 'MRR × 12', drill: { tipo: 'dre' } }),
-    _fv2Kpi({ id: 'recorrencia', titulo: 'ARR ÷ receita', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: L.recorrencia_meta_2027 + '% até 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+    _fv2Kpi({ id: 'recorrencia', titulo: 'ARR ÷ receita', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: 'hipótese: ' + L.recorrencia_meta_2027 + '% até 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
       semaforo: recPct == null ? 'cinza' : recPct >= L.recorrencia_meta_2027 ? 'verde' : recPct >= L.recorrencia_meta_2027 / 2 ? 'amarelo' : 'vermelho', formula: 'ARR ÷ receita dos últimos 12 meses fechados', extra: { receita_12m: R12?.faturamento } }),
     _fv2Kpi({ id: 'nrr', titulo: 'Net Revenue Retention', valor: nrr, fmt: 'pct', meta: { valor: L.nrr.verde, texto: 'acima de ' + L.nrr.verde + '%' }, semaforo: _fv2Sem(nrr, L.nrr), tendencia: nrrM.slice(-7).map(x => ({ mes: x.mes, v: x.nrr })),
       formula: '(MRR inicial + expansão − contração − churn) ÷ MRR inicial — média mensal dos 3 últimos meses', nota: glOk ? null : semBilling }),

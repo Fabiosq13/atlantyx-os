@@ -60,9 +60,9 @@ test('orçamento: sem orçado avisa; sem DRE devolve aviso e nenhuma série', ()
   const n = montarOrcamento({ ano: 2026, dre: null, hoje: '2026-05-18' }); assert.equal(n.series, null); assert.ok(n.avisos.length);
 });
 
-test('impostos novos: 2027 desconta 25% − 16,33% sobre as entradas; 2026 não tem linha líquida', () => {
+test('impostos novos: 2027 desconta 30% − 16,33% sobre as entradas; 2026 não tem linha líquida', () => {
   const r27 = montarCaixa({ ano: 2027, extrato: ext(2027), metas, hoje: '2026-11-21' });
-  const m = ext(2027).meses[0], imp = Math.round(m.entradas * 0.0867 * 100) / 100;
+  const m = ext(2027).meses[0], imp = Math.round(m.entradas * 0.1367 * 100) / 100;
   assert.equal(r27.imposto.ativo, true);
   assert.equal(r27.caixa.mensal.liquido[0], Math.round((m.resultado - imp) * 100) / 100);
   assert.equal(r27.caixa.acumulado.liquido[1], Math.round((r27.caixa.mensal.liquido[0] + r27.caixa.mensal.liquido[1]) * 100) / 100);

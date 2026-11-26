@@ -183,6 +183,7 @@
           <b style="font-size:13px;">Reunião ${r.n} · ${esc(r.titulo)}</b><span style="font-size:10.5px;color:var(--t3);">${esc(r.duracao)}</span>${chip(r.feito ? 'feita ' + dataBR(r.realizada_em) : r.n === J.proxima ? 'próxima' : 'pendente', r.feito ? 'var(--green,#22d3a3)' : r.n === J.proxima ? 'var(--gold)' : 'var(--t3)')}
           <span style="margin-left:auto;font-size:10.5px;color:var(--t2);">checklist ${r.progresso}%</span></div>
         ${r.alertas.map(a => `<div style="font-size:11px;color:var(--gold);margin-top:4px;">⚠ ${esc(a)}</div>`).join('')}
+        <div style="font-size:11px;color:var(--t2);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;"><span><b>Participam:</b> ${esc(r.participantes || '—')}</span><span><b>Traz os insumos:</b> ${esc(r.traz || '—')}</span><label>Data <input type="date" class="fi" style="width:140px;display:inline-block;" value="${esc(r.data || '')}" onchange="ESTT.jorData('${r.id}',this.value)"></label></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px;font-size:11px;line-height:1.55;color:var(--t2);">
           <div><b>Telas</b><br>${r.telas.map(esc).join('<br>')}${r.perguntas.length ? `<br>Perguntas do roteiro: ${r.perguntas_estado.map(p => `${p.n} (${p.estado})`).join(', ')}` : ''}</div>
           <div><b>Entradas</b><br>${r.entradas.map(esc).join('<br>')}</div>
@@ -192,11 +193,21 @@
         <div style="margin-top:8px;"><label class="fl" for="jd_${r.id}">Registrar decisão tomada</label><div style="display:flex;gap:6px;"><input class="fi" id="jd_${r.id}" placeholder="decisão em uma frase" style="flex:1;"><button class="btn btn-g" onclick="ESTT.jorDecisao('${r.id}')">＋ Registrar</button></div>
           ${r.decisoes.map(d => `<div style="border-top:1px solid var(--bd);padding:4px 2px;font-size:11.5px;display:flex;gap:8px;align-items:center;"><span style="font-family:var(--M);font-size:10px;color:var(--t3);">${quando(d.em)}</span><span style="flex:1;">${esc(d.texto)}</span><button class="btn" style="font-size:10px;" onclick="ESTT.jorDecisaoDel('${r.id}','${d.id}')">remover</button></div>`).join('')}</div>
         <details style="margin-top:6px;"${r.notas ? ' open' : ''}><summary style="font-size:10.5px;color:var(--t3);cursor:pointer;">notas</summary><textarea class="fta" style="min-height:44px;font-size:11.5px;margin-top:4px;" onchange="ESTT.jorNotas('${r.id}',this.value)">${esc(r.notas)}</textarea></details>
-      </div></div>`).join('')}`;
+      </div></div>`).join('')}${pessoasPainel(J)}<div class="panel" style="margin-bottom:10px;"><div class="pb" style="font-size:11.5px;line-height:1.6;"><b>Decisões em aberto que travam o plano</b> (leve todas à Reunião 1)<ul style="margin:6px 0 0 16px;">${(J.decisoes_abertas || []).map(d => `<li>${esc(d)}</li>`).join('')}</ul></div></div>`;
+  }
+  const ESTG = { iniciante: 'Iniciante', em_desenvolvimento: 'Em desenvolvimento', autonoma: 'Autônoma' };
+  function pessoasPainel(J) {
+    const L = J.pessoas || [];
+    return `<div class="panel" style="margin-bottom:10px;"><div class="pb" style="font-size:11.5px;"><b>Pessoas e liderança</b> (Reunião 5): estágio de cada área ou pessoa-chave, o que o fundador delega e deixa de fazer, e o plano de 90 dias.
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px;margin-top:8px;"><input class="fi" id="ps_area" placeholder="Área"><input class="fi" id="ps_pessoa" placeholder="Pessoa-chave"><select class="fi" id="ps_est">${(J.estagios || []).map(e => `<option value="${e}">${ESTG[e] || e}</option>`).join('')}</select><input class="fi" id="ps_del" placeholder="O que o fundador delega"><input class="fi" id="ps_dei" placeholder="O que deixa de fazer"><input class="fi" id="ps_90" placeholder="Plano de 90 dias"><input class="fi" type="date" id="ps_prz" title="prazo"><button class="btn btn-g" onclick="ESTT.pessoaAdd()">＋ Registrar</button></div>
+      ${L.length ? `<div style="margin-top:8px;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="text-align:left;color:var(--t3);"><th>Área</th><th>Pessoa</th><th>Estágio</th><th>Delega</th><th>Deixa de fazer</th><th>Plano de 90 dias</th><th>Prazo</th><th></th></tr>${L.map(x => `<tr style="border-top:1px solid var(--bd);vertical-align:top;"><td>${esc(x.area)}</td><td>${esc(x.pessoa)}</td><td>${esc(ESTG[x.estagio] || x.estagio)}</td><td>${esc(x.delega)}</td><td>${esc(x.deixa_de_fazer)}</td><td>${esc(x.plano90)}</td><td>${dataBR(x.prazo)}</td><td><button class="btn" style="font-size:10px;" onclick="ESTT.pessoaDel('${esc(x.id)}')">remover</button></td></tr>`).join('')}</table></div>` : '<div style="color:var(--t3);margin-top:6px;">Nenhuma pessoa ou área registrada ainda.</div>'}</div></div>`;
   }
   async function jorSalvar(body, msg) { try { JOR = (await api('jornada_salvar', body)).jornada; if (msg) nota(msg); } catch (e) { nota(e.message, 'error'); } jornada(); }
   function jorFeito(id, v) { jorSalvar({ reuniao: id, feito: v }, v ? 'Reunião registrada como feita' : 'Reunião reaberta'); }
   function jorCheck(id, k, v) { jorSalvar({ reuniao: id, checklist: { [k]: v } }); }
+  function jorData(id, v) { jorSalvar({ reuniao: id, data: v || null }, 'Data salva'); }
+  function pessoaAdd() { const g = i => (document.getElementById(i) || {}).value || ''; jorSalvar({ pessoa: { area: g('ps_area'), pessoa: g('ps_pessoa'), estagio: g('ps_est'), delega: g('ps_del'), deixa_de_fazer: g('ps_dei'), plano90: g('ps_90'), prazo: g('ps_prz') } }, 'Registrado'); }
+  function pessoaDel(id) { jorSalvar({ pessoa_remover: id }, 'Removido'); }
   function jorNotas(id, v) { jorSalvar({ reuniao: id, notas: v }, 'Notas salvas'); }
   function jorDecisao(id) { const t = $('jd_' + id).value.trim(); if (!t) return nota('Escreva a decisão', 'error'); jorSalvar({ reuniao: id, decisao: { texto: t } }, 'Decisão registrada'); }
   function jorDecisaoDel(id, d) { if (confirm('Remover esta decisão do registro?')) jorSalvar({ reuniao: id, decisao_remover: d }, 'Decisão removida'); }
@@ -315,6 +326,6 @@
 
   window.ESTT = { render, regras: () => { regrasAbertas = !regrasAbertas; desenhar(); }, sub: k => { if (sub === 'roteiro' && k !== 'roteiro' && sujo() && !confirm('A resposta desta etapa tem mudanças não salvas. Sair sem salvar?')) return; sub = k; desenhar(); },
     etapa, salvar, sugerir, usarSug, descartarSug, nfSalvar, nfEditar, nfAtivo, nfRemover, nfImportar, nfTestar,
-    calAno: a => { calAno = a; calendario(); }, jorFeito, jorCheck, jorNotas, jorDecisao, jorDecisaoDel, calFeito, calCheck, calNotas, gatilho, gatilhoResolver,
+    calAno: a => { calAno = a; calendario(); }, jorFeito, jorCheck, jorNotas, jorData, pessoaAdd, pessoaDel, jorDecisao, jorDecisaoDel, calFeito, calCheck, calNotas, gatilho, gatilhoResolver,
     orcSem: s => orcamento(s), orcSug: () => orcDesenhar(true), orcSalvar, socCampo, socAdd, socDel, socSalvar, socAcordo, cadCampo, cadTempo, cadItem, cadItemCampo, cadItemDel, cadSalvar, pesCampo, pesSalvar, pesApagar, _estado: () => ({ D, CAL, ORC, SO }) };
 })();

@@ -116,8 +116,8 @@ async function propConfig() {
   params.impostos_por_ano = { ...IMPOSTOS_ANO_PROPOSTA, ...((salvo.params || {}).impostos_por_ano || {}) };
   return { params, impostos_fonte: IMPOSTOS_FONTE, escopos: await escoposProduto(), instrucoes: salvo.instrucoes || '', imposto_origem: salvo.params?.impostos_pct != null ? 'manual' + (aliqAno != null && Number(salvo.params.impostos_pct) !== aliqAno ? ' — atenção: a alíquota de ' + anoRef + ' no Financeiro é ' + String(aliqAno).replace('.', ',') + '%' : '') : (aliqAno != null ? 'alíquota de ' + anoRef + ' configurada no Financeiro (' + String(aliqAno).replace('.', ',') + '%)' : impostoTrib != null ? 'tributos do financeiro (' + trib.regime + ')' : 'padrão') };
 }
-const IMPOSTOS_ANO_PROPOSTA = { '2026': 16.33, '2027': 24 };
-const IMPOSTOS_FONTE = '2026: 16,33% (Lucro Presumido: PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88). 2027: 24% estimado — CBS+IBS 11,3% proposta pelo TCU em 28/10/2026 (substitui PIS/Cofins) + ISS 5 + IRPJ 4,8 + CSLL 2,88; o Senado fixa a alíquota até 15/12/2026. Antes de créditos.';
+const IMPOSTOS_ANO_PROPOSTA = { '2026': 16.33, '2027': 30 };
+const IMPOSTOS_FONTE = '2026: 16,33% (Lucro Presumido: PIS 0,65 + Cofins 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88). 2027: 30% (regra do fundador no Guia do Planejamento 2027, no lugar dos 16,33%; vale para propostas com faturamento a partir de jan/2027). Antes de créditos.';
 async function rateCard() { return (await cfgGet('propostas_rate_card')) || []; }
 async function rateCardSugerir() {
   // custo/hora real do RH por cargo + preços observados nas propostas aprendidas

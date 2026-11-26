@@ -48,6 +48,9 @@ export const CATALOGO = [
     formula: 'Dias entre a emissão da nota e o recebimento (menor é melhor)' },
   { id: 'capacidade', nome: 'Capacidade comprometida', grupo: 'Entrega, caixa e pessoas', unidade: '%', tipo: 'nivel', sentido: 'faixa', fonte: 'manual', periodicidade: 'semanal', dono: 'Operações', visivel_tv: true, tolerancia: 5, max_idade_dias: 10,
     formula: 'Horas alocadas ÷ horas disponíveis do time. Faixa-alvo (hipótese a validar: 80 a 95%)' },
+  // v3.636: receita nova por origem (Guia 2027, Reunião 5). Registro manual mensal em R$; a soma mostra de onde vem a receita nova.
+  ...[['venda_ativa', 'Venda ativa (SDR/IARA)'], ['indicacao', 'Indicação'], ['base_clientes', 'Base de clientes'], ['entrada_espontanea', 'Entrada espontânea'], ['parceiros', 'Parceiros']].map(([k, n]) => ({ id: 'rec_origem_' + k, nome: 'Receita nova — ' + n, grupo: 'Origem da receita nova', unidade: 'R$', tipo: 'acumulado', sentido: 'maior', fonte: 'manual', periodicidade: 'mensal', dono: 'Comercial', visivel_tv: false, max_idade_dias: 45,
+    formula: 'Receita nova do mês que veio por ' + n.toLowerCase() + '. Registro manual mensal; a soma das cinco origens é a receita nova total' })),
   { id: 'tempo_fundador', nome: 'Tempo do fundador em direção', grupo: 'Liberdade', unidade: '%', tipo: 'nivel', sentido: 'maior', fonte: 'manual', periodicidade: 'semanal', dono: 'CEO', visivel_tv: false, privado: true, tolerancia: 5, max_idade_dias: 10,
     formula: '% do tempo da semana em direção (e não em operação). Registro semanal manual' },
 ];
@@ -90,7 +93,7 @@ async function montar(ano, { forcar = false } = {}) {
     const h = hist[d.id] || []; if (d.fonte !== 'manual') leit.historico = h.map(x => x.v);
     const ind = montarIndicador({ ...d, tolerancia: mm.tolerancia ?? d.tolerancia, dono: mm.dono || d.dono }, leit, hoje);
     const cores = h.map(x => x.cor).concat(ind.cor); const ra = exigeAcao(cores);
-    return { ...ind, exige_acao: ra.exige ? ra.motivo : null, curva: leit.curva || null, periodicidade: d.periodicidade };
+    return { ...ind, niveis: { piso: mm.piso ?? null, meta: ind.meta, desafio: mm.desafio ?? null }, aprendizado: { premissa: mm.premissa || null, evidencia: mm.evidencia || null, alavanca: mm.alavanca || null, frequencia: mm.frequencia || null, revisao: mm.revisao || null, revisao_vencida: !!(mm.revisao && mm.revisao < hoje) }, exige_acao: ra.exige ? ra.motivo : null, curva: leit.curva || null, periodicidade: d.periodicidade };
   });
   const abertas = acoes.filter(a => a.status === 'aberta').map(a => ({ ...a, indicador_nome: inds.find(i => i.id === a.indicador)?.nome || a.indicador }));
   const pendentes = inds.filter(i => i.exige_acao && !abertas.some(a => a.indicador === i.id)).map(i => ({ id: i.id, nome: i.nome, motivo: i.exige_acao }));
@@ -132,6 +135,9 @@ async function handler(req, res) {
         if (['receita_ano', 'margem_liquida', 'margem_ebitda', 'caixa_minimo'].includes(id) || (id === 'recorrente_pct')) throw new Error('Esta meta é financeira: edite em Planejamento → Metas da Empresa (fonte única).');
         const k = 'placar:metas:' + ano, M = (await kv(k)) || {}, antes = M[id] || null, n = { ...(antes || {}) };
         if (p.meta !== undefined) n.meta = p.meta === '' ? null : num(p.meta); if (p.tolerancia !== undefined) n.tolerancia = p.tolerancia === '' ? null : num(p.tolerancia); if (p.dono !== undefined) n.dono = tx(p.dono, 60);
+        for (const c of ['piso', 'desafio']) if (p[c] !== undefined) n[c] = p[c] === '' || p[c] === null ? null : num(p[c]);
+        for (const [c, t] of [['premissa', 400], ['evidencia', 400], ['alavanca', 120], ['frequencia', 40]]) if (p[c] !== undefined) n[c] = tx(p[c], t);
+        if (p.revisao !== undefined) n.revisao = /^\d{4}-\d{2}-\d{2}$/.test(String(p.revisao || '')) ? p.revisao : null; // v3.636: piso/meta/desafio + premissa, evidência, alavanca e data de revisão (Guia 2027)
         if (p.faixa !== undefined) n.faixa = Array.isArray(p.faixa) && p.faixa.length === 2 && p.faixa.every(x => num(x) != null) ? p.faixa.map(Number) : null;
         M[id] = n; await kv(k, M); await logar(quem(req), 'meta:' + ano + ':' + id, antes, n, p.motivo); await kv('placar:cache:' + ano, null); return { ok: true, meta: n }; },
       manual_registrar: async () => { const id = tx(p.id, 40), d = CATALOGO.find(x => x.id === id); if (!d || d.fonte !== 'manual') throw new Error('Este indicador não é manual.'); const v = num(p.valor); if (v == null) throw new Error('Informe o valor.');

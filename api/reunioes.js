@@ -63,6 +63,8 @@ const RITOS_PADRAO = () => [
     dia_semana: 4, hora: '10:00', duracao_min: 45, fontes: ['financeiro'], participantes: ['atlanteambr@gmail.com'], ativo: true, ordem: 2.5 },
   { nome: 'Ideias e produto', objetivo: 'Decidir as ideias que aguardam o fundador, priorizar demandas do Atlantyx OS e acompanhar a Batida do Método B.P.M.',
     dia_semana: 3, hora: '16:00', duracao_min: 45, fontes: ['ideias', 'esteira_demandas'], participantes: ['julio.castro@atlanteam.com.br'], ativo: true, ordem: 3 },
+  { nome: 'Revisão do Fundador', objetivo: 'Revisão semanal do fundador (Guia 2027): placar e metas, margem por projeto, recebíveis e caixa, funil, e problemas com ação, dono e prazo.',
+    dia_semana: 5, hora: '11:00', duracao_min: 45, fontes: ['financeiro', 'vendas', 'projetos_pmo'], participantes: ['atlanteambr@gmail.com'], ativo: true, ordem: 3.5 },
   { nome: 'Ensaio geral (entregas da semana)', objetivo: 'Demonstrar o que entrou no ar na semana, trilhas encerradas e abertas (Método B.P.M.).',
     dia_semana: 5, hora: '16:00', duracao_min: 30, fontes: ['esteira_demandas', 'esteira_entrega'], participantes: ['julio.castro@atlanteam.com.br'], ativo: false, ordem: 4 },
 ];
@@ -194,6 +196,10 @@ async function ritos() {
   try { const k = (await sql`SELECT 1 FROM kv_store WHERE key = 'reu:rito_financeiro_semeado'`).length;
     if (!k) { if (!R.some(r => (r.fontes || []).includes('financeiro'))) { await ritoSalvar(RITOS_PADRAO().find(p => p.fontes.includes('financeiro')), true); R = await sql`SELECT * FROM reu_ritos ORDER BY ordem, criado_em`; }
       await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('reu:rito_financeiro_semeado', '"1"', NOW()) ON CONFLICT (key) DO NOTHING`; } } catch (_) {}
+  // v3.636: Revisão do Fundador (sexta 11h, Guia 2027) entra uma única vez em bases que já tinham ritos (se for excluída, não volta)
+  try { const k2 = (await sql`SELECT 1 FROM kv_store WHERE key = 'reu:rito_fundador_semeado'`).length;
+    if (!k2) { if (!R.some(r => /revis[aã]o do fundador/i.test(r.nome || ''))) { await ritoSalvar(RITOS_PADRAO().find(p => p.nome === 'Revisão do Fundador'), true); R = await sql`SELECT * FROM reu_ritos ORDER BY ordem, criado_em`; }
+      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('reu:rito_fundador_semeado', '"1"', NOW()) ON CONFLICT (key) DO NOTHING`; } } catch (_) {}
   const U = await sql`SELECT id, rito_id, data, status, pauta_enviada_em, assuntos, ata FROM reu_reunioes ORDER BY data DESC LIMIT 80`;
   return { ritos: R.map(r => linhaRito(r, U)), fontes: Object.fromEntries(Object.entries(FONTES).map(([k, f]) => [k, f.nome])), dias: DIAS, remetente: remetente(), email_ok: !!(process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.RESEND_API_KEY) };
 }

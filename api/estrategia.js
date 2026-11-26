@@ -42,7 +42,7 @@ async function kv(k, v) {
 const PREMISSAS_PADRAO = `Atlantyx: empresa brasileira B2B de dados, BI, engenharia de dados e IA, com 17 anos de história. Clientes de grande porte em energia, financeiro e varejo de veículos.
 Três motores de negócio: (1) alocação de talentos, (2) projetos sob medida, (3) suíte própria de produtos de IA (Atlantyx OS e verticais).
 Direção: pensar em "negócios completos" que vendem resultado/ROI, não sistemas. Só o motor de produtos sobrevive no horizonte de 10–20 anos.
-Metas: crescimento de 25% ao ano no faturamento; margem de lucro líquido de 35%; faturamento de R$ 6,5 milhões em 2027; receita recorrente (ARR) = 30% do faturamento até o fim de 2027 e 60% até 2031.
+Metas: AINDA NÃO DEFINIDAS (2027 a 2031). Os números que circularam antes (crescimento, margem, faturamento, recorrência) foram hipóteses de trabalho e não valem como meta; as metas são fixadas na Reunião 4 do planejamento, só depois de diagnóstico, alavancas, produtos e simulação validados. Imposto sobre a receita em 2027: 30%.
 Foco: escolher 1–2 produtos-âncora nos próximos 18 meses e despriorizar o resto. Maior risco: diluição de foco.
 Interesse em expansão internacional (corredor Houston/EUA, câmaras de comércio europeias).`;
 
@@ -583,16 +583,17 @@ async function salaAcoes({ sessao_id, itens = [], rito_id }) {
 function soFundador(req) {
   if (req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) throw Object.assign(new Error('A trilha guiada da estratégia é só do fundador (perfil administrador).'), { status: 403 });
 }
+async function reunioesFeitas() { try { const J = JN.jornadaNormalizar(await kv(JN.K_JORNADA)); return JN.REUNIOES.filter(r => J.reunioes[r.id].feito).map(r => r.n); } catch (_) { return null; } }
 async function roteiroObter() {
   const [r, nf, ca, so] = await Promise.all([kv(RT.K_ROTEIRO), kv(RT.K_NAO_FAZER), kv('est:contexto_amplo'), kv(RT.K_SOCIOS)]);
-  const R = RT.roteiroNormalizar(r), socios = RT.socStatus(so || {});
+  const R = RT.roteiroNormalizar(r), socios = RT.socStatus(so || {}), feitas = await reunioesFeitas();
   const numeros = ca ? { em: ca.em, ano_atual: ca.ano_atual, historico: ca.historico, motores_12m: ca.motores_12m, pessoas_ativas: ca.pessoas?.ativos ?? null, contratos: ca.contratos || null, erros: ca.erros || [] } : null;
-  return { roteiro: R, status: RT.roteiroStatus(R, { socios }), socios, perguntas: RT.PERGUNTAS, blocos: RT.BLOCOS, estados: RT.ESTADOS, escolhas_motor: RT.ESCOLHAS_MOTOR, motores: RT.MOTORES_R, regras_ouro: RT.REGRAS_OURO,
+  return { roteiro: R, status: RT.roteiroStatus(R, { socios, reunioesFeitas: feitas }), socios, perguntas: RT.PERGUNTAS, blocos: RT.BLOCOS, estados: RT.ESTADOS, escolhas_motor: RT.ESCOLHAS_MOTOR, motores: RT.MOTORES_R, regras_ouro: RT.REGRAS_OURO,
     horizonte: RT.HORIZONTE, nao_fazer: RT.naoFazerNormalizar(nf?.itens), numeros };
 }
 async function roteiroSalvar(b, usuario) {
   const socios = RT.socStatus((await kv(RT.K_SOCIOS)) || {}), R = RT.roteiroAplicar(await kv(RT.K_ROTEIRO), b, usuario, { socios });
-  await kv(RT.K_ROTEIRO, R); return { roteiro: R, status: RT.roteiroStatus(R, { socios }), socios };
+  await kv(RT.K_ROTEIRO, R); return { roteiro: R, status: RT.roteiroStatus(R, { socios, reunioesFeitas: await reunioesFeitas() }), socios };
 }
 async function roteiroSugerir({ n, pedido }) {
   const q = RT.PERGUNTAS.find(p => p.n === Number(n)); if (!q) throw Object.assign(new Error('Etapa inválida'), { status: 400 });
