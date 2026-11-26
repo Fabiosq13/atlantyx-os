@@ -8753,13 +8753,13 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
   // ── por coluna: agora (abertos) e período (entradas) ──
   const linhas = colunas.map(c => ({ id: c.id, nome: c.nome, ordem: c.ordem, probabilidade: c.probabilidade ?? null, ganho: !!c.ganho, etapas_hubspot: c.etapas.map(id => porId[id]?.nome).filter(Boolean),
     agora: { qtd: 0, valor: 0, ponderado: 0, sem_valor: 0 }, real: { qtd: 0, valor: 0 }, ids: [], ids_agora: [] }));
-  const det = {}, perdidos = { qtd: 0, valor: 0 }, ganhosPer = { qtd: 0, valor: 0, ids: [] };
+  const det = {}, perdidos = { qtd: 0, valor: 0 }, ganhosPer = { qtd: 0, valor: 0, ids: [], datas: {} };
   const regDet = (d, atual) => { const pr = d.properties || {}; det[d.id] = { id: d.id, nome: pr.dealname || 'Negócio', valor: val(d), etapa: atual?.nome || pr.dealstage, pipeline: pipelines.find(x => x.id === pr.pipeline)?.nome || '', criado: pr.createdate ? String(pr.createdate).slice(0, 10) : null, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, owner: pr.hubspot_owner_id || null }; };
   for (const d of deals) {
     const pr = d.properties || {}, atual = porId[pr.dealstage]; if (!atual) continue; const v = val(d), criado = _tsHs(pr.createdate);
     const tFech = _tsHs(pr.closedate) || ent(d, atual.id);
     if (atual.perdido) { const t = ent(d, atual.id) || _tsHs(pr.closedate); if (t >= P.tIni && t <= P.tFim) { perdidos.qtd++; perdidos.valor += v; } }
-    if (atual.ganho && tFech >= P.tIni && tFech <= P.tFim) { ganhosPer.qtd++; ganhosPer.valor += v; ganhosPer.ids.push(d.id); regDet(d, atual); }
+    if (atual.ganho && tFech >= P.tIni && tFech <= P.tFim) { ganhosPer.qtd++; ganhosPer.valor += v; ganhosPer.ids.push(d.id); ganhosPer.datas[d.id] = new Date(tFech - 3 * 3600000).toISOString().slice(0, 10); regDet(d, atual); }
     // agora: abertos na etapa (a coluna Ganho mostra os ganhos do período)
     if (!atual.fechada && atual.col != null) { const L = linhas[atual.col]; const p = atual.probabilidade ?? colunas[atual.col].probabilidade ?? 0;
       L.agora.qtd++; L.agora.valor += v; L.agora.ponderado += v * p; if (!v) L.agora.sem_valor++; L.ids_agora.push(d.id); regDet(d, atual); }
@@ -8769,10 +8769,10 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
       let t = null; for (const id of colunas[L.ordem].etapas) { const x = ent(d, id); if (x != null && (t == null || x < t)) t = x; }
       if (t == null && colAtual != null && colAtual >= L.ordem) t = L.ganho ? (tFech || criado) : criado;
       if (t == null && L.ordem === 0 && atual.perdido) t = criado;
-      if (t != null && t >= P.tIni && t <= P.tFim) { L.real.qtd++; L.real.valor += v; L.ids.push(d.id); regDet(d, atual); }
+      if (t != null && t >= P.tIni && t <= P.tFim) { L.real.qtd++; L.real.valor += v; L.ids.push(d.id); (L.entradas = L.entradas || {})[d.id] = new Date(t - 3 * 3600000).toISOString().slice(0, 10); regDet(d, atual); } // v3.628: guarda a data que fez o negócio contar no período (auditoria)
     }
   }
-  const gl = linhas.find(L => L.ganho); if (gl) { gl.real = { qtd: ganhosPer.qtd, valor: ganhosPer.valor }; gl.ids = ganhosPer.ids.slice(); /* v3.627: 'Fechado ganho' do período = os ganhos pela data de fechamento — mesma base do valor do cartão (antes quantidade e valor vinham de bases diferentes) */ gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
+  const gl = linhas.find(L => L.ganho); if (gl) { gl.real = { qtd: ganhosPer.qtd, valor: ganhosPer.valor }; gl.ids = ganhosPer.ids.slice(); gl.entradas = ganhosPer.datas; /* v3.627: 'Fechado ganho' do período = os ganhos pela data de fechamento — mesma base do valor do cartão (antes quantidade e valor vinham de bases diferentes) */ gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
   // v3.364: CAMADA DE LEADS = CONTATOS DO HUBSPOT (topo do funil, antes dos negócios)
   //   real no período = contatos CRIADOS no HubSpot no período · acumulado (agora) = contatos ainda em fase de lead
   //   (lifecycle lead, MQL ou SQL — de qualquer data). Contagem pelo "total" da busca (sem baixar a lista). Falha → a camada não entra.
@@ -8781,7 +8781,9 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
     const [noPer, abertos] = await Promise.all([
       cnt([{ propertyName: 'createdate', operator: 'BETWEEN', value: String(P.tIni), highValue: String(P.tFim) }]),
       cnt([{ propertyName: 'lifecyclestage', operator: 'IN', values: ['subscriber', 'lead', 'marketingqualifiedlead', 'salesqualifiedlead'] }])]);
-    linhas.unshift({ id: 'contatos_hs', nome: 'Leads · contatos HubSpot', ordem: 0, probabilidade: null, ganho: false, contatos: true, etapas_hubspot: ['Contatos (lifecycle lead, MQL, SQL)'],
+    let listaC = []; try { const dl = await _hs('/crm/v3/objects/contacts/search', 'POST', { filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'BETWEEN', value: String(P.tIni), highValue: String(P.tFim) }] }], properties: ['firstname', 'lastname', 'company', 'createdate', 'lifecyclestage'], sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }], limit: 100 });
+      listaC = (dl.results || []).map(c => ({ id: c.id, nome: [c.properties?.firstname, c.properties?.lastname].filter(Boolean).join(' ') || '(sem nome)', empresa: c.properties?.company || '', criado: c.properties?.createdate ? new Date(Date.parse(c.properties.createdate) - 3 * 3600000).toISOString().slice(0, 10) : null, fase: c.properties?.lifecyclestage || '' })); } catch (_) {}
+    linhas.unshift({ lista_contatos: listaC, id: 'contatos_hs', nome: 'Leads · contatos HubSpot', ordem: 0, probabilidade: null, ganho: false, contatos: true, etapas_hubspot: ['Contatos (lifecycle lead, MQL, SQL)'],
       agora: { qtd: abertos, valor: 0, ponderado: 0, sem_valor: 0 }, real: { qtd: noPer, valor: 0 }, ids: [], ids_agora: [] });
     linhas.forEach((L, i) => { L.ordem = i; });
   } catch (e) { console.warn('[funil] contatos HubSpot:', e.message); }
