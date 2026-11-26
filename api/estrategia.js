@@ -2,7 +2,7 @@ import { liberado, marcar, opcao } from '../lib/robos.js'; // v3.566: liga/desli
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
-import * as RT from '../lib/estrategia-roteiro.js'; import * as JN from '../lib/estrategia-jornada.js'; // v3.526: jornada das 6 reuniões
+import * as RT from '../lib/estrategia-roteiro.js'; import * as JN from '../lib/estrategia-jornada.js'; import * as PQ from '../lib/estrategia-pesquisa.js'; import { listarHistorico as listarHistS1, obterHistorico as obterHistS1 } from '../lib/historico-s1.js'; // v3.526: jornada das 6 reuniões
 import { investimentosAnalisar, investimentosObter, investimentosParamsSalvar } from '../lib/investimentos.js'; // v3.400: Financeiro → Investimentos e retiradas
 import { salvarHistorico as salvarHistoricoS1 } from '../lib/historico-s1.js'; // v3.341: trilha guiada (11 perguntas), o que NÃO fazer, calendário de revisão e orçamento semestral
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
@@ -601,8 +601,9 @@ async function roteiroSugerir({ n, pedido }) {
   const R = RT.roteiroNormalizar(r), anteriores = RT.PERGUNTAS.filter(p => p.n < q.n && R.etapas[p.n].resposta.trim()).map(p => `${p.n}. ${p.titulo} [${R.etapas[p.n].estado}] ${R.etapas[p.n].resposta.substring(0, 900)}`).join('\n');
   const sys = `Você é ATLAS, estrategista-chefe da Atlantyx (dados, BI, engenharia de dados e IA; três motores: alocação de pessoas, projetos e produtos próprios de IA). Você ajuda o fundador a responder UMA etapa do roteiro estratégico de 5 anos (${RT.HORIZONTE.inicio}–${RT.HORIZONTE.fim}).
 Regras: (1) Números da Atlantyx só os que estão nos DADOS DA EMPRESA — cite a origem ("financeiro, últimos 12 meses"). (2) NUNCA apresente número de mercado, tamanho de mercado, múltiplo ou dado de concorrente como fato: se mencionar algo externo, escreva "(não verificado — fonte: ...)" ou "a confirmar". (3) Não use nomes de clientes; fale em "clientes de energia", "banco", etc. (4) É um RASCUNHO: termine com 1 a 3 perguntas que só o fundador pode responder. (5) Respeite a lista do que NÃO fazer. (6) Português do Brasil, direto, no máximo ~25 linhas, em tópicos curtos.${q.motores ? ' (7) Para cada motor sugira defender, evoluir ou transformar, com o porquê.' : ''}`;
+  let pesq = ''; if (q.n <= 6) { try { const P0 = await kv(PQ.K_PESQUISA), ia = await mercadoIA(); pesq = PQ.pesquisaResumoTexto(P0, PQ.pesquisaStatus(P0, { mercado_ia: ia })) + (ia ? '\nANÁLISE DE MERCADO DA IA (1.4, NÃO VERIFICADA — tratar como hipótese): maturidade ' + (ia.panorama?.maturidade || '?') + '; atratividade ' + (ia.porter?.atratividade_geral || '?') + '; concorrentes citados: ' + (ia.concorrentes || []).map(c => c.nome).join(', ') : ''); } catch (_) {} }
   const socDet = q.n === RT.ETAPA_SOCIOS ? RT.sociosResumoTexto((await kv(RT.K_SOCIOS)) || {}, { detalhe: true }) : '';
-  const usr = `ETAPA ${q.n} — ${q.titulo}\nO que cobrir: ${q.guia}\n${socDet ? socDet + '\n' : ''}${pedido ? 'PEDIDO DO FUNDADOR: ' + String(pedido).substring(0, 800) + '\n' : ''}\nRESPOSTA ATUAL DESTA ETAPA: ${R.etapas[q.n].resposta.substring(0, 2000) || '(vazia)'}\n\nETAPAS ANTERIORES:\n${anteriores || '(nenhuma respondida)'}\n\nPREMISSAS, PLANO E RENÚNCIAS:\n${prem.substring(0, 6000)}\n\nDADOS DA EMPRESA (vivos): ${A ? JSON.stringify({ ano_atual: A.ano_atual, historico: A.historico, motores_12m: A.motores_12m, metas_por_ano: A.metas_por_ano, carteira_contratada: A.carteira_contratada?.total_previsto_13m, pessoas: A.pessoas?.ativos, propostas_12m: A.propostas_12m, contratos: A.contratos, projecao: A.projecao_3anos, erros: A.erros }).substring(0, 9000) : '(indisponíveis agora)'}`;
+  const usr = `ETAPA ${q.n} — ${q.titulo}\nO que cobrir: ${q.guia}\n${socDet ? socDet + '\n' : ''}${pesq ? pesq + '\n' : ''}${pedido ? 'PEDIDO DO FUNDADOR: ' + String(pedido).substring(0, 800) + '\n' : ''}\nRESPOSTA ATUAL DESTA ETAPA: ${R.etapas[q.n].resposta.substring(0, 2000) || '(vazia)'}\n\nETAPAS ANTERIORES:\n${anteriores || '(nenhuma respondida)'}\n\nPREMISSAS, PLANO E RENÚNCIAS:\n${prem.substring(0, 6000)}\n\nDADOS DA EMPRESA (vivos): ${A ? JSON.stringify({ ano_atual: A.ano_atual, historico: A.historico, motores_12m: A.motores_12m, metas_por_ano: A.metas_por_ano, carteira_contratada: A.carteira_contratada?.total_previsto_13m, pessoas: A.pessoas?.ativos, propostas_12m: A.propostas_12m, contratos: A.contratos, projecao: A.projecao_3anos, erros: A.erros }).substring(0, 9000) : '(indisponíveis agora)'}`;
   const sugestao = await claude(sys, [{ role: 'user', content: usr }], 1500);
   return { n: q.n, sugestao, aviso: 'Sugestão do ATLAS — revise, ajuste e só então valide. Nada foi salvo.' };
 }
@@ -625,9 +626,33 @@ async function naoFazerImportarPlano(usuario) { // traz os "não fazer" da sínt
   const L = RT.naoFazerNormalizar([...novos, ...atual]); await kv(RT.K_NAO_FAZER, { itens: L, em: new Date().toISOString(), por: usuario || null });
   return { nao_fazer: L, importados: novos.length };
 }
+// ── v3.637: PASSO 0 — pesquisa de mercado e concorrência (antes da Reunião 1) ──
+async function mercadoIA() { // última análise 1.4 (IA, sem fonte): só rascunho, nunca fato
+  try {
+    const [h] = await listarHistS1(['analise_mercado'], 1); if (!h) return null;
+    const x = await obterHistS1(h.id), M = x?.dados?.mercado || null; if (!M) return null;
+    const imp = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, v?.impacto || null])), forc = o => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v && typeof v === 'object').map(([k, v]) => [k, v.nivel || null]));
+    return { id: h.id, em: h.criado_em, por: h.criado_por || null, idade_dias: Math.floor((Date.now() - new Date(h.criado_em).getTime()) / 864e5), nao_verificado: true,
+      panorama: M.panorama_mercado || null, pestel: imp(M.pestel), porter: { ...forc(M['forças_porter']), atratividade_geral: M['forças_porter']?.atratividade_geral || null },
+      concorrentes: (M.concorrentes || []).slice(0, 15), tendencias: (M.tendencias_favoraveis || []).slice(0, 6), oportunidades: (M.oportunidades_nao_exploradas || []).slice(0, 6), segmento_mais_quente: M.segmento_mais_quente || null };
+  } catch (_) { return null; }
+}
+async function pesquisaObter() {
+  const [P0, ia, ca] = await Promise.all([kv(PQ.K_PESQUISA), mercadoIA(), kv('est:contexto_amplo')]);
+  const P = PQ.pesquisaNormalizar(P0), st = PQ.pesquisaStatus(P, { mercado_ia: ia });
+  const receita_motor = ca?.motores_12m ? Object.fromEntries(Object.entries(ca.motores_12m).map(([k, m]) => [k, m?.receita ?? null])) : null; // receita atual por motor, sistema (últimos 12 meses)
+  return { pesquisa: P, status: st, mercado_ia: ia, receita_motor, potencial: Object.fromEntries(Object.entries(P.potencial).map(([m, x]) => [m, PQ.potencialCalc(x)])),
+    campos_mercado: PQ.CAMPOS_MERCADO, grupos: PQ.GRUPOS_CONC, criterios: PQ.CRITERIOS, notas: PQ.NOTAS, motores: PQ.MOTORES, minimos: PQ.MIN };
+}
+async function pesquisaSalvar(b, usuario) { const P = PQ.pesquisaAplicar(await kv(PQ.K_PESQUISA), b, usuario); await kv(PQ.K_PESQUISA, P); return pesquisaObter(); }
+async function pesquisaImportarIA(usuario) {
+  const ia = await mercadoIA(); if (!ia) throw Object.assign(new Error('Ainda não há análise de mercado (1.4). Gere a análise primeiro.'), { status: 400 });
+  const { P, importados } = PQ.pesquisaImportarIA(await kv(PQ.K_PESQUISA), ia.concorrentes, usuario); await kv(PQ.K_PESQUISA, P); return { ...(await pesquisaObter()), importados };
+}
 async function jornadaObter() {
   const so = await kv(RT.K_SOCIOS), r = RT.roteiroNormalizar(await kv(RT.K_ROTEIRO)), st = RT.roteiroStatus(r, { socios: RT.socStatus(so || {}) });
-  return { jornada: JN.jornadaGerar(await kv(JN.K_JORNADA), st) };
+  const ia = await mercadoIA(), passo0 = PQ.pesquisaStatus(await kv(PQ.K_PESQUISA), { mercado_ia: ia });
+  return { jornada: JN.jornadaGerar(await kv(JN.K_JORNADA), st, passo0) };
 }
 async function jornadaSalvar(b, usuario) { const E = JN.jornadaAplicar(await kv(JN.K_JORNADA), b, usuario); await kv(JN.K_JORNADA, E); return jornadaObter(); }
 async function calendarioObter() { return { calendario: RT.calendarioGerar(await kv(RT.K_CALENDARIO)), checklist: RT.CHECKLIST_REVISAO, gatilhos_tipos: RT.GATILHOS, horizonte: RT.HORIZONTE }; }
@@ -765,7 +790,7 @@ async function handler(req, res) {
       nao_fazer_importar_plano: () => (soFundador(req), naoFazerImportarPlano(usuario)),
       nao_fazer_checar: async () => ({ conflitos: RT.naoFazerChecar((await kv(RT.K_NAO_FAZER))?.itens, [b.titulo, b.texto].filter(Boolean).join(' \n ').substring(0, 6000)) }),
       revisao_calendario: () => (soFundador(req), calendarioObter()), revisao_calendario_salvar: () => (soFundador(req), calendarioSalvar(b, usuario)),
-      jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
+      pesquisa_obter: () => (soFundador(req), pesquisaObter()), pesquisa_salvar: () => (soFundador(req), pesquisaSalvar(b, usuario)), pesquisa_importar_ia: () => (soFundador(req), pesquisaImportarIA(usuario)), jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
       socios_obter: () => (soFundador(req), sociosObter(usuario)), socios_salvar: () => (soFundador(req), sociosSalvar(b, usuario)), socios_acordo: () => (soFundador(req), sociosAcordo(b, usuario)), // v3.342
       cadeiras_salvar: () => (soFundador(req), cadeirasSalvar(b, usuario)), pessoal_salvar: () => (soFundador(req), pessoalSalvar(b, usuario)),
       orcamento_obter: () => (soFundador(req), orcamentoObter(b)), orcamento_salvar: () => (soFundador(req), orcamentoSalvar(b, usuario)),

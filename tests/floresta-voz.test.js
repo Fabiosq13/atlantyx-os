@@ -105,3 +105,12 @@ test('v3.615: a ligação segue o contato quando o card vira negócio (n:ID), a 
   void notas; assert.equal((await m.V.status()).ultimo_webhook, null);
   await m.V.webhook({ event: 'call_ended', call: { call_id: 'call_1', transcript: 'Lead: ok' } }); assert.equal((await m.V.status()).ultimo_webhook.evento, 'call_ended');
 });
+
+test('v3.637: "not_connected" é final — não fica "em andamento": sem atender vira nao_atendeu; motivo desconhecido pede registro manual', async () => {
+  const a = montarComGet({ call_id: 'call_1', call_status: 'not_connected', disconnection_reason: 'dial_no_answer' });
+  await a.V.ligar({ card_ids: ['c:7'], avulso: true }); const s1 = await a.V.sincronizar({ card_id: 'c:7' });
+  assert.equal(a.resultados[0].resultado, 'nao_atendeu'); assert.ok(!/andamento/.test(s1.ligacoes[0].erro || ''));
+  const b = montarComGet({ call_id: 'call_1', call_status: 'not_connected' });
+  await b.V.ligar({ card_ids: ['c:7'], avulso: true }); const s2 = await b.V.sincronizar({ card_id: 'c:7' });
+  assert.match(s2.ligacoes[0].erro, /não conectada/); assert.ok(!/andamento/.test(s2.ligacoes[0].erro)); assert.equal(b.resultados.length, 0, 'não inventa resultado');
+});

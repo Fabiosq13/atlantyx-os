@@ -256,7 +256,8 @@
         ${r.alertas.length ? `<div style="color:var(--gold,#f0a030);margin-top:6px">⚠ ${esc(r.alertas[0])}</div>` : ''}
         <div class="ck-act" style="margin-top:8px"><button class="ck-btn p" onclick="CENTRAL.jornadaAbrir(${r.n})">Abrir esta reunião na Trilha ›</button>${r.n === 3 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Estúdio de Produtos e Esteira\')">Estúdio ›</button>' : ''}${r.n === 4 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Cenários 2027\')">Cenários ›</button>' : ''}${r.n === 6 ? '<button class="ck-btn" onclick="CENTRAL.irN(\'Sala do Conselho\')">Conselho ›</button>' : ''}</div></div></div>`;
     const A = S.cen && S.cen.atual, pre = [['Valor e parcelas do Jelta', null], ['ARR 2026 da Agenda de Receitas', arrBase().sis != null], ['Motor de cada cliente (QuickBooks)', null], ['Placar de metas carregado', !!S.placar], ['Sócios convocados', J.reunioes[0].checklist.find(c => c.chave === 'socios')?.ok ?? null]];
-    return `<div class="ck-jor">${cards}</div>${det}<div class="ck-cap" style="margin-top:8px">${J.feitas} de ${J.total} reuniões feitas. A ordem não se inverte: cada reunião usa a decisão da anterior.</div><div class="ck-pre"><b style="color:var(--t3)">Antes da Reunião 1:</b>${pre.map(([t, ok]) => `<span>${ok === true ? '☑' : '☐'} ${esc(t)}</span>`).join('')}</div>`;
+    const P0 = J.passo0, p0 = P0 ? `<div class="ck-pre" style="margin:0 0 10px;align-items:center"><b style="color:var(--t3)">Passo 0 · antes da Reunião 1 (${P0.feitas}/${P0.total}):</b>${P0.etapas.map(e => `<span title="${esc((e.faltas || []).join('; '))}">${e.ok ? '☑' : '☐'} ${esc(e.titulo)}</span>`).join('')}<button class="ck-btn p" style="padding:3px 9px;font-size:10px" onclick="CENTRAL.pesquisaAbrir()">Pesquisa de mercado e concorrência ›</button></div>` : '';
+    return `${p0}<div class="ck-jor">${cards}</div>${det}<div class="ck-cap" style="margin-top:8px">${J.feitas} de ${J.total} reuniões feitas. A ordem não se inverte: cada reunião usa a decisão da anterior.</div><div class="ck-pre"><b style="color:var(--t3)">Antes da Reunião 1:</b>${pre.map(([t, ok]) => `<span>${ok === true ? '☑' : '☐'} ${esc(t)}</span>`).join('')}</div>`;
   }
 
   // ── 🗼 TORRE DE CONTROLE · ATLAS por chat e voz contínua (reaproveita /api/estrategia chat)
@@ -400,6 +401,7 @@
     enviar() { torreEnviar(); },
     sug(i) { torreEnviar(SUG[i]); },
     reuniao(n) { S.reuniaoAberta = n; render(); },
+    pesquisaAbrir() { navegar({ p: 's0estrategia', aba: 'trilha', pos: () => { try { ESTT.sub('pesquisa'); } catch (_) {} } }); },
     jornadaAbrir(n) { navegar({ p: 's0estrategia', aba: 'trilha', pos: () => { try { ESTT.sub('jornada'); } catch (_) {} } }); },
     buscar(v) { S.filtro = v; const c = $('ckCmd'); if (c) c.innerHTML = comandos(); }
   };
