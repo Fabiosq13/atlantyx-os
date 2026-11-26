@@ -42,7 +42,7 @@ async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'Ação desconhecida' });
       } catch (e) { return res.status(e.status || 500).json({ success: false, error: e.message }); }
     }
-    // v3.605: CENÁRIOS 2027 (Gelta, IARA, Maestro, grandes projetos, sustentação, funil isca→IA) — só o CEO/administrador; só calcula, não envia nem gasta IA
+    // v3.605: CENÁRIOS 2027 (Jelta, IARA, Maestro, grandes projetos, sustentação, funil isca→IA) — só o CEO/administrador; só calcula, não envia nem gasta IA
     if (/^cenarios_/.test(String(action))) {
       const login = req.sessao?.login || req.usuario || '', admin = req.sessao ? !!req.sessao.admin : true;
       try {

@@ -37585,7 +37585,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.634] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.635] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37601,7 +37601,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.634';
+window.__ATX_BUILD_ID__ = 'ATX-v3.635';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 

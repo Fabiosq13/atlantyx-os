@@ -4,7 +4,7 @@ import { calcular, valores, estado, salvar, K_CENARIOS, CAMPOS } from '../lib/ce
 const perto = (a, b, tol = 1) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 const kvMem = () => { const m = new Map(); return { get: async k => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); } }; };
 
-test('Gelta: suíte, ARR e resultado batem com a planilha', () => {
+test('Jelta: suíte, ARR e resultado batem com a planilha', () => {
   const r = calcular(); const g = r.gelta;
   perto(g.suite.recPond, 6096); perto(g.suite.custoPond, 1839, 0.01); perto(g.suite.margemPond, 0.5978, 0.001);
   perto(g.cenarios[1].arr, 731520); perto(g.cenarios[1].runrate, 327959.9, 0.1); perto(g.cenarios[1].resultado1, 201249.1, 0.1); perto(g.cenarios[0].payback, 7.08, 0.01);

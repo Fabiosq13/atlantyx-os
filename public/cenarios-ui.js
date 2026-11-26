@@ -1,4 +1,4 @@
-// public/cenarios-ui.js — v3.605 aba "Cenários 2027" do Planejamento Estratégico (Gelta, IARA, Maestro, grandes projetos, sustentação, funil isca → IA)
+// public/cenarios-ui.js — v3.605 aba "Cenários 2027" do Planejamento Estratégico (Jelta, IARA, Maestro, grandes projetos, sustentação, funil isca → IA)
 // Só mostra e recalcula (lib/cenarios.js). Os números são hipóteses; o CEO edita as premissas aqui.
 (function () {
   'use strict';
@@ -37,11 +37,11 @@
       L('Resultado do 1º ano após o investimento', c => R(c.resultado1), true), L('Resultado anual em run-rate', c => R(c.runrate)), L('Margem em run-rate', c => P(c.margemRR)), L('Meses para pagar o investimento', c => N1(c.payback))]);
   }
   function comparativo(r) {
-    const c = r.comparativo, prods = [['Gelta', r.gelta.cenarios], ['IARA', r.iara.cenarios], ['Maestro', r.maestro.cenarios]];
+    const c = r.comparativo, prods = [['Jelta', r.gelta.cenarios], ['IARA', r.iara.cenarios], ['Maestro', r.maestro.cenarios]];
     const lid = `<div class="cen-lid"><div><span>Maior ARR (cenário B)</span><b>${esc(c.maiorArr)}</b></div><div><span>Maior resultado no 1º ano</span><b>${esc(c.maiorResultado1)}</b></div><div><span>Maior margem em run-rate</span><b>${esc(c.maiorMargemRR)}</b></div><div><span>Retorno mais rápido do investimento</span><b>${esc(c.retornoMaisRapido || '—')}</b></div></div>`;
     const bloco = (tit, f) => `<h4>${tit}</h4>` + tab(['Produto'].concat(r.clientes.map(n => n + ' clientes')), prods.map(p => ({ c: [p[0]].concat(p[1].map(f)) })));
     const qual = tab(['Produto', 'Esforço de venda', 'Risco principal', 'Dependência'], [
-      { c: ['Gelta', 'Médio: já existe cliente-âncora e dor clara', 'Extração de dados do Dealer Net', 'Dealer Net (API ou contrato)'] },
+      { c: ['Jelta', 'Médio: já existe cliente-âncora e dor clara', 'Extração de dados do Dealer Net', 'Dealer Net (API ou contrato)'] },
       { c: ['IARA', 'Alto: ainda não vendeu; precisa de prova de resultado', 'Taxa de qualificação e reputação do domínio', 'WhatsApp, e-mail e enriquecimento'] },
       { c: ['Maestro', 'Alto: venda a PMO de grande empresa, ciclo longo', 'Ciclo de venda e custo de IA por projeto', 'Cliente-âncora a definir'] }], 99);
     return lid + `<div class="cen-av">${esc(r.leitura.aviso)}</div>` + bloco('ARR em run-rate', x => R(x.arr)) + bloco('Resultado do 1º ano após o investimento', x => R(x.resultado1)) + bloco('Resultado anual em run-rate', x => R(x.runrate)) + bloco('Margem em run-rate (% da receita bruta)', x => P(x.margemRR)) + bloco('Meses para pagar o investimento', x => N1(x.payback)) + '<h4>Esforço, risco e dependência</h4>' + qual;
@@ -74,11 +74,11 @@
   }
   function render() {
     const box = $('peTabCen'); if (!box || !S.d) return; const d = S.d, r = d.resultado, ed = d.alterados.length;
-    box.innerHTML = '<div class="cen-av"><b>Hipóteses de trabalho, não dados de clientes.</b> Preços, adoção e conversões vêm da conversa com o Fabio e precisam ser validados com a Gelta e com 2 a 3 grupos-alvo. ' +
+    box.innerHTML = '<div class="cen-av"><b>Hipóteses de trabalho, não dados de clientes.</b> Preços, adoção e conversões vêm da conversa com o Fabio e precisam ser validados com o Jelta e com 2 a 3 grupos-alvo. ' +
       (ed ? `Há ${ed} premissa(s) alterada(s) em relação ao padrão${d.por ? ' por ' + esc(d.por) : ''}.` : 'Nenhuma premissa alterada ainda.') + '</div>' +
       '<div class="cen-bar"><button class="btn btn-p" onclick="window._estAbaInicial=\'conselho\';nav(\'s0estrategia\')">🏛️ Debater com o Conselho</button><button class="btn" onclick="CENARIOS.abrir()">↻ Recalcular</button></div>' +
       det('Comparativo dos três produtos', comparativo(r), true) +
-      det('Gelta — cockpit para concessionárias (módulos por setor)', gelta(r), false) +
+      det('Jelta — cockpit para concessionárias (módulos por setor)', gelta(r), false) +
       det('IARA — agente comercial de IA', produto(r, 'iara', 'IARA', [['Receita fixa', R(r.iara.cliente.fixa)], ['Receita variável (leads qualificados)', R(r.iara.cliente.variavel)], ['Receita total por mês', R(r.iara.cliente.rec)], ['Custo de infra e IA', R(r.iara.cliente.infra)], ['Custo de equipe', R(r.iara.cliente.equipe)], ['Margem por cliente', R(r.iara.cliente.margemRS) + ' · ' + P(r.iara.cliente.margem)], ['Custo por lead qualificado', R(r.iara.cliente.custoPorLead)], ['Margem se a qualificação cair pela metade', P(r.iara.cliente.margemMetade)]]), false) +
       det('Maestro — gestão de portfólio de projetos com IA', produto(r, 'maestro', 'Maestro', [['Receita total por mês', R(r.maestro.cliente.rec)], ['Custo de infra e IA', R(r.maestro.cliente.infra)], ['Custo de equipe', R(r.maestro.cliente.equipe)], ['Margem por cliente', R(r.maestro.cliente.margemRS) + ' · ' + P(r.maestro.cliente.margem)], ['Margem se o consumo de IA dobrar', P(r.maestro.cliente.margemIADobra)]]), false) +
       det('Grandes projetos, sustentação e produto isca com serviços de IA', frentes(r), false) +

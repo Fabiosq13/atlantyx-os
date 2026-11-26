@@ -26,7 +26,7 @@
       { n: 'Riscos', i: '⚠', d: 'Riscos do negócio', p: 's1riscos' }] },
     { id: 'alav', nome: 'Alavancas e produtos', cor: '#f5b83d', itens: [
       { n: 'Plano Estratégico · alavancas', i: '▶', d: 'Plano cadastrado, simulação e alavancas', p: 's1plano' },
-      { n: 'Cenários 2027', i: '📊', d: 'Gelta, IARA, Maestro, grandes projetos, sustentação e funil isca', p: 's1plano', pos: () => { try { peAba('cen'); } catch (_) {} }, novo: true },
+      { n: 'Cenários 2027', i: '📊', d: 'Jelta, IARA, Maestro, grandes projetos, sustentação e funil isca', p: 's1plano', pos: () => { try { peAba('cen'); } catch (_) {} }, novo: true },
       { n: 'Playbook 2027', i: '🧭', d: 'O Norte de marketing e vendas', p: 's2playbook' },
       { n: 'Pipeline de Ideias', i: '💡', d: 'Ideias em andamento', p: 's1pipeline' },
       { n: 'Analisar Ideia', i: '🔬', d: 'IA analisa uma ideia nova', p: 's1analise' },
@@ -177,7 +177,7 @@
     const bar = l => `<div class="ck-bar" style="cursor:pointer" title="Clique para ver o que compõe este número" onclick="CENTRAL.detalhe('${l[3] || ''}')"><span>${esc(l[0])}</span><div class="tr"><i style="width:${Math.max(2, Math.max(0, l[1] || 0) / mx * 100).toFixed(1)}%;background:${l[2]}"></i></div><b>${R(l[1])}</b></div>`;
     const cp = C.comparativo || {};
     return base.map(bar).join('') + '<div class="ck-act" style="margin:6px 0 2px"><button class="ck-btn" onclick="CENTRAL.arrEditar()">✎ Ajustar o ponto de partida de 2027</button>' + (b27.manual ? '<button class="ck-btn" onclick="CENTRAL.arrSalvar(true)">↺ Voltar ao ARR do sistema</button>' : '') + '</div>' + '<div class="ck-cap" style="margin:8px 0 2px">Hipóteses de novos produtos (somam sobre o ponto de partida)</div>' + linhas.map(bar).join('') + tot27.map(bar).join('') + '<div style="height:6px"></div>' + res.map(bar).join('') +
-      `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Entre Gelta e IARA — maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>. O Maestro está fora do plano 2027 e não entra nestas contas.</div>`;
+      `<div class="ck-cap">Cenário do meio (B) das hipóteses editáveis. O Jelta é projeto parcelado (não entra em recorrência). Entre Jelta e IARA — maior receita recorrente: <b>${esc(cp.maiorArr || '—')}</b> · maior margem: <b>${esc(cp.maiorMargemRR || '—')}</b> · retorno mais rápido: <b>${esc(cp.retornoMaisRapido || '—')}</b>. O Maestro está fora do plano 2027 e não entra nestas contas.</div>`;
   }
 
 
