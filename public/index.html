@@ -1240,7 +1240,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <!-- v3.355: cartões de vendas no padrão dos de resultado (Real · Meta · % · farol) -->
     <!-- v3.356: área "Vendas" com os cartões do funil -->
     <div class="panel" id="vendasPanel" style="margin-bottom:13px;border-color:rgba(91,141,239,.35);">
-      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128188; Vendas<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Vendas** — funil de vendas do HubSpot no período da aba Vendas (padrão: mês corrente, todos os pipelines). Em cada cartão: Real do período, Meta, % atingido, farol e o ACUMULADO: tudo parado naquela etapa do funil agora, de qualquer mês.">i</span></div>
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128188; Vendas<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Vendas** — funil de vendas do HubSpot no período da aba Vendas (padrão: mês corrente, todos os pipelines). Em cada cartão: Real do período, Meta, % atingido, farol e conversão. Só entra o que ocorreu no período; o estoque aberto agora fica no (i).">i</span></div>
         <span id="vendasPer" style="font-size:10.5px;color:var(--t3);margin-left:auto;"></span><button class="btn btn-g" style="font-size:10px;padding:3px 10px;" onclick="dashAba('vendas')">Funil completo &#8594;</button></div>
       <div class="pb"><div class="rc-row rc-row6" id="vendasCards"><div style="grid-column:1/-1;color:var(--t3);font-size:11px;padding:8px;">Carregando o funil de vendas…</div></div></div>
     </div>
@@ -31592,7 +31592,7 @@ function vendasCardsRender() {
   const E = D.etapas || [], acha = re => E.find(L => re.test(String(L.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()));
   const n = v => v == null ? '—' : Number(v).toLocaleString('pt-BR'), brl = v => v == null ? '—' : fmtBRL(v);
   const per = D.periodo?.tipo === 'mes' ? 'do mês' : 'do período', defM = "dashAba('vendas');setTimeout(()=>{try{funilMetasEditar()}catch(_){}} ,900)";
-  const tipBase = '\n\nFonte: funil de vendas do HubSpot · ' + (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || '') + ' (troque na aba Vendas). Real = negócios que entraram na etapa no período. Meta = ✎ Metas por etapa (aba Vendas). Farol = real contra a meta proporcional ao período decorrido (' + (D.periodo?.decorrido_pct ?? '—') + '%). Acumulado = tudo parado na etapa agora (negócios abertos), de qualquer mês.';
+  const tipBase = '\n\nFonte: funil de vendas do HubSpot · ' + (D.periodo?.rotulo || '') + ' · ' + (D.pipeline?.nome || '') + ' (troque na aba Vendas). Real = negócios que entraram na etapa no período. Meta = ✎ Metas por etapa (aba Vendas). Farol = real contra a meta proporcional ao período decorrido (' + (D.periodo?.decorrido_pct ?? '—') + '%). O estoque aberto agora (qualquer mês) fica só nos (i) e na visão "Pipeline agora" da aba Vendas.';
   const etapa = (rot, L, tip) => { if (!L) return _resCartaoV2({ rot, tip: tip + tipBase, real: null, semPrev: true, fmt: n, meta: null });
     const mq = L.meta?.qtd; return _resCartaoV2({ rot, tip: tip + '\n\nEm aberto agora (estoque de hoje, fora do período): ' + acum(L) + tipBase, real: L.real.qtd, fmt: n, meta: mq || undefined, semPrev: true, luz: L.farol, ating: mq ? L.real.qtd / mq * 100 : null, definir: defM, linhas: [...(L.ordem > 0 ? [['Conversão', (L.conv_real == null ? '—' : _resFmtPct(L.conv_real)) + (L.conv_meta ? ' / meta ' + _resFmtPct(L.conv_meta) : '')]] : []), ...(L.meta?.qtd_ate_hoje != null ? [['Esperado até hoje', n(Math.round(L.meta.qtd_ate_hoje))]] : [])] }); }; // v3.629: cartões do mês mostram só o que ocorreu no mês; o estoque aberto agora fica no (i)
   const acum = (L, comValor) => !L || !L.agora ? '—' : n(L.agora.qtd) + (comValor ? ' · ' + brl(L.agora.valor) : ''); // v3.356: negócios abertos na etapa agora
@@ -33820,7 +33820,7 @@ function dashMktRender() {
           + '<div style="font-size:10px;color:var(--t3);">' + E((c.inicio || '').split('-').reverse().join('/')) + ' a ' + E((c.fim || '').split('-').reverse().join('/')) + ' · ' + fmtBRLcompleto(c.orcamento_diario) + '/dia' + (c.local ? ' · 📍 ' + E(String(c.local.endereco || '').split(',')[0]) + ' (' + c.local.raio_km + ' km)' : '') + '</div>'
           + '<div style="font-size:10.5px;color:var(--t2);margin-top:3px;">gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + n(r.impressoes) + ' impressões · ' + n(r.cliques_link) + ' cliques · ' + n(f.visitas) + ' visitas · <b style="color:' + (f.leads ? 'var(--green,#22d3a3)' : 'var(--t2)') + ';">' + n(f.leads) + ' lead(s)</b></div></div>'
           + '<div style="text-align:right;white-space:nowrap;">' + (() => { const fl = _mktFarol(c); return _mktBola(fl.cor) + ' <b style="font-size:13px;">' + n(f.leads) + '</b><span style="font-size:10.5px;color:var(--t3);">' + (fl.meta ? ' / meta ' + fl.meta + ' (' + fl.pct + '%)' : ' · sem meta') + '</span>'; })() + ' <span style="font-size:18px;color:var(--t3);">›</span></div></div>'; }).join(''))
-    + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Toque numa campanha para ver todos os dados e os leads. Gasto, impressões e cliques vêm do Meta/LinkedIn; visitas e leads, da página de cadastro (pela UTM da campanha).</div>';
+    + '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;"><b>Os totais acima são o acumulado de cada campanha listada, do início dela até hoje — não são do mês.</b> Toque numa campanha para ver todos os dados e os leads. Gasto, impressões e cliques vêm do Meta/LinkedIn; visitas e leads, da página de cadastro (pela UTM da campanha).</div>';
 }
 function dashMktVerbaPct(base, pct) { const el = document.getElementById('dmkVerba'); if (el) el.value = (Math.round(base * (1 + pct / 100) * 100) / 100).toFixed(2).replace('.', ','); }
 async function dashMktVerba(id) {
@@ -34146,7 +34146,7 @@ function funilRender() {
     const lnF = (r, x) => '<div class="fn2-l"><small>' + r + '</small><b>' + x + '</b></div>';
     const dir = '<div class="fn2-st" style="color:' + corF + ';"><span class="fn-luz" style="background:' + corF + ';"></span>' + txtF + '<span style="margin-left:auto;">' + (atg == null ? '—' : _resFmtPct(atg)) + ' <small>atingido</small></span></div>'
       + '<div class="fn2-q"><div><small>Real</small><b>' + nQ(rv) + '</b></div><div><small>Meta</small><b>' + (mvv ? nQ(mvv) : '<a href="#" onclick="event.stopPropagation();funilMetasEditar();return false;" style="color:var(--blue);font-size:12px;">definir</a>') + '</b></div><div><small>Conversão' + (e.conv_base ? ' de ' + _fnE(String(e.conv_base).split(' /')[0].toLowerCase()) : '') + '</small><b>' + (convL ?? '<span style="font-size:11px;color:var(--t3);">topo</span>') + '</b></div></div>'
-      + lnF('R$ real · meta', _fnR(e.real.valor) + ' · ' + (e.meta?.valor ? _fnR(e.meta.valor) : '—')) + lnF(e.ganho ? 'Ganhos' : 'Acumulado', e.ganho ? nQ(e.real.qtd) + ' · ' + _fnR(e.real.valor) : ac);
+      + lnF('R$ real · meta', _fnR(e.real.valor) + ' · ' + (e.meta?.valor ? _fnR(e.meta.valor) : '—')) + (e.ganho ? lnF('Ganhos no período', nQ(e.real.qtd) + ' · ' + _fnR(e.real.valor)) : (ag ? lnF('Abertos agora (qualquer data)', ac) : '')); // v3.630: visão do período mostra só o que ocorreu no período; o estoque só aparece na visão "agora"
     const FG = { verde: ['#0f8a52', '#2fcf86'], amarelo: ['#b7791f', '#f6b84b'], vermelho: ['#b4233c', '#ef5a6f'] }, gg = FG[fr] || ['#3b4a6b', '#5d6f96']; // v3.357: cor da faixa = farol (sem meta = neutro)
     const doTopo = i > 0 && topo > 0 ? Math.round(n / topo * 100) + '% do topo' : (i === 0 ? 'topo do funil' : '');
     // formato de funil: cada faixa liga a largura de cima à de baixo (afunila sempre); o número de cada etapa vai dentro
@@ -37585,7 +37585,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.629] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.630] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37601,7 +37601,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.629';
+window.__ATX_BUILD_ID__ = 'ATX-v3.630';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
