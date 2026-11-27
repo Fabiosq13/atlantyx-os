@@ -12,18 +12,26 @@
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'Demorou demais — tente de novo' : 'HTTP ' + r.status }));
     if (d.success === false || !r.ok) throw new Error(d.error || 'falha'); return d;
   }
-  async function abrir() { const box = $('tvApp'); if (!box) return; if (!S.d) box.innerHTML = '<div class="tv-vazio">Abrindo o time de vendas…</div>'; const ctl = new AbortController(), tm = setTimeout(() => { if (!S.d) box.innerHTML = '<div class="tv-vazio">Está demorando mais que o normal… <button class="btn" onclick="TIMEV.abrir()">Tentar de novo</button></div>'; }, 20000); try { S.d = await api('time_estado'); } catch (e) { box.innerHTML = `<div class="tv-vazio">Não consegui abrir o time: ${esc(e.message)} <button class="btn" onclick="TIMEV.abrir()">Tentar de novo</button></div>`; return; } finally { clearTimeout(tm); void ctl; } try { render(); } catch (e) { box.innerHTML = `<div class="tv-vazio">Erro ao desenhar a tela: ${esc(e.message)}</div>`; console.error('[time-vendas]', e); } }
+  // v3.650: abertura em etapas com barra de progresso — a tela aparece assim que a fila chega; o painel do gerente (lê a Floresta) completa em segundo plano
+  const ETAPAS = ['Conectando ao servidor', 'Lendo fila de aprovação, agentes e Playbook', 'Desenhando a tela', 'Calculando o painel do gerente (lendo a Floresta de Vendas)'];
+  function barra(n, extra) { const box = $('tvApp'); if (!box || S.d) return; const pct = Math.round((n + 1) / ETAPAS.length * 100);
+    box.innerHTML = `<div class="tv-vazio" style="max-width:520px;margin:40px auto;text-align:left;"><div style="font-weight:700;margin-bottom:6px;">Abrindo o time de vendas…</div><div style="height:10px;background:rgba(0,0,0,.1);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#00708A;transition:width .4s;"></div></div><div style="margin-top:8px;font-size:12px;">Etapa ${n + 1} de ${ETAPAS.length}: ${ETAPAS[n]}${extra || ''}</div></div>`; }
+  async function abrir() { const box = $('tvApp'); if (!box) return; let seg = 0, tk = null;
+    if (!S.d) { barra(0); tk = setInterval(() => { seg++; if (!S.d) barra(1, ' · ' + seg + 's' + (seg > 15 ? ' — está demorando mais que o normal' : '')); }, 1000); }
+    try { S.d = await api('time_estado', { rapido: true }); } catch (e) { clearInterval(tk); box.innerHTML = `<div class="tv-vazio">Não consegui abrir o time: ${esc(e.message)} <button class="btn" onclick="TIMEV.abrir()">Tentar de novo</button></div>`; return; } finally { clearInterval(tk); }
+    try { render(); } catch (e) { box.innerHTML = `<div class="tv-vazio">Erro ao desenhar a tela: ${esc(e.message)}</div>`; console.error('[time-vendas]', e); return; }
+    api('time_gerente').then(r => { if (S.d && r.gerente) { S.d.gerente = r.gerente; render(); } }).catch(() => {}); }
   const aba = a => { S.aba = a; render(); };
   const filtro = f => { S.filtro = f; render(); };
-  async function rodar(agente) { if (S.ocupado) return; S.ocupado = true; render(); try { const r = await api('time_rodar', agente ? { agente } : {}); nota(r.novos ? `${r.novos} item(ns) novo(s) na fila de aprovação` : 'Nada novo para preparar agora', r.novos ? 'success' : 'info'); S.d = await api('time_estado'); } catch (e) { nota(e.message, 'error'); } S.ocupado = false; render(); }
+  async function rodar(agente) { if (S.ocupado) return; S.ocupado = true; render(); try { const r = await api('time_rodar', agente ? { agente } : {}); nota(r.novos ? `${r.novos} item(ns) novo(s) na fila de aprovação` : 'Nada novo para preparar agora', r.novos ? 'success' : 'info'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); } catch (e) { nota(e.message, 'error'); } S.ocupado = false; render(); }
   async function decidir(id, decisao) {
     const el = $('tvc_' + id), as = $('tva_' + id), corpo = el ? el.value : undefined, assunto = as ? as.value : undefined; let motivo = '';
     if (decisao === 'rejeitar') { motivo = prompt('Por que rejeitar? (ajuda os agentes a melhorar)') || ''; if (!motivo) return; }
-    try { await api('time_decidir', { id, decisao, motivo, corpo, assunto }); nota(decisao === 'aprovar' ? 'Aprovado — agora é só enviar e marcar como enviado' : decisao === 'rejeitar' ? 'Rejeitado' : 'Texto salvo'); S.d = await api('time_estado'); render(); } catch (e) { nota(e.message, 'error'); }
+    try { await api('time_decidir', { id, decisao, motivo, corpo, assunto }); nota(decisao === 'aprovar' ? 'Aprovado — agora é só enviar e marcar como enviado' : decisao === 'rejeitar' ? 'Rejeitado' : 'Texto salvo'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); render(); } catch (e) { nota(e.message, 'error'); }
   }
-  async function enviado(id) { try { await api('time_enviado', { id }); nota('Marcado como enviado'); S.d = await api('time_estado'); render(); } catch (e) { nota(e.message, 'error'); } }
+  async function enviado(id) { try { await api('time_enviado', { id }); nota('Marcado como enviado'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); render(); } catch (e) { nota(e.message, 'error'); } }
   function copiar(id) { const i = S.d.fila.find(x => x.id === id); if (!i) return; const t = (i.assunto ? i.assunto + '\n\n' : '') + i.corpo; try { navigator.clipboard.writeText(t); nota('Texto copiado'); } catch (_) { nota('Não consegui copiar', 'error'); } }
-  async function cfg(patch) { try { await api('time_cfg', { patch }); nota('Salvo'); S.d = await api('time_estado'); render(); } catch (e) { nota(e.message, 'error'); render(); } }
+  async function cfg(patch) { try { await api('time_cfg', { patch }); nota('Salvo'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); render(); } catch (e) { nota(e.message, 'error'); render(); } }
   const auto = (id, on) => { if (on && !confirm('Atenção: esta versão não tem envio automático. Ligar só registra a sua autorização para a fase seguinte, com as travas. Confirmar?')) { render(); return; } cfg({ autoenvio: { [id]: !!on } }); };
   const limite = (k, v) => cfg({ limites: { [k]: Number(v) } });
 
