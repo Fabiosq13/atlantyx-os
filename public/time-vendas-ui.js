@@ -23,7 +23,16 @@
     api('time_gerente').then(r => { if (S.d && r.gerente) { S.d.gerente = r.gerente; render(); } }).catch(() => {}); }
   const aba = a => { S.aba = a; render(); };
   const filtro = f => { S.filtro = f; render(); };
-  async function rodar(agente) { if (S.ocupado) return; S.ocupado = true; render(); try { const r = await api('time_rodar', agente ? { agente } : {}); nota(r.novos ? `${r.novos} item(ns) novo(s) na fila de aprovação` : 'Nada novo para preparar agora', r.novos ? 'success' : 'info'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); } catch (e) { nota(e.message, 'error'); } S.ocupado = false; render(); }
+  // v3.664: refazer os pendentes com as regras atuais (descarta e reescreve, em rodadas, mostrando o andamento)
+  async function refazer() { if (S.ocupado) return; const n = ((S.d || {}).fila || []).filter(i => i.estado === 'pendente').length; if (!n) return nota('Não há itens pendentes para refazer', 'info');
+    if (!confirm('Descartar os ' + n + ' itens pendentes e pedir aos agentes que escrevam de novo com as regras atuais (reunião de 15 minutos com dia e horário, sem WhatsApp, sem caso de cliente)?\n\nLeva alguns minutos e gasta IA.')) return;
+    S.ocupado = true; S.msgOcupado = 'Descartando os pendentes…'; render(); let total = 0, rod = 0;
+    try { for (;;) { rod++; S.msgOcupado = 'Rodada ' + rod + ': os agentes estão reescrevendo… (' + total + ' de ~' + n + ' prontos)'; render();
+        const r = await api('time_rodar', rod === 1 ? { refazer: true } : { sem_corte: true }); total += r.novos || 0; if (!r.novos || total >= n || rod >= 8) break; }
+      nota(total + ' item(ns) reescrito(s) em ' + rod + ' rodada(s)', total ? 'success' : 'info'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); }
+    catch (e) { nota('Parou na rodada ' + rod + ': ' + e.message, 'error'); try { S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); } catch (_) {} }
+    S.ocupado = false; S.msgOcupado = ''; render(); }
+  async function rodar(agente) { if (S.ocupado) return; S.ocupado = true; render(); try { const r = await api('time_rodar', agente ? { agente } : {}); nota(r.novos ? `${r.novos} item(ns) novo(s) na fila de aprovação` : 'Nada novo para preparar agora: os leads elegíveis já têm item pendente na fila. Use "Refazer pendentes" para reescrever com as regras atuais', r.novos ? 'success' : 'info'); S.d = Object.assign(await api('time_estado', { rapido: true }), { gerente: (S.d || {}).gerente }); } catch (e) { nota(e.message, 'error'); } S.ocupado = false; render(); }
   async function decidir(id, decisao) {
     const el = $('tvc_' + id), as = $('tva_' + id), corpo = el ? el.value : undefined, assunto = as ? as.value : undefined; let motivo = '';
     if (decisao === 'rejeitar') { motivo = prompt('Por que rejeitar? (ajuda os agentes a melhorar)') || ''; if (!motivo) return; }
@@ -61,9 +70,9 @@
       <h4 class="tv-h4">Limites e travas</h4><div class="tv-lim">${[['por_agente_rodada', 'Itens por agente a cada rodada'], ['total_rodada', 'Itens por rodada (todos)'], ['repetir_apos_dias', 'Dias até abordar o mesmo lead de novo'], ['envio_dia', 'Envios por dia (futuro)'], ['hora_ini', 'Hora inicial de envio'], ['hora_fim', 'Hora final de envio']].map(([k, n]) => `<label>${n}<input type="number" value="${L[k] ?? ''}" onchange="TIMEV.limite('${k}',this.value)"></label>`).join('')}</div>
       <ul class="tv-trv"><li>Só item aprovado por uma pessoa pode sair.</li><li>Nunca para contato sem consentimento ou que pediu para não receber.</li><li>Para a cadência assim que o contato responde.</li><li>Só em horário comercial, dias úteis, com cópia para o vendedor e registro de tudo.</li></ul>`; }
     box.innerHTML = `<div class="tv-top"><div><h1>Time de vendas virtual</h1><p class="tv-tese">${d.playbook ? esc(d.playbook.tese) : 'O Playbook ainda não existe: abra Marketing → Playbook 2027 para o time ter o Norte.'}</p></div>
-      <div class="tv-topb"><button class="tv-bt p" ${S.ocupado || !d.playbook ? 'disabled' : ''} onclick="TIMEV.rodar()">${S.ocupado ? 'Preparando… (até 1 minuto)' : 'Preparar abordagens agora'}</button></div></div>
+      <div class="tv-topb"><button class="tv-bt p" ${S.ocupado || !d.playbook ? 'disabled' : ''} onclick="TIMEV.rodar()">${S.ocupado ? 'Preparando… (até 1 minuto)' : 'Preparar abordagens agora'}</button><button class="tv-bt" ${S.ocupado || !d.playbook ? 'disabled' : ''} onclick="TIMEV.refazer()" title="Descarta os pendentes e reescreve com as regras atuais" style="margin-left:6px;">↻ Refazer pendentes</button>${S.msgOcupado ? `<div style="font-size:12px;margin-top:6px;">⏳ ${esc(S.msgOcupado)}</div>` : ''}</div></div>
       <div class="tv-aviso">${esc(d.aviso)} Aprovam: Patricia (funil WX), Ademir (funil padrão) e o CEO (todos).</div>
       <div class="tv-abas">${abas.map(([k, n]) => `<button class="tv-aba ${S.aba === k ? 'on' : ''}" onclick="TIMEV.aba('${k}')">${n}${k === 'fila' && cont('pendente') ? ` <span class="tv-bd">${cont('pendente')}</span>` : ''}</button>`).join('')}</div>${corpo}`;
   }
-  window.TIMEV = { abrir, aba, filtro, rodar, decidir, enviado, copiar, cfg, auto, limite };
+  window.TIMEV = { refazer, abrir, aba, filtro, rodar, decidir, enviado, copiar, cfg, auto, limite };
 })();
