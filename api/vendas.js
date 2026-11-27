@@ -1073,7 +1073,7 @@ async function handler(req, res) {
     floresta_voz_sincronizar: () => voz().sincronizar(payload),   // v3.608: busca o resultado/transcrição da ligação na Retell
     floresta_voz_teste: () => voz().teste(payload),
     // v3.643: marcas de abordagem (WhatsApp/voz/e-mail) e briefing dos e-mails antes do envio
-    floresta_abordagem: async () => { const fila = await TV.lerFila(_kvTV()); const email = {};
+    floresta_abordagem: async () => { let saneados = 0; try { saneados = await TV.sanearEmails(_kvTV()); } catch (_) {} const fila = await TV.lerFila(_kvTV()); const email = {};
       for (const i of fila.filter(x => x.canal === 'email' && x.card_id)) { const o = email[i.card_id] = email[i.card_id] || { itens: 0, enviado: false, pendente: 0, aprovado: 0 }; o.itens++; if (i.enviado) { o.enviado = true; o.enviado_em = i.enviado_em; } if (i.estado === 'pendente') o.pendente++; if (i.estado === 'aprovado') o.aprovado++; }
       let v = {}; try { v = await voz().marcas(); } catch (_) {}
       return { voz: v, email, briefing: fila.filter(x => x.agente === 'sdr_email' && !x.enviado && x.estado !== 'rejeitado').map(x => ({ id: x.id, card_id: x.card_id, nome: x.nome, empresa: x.empresa, cargo: x.cargo, etapa: x.etapa, estado: x.estado, assunto: x.assunto, corpo: x.corpo, racional: x.racional, pesquisa: x.pesquisa || null, angulo: x.angulo, responsavel: x.responsavel, funil: x.funil, criado_em: x.criado_em })) }; },

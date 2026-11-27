@@ -25,3 +25,9 @@ test('e-mail nunca sai com oferta de WhatsApp e sempre tem o convite de 15 minut
   const r2 = TV.limparEmail(ok, 'quartas e quintas, entre 10h30 e 12h'); assert.ok(/quarta ou na quinta, entre 10h30 e 12h\?/.test(r2)); assert.ok(/Atenciosamente$/.test(r2));
   const completo = ok.replace('sem compromisso.', 'sem compromisso. Fica melhor para você na quarta ou na quinta, entre 10h30 e 12h?'); assert.equal(TV.limparEmail(completo, 'x'), completo);
 });
+test('rascunho antigo com WhatsApp e caso de cliente é consertado na fila', async () => {
+  const corpo = 'Maria, tudo bem?\n\nSou Ademir, da Atlantyx.\n\nEmpresas de logística têm lidado com dado atrasado.\n\nUm cliente do setor resolveu isso sem trocar de sistema. Posso te mandar um mapa de como eles fizeram no WhatsApp — sem reunião, sem custo.\n\nAtenciosamente\n\nAdemir Souza';
+  const kv = mk([item({ estado: 'aprovado', corpo })]); const n = await TV.sanearEmails(kv); assert.equal(n, 1);
+  const it = (await kv.get(TV.K_FILA))[0]; assert.ok(!/whats|cliente do setor|sem reuni/i.test(it.corpo)); assert.ok(/15 minutos/.test(it.corpo) && /quarta ou na quinta/.test(it.corpo)); assert.equal(it.estado, 'pendente');
+  assert.equal(await TV.sanearEmails(kv), 0);
+});
