@@ -166,7 +166,7 @@
   // v3.643: marca de quem JÁ foi abordado — IARA WhatsApp, IARA de voz e e-mail
   let AB = { voz: {}, email: {}, briefing: [] };
   async function marcasCarregar() { try { const r = await api('floresta_abordagem', {}); AB = { voz: r.voz || {}, email: r.email || {}, briefing: r.briefing || [] }; render(); } catch (_) {} }
-  function abCanais(c) { const o = [], v = AB.voz[c.id], e = AB.email[c.id];
+  function abCanais(c) { const o = [], v = AB.voz[c.id] || (c.contato_id ? AB.voz['ct:' + c.contato_id] : null), e = AB.email[c.id];
     if (c.atendido_ia) o.push({ k: 'wa', cor: '#16a34a', t: '💬 IARA WhatsApp', dica: 'Já abordado pela IARA no WhatsApp (atendido pela IA = sim no HubSpot)' });
     if (v && v.n) o.push({ k: 'v', cor: '#0ea5a4', t: '📞 IARA ligou' + (v.n > 1 ? ' ×' + v.n : '') + (v.atendeu ? '' : ' · sem resposta'), dica: v.n + ' ligação(ões) da IARA de voz · última ' + (v.ultima_em ? new Date(v.ultima_em).toLocaleString('pt-BR').slice(0, 17) : '') + (v.resultado ? ' · resultado: ' + v.resultado : '') });
     const L = c.ligacao; if (L && (L.tentativas > 0 || (L.historico || []).length) && !(v && v.n)) { const h = (L.historico || []).slice(-1)[0] || {};
