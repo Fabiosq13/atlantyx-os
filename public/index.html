@@ -7012,7 +7012,7 @@ function nav(p,el){try{document.body.classList.remove('sb-aberto');}catch(_){}do
 // v3.638: Voltar / Início em qualquer tela (histórico de navegação)
 var _navHist=[],_navVolt=false;
 (function(){var _n=nav;nav=function(p,el){var at=(document.querySelector('.page.active')||{}).id;at=at?at.replace(/^page-/,''):null;if(!_navVolt&&at&&at!==p){_navHist.push(at);if(_navHist.length>30)_navHist.shift();}var r=_n.apply(this,arguments);try{var b1=document.getElementById('tbVoltar'),b2=document.getElementById('tbInicio');if(b1)b1.style.display=(p==='dash'?'none':'');if(b2)b2.style.display=(p==='dash'?'none':'');window.scrollTo(0,0);}catch(_){}return r;};
-window.navVoltar=function(){var p=_navHist.pop();_navVolt=true;try{nav(p||'dash');}finally{_navVolt=false;}};window.navInicio=function(){_navHist.length=0;nav('dash');};})();
+window.navVoltar=function(){var p=_navHist.pop();while(p&&window._telaPermitida&&!window._telaPermitida(p))p=_navHist.pop();_navVolt=true;try{if(p)nav(p);else window.navInicio();}finally{_navVolt=false;}};window.navInicio=function(){_navHist.length=0;var d=(window._telaPermitida&&!window._telaPermitida('dash'))?(window._telaInicio||'dash'):'dash';nav(d);};})();
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const _e=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const el=`<div class="le ${String(type).replace(/[^a-z]/gi,'')}">[${time}] ${_e(msg)}</div>`; /* v3.237: mensagem escapada (nome vindo do Apollo/HubSpot rodava script) */['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
 async function api(ep,method='GET',body=null){try{const o={method,headers:{'Content-Type':'application/json'}};if(body)o.body=JSON.stringify(body);const r=await fetch(ep,o);return await r.json();}catch(e){addLog('err','Erro '+ep+': '+e.message);return null;}}
@@ -12821,12 +12821,15 @@ window._acessoAplicar = function (j) {
   const u = j && j.usuario; const admin = !j.ativa || !u || u.admin;
   const ma = document.getElementById('menuAcesso'); if (ma) ma.style.display = (admin && (u || j.primeiro_acesso === false)) ? '' : 'none';
   if (admin) return;
-  const ok = new Set(u.telas || []); const menu = new Set(_telasDoMenu().map(t => t.id));
+  const ok = new Set(u.telas || []); const _mi = _telasDoMenu(); const menu = new Set(_mi.map(t => t.id));
+  // v3.641: perfil Vendas enxerga SEMPRE todas as telas do menu "S7 · Vendas Ativo" — telas novas não ficam mais bloqueadas por não estarem na lista salva no perfil
+  if (/^\s*vendas\s*$/i.test(String(u.perfil || ''))) _mi.filter(t => /VENDAS ATIVO/i.test(t.grupo || '')).forEach(t => ok.add(t.id));
   window._telaPermitida = p => ok.has('*') || ok.has(p) || (!menu.has(p) && !/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p));
   document.querySelectorAll('.sb-nav .sbi').forEach(el => { const m = (el.getAttribute('onclick') || '').match(/nav\('([a-z0-9_]+)'/i); if (m && !window._telaPermitida(m[1])) el.style.display = 'none'; });
   document.querySelectorAll('.sb-nav .sg-body').forEach(b => { const vis = Array.from(b.querySelectorAll('.sbi')).some(x => x.style.display !== 'none'); if (!vis) { b.style.display = 'none'; const hd = document.querySelector('.sg-hd[data-g="' + b.id + '"]'); if (hd) hd.style.display = 'none'; } });
   const _navOrig = window.nav;
   window.nav = nav = function (p, el) { if (!window._telaPermitida(p)) { try { toast('Seu perfil não tem acesso a esta tela', 'error'); } catch (_) {} return; } return _navOrig(p, el); };
+  window._telaInicio = Array.from(menu).find(x => window._telaPermitida(x)) || 'dash';
   const ativa = document.querySelector('.page.active'); const idAtiva = ativa ? ativa.id.replace('page-', '') : 'dash';
   if (!window._telaPermitida(idAtiva)) { const prim = Array.from(menu).find(x => window._telaPermitida(x)); if (prim) nav(prim, document.querySelector('.sbi[onclick*="\'' + prim + '\'"]')); else { document.querySelectorAll('.page').forEach(x => x.classList.remove('active')); } }
 };
@@ -37591,7 +37594,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.640] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.641] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37607,7 +37610,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.640';
+window.__ATX_BUILD_ID__ = 'ATX-v3.641';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
