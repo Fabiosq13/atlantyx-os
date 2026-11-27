@@ -12822,7 +12822,7 @@ window._acessoAplicar = function (j) {
   const ma = document.getElementById('menuAcesso'); if (ma) ma.style.display = (admin && (u || j.primeiro_acesso === false)) ? '' : 'none';
   if (admin) return;
   const ok = new Set(u.telas || []); const _mi = _telasDoMenu(); const menu = new Set(_mi.map(t => t.id));
-  // v3.652: perfil Vendas enxerga SEMPRE todas as telas do menu "S7 · Vendas Ativo" — telas novas não ficam mais bloqueadas por não estarem na lista salva no perfil
+  // v3.653: perfil Vendas enxerga SEMPRE todas as telas do menu "S7 · Vendas Ativo" — telas novas não ficam mais bloqueadas por não estarem na lista salva no perfil
   if (/^\s*vendas\s*$/i.test(String(u.perfil || ''))) _mi.filter(t => /VENDAS ATIVO/i.test(t.grupo || '')).forEach(t => ok.add(t.id));
   window._telaPermitida = p => ok.has('*') || ok.has(p) || (!menu.has(p) && !/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p));
   document.querySelectorAll('.sb-nav .sbi').forEach(el => { const m = (el.getAttribute('onclick') || '').match(/nav\('([a-z0-9_]+)'/i); if (m && !window._telaPermitida(m[1])) el.style.display = 'none'; });
@@ -37594,7 +37594,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.652] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.653] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -37610,7 +37610,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.652';
+window.__ATX_BUILD_ID__ = 'ATX-v3.653';
 // v3.565: a tela Assuntos · ATLAS é a primeira a abrir (o Dashboard continua em "Início" e no menu)
 setTimeout(() => { try { if (/^#?$/.test(location.hash) && document.getElementById('page-dash')?.classList.contains('active')) nav('s0assuntos', document.querySelector('.sbi[onclick*="s0assuntos"]')); } catch (_) {} }, 600);
 
