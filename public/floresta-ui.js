@@ -169,6 +169,8 @@
   function abCanais(c) { const o = [], v = AB.voz[c.id], e = AB.email[c.id];
     if (c.atendido_ia) o.push({ k: 'wa', cor: '#16a34a', t: '💬 IARA WhatsApp', dica: 'Já abordado pela IARA no WhatsApp (atendido pela IA = sim no HubSpot)' });
     if (v && v.n) o.push({ k: 'v', cor: '#0ea5a4', t: '📞 IARA ligou' + (v.n > 1 ? ' ×' + v.n : '') + (v.atendeu ? '' : ' · sem resposta'), dica: v.n + ' ligação(ões) da IARA de voz · última ' + (v.ultima_em ? new Date(v.ultima_em).toLocaleString('pt-BR').slice(0, 17) : '') + (v.resultado ? ' · resultado: ' + v.resultado : '') });
+    const L = c.ligacao; if (L && (L.tentativas > 0 || (L.historico || []).length) && !(v && v.n)) { const h = (L.historico || []).slice(-1)[0] || {};
+      o.push({ k: 'v', cor: '#0ea5a4', t: '📞 Ligação ' + (L.caminho === 'A' ? 'Ademir' : 'IARA') + ' · ' + (L.tentativas || (L.historico || []).length) + '/' + (L.max || '?'), dica: 'Tentativas de ligação já feitas (' + (L.quem || '') + ')' + (h.resultado ? ' · último resultado: ' + h.resultado : '') + (h.em ? ' em ' + new Date(h.em).toLocaleString('pt-BR').slice(0, 17) : '') }); }
     if (e && e.enviado) o.push({ k: 'e', cor: '#2563eb', t: '✉️ e-mail enviado', dica: 'E-mail marcado como enviado' + (e.enviado_em ? ' em ' + new Date(e.enviado_em).toLocaleString('pt-BR').slice(0, 17) : '') });
     return o; }
   // v3.643: briefing do e-mail ANTES do envio — nada sai daqui; o texto passa por aprovação humana
