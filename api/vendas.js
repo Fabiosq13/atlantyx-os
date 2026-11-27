@@ -43,6 +43,25 @@ async function claude(system, content, maxTokens = 2000, ms = 55000) {
   } catch (e) { throw new Error(e.name === 'AbortError' ? 'A IA demorou demais — tente de novo' : e.message); }
   finally { clearTimeout(tm); }
 }
+// v3.655: pesquisa da empresa do lead na web (domínio do e-mail + nome), para o e-mail sob medida. Guarda 30 dias por domínio/empresa.
+async function pesquisarEmpresa(card) {
+  const em = String(card?.email || '').toLowerCase(), dom = em.includes('@') ? em.split('@')[1] : '', pessoal = /^(gmail|hotmail|outlook|yahoo|icloud|live|bol|uol|msn|terra|ig)\./i.test(dom);
+  const empresa = String(card?.empresa || '').trim(); if (!empresa && (!dom || pessoal)) return null;
+  const chave = (pessoal || !dom ? 'n:' + empresa.toLowerCase() : 'd:' + dom).slice(0, 80), kv = _kvTV(), K = 'vendas:time:pesquisa';
+  let M = {}; try { M = (await kv.get(K)) || {}; } catch (_) {}
+  if (M[chave] && Date.now() - Date.parse(M[chave].em) < 30 * 864e5) return M[chave].texto;
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 35000);
+  try { const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 700, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
+        system: 'Você pesquisa empresas para um vendedor B2B brasileiro. Responda em português, em até 110 palavras, só com fatos que encontrou na busca (nada inventado): o que a empresa faz e para quem; porte ou presença, se achar; um movimento recente (expansão, aquisição, lançamento, digitalização), se achar, com mês/ano; e 1 frase sobre onde dados e IA costumam pesar nesse tipo de negócio. Se não achar a empresa, responda exatamente: NAO_ENCONTREI.',
+        messages: [{ role: 'user', content: 'Empresa: ' + (empresa || '(sem nome)') + (dom && !pessoal ? ' · site provável: ' + dom : '') + (card?.setor ? ' · setor informado: ' + card.setor : '') + '. País: Brasil.' }] }) });
+    const d = await r.json().catch(() => ({})); if (!r.ok) return null;
+    const texto = (d.content || []).filter(c => c.type === 'text').map(c => c.text).join(' ').replace(/\s+/g, ' ').trim(); if (!texto || /NAO_ENCONTREI/.test(texto)) return null;
+    try { const M2 = (await kv.get(K)) || {}; M2[chave] = { texto: texto.slice(0, 1200), em: new Date().toISOString() }; const ks = Object.keys(M2); if (ks.length > 800) ks.sort((a, b) => Date.parse(M2[a].em) - Date.parse(M2[b].em)).slice(0, ks.length - 800).forEach(k => delete M2[k]); await kv.set(K, M2); } catch (_) {}
+    return texto.slice(0, 1200);
+  } catch (_) { return null; } finally { clearTimeout(tm); }
+}
 // v3.383: redação em streaming — se o tempo do servidor acabar, devolve o que já foi escrito (o JSON é reparado)
 // em vez de perder o capítulo inteiro; 429/529 (limite da IA) sobem com o código para o navegador aguardar e repetir.
 async function claudeStream(system, content, maxTokens = 4000, ms = 95000) {
@@ -1003,7 +1022,7 @@ async function handler(req, res) {
     // v3.601: TIME DE VENDAS VIRTUAL — agentes preparam, pessoas aprovam; nada é enviado por aqui
     time_estado: async () => { let cards = []; if (payload.rapido) return TV.estado({ kv: _kvTV(), cards: [], login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} });   /* v3.650: abre a tela já, sem esperar o HubSpot */ try { const F = await Promise.race([floresta().carregar({}), new Promise(r => setTimeout(() => r(null), 3000))]); cards = F?.cards || []; } catch (_) {} /* v3.617: não trava a tela esperando o HubSpot (máx. 8 s) */ return TV.estado({ kv: _kvTV(), cards, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); },
     time_gerente: async () => { let cards = []; try { const F = await Promise.race([floresta().carregar({}), new Promise(r => setTimeout(() => r(null), 20000))]); cards = F?.cards || []; } catch (_) {} const e = await TV.estado({ kv: _kvTV(), cards, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); return { gerente: e.gerente, leu_floresta: cards.length > 0 }; },
-    time_rodar: async () => { const cards = (await floresta().carregar({ forcar: !!payload.forcar })).cards || []; return TV.rodar({ kv: _kvTV(), cards, claude, agente: payload.agente || null, card_ids: payload.card_ids || null, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); },
+    time_rodar: async () => { const cards = (await floresta().carregar({ forcar: !!payload.forcar })).cards || []; return TV.rodar({ kv: _kvTV(), cards, claude, pesquisar: pesquisarEmpresa, agente: payload.agente || null, card_ids: payload.card_ids || null, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); },
     time_decidir: async () => ({ item: await TV.decidir({ kv: _kvTV(), id: payload.id, decisao: payload.decisao, motivo: payload.motivo, assunto: payload.assunto, corpo: payload.corpo, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }) }),
     time_enviado: async () => ({ item: await TV.marcarEnviado({ kv: _kvTV(), id: payload.id, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }) }),
     // v3.652: envio direto (1 clique por e-mail, só item aprovado) — busca o e-mail do lead na Floresta e registra nota no HubSpot
@@ -1057,7 +1076,7 @@ async function handler(req, res) {
     floresta_abordagem: async () => { const fila = await TV.lerFila(_kvTV()); const email = {};
       for (const i of fila.filter(x => x.canal === 'email' && x.card_id)) { const o = email[i.card_id] = email[i.card_id] || { itens: 0, enviado: false, pendente: 0, aprovado: 0 }; o.itens++; if (i.enviado) { o.enviado = true; o.enviado_em = i.enviado_em; } if (i.estado === 'pendente') o.pendente++; if (i.estado === 'aprovado') o.aprovado++; }
       let v = {}; try { v = await voz().marcas(); } catch (_) {}
-      return { voz: v, email, briefing: fila.filter(x => x.agente === 'sdr_email' && !x.enviado && x.estado !== 'rejeitado').map(x => ({ id: x.id, card_id: x.card_id, nome: x.nome, empresa: x.empresa, cargo: x.cargo, etapa: x.etapa, estado: x.estado, assunto: x.assunto, corpo: x.corpo, racional: x.racional, angulo: x.angulo, responsavel: x.responsavel, funil: x.funil, criado_em: x.criado_em })) }; },
+      return { voz: v, email, briefing: fila.filter(x => x.agente === 'sdr_email' && !x.enviado && x.estado !== 'rejeitado').map(x => ({ id: x.id, card_id: x.card_id, nome: x.nome, empresa: x.empresa, cargo: x.cargo, etapa: x.etapa, estado: x.estado, assunto: x.assunto, corpo: x.corpo, racional: x.racional, pesquisa: x.pesquisa || null, angulo: x.angulo, responsavel: x.responsavel, funil: x.funil, criado_em: x.criado_em })) }; },
     floresta_abordagem: () => floresta().abordagemSalvar(payload),
     floresta_props_ia: () => floresta().propsIA(true),
     floresta_remarketing_lista: () => floresta().remarketingLista(),
