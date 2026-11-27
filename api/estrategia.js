@@ -637,17 +637,51 @@ async function mercadoIA() { // última análise 1.4 (IA, sem fonte): só rascun
       concorrentes: (M.concorrentes || []).slice(0, 15), tendencias: (M.tendencias_favoraveis || []).slice(0, 6), oportunidades: (M.oportunidades_nao_exploradas || []).slice(0, 6), segmento_mais_quente: M.segmento_mais_quente || null };
   } catch (_) { return null; }
 }
-// v3.662: rascunho da IA para as 6 fichas de mercado (pergunta 1) — só preenche ficha VAZIA, sem fonte (segue "a confirmar" até o fundador informar a fonte)
-async function pesquisaPreencherIA(usuario) {
-  const [P0, ia, ca] = await Promise.all([kv(PQ.K_PESQUISA), mercadoIA(), kv('est:contexto_amplo')]); const P = PQ.pesquisaNormalizar(P0);
-  const vazias = PQ.CAMPOS_MERCADO.filter(([k]) => !P.mercado[k].texto.trim()); if (!vazias.length) return { ...(await pesquisaObter()), preenchidos: 0 };
-  const sys = 'Você ajuda o fundador da Atlantyx (empresa brasileira de IA, análise de dados e engenharia de dados para empresas médias e grandes) a preparar a pesquisa de mercado do planejamento 2027. Escreva um RASCUNHO para cada ficha pedida, em português do Brasil, 2 a 4 frases curtas por ficha, direto ao ponto. REGRAS: use só o que está no material abaixo e conhecimento geral estável do mercado brasileiro; NUNCA escreva número, percentual, valor, tamanho de mercado ou nome de cliente como fato — onde um número for necessário, escreva "número a levantar" e diga em qual tipo de fonte buscar (ex.: IDC, Gartner, ABES, ANEEL, PNCP). Não cite clientes da Atlantyx pelo nome. Responda SOMENTE um JSON {"chave":"texto"} com exatamente as chaves pedidas.';
-  const usr = 'FICHAS A PREENCHER:\n' + vazias.map(([k, r]) => '- ' + k + ': ' + r).join('\n') + '\n\nANÁLISE DE MERCADO DA IA (tela 1.4, não verificada):\n' + JSON.stringify(ia || { aviso: 'sem análise 1.4' }).slice(0, 6000) + (ca ? '\n\nCONTEXTO DA EMPRESA:\n' + JSON.stringify(ca).slice(0, 3000) : '');
-  const t = await claude(sys, [{ role: 'user', content: usr }], 1800); const i = t.indexOf('{'), j = t.lastIndexOf('}'); if (i < 0 || j < i) throw Object.assign(new Error('A IA não devolveu o rascunho — tente de novo'), { status: 502 });
-  let o = {}; try { o = JSON.parse(t.slice(i, j + 1)); } catch (_) { throw Object.assign(new Error('A IA devolveu um rascunho ilegível — tente de novo'), { status: 502 }); }
-  const mercado = { ...P.mercado }; let n = 0; for (const [k] of vazias) { const v = String(o[k] || '').trim(); if (!v) continue; mercado[k] = { ...mercado[k], texto: ('[Rascunho da IA — confirmar] ' + v).slice(0, 1500) }; n++; }
-  if (n) await kv(PQ.K_PESQUISA, PQ.pesquisaAplicar(P, { secao: 'mercado', dados: mercado }, usuario || 'IA'));
-  return { ...(await pesquisaObter()), preenchidos: n };
+// v3.662/v3.666: rascunho da IA para o Passo 0. Tudo entra marcado "a confirmar": texto com "[Rascunho da IA — confirmar]", concorrente com origem "ia", número com fonte "Estimativa da IA".
+// secao: mercado (padrão) · concorrentes (pesquisa na web, com link) · quadro (Atlantyx × pares) · potencial (por motor)
+const WEB = n => [{ type: 'web_search_20250305', name: 'web_search', max_uses: n }];
+const SYS_P0 = 'Você ajuda o fundador da Atlantyx (empresa brasileira de IA, análise de dados e engenharia de dados; três frentes: alocação de pessoas, projetos sob medida e produtos de IA; clientes: empresas médias e grandes, com força em energia e setor financeiro) a preparar a pesquisa de mercado e concorrência do planejamento 2027. Português do Brasil, frases curtas. Você escreve um RASCUNHO para o fundador revisar: nunca apresente palpite como fato; quando não achar um dado, diga "a levantar". Não cite clientes da Atlantyx pelo nome. Responda SOMENTE o JSON pedido.';
+async function pesquisaPreencherIA(usuario, secao = 'mercado') {
+  const [P0, ia, ca] = await Promise.all([kv(PQ.K_PESQUISA), mercadoIA(), kv('est:contexto_amplo')]); const P = PQ.pesquisaNormalizar(P0), hoje = new Date().toISOString().slice(0, 10);
+  const salvar = async (sec, dados) => { await kv(PQ.K_PESQUISA, PQ.pesquisaAplicar(await kv(PQ.K_PESQUISA), { secao: sec, dados }, usuario || 'IA')); };
+  const fim = async n => ({ ...(await pesquisaObter()), preenchidos: n, secao });
+  if (secao === 'mercado') {
+    const vazias = PQ.CAMPOS_MERCADO.filter(([k]) => !P.mercado[k].texto.trim()); if (!vazias.length) return fim(0);
+    const sys = SYS_P0 + ' Escreva 2 a 4 frases por ficha. NUNCA escreva número, percentual, valor ou tamanho de mercado como fato — onde um número for necessário, escreva "número a levantar" e diga em qual tipo de fonte buscar (ex.: IDC, Gartner, ABES, ANEEL, PNCP). JSON: {"chave":"texto"} com exatamente as chaves pedidas.';
+    const usr = 'FICHAS A PREENCHER:\n' + vazias.map(([k, r]) => '- ' + k + ': ' + r).join('\n') + '\n\nANÁLISE DE MERCADO DA IA (tela 1.4, não verificada):\n' + JSON.stringify(ia || { aviso: 'sem análise 1.4' }).slice(0, 6000) + (ca ? '\n\nCONTEXTO DA EMPRESA:\n' + JSON.stringify(ca).slice(0, 3000) : '');
+    const o = json(await claude(sys, [{ role: 'user', content: usr }], 1800)); if (!o) throw Object.assign(new Error('A IA não devolveu o rascunho — tente de novo'), { status: 502 });
+    const mercado = { ...P.mercado }; let n = 0; for (const [k] of vazias) { const v = String(o[k] || '').trim(); if (!v) continue; mercado[k] = { ...mercado[k], texto: ('[Rascunho da IA — confirmar] ' + v).slice(0, 1500) }; n++; }
+    if (n) await salvar('mercado', mercado); return fim(n);
+  }
+  if (secao === 'concorrentes') {
+    const falta = Math.max(0, 10 - P.concorrentes.length); if (!falta) return fim(0);
+    const usr = 'Pesquise na web e liste ' + falta + ' concorrentes REAIS da Atlantyx no Brasil, cobrindo os 4 grupos: consultorias (consultorias grandes de dados e IA), fabricas (fábricas de software / integradoras), internas (equipes internas dos clientes — descreva o tipo, ex.: "área interna de dados de uma distribuidora de energia"), ferramentas (ferramentas prontas de IA e dados). Não repita: ' + (P.concorrentes.map(c => c.nome).join(', ') || '(nenhum ainda)') + (ia?.concorrentes?.length ? '. Candidatos já citados na análise 1.4 (confira antes de usar): ' + ia.concorrentes.map(c => c.nome).filter(Boolean).join(', ') : '') + '.\nPara cada um: nome; grupo (uma das 4 chaves); porte (funcionários ou faixa, se achar; senão "a levantar"); oferta (o que vende, 1 frase); preco ("não público — a levantar", salvo se achar preço publicado); forca (ponto forte, 1 frase); fonte (URL onde você viu).\nJSON: {"concorrentes":[{"nome":"","grupo":"","porte":"","oferta":"","preco":"","forca":"","fonte":""}]}';
+    const o = json(await claudeTools(SYS_P0, usr, 3500, WEB(6))); const L = Array.isArray(o?.concorrentes) ? o.concorrentes : null; if (!L) throw Object.assign(new Error('A IA não devolveu a lista de concorrentes — tente de novo'), { status: 502 });
+    const tem = new Set(P.concorrentes.map(c => c.nome.trim().toLowerCase())), novos = [];
+    for (const c of L.slice(0, falta)) { const nome = String(c?.nome || '').trim(); if (!nome || tem.has(nome.toLowerCase())) continue; tem.add(nome.toLowerCase());
+      novos.push({ nome, grupo: PQ.GRUPOS_CONC[c.grupo] ? c.grupo : '', porte: String(c.porte || 'a levantar'), oferta: String(c.oferta || ''), preco: String(c.preco || 'não público — a levantar'), forca: String(c.forca || ''), perdas: '', fonte: String(c.fonte || ''), data: hoje, origem: 'ia' }); }
+    if (novos.length) await salvar('concorrentes', [...P.concorrentes, ...novos]); return fim(novos.length);
+  }
+  if (secao === 'quadro') {
+    if (P.concorrentes.length < 3) throw Object.assign(new Error('Salve pelo menos 3 concorrentes na etapa 3 antes do quadro (use "Preencher com IA" na etapa 3)'), { status: 400 });
+    const usr = 'Monte o quadro "como estamos": Atlantyx comparada a 3 pares escolhidos entre os concorrentes abaixo (os mais parecidos em porte e oferta).\nCRITÉRIOS (chave: nome): ' + PQ.CRITERIOS.map(([k, r]) => k + ': ' + r).join('; ') + '.\nCONCORRENTES (id · nome · grupo · oferta · força): ' + P.concorrentes.map(c => [c.id, c.nome, c.grupo, c.oferta, c.forca].join(' · ')).join(' | ') + '\nDADOS DA ATLANTYX (sistema): ' + JSON.stringify(ca || {}).slice(0, 3500) + '\nPara CADA critério dê: a nota da Atlantyx frente ao mercado ("melhor", "igual" ou "pior") com a evidência (use os dados do sistema quando existirem; se não houver dado, escreva "hipótese a confirmar: ..."); e a nota de cada par frente à Atlantyx ("melhor", "igual" ou "pior") com evidência curta ("percepção de mercado a confirmar" quando não houver fato).\nJSON: {"pares":["id1","id2","id3"],"celulas":{"<critério>":{"atlantyx":{"nota":"","evidencia":""},"<id do par>":{"nota":"","evidencia":""}}}}';
+    const o = json(await claude(SYS_P0, [{ role: 'user', content: usr }], 2500)); if (!o?.celulas) throw Object.assign(new Error('A IA não devolveu o quadro — tente de novo'), { status: 502 });
+    const ids = new Set(P.concorrentes.map(c => c.id)), pares = (P.quadro.pares.length ? P.quadro.pares : (Array.isArray(o.pares) ? o.pares : []).filter(x => ids.has(x)).slice(0, 3)); let n = 0;
+    const celulas = JSON.parse(JSON.stringify(P.quadro.celulas)); for (const [k] of PQ.CRITERIOS) { celulas[k] = celulas[k] || {}; for (const col of ['atlantyx', ...pares]) { const at = celulas[k][col] || {}, v = o.celulas?.[k]?.[col]; if (at.nota || !v || !PQ.NOTAS[v.nota]) continue; celulas[k][col] = { nota: v.nota, evidencia: ('[Rascunho da IA — confirmar] ' + String(v.evidencia || '')).slice(0, 400) }; n++; } }
+    if (n) await salvar('quadro', { pares, celulas }); return fim(n);
+  }
+  if (secao === 'potencial') {
+    const rm = ca?.motores_12m ? Object.fromEntries(Object.entries(ca.motores_12m).map(([k, m]) => [k, m?.receita ?? null])) : {};
+    const usr = 'Estime o potencial de mercado da Atlantyx no Brasil para cada frente (motor): ' + Object.entries(PQ.MOTORES).map(([k, r]) => k + ' = ' + r).join('; ') + '.\nPara cada motor estime: empresas_icp (quantas empresas no Brasil cabem no perfil ideal: médias e grandes que compram esse tipo de serviço), ticket_medio (R$ por ano por cliente) e conversao_pct (% realista em 12 meses para uma empresa do porte da Atlantyx). Pesquise na web bases públicas (IBGE/CEMPRE, ANEEL, Bacen, ABES, relatórios de mercado) para o número de empresas. Use os dados do sistema para ticket e conversão quando existirem.\nDADOS DO SISTEMA: ' + JSON.stringify(ca || {}).slice(0, 3500) + '\nEm "base" explique em 1 a 2 frases de onde veio cada número e o que é palpite; em "fonte" ponha a URL ou o nome da base usada para o número de empresas.\nJSON: {"pessoas":{"empresas_icp":0,"ticket_medio":0,"conversao_pct":0,"base":"","fonte":""},"projetos":{...},"produtos":{...}}';
+    const o = json(await claudeTools(SYS_P0, usr, 2500, WEB(4))); if (!o) throw Object.assign(new Error('A IA não devolveu a estimativa — tente de novo'), { status: 502 });
+    const pot = JSON.parse(JSON.stringify(P.potencial)); let n = 0; const nn = v => { const x = Number(v); return Number.isFinite(x) && x > 0 ? x : null; };
+    for (const m of Object.keys(PQ.MOTORES)) { const at = pot[m], v = o[m]; if (!v) continue; let mud = false;
+      if (at.empresas_icp == null && nn(v.empresas_icp)) { at.empresas_icp = Math.round(nn(v.empresas_icp)); mud = true; } if (at.ticket_medio == null && nn(v.ticket_medio)) { at.ticket_medio = Math.round(nn(v.ticket_medio)); mud = true; } if (at.conversao_pct == null && nn(v.conversao_pct)) { at.conversao_pct = Math.min(100, nn(v.conversao_pct)); mud = true; }
+      if (at.receita_atual == null && rm[m] != null) { at.receita_atual = rm[m]; mud = true; }
+      if (mud) { if (!at.fonte) at.fonte = ('Estimativa da IA (a confirmar): ' + String(v.fonte || 'sem fonte')).slice(0, 300); if (!at.data) at.data = hoje; if (!at.hipotese) at.hipotese = ('[Rascunho da IA] ' + String(v.base || '')).slice(0, 400); n++; } }
+    if (n) await salvar('potencial', pot); return fim(n);
+  }
+  throw Object.assign(new Error('Seção inválida'), { status: 400 });
 }
 // v3.663: transcrição de fala no servidor (plano B da Torre quando o reconhecimento de voz do navegador não responde)
 async function transcrever({ audio, mime } = {}) {
@@ -816,7 +850,7 @@ async function handler(req, res) {
       nao_fazer_importar_plano: () => (soFundador(req), naoFazerImportarPlano(usuario)),
       nao_fazer_checar: async () => ({ conflitos: RT.naoFazerChecar((await kv(RT.K_NAO_FAZER))?.itens, [b.titulo, b.texto].filter(Boolean).join(' \n ').substring(0, 6000)) }),
       revisao_calendario: () => (soFundador(req), calendarioObter()), revisao_calendario_salvar: () => (soFundador(req), calendarioSalvar(b, usuario)),
-      pesquisa_obter: () => (soFundador(req), pesquisaObter()), pesquisa_salvar: () => (soFundador(req), pesquisaSalvar(b, usuario)), pesquisa_importar_ia: () => (soFundador(req), pesquisaImportarIA(usuario)), pesquisa_preencher_ia: () => (soFundador(req), pesquisaPreencherIA(usuario)), jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
+      pesquisa_obter: () => (soFundador(req), pesquisaObter()), pesquisa_salvar: () => (soFundador(req), pesquisaSalvar(b, usuario)), pesquisa_importar_ia: () => (soFundador(req), pesquisaImportarIA(usuario)), pesquisa_preencher_ia: () => (soFundador(req), pesquisaPreencherIA(usuario, b.secao || 'mercado')), jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
       socios_obter: () => (soFundador(req), sociosObter(usuario)), socios_salvar: () => (soFundador(req), sociosSalvar(b, usuario)), socios_acordo: () => (soFundador(req), sociosAcordo(b, usuario)), // v3.342
       cadeiras_salvar: () => (soFundador(req), cadeirasSalvar(b, usuario)), pessoal_salvar: () => (soFundador(req), pessoalSalvar(b, usuario)),
       orcamento_obter: () => (soFundador(req), orcamentoObter(b)), orcamento_salvar: () => (soFundador(req), orcamentoSalvar(b, usuario)),
