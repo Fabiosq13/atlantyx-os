@@ -31,3 +31,14 @@ test('rascunho antigo com WhatsApp e caso de cliente é consertado na fila', asy
   const it = (await kv.get(TV.K_FILA))[0]; assert.ok(!/whats|cliente do setor|sem reuni/i.test(it.corpo)); assert.ok(/15 minutos/.test(it.corpo) && /quarta ou na quinta/.test(it.corpo)); assert.equal(it.estado, 'pendente');
   assert.equal(await TV.sanearEmails(kv), 0);
 });
+test('caixa de vendas: só envia pela contato@ quando há credencial dela', async () => {
+  const { caixaVendas } = await import('../lib/floresta-email.js');
+  assert.equal(caixaVendas({ EMAIL_SMTP_USER: 'sistema@gmail.com', EMAIL_SMTP_PASS: 'x' }).ok, false);
+  const a = caixaVendas({ EMAIL_VENDAS_USER: 'contato@atlanteam.com.br', EMAIL_VENDAS_PASS: 'x' }); assert.ok(a.ok); assert.equal(a.host, 'mail.atlanteam.com.br');
+  assert.ok(caixaVendas({ EMAIL_SMTP_USER: 'contato@atlanteam.com.br', EMAIL_SMTP_PASS: 'x' }).ok);
+});
+test('aprovar e enviar no mesmo clique usa o texto editado na tela', async () => {
+  const kv = mk([item({ estado: 'pendente' })]); let env = null;
+  const r = await TV.aprovarEnviar({ kv, id: 'tv_1', assunto: 'Novo assunto', corpo: 'Maria, tudo bem?\n\nTexto editado. Se fizer sentido, são 15 minutos, sem compromisso. Fica melhor para você na quarta ou na quinta, entre 10h30 e 12h?\n\nAtenciosamente', card, enviar: async x => { env = x; return { ok: true, de: 'contato@atlanteam.com.br' }; }, login: 'ceo', admin: true });
+  assert.equal(env.assunto, 'Novo assunto'); assert.ok(/Texto editado/.test(env.corpo)); assert.equal(r.item.enviado, true); assert.equal(r.item.estado, 'aprovado');
+});

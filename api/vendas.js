@@ -1032,6 +1032,13 @@ async function handler(req, res) {
       const r = await TV.enviarEmailItem({ kv: kvt, id: payload.id, card, enviar: enviarEmailLead, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} });
       try { await floresta().notaContato({ card_id: card.id, contato_id: card.contato_id, texto: '✉️ E-mail de abordagem enviado pelo Atlantyx OS (aprovado e enviado por ' + (req.sessao?.login || '—') + ')\nAssunto: ' + r.item.assunto + '\n\n' + r.item.corpo }); } catch (_) {}
       return r; },
+    // v3.665: aprova com o texto da tela e envia no mesmo clique (tela de e-mails da Floresta)
+    time_aprovar_enviar: async () => { const kvt = _kvTV(), it0 = (await TV.lerFila(kvt)).find(x => x.id === payload.id); if (!it0) throw Object.assign(new Error('Item não encontrado'), { status: 404 });
+      const cards = (await floresta().carregar({})).cards || [], card = cards.find(c => String(c.id) === String(it0.card_id)); if (!card) throw Object.assign(new Error('Card não encontrado na Floresta — atualize a tela'), { status: 404 });
+      const { enviarEmailLead } = await import('../lib/floresta-email.js');
+      const r = await TV.aprovarEnviar({ kv: kvt, id: payload.id, assunto: payload.assunto, corpo: payload.corpo, card, enviar: enviarEmailLead, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} });
+      try { await floresta().notaContato({ card_id: card.id, contato_id: card.contato_id, texto: '✉️ E-mail de abordagem enviado pelo Atlantyx OS, da caixa ' + (r.envio?.de || '') + ' (aprovado e enviado por ' + (req.sessao?.login || '—') + ')\nAssunto: ' + r.item.assunto + '\n\n' + r.item.corpo }); } catch (_) {}
+      return r; },
     time_cfg: async () => ({ cfg: await TV.salvarCfg({ kv: _kvTV(), patch: payload.patch || {}, login: req.sessao?.login, admin: _tvAdmin() }) }),
     floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
     floresta_ia: () => floresta().analisarIA(payload),
@@ -1076,7 +1083,7 @@ async function handler(req, res) {
     floresta_abordagem: async () => { let saneados = 0; try { saneados = await TV.sanearEmails(_kvTV()); } catch (_) {} const fila = await TV.lerFila(_kvTV()); const email = {};
       for (const i of fila.filter(x => x.canal === 'email' && x.card_id)) { const o = email[i.card_id] = email[i.card_id] || { itens: 0, enviado: false, pendente: 0, aprovado: 0 }; o.itens++; if (i.enviado) { o.enviado = true; o.enviado_em = i.enviado_em; } if (i.estado === 'pendente') o.pendente++; if (i.estado === 'aprovado') o.aprovado++; }
       let v = {}; try { v = await voz().marcas(); } catch (_) {}
-      return { voz: v, email, briefing: fila.filter(x => x.agente === 'sdr_email' && !x.enviado && x.estado !== 'rejeitado').map(x => ({ id: x.id, card_id: x.card_id, nome: x.nome, empresa: x.empresa, cargo: x.cargo, etapa: x.etapa, estado: x.estado, assunto: x.assunto, corpo: x.corpo, racional: x.racional, pesquisa: x.pesquisa || null, angulo: x.angulo, responsavel: x.responsavel, funil: x.funil, criado_em: x.criado_em })) }; },
+      return { voz: v, email, ...(await TV.enviosHoje(_kvTV())), caixa: await import('../lib/floresta-email.js').then(m => { const c = m.caixaVendas(); return { ok: c.ok, de: c.ok ? c.user : c.alvo, erro: c.erro || null }; }).catch(() => null), briefing: fila.filter(x => x.agente === 'sdr_email' && !x.enviado && x.estado !== 'rejeitado').map(x => ({ id: x.id, card_id: x.card_id, nome: x.nome, empresa: x.empresa, cargo: x.cargo, etapa: x.etapa, estado: x.estado, assunto: x.assunto, corpo: x.corpo, racional: x.racional, pesquisa: x.pesquisa || null, angulo: x.angulo, responsavel: x.responsavel, funil: x.funil, criado_em: x.criado_em })) }; },
     floresta_abordagem: () => floresta().abordagemSalvar(payload),
     floresta_props_ia: () => floresta().propsIA(true),
     floresta_remarketing_lista: () => floresta().remarketingLista(),
