@@ -1006,6 +1006,13 @@ async function handler(req, res) {
     time_rodar: async () => { const cards = (await floresta().carregar({ forcar: !!payload.forcar })).cards || []; return TV.rodar({ kv: _kvTV(), cards, claude, agente: payload.agente || null, card_ids: payload.card_ids || null, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }); },
     time_decidir: async () => ({ item: await TV.decidir({ kv: _kvTV(), id: payload.id, decisao: payload.decisao, motivo: payload.motivo, assunto: payload.assunto, corpo: payload.corpo, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }) }),
     time_enviado: async () => ({ item: await TV.marcarEnviado({ kv: _kvTV(), id: payload.id, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} }) }),
+    // v3.652: envio direto (1 clique por e-mail, só item aprovado) — busca o e-mail do lead na Floresta e registra nota no HubSpot
+    time_enviar_email: async () => { const kvt = _kvTV(), it0 = (await TV.lerFila(kvt)).find(x => x.id === payload.id); if (!it0) throw Object.assign(new Error('Item não encontrado'), { status: 404 });
+      const cards = (await floresta().carregar({})).cards || [], card = cards.find(c => String(c.id) === String(it0.card_id)); if (!card) throw Object.assign(new Error('Card não encontrado na Floresta — atualize a tela'), { status: 404 });
+      const { enviarEmailLead } = await import('../lib/floresta-email.js');
+      const r = await TV.enviarEmailItem({ kv: kvt, id: payload.id, card, enviar: enviarEmailLead, login: req.sessao?.login, admin: _tvAdmin(), mapaFunil: (await cfgGet('floresta_acesso_funil')) || {} });
+      try { await floresta().notaContato({ card_id: card.id, contato_id: card.contato_id, texto: '✉️ E-mail de abordagem enviado pelo Atlantyx OS (aprovado e enviado por ' + (req.sessao?.login || '—') + ')\nAssunto: ' + r.item.assunto + '\n\n' + r.item.corpo }); } catch (_) {}
+      return r; },
     time_cfg: async () => ({ cfg: await TV.salvarCfg({ kv: _kvTV(), patch: payload.patch || {}, login: req.sessao?.login, admin: _tvAdmin() }) }),
     floresta: () => floresta().carregar(payload),                        // v3.440: Floresta de Vendas
     floresta_ia: () => floresta().analisarIA(payload),
