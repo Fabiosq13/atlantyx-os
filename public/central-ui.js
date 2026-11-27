@@ -297,19 +297,42 @@
   async function torreMic() { if (T.stream || T.micPed || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return; T.micPed = true;
     try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); T.stream = st; T.micNome = (st.getAudioTracks()[0] || {}).label || 'microfone padrão'; T.erroVoz = ''; T.somEm = 0; T.micDesde = Date.now();
       const AC = window.AudioContext || window.webkitAudioContext; if (AC) { const ac = new AC(), an = ac.createAnalyser(); an.fftSize = 512; ac.createMediaStreamSource(st).connect(an); const buf = new Uint8Array(an.fftSize); T.ac = ac;
-        T.nivelTk = setInterval(() => { an.getByteTimeDomainData(buf); let mx = 0; for (let i = 0; i < buf.length; i++) mx = Math.max(mx, Math.abs(buf[i] - 128)); if (mx > 5) T.somEm = Date.now();
+        T.nivelTk = setInterval(() => { an.getByteTimeDomainData(buf); let mx = 0; for (let i = 0; i < buf.length; i++) mx = Math.max(mx, Math.abs(buf[i] - 128)); if (mx > 5) T.somEm = Date.now(); T.nivelAgora = mx; if (mx > 10) T.framesVoz = (T.framesVoz || 0) + 1;
+          if (T.rec && !T.modoServ && (T.framesVoz || 0) >= 12 && T.ouvindoDesde && Date.now() - T.ouvindoDesde > 7000 && !T.rasc) torreTrocarServ('o navegador não transcreveu');
           const b = $('ckNivel'); if (b) b.style.width = Math.min(100, mx * 2.2) + '%'; const d = $('ckMicDica'); if (d) d.textContent = torreDica(); }, 150); }
     } catch (e) { T.erroVoz = e.name === 'NotAllowedError' ? 'Microfone bloqueado: clique no cadeado da barra de endereço e permita o microfone' : e.name === 'NotFoundError' ? 'Nenhum microfone encontrado neste computador' : 'Microfone indisponível: ' + (e.message || e.name); }
     T.micPed = false; torreBotoes(); }
   function torreMicFim() { clearInterval(T.nivelTk); try { (T.stream ? T.stream.getTracks() : []).forEach(t => t.stop()); } catch (_) {} try { T.ac && T.ac.close(); } catch (_) {} T.stream = null; T.ac = null; T.micNome = ''; }
-  function torreDica() { if (T.erroVoz) return '⚠ ' + T.erroVoz; if (!T.stream || !T.rec) return '';
+  function torreDica() { if (T.erroVoz) return '⚠ ' + T.erroVoz; if (!T.stream || !(T.rec || T.grav)) return ''; if (T.grav && T.somEm) return '';
     const agora = Date.now(), semSom = !T.somEm ? agora - (T.micDesde || agora) > 5000 : agora - T.somEm > 12000;
     if (semSom) return '⚠ não está chegando som deste microfone — confira se ele é o microfone certo (cadeado da barra de endereço → Microfone) e se não está mudo';
     if (T.somEm && T.ouvindoDesde && agora - T.ouvindoDesde > 9000 && !T.rasc && agora - T.somEm < 3000) return '⚠ o som chega, mas o navegador não está transcrevendo — recarregue a página (Ctrl+F5); se persistir, a rede ou a VPN pode estar bloqueando o reconhecimento de voz do Chrome/Edge';
     return ''; }
+  // v3.663: PLANO B — quando o reconhecimento de voz do navegador não responde, grava a fala e transcreve no servidor
+  function torreTrocarServ(motivo) { T.modoServ = true; T.erroVoz = ''; if (T.rec) { try { T.rec.onend = null; T.rec.onerror = null; T.rec.stop(); } catch (_) {} T.rec = null; } clearTimeout(T.tm); try { toast('Voz: ' + motivo + ' — passei a transcrever pelo servidor', 'info'); } catch (_) {} torreGravar(); }
+  async function torreGravar() {
+    if (T.grav || T.env || T.transc || T.falando) return; if (!T.stream) { await torreMic(); if (!T.stream) { T.modo = false; torreBotoes(); return; } }
+    const MR = window.MediaRecorder; if (!MR) { T.erroVoz = 'Este navegador não grava áudio — use o Chrome ou o Edge atualizado'; T.modo = false; torreBotoes(); return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(m => { try { return MR.isTypeSupported(m); } catch (_) { return false; } }) || '';
+    let rec; try { rec = new MR(T.stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined); } catch (e) { T.erroVoz = 'Não consegui gravar o microfone: ' + e.message; T.modo = false; torreBotoes(); return; }
+    const partes = [], t0 = Date.now(); let voz = 0, ultSom = 0, descartar = false; T.grav = rec;
+    rec.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
+    const tk = setInterval(() => { const ag = Date.now(); if ((T.nivelAgora || 0) > 10) { voz++; ultSom = ag; }
+      if (voz >= 4 && ag - ultSom > 1600) { try { rec.stop(); } catch (_) {} } else if (ag - t0 > 40000) { try { rec.stop(); } catch (_) {} } else if (voz < 4 && ag - t0 > 15000) { descartar = true; try { rec.stop(); } catch (_) {} } }, 150);
+    rec.onstop = async () => { clearInterval(tk); T.grav = null; torreBotoes();
+      if (rec._cancelado) return; if (descartar || voz < 4) { if (T.modo && $('ckTorre') && !T.env && !T.falando) setTimeout(torreGravar, 150); return; }
+      T.transc = true; torreBotoes();
+      try { const blob = new Blob(partes, { type: rec.mimeType || mime || 'audio/webm' }); const b64 = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(new Error('falha ao ler o áudio')); fr.readAsDataURL(blob); });
+        const d = await api('/api/estrategia', { action: 'transcrever', audio: b64, mime: blob.type }); T.transc = false; const txt = String(d.texto || '').trim();
+        if (txt) { T.rasc = txt; const el = $('ckTxt'); if (el) el.value = txt; torreBotoes(); torreEnviar(); } else { torreBotoes(); if (T.modo && $('ckTorre')) setTimeout(torreGravar, 150); }
+      } catch (e) { T.transc = false; T.erroVoz = e.message; T.modo = false; torreBotoes(); } };
+    try { rec.start(); } catch (e) { clearInterval(tk); T.grav = null; T.erroVoz = 'Não consegui gravar o microfone: ' + e.message; T.modo = false; } torreBotoes();
+  }
   function torreOuvir() {
+    if (T.modoServ) return torreGravar();
+    if (!SR) return torreTrocarServ('este navegador não reconhece voz');
     if (!SR) { try { toast('Este navegador não reconhece voz — use o Chrome ou o Edge', 'error'); } catch (_) {} T.modo = false; torreBotoes(); return; }
-    if (T.rec || T.env) return; torreCalar(); torreMic(); T.ouvindoDesde = Date.now();
+    if (T.rec || T.env) return; torreCalar(); torreMic(); T.ouvindoDesde = Date.now(); T.framesVoz = 0;
     const r = new SR(); r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true; T.rec = r; let final = '', ouviu = false;
     const base = T.rasc ? T.rasc + ' ' : ''; const el = () => $('ckTxt');
     r.onresult = e => { let parc = ''; for (let i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) final += e.results[i][0].transcript + ' '; else parc += e.results[i][0].transcript; }
@@ -317,7 +340,7 @@
       if (T.modo && ouviu) T.tm = setTimeout(() => { try { r.stop(); } catch (_) {} }, 1700); }; // 1,7 s de silêncio = terminou de falar (conta também o texto provisório)
     r.onerror = e => { const er = e.error; if (er === 'not-allowed' || er === 'service-not-allowed') { T.modo = false; T.erroVoz = 'Microfone bloqueado: clique no cadeado da barra de endereço e permita o microfone'; try { toast('Libere o microfone no cadeado da barra de endereço', 'error'); } catch (_) {} }
       else if (er === 'audio-capture') { T.modo = false; T.erroVoz = 'O navegador não conseguiu abrir o microfone (outro programa pode estar usando, ou não há microfone)'; }
-      else if (er === 'network') { T.erroVoz = 'O reconhecimento de voz do navegador não respondeu (internet, VPN ou firewall). Dá para digitar enquanto isso'; T.falhasRede = (T.falhasRede || 0) + 1; if (T.falhasRede >= 3) T.modo = false; }
+      else if (er === 'network') { T.erroVoz = 'O reconhecimento de voz do navegador não respondeu (internet, VPN ou firewall). Dá para digitar enquanto isso'; T.falhasRede = (T.falhasRede || 0) + 1; if (T.falhasRede >= 2) { T.rec = null; setTimeout(() => torreTrocarServ('o reconhecimento de voz do navegador não respondeu'), 0); return; } }
       else if (er === 'no-speech') { /* silêncio: só reinicia */ } else if (er !== 'aborted') T.erroVoz = 'Voz: ' + er; torreBotoes(); };
     r.onend = () => { T.rec = null; clearTimeout(T.tm); torreBotoes(); const txt = (T.rasc || '').trim();
       if (txt) { if (T.modo || ouviu) torreEnviar(); } else if (T.modo && $('ckTorre') && !T.env && !T.falando) setTimeout(torreOuvir, 250); };
@@ -325,7 +348,7 @@
   }
   async function torreEnviar(texto) {
     const m = String(texto ?? T.rasc ?? '').trim(); if (!m || T.env) return; const veioDaVoz = T.modo || !!T.rec;
-    if (T.rec) { try { T.rec.onend = null; T.rec.stop(); } catch (_) {} T.rec = null; } torreCalar();
+    if (T.rec) { try { T.rec.onend = null; T.rec.stop(); } catch (_) {} T.rec = null; } if (T.grav) { T.grav._cancelado = true; try { T.grav.stop(); } catch (_) {} T.grav = null; } torreCalar();
     T.rasc = ''; T.env = true; T.aberto = true; T.msgs.push({ r: 'u', t: m }, { r: 'a', t: '', pensando: true }); torreRender();
     try {
       const d = await api('/api/estrategia', { action: 'chat', conversa_id: T.conv, mensagem: m, voz: T.voz && (veioDaVoz || T.modo), persona: 'atlas', titulo_extra: 'Central de Planejamento e Estratégia', contexto_extra: 'Você é a TORRE DE CONTROLE da Central de Planejamento e Estratégia: o fundador conversa com você para ser guiado, tirar dúvidas e decidir. Estado atual da tela (jornada das 6 reuniões, placar de metas, cenários 2027):\n' + digest() });
@@ -337,13 +360,15 @@
     const pr = $('ckBtParar'); if (pr) pr.style.display = (T.falando || T.env) ? '' : 'none'; const ve = $('ckBtVel'); if (ve) ve.textContent = '⚡ ' + String(T.vel).replace('.', ',') + '×';
     const m = $('ckBtModo'), mic = $('ckBtMic'), vz = $('ckBtVoz'), st = $('ckStatus');
     if (m) { m.className = 'ck-btn' + (T.modo ? ' p' : ''); m.textContent = T.modo ? '⏹ Encerrar conversa contínua' : '🎙 Conversa contínua'; }
-    if (mic) { mic.textContent = T.rec ? '⏺ ouvindo…' : '🎤 Falar'; mic.style.background = T.rec ? 'var(--red,#e5594f)' : ''; mic.style.color = T.rec ? '#fff' : ''; }
+    const ouv = T.rec || T.grav; if (mic) { mic.textContent = T.transc ? '✍️ transcrevendo…' : ouv ? '⏺ ouvindo…' : '🎤 Falar'; mic.style.background = ouv ? 'var(--red,#e5594f)' : ''; mic.style.color = ouv ? '#fff' : ''; }
     if (vz) vz.textContent = T.voz ? '🔊 Voz ligada' : '🔇 Voz desligada';
-    if (st) st.innerHTML = T.env ? '⏳ ATLAS está pensando com os números da empresa…' : T.falando ? '🔊 ATLAS falando — <a href="#" onclick="event.preventDefault();CENTRAL.interromper()">interromper e falar</a>' : T.rec ? '🎧 Estou ouvindo — fale, faça uma pausa e eu respondo' + (T.micNome ? ' · 🎙 ' + esc(T.micNome.slice(0, 40)) + ' <span style="display:inline-block;width:60px;height:6px;background:rgba(127,127,127,.25);border-radius:3px;vertical-align:middle;overflow:hidden"><span id="ckNivel" style="display:block;height:100%;width:0;background:#22c55e"></span></span>' : '') + ' <span id="ckMicDica" style="color:#e5594f">' + esc(torreDica()) + '</span>' : T.erroVoz ? '<span style="color:#e5594f">⚠ ' + esc(T.erroVoz) + '</span>' : T.modo ? '🎙 Conversa contínua ligada' : '';
+    if (st) st.innerHTML = T.env ? '⏳ ATLAS está pensando com os números da empresa…' : T.falando ? '🔊 ATLAS falando — <a href="#" onclick="event.preventDefault();CENTRAL.interromper()">interromper e falar</a>' : T.transc ? '✍️ Transcrevendo o que você falou…' : (T.rec || T.grav) ? '🎧 Estou ouvindo — fale, faça uma pausa e eu respondo' + (T.grav ? ' (transcrição pelo servidor)' : '') + (T.micNome ? ' · 🎙 ' + esc(T.micNome.slice(0, 40)) + ' <span style="display:inline-block;width:60px;height:6px;background:rgba(127,127,127,.25);border-radius:3px;vertical-align:middle;overflow:hidden"><span id="ckNivel" style="display:block;height:100%;width:0;background:#22c55e"></span></span>' : '') + ' <span id="ckMicDica" style="color:#e5594f">' + esc(torreDica()) + '</span>' : T.erroVoz ? '<span style="color:#e5594f">⚠ ' + esc(T.erroVoz) + '</span>' : T.modo ? '🎙 Conversa contínua ligada' : '';
   }
   function torreEnc() {
     const b = $('ckTorre'), a = $('ckApp'); if (!b || !a) return; const r = a.getBoundingClientRect(); if (!r.width) return;
-    const l = Math.max(0, r.left); b.style.left = l + 'px'; b.style.width = Math.min(r.width, innerWidth - l) + 'px'; a.style.paddingBottom = (b.offsetHeight + 24) + 'px';
+    const l = Math.max(0, r.left); b.style.left = l + 'px'; b.style.width = Math.min(r.width, innerWidth - l) + 'px';
+    const dk = document.getElementById('dock'), alt = dk && dk.offsetHeight && getComputedStyle(dk).display !== 'none' ? Math.max(0, innerHeight - dk.getBoundingClientRect().top) + 8 : 0;   // v3.663: fica ACIMA da barra de atalhos (antes a barra cobria o campo de texto)
+    b.style.bottom = alt + 'px'; b.style.borderRadius = alt ? '14px' : ''; b.style.borderBottom = alt ? '1px solid var(--bd)' : ''; a.style.paddingBottom = (b.offsetHeight + alt + 24) + 'px';
   }
   if (!window._ckResize) { window._ckResize = true; window.addEventListener('resize', () => { try { torreEnc(); } catch (_) {} }); }
   function torreRender() {
@@ -411,8 +436,8 @@
     kpid(id) { const i = ((S.placar || {}).indicadores || []).find(x => x.id === id) || {}; const n = i.nome, f = i.formula; if (window.KPID) return KPID.abrir(id, n, f); const sc = document.createElement('script'); sc.src = '/kpi-detalhe-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); sc.onload = () => KPID.abrir(id, n, f); document.head.appendChild(sc); },
     torreAbrir() { T.aberto = !T.aberto; torreRender(); },
     torreNova() { torreCalar(); T.modo = false; T.conv = null; T.msgs = []; T.rasc = ''; torreRender(); },
-    modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; T.rasc = ''; T.erroVoz = ''; T.falhasRede = 0; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } torreMicFim(); } torreBotoes(); },
-    mic() { if (T.rec) { try { T.rec.stop(); } catch (_) {} } else torreOuvir(); },
+    modo() { T.modo = !T.modo; if (T.modo) { T.voz = true; T.rasc = ''; T.erroVoz = ''; T.falhasRede = 0; torreOuvir(); } else { torreCalar(); if (T.rec) { T.rec.onend = null; try { T.rec.stop(); } catch (_) {} T.rec = null; } if (T.grav) { T.grav._cancelado = true; try { T.grav.stop(); } catch (_) {} T.grav = null; } torreMicFim(); } torreBotoes(); },
+    mic() { if (T.rec) { try { T.rec.stop(); } catch (_) {} } else if (T.grav) { try { T.grav.stop(); } catch (_) {} } else torreOuvir(); },
     vozToggle() { T.voz = !T.voz; if (!T.voz) torreCalar(); torreBotoes(); },
     interromper() { torreCalar(); torreOuvir(); },
     parar() { torreParar(); },

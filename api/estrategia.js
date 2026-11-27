@@ -649,6 +649,18 @@ async function pesquisaPreencherIA(usuario) {
   if (n) await kv(PQ.K_PESQUISA, PQ.pesquisaAplicar(P, { secao: 'mercado', dados: mercado }, usuario || 'IA'));
   return { ...(await pesquisaObter()), preenchidos: n };
 }
+// v3.663: transcrição de fala no servidor (plano B da Torre quando o reconhecimento de voz do navegador não responde)
+async function transcrever({ audio, mime } = {}) {
+  const b64 = String(audio || ''); if (b64.length < 800) return { texto: '' }; if (b64.length > 3_500_000) throw Object.assign(new Error('Áudio longo demais — fale em trechos menores'), { status: 413 });
+  const provs = [process.env.OPENAI_API_KEY && { nome: 'OpenAI', url: 'https://api.openai.com/v1/audio/transcriptions', chave: process.env.OPENAI_API_KEY, modelo: process.env.STT_MODEL || 'whisper-1' }, process.env.GROQ_API_KEY && { nome: 'Groq', url: 'https://api.groq.com/openai/v1/audio/transcriptions', chave: process.env.GROQ_API_KEY, modelo: 'whisper-large-v3-turbo' }].filter(Boolean);
+  if (!provs.length) throw Object.assign(new Error('Transcrição pelo servidor não configurada: falta OPENAI_API_KEY ou GROQ_API_KEY nas variáveis da Vercel. Enquanto isso, digite a pergunta.'), { status: 503 });
+  const buf = Buffer.from(b64, 'base64'), tipo = /mp4|m4a/.test(mime || '') ? 'audio/mp4' : /ogg/.test(mime || '') ? 'audio/ogg' : 'audio/webm', ext = tipo.split('/')[1]; let ultimo = null;
+  for (const p of provs) { try { const fd = new FormData(); fd.append('file', new Blob([buf], { type: tipo }), 'fala.' + ext); fd.append('model', p.modelo); fd.append('language', 'pt'); fd.append('response_format', 'json');
+      const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 25000); let r; try { r = await fetch(p.url, { method: 'POST', headers: { Authorization: 'Bearer ' + p.chave }, body: fd, signal: ctrl.signal }); } finally { clearTimeout(tm); }
+      const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(p.nome + ' [' + r.status + ']: ' + String(d?.error?.message || 'erro').slice(0, 160));
+      return { texto: String(d.text || '').trim(), via: p.nome }; } catch (e) { ultimo = e; } }
+  throw Object.assign(new Error('Transcrição falhou: ' + (ultimo?.name === 'AbortError' ? 'o serviço demorou demais' : ultimo?.message || 'erro')), { status: 502 });
+}
 async function pesquisaObter() {
   const [P0, ia, ca] = await Promise.all([kv(PQ.K_PESQUISA), mercadoIA(), kv('est:contexto_amplo')]);
   const P = PQ.pesquisaNormalizar(P0), st = PQ.pesquisaStatus(P, { mercado_ia: ia });
@@ -771,6 +783,7 @@ async function handler(req, res) {
       projecao_salvar: () => projecaoSalvar(b, usuario), projecao_ia: () => projecaoIA(b), projecao_para_metas: () => projecaoParaMetas(b),
       premissas_salvar: async () => { const t = String(b.texto || '').trim(); if (t.length < 30) throw new Error('Escreva as premissas (pelo menos algumas frases)'); await kv('est:premissas', { texto: t.substring(0, 6000), em: new Date().toISOString(), por: usuario }); return { ok: true }; },
       chat: () => chat({ ...b, _usuario: usuario }),
+      transcrever: () => transcrever(b),
       conselho_chat: () => conselhoChat({ ...b, _usuario: usuario }),
       tarefas_criar: () => tarefasCriar({ ...b, _usuario: usuario }), // v3.410 // v3.404: Sala do Conselho (todos os agentes + Conselheiro do Contra)
       // v3.400: Investimentos e retiradas (tela do Financeiro) — só o fundador
