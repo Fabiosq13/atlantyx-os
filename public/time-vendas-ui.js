@@ -14,9 +14,9 @@
   }
   // v3.650: abertura em etapas com barra de progresso — a tela aparece assim que a fila chega; o painel do gerente (lê a Floresta) completa em segundo plano
   const ETAPAS = ['Conectando ao servidor', 'Lendo fila de aprovação, agentes e Playbook', 'Desenhando a tela', 'Calculando o painel do gerente (lendo a Floresta de Vendas)'];
-  function barra(n, extra) { const box = $('tvApp'); if (!box || S.d) return; const pct = Math.round((n + 1) / ETAPAS.length * 100);
+  function barra(n, extra) { const box = $('timevApp'); if (!box || S.d) return; const pct = Math.round((n + 1) / ETAPAS.length * 100);
     box.innerHTML = `<div class="tv-vazio" style="max-width:520px;margin:40px auto;text-align:left;"><div style="font-weight:700;margin-bottom:6px;">Abrindo o time de vendas…</div><div style="height:10px;background:rgba(0,0,0,.1);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#00708A;transition:width .4s;"></div></div><div style="margin-top:8px;font-size:12px;">Etapa ${n + 1} de ${ETAPAS.length}: ${ETAPAS[n]}${extra || ''}</div></div>`; }
-  async function abrir() { const box = $('tvApp'); if (!box) return; let seg = 0, tk = null;
+  async function abrir() { const box = $('timevApp'); if (!box) return; let seg = 0, tk = null;
     if (!S.d) { barra(0); tk = setInterval(() => { seg++; if (!S.d) barra(1, ' · ' + seg + 's' + (seg > 15 ? ' — está demorando mais que o normal' : '')); }, 1000); }
     try { S.d = await api('time_estado', { rapido: true }); } catch (e) { clearInterval(tk); box.innerHTML = `<div class="tv-vazio">Não consegui abrir o time: ${esc(e.message)} <button class="btn" onclick="TIMEV.abrir()">Tentar de novo</button></div>`; return; } finally { clearInterval(tk); }
     try { render(); } catch (e) { box.innerHTML = `<div class="tv-vazio">Erro ao desenhar a tela: ${esc(e.message)}</div>`; console.error('[time-vendas]', e); return; }
@@ -47,7 +47,7 @@
         : `<span class="tv-mut">Rejeitado por ${esc(i.decidido_por || '')}${i.motivo ? ': ' + esc(i.motivo) : ''}</span><button class="tv-bt" onclick="TIMEV.decidir('${i.id}','reabrir')">Reabrir</button>`}</div></div>`;
   }
   function render() {
-    const box = $('tvApp'); if (!box || !S.d) return; const d = S.d, g = d.gerente || {}, fila = d.fila || [], cont = e => fila.filter(i => i.estado === e).length;
+    const box = $('timevApp'); if (!box || !S.d) return; const d = S.d, g = d.gerente || {}, fila = d.fila || [], cont = e => fila.filter(i => i.estado === e).length;
     const lista = fila.filter(i => S.filtro === 'todos' || (S.filtro === 'aprovado' ? i.estado === 'aprovado' && !i.enviado : S.filtro === 'enviado' ? i.enviado : i.estado === S.filtro));
     const abas = [['fila', 'Fila de aprovação'], ['time', 'O time'], ['funil', 'Funil'], ...(d.eh_ceo ? [['controle', 'Controle do CEO']] : [])];
     let corpo = '';
