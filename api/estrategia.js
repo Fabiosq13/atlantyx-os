@@ -637,6 +637,18 @@ async function mercadoIA() { // última análise 1.4 (IA, sem fonte): só rascun
       concorrentes: (M.concorrentes || []).slice(0, 15), tendencias: (M.tendencias_favoraveis || []).slice(0, 6), oportunidades: (M.oportunidades_nao_exploradas || []).slice(0, 6), segmento_mais_quente: M.segmento_mais_quente || null };
   } catch (_) { return null; }
 }
+// v3.662: rascunho da IA para as 6 fichas de mercado (pergunta 1) — só preenche ficha VAZIA, sem fonte (segue "a confirmar" até o fundador informar a fonte)
+async function pesquisaPreencherIA(usuario) {
+  const [P0, ia, ca] = await Promise.all([kv(PQ.K_PESQUISA), mercadoIA(), kv('est:contexto_amplo')]); const P = PQ.pesquisaNormalizar(P0);
+  const vazias = PQ.CAMPOS_MERCADO.filter(([k]) => !P.mercado[k].texto.trim()); if (!vazias.length) return { ...(await pesquisaObter()), preenchidos: 0 };
+  const sys = 'Você ajuda o fundador da Atlantyx (empresa brasileira de IA, análise de dados e engenharia de dados para empresas médias e grandes) a preparar a pesquisa de mercado do planejamento 2027. Escreva um RASCUNHO para cada ficha pedida, em português do Brasil, 2 a 4 frases curtas por ficha, direto ao ponto. REGRAS: use só o que está no material abaixo e conhecimento geral estável do mercado brasileiro; NUNCA escreva número, percentual, valor, tamanho de mercado ou nome de cliente como fato — onde um número for necessário, escreva "número a levantar" e diga em qual tipo de fonte buscar (ex.: IDC, Gartner, ABES, ANEEL, PNCP). Não cite clientes da Atlantyx pelo nome. Responda SOMENTE um JSON {"chave":"texto"} com exatamente as chaves pedidas.';
+  const usr = 'FICHAS A PREENCHER:\n' + vazias.map(([k, r]) => '- ' + k + ': ' + r).join('\n') + '\n\nANÁLISE DE MERCADO DA IA (tela 1.4, não verificada):\n' + JSON.stringify(ia || { aviso: 'sem análise 1.4' }).slice(0, 6000) + (ca ? '\n\nCONTEXTO DA EMPRESA:\n' + JSON.stringify(ca).slice(0, 3000) : '');
+  const t = await claude(sys, [{ role: 'user', content: usr }], 1800); const i = t.indexOf('{'), j = t.lastIndexOf('}'); if (i < 0 || j < i) throw Object.assign(new Error('A IA não devolveu o rascunho — tente de novo'), { status: 502 });
+  let o = {}; try { o = JSON.parse(t.slice(i, j + 1)); } catch (_) { throw Object.assign(new Error('A IA devolveu um rascunho ilegível — tente de novo'), { status: 502 }); }
+  const mercado = { ...P.mercado }; let n = 0; for (const [k] of vazias) { const v = String(o[k] || '').trim(); if (!v) continue; mercado[k] = { ...mercado[k], texto: ('[Rascunho da IA — confirmar] ' + v).slice(0, 1500) }; n++; }
+  if (n) await kv(PQ.K_PESQUISA, PQ.pesquisaAplicar(P, { secao: 'mercado', dados: mercado }, usuario || 'IA'));
+  return { ...(await pesquisaObter()), preenchidos: n };
+}
 async function pesquisaObter() {
   const [P0, ia, ca] = await Promise.all([kv(PQ.K_PESQUISA), mercadoIA(), kv('est:contexto_amplo')]);
   const P = PQ.pesquisaNormalizar(P0), st = PQ.pesquisaStatus(P, { mercado_ia: ia });
@@ -650,9 +662,10 @@ async function pesquisaImportarIA(usuario) {
   const { P, importados } = PQ.pesquisaImportarIA(await kv(PQ.K_PESQUISA), ia.concorrentes, usuario); await kv(PQ.K_PESQUISA, P); return { ...(await pesquisaObter()), importados };
 }
 async function jornadaObter() {
-  const so = await kv(RT.K_SOCIOS), r = RT.roteiroNormalizar(await kv(RT.K_ROTEIRO)), st = RT.roteiroStatus(r, { socios: RT.socStatus(so || {}) });
-  const ia = await mercadoIA(), passo0 = PQ.pesquisaStatus(await kv(PQ.K_PESQUISA), { mercado_ia: ia });
-  return { jornada: JN.jornadaGerar(await kv(JN.K_JORNADA), st, passo0) };
+  // v3.662: leituras em paralelo; a análise 1.4 (pesada) espera no máximo 2,5 s — sem ela a jornada abre do mesmo jeito
+  const [so, rt, ia, P0, J0] = await Promise.all([kv(RT.K_SOCIOS), kv(RT.K_ROTEIRO), Promise.race([mercadoIA(), new Promise(r => setTimeout(() => r(null), 2500))]), kv(PQ.K_PESQUISA), kv(JN.K_JORNADA)]);
+  const st = RT.roteiroStatus(RT.roteiroNormalizar(rt), { socios: RT.socStatus(so || {}) }), passo0 = PQ.pesquisaStatus(P0, { mercado_ia: ia });
+  return { jornada: JN.jornadaGerar(J0, st, passo0) };
 }
 async function jornadaSalvar(b, usuario) { const E = JN.jornadaAplicar(await kv(JN.K_JORNADA), b, usuario); await kv(JN.K_JORNADA, E); return jornadaObter(); }
 async function calendarioObter() { return { calendario: RT.calendarioGerar(await kv(RT.K_CALENDARIO)), checklist: RT.CHECKLIST_REVISAO, gatilhos_tipos: RT.GATILHOS, horizonte: RT.HORIZONTE }; }
@@ -790,7 +803,7 @@ async function handler(req, res) {
       nao_fazer_importar_plano: () => (soFundador(req), naoFazerImportarPlano(usuario)),
       nao_fazer_checar: async () => ({ conflitos: RT.naoFazerChecar((await kv(RT.K_NAO_FAZER))?.itens, [b.titulo, b.texto].filter(Boolean).join(' \n ').substring(0, 6000)) }),
       revisao_calendario: () => (soFundador(req), calendarioObter()), revisao_calendario_salvar: () => (soFundador(req), calendarioSalvar(b, usuario)),
-      pesquisa_obter: () => (soFundador(req), pesquisaObter()), pesquisa_salvar: () => (soFundador(req), pesquisaSalvar(b, usuario)), pesquisa_importar_ia: () => (soFundador(req), pesquisaImportarIA(usuario)), jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
+      pesquisa_obter: () => (soFundador(req), pesquisaObter()), pesquisa_salvar: () => (soFundador(req), pesquisaSalvar(b, usuario)), pesquisa_importar_ia: () => (soFundador(req), pesquisaImportarIA(usuario)), pesquisa_preencher_ia: () => (soFundador(req), pesquisaPreencherIA(usuario)), jornada_obter: () => (soFundador(req), jornadaObter()), jornada_salvar: () => (soFundador(req), jornadaSalvar(b, usuario)), // v3.526
       socios_obter: () => (soFundador(req), sociosObter(usuario)), socios_salvar: () => (soFundador(req), sociosSalvar(b, usuario)), socios_acordo: () => (soFundador(req), sociosAcordo(b, usuario)), // v3.342
       cadeiras_salvar: () => (soFundador(req), cadeirasSalvar(b, usuario)), pessoal_salvar: () => (soFundador(req), pessoalSalvar(b, usuario)),
       orcamento_obter: () => (soFundador(req), orcamentoObter(b)), orcamento_salvar: () => (soFundador(req), orcamentoSalvar(b, usuario)),
